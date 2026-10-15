@@ -2,13 +2,13 @@
 description: "List and triage Fortify SSC issues for the current branch, falling back to develop (read-only). Usage: /fortify [ssc-application:version]"
 agent: fortify
 ---
-SSC application (from appsec-ci.env): !`f=$(git ls-files '*appsec-ci.env' | head -1); if [ -n "$f" ]; then grep -E '^APPSEC_PROJECT_NAME=' "$f" | head -1 | cut -d= -f2- | tr -d '"\r'; fi`
+SSC application line (from appsec-ci.env): !`git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'`
 Current git branch: !`git branch --show-current`
 
 Explicit target: "$ARGUMENTS"
 
 Rules:
-- Never read appsec-ci.env yourself: it may contain secrets. Use only the value injected above.
+- Never read appsec-ci.env yourself: it may contain secrets. Use only the line injected above: the SSC application is the value after `=`, without quotes.
 
 Steps:
 1. If an explicit target is given above, use it as is and go to step 4.

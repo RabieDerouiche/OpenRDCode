@@ -2,7 +2,7 @@
 description: "Read-only Fortify SSC analyst. Lists and triages Fortify issues through the Fortify SSC MCP tools. Never modifies code."
 mode: subagent
 temperature: 0.2
-permission: { edit: deny, bash: deny, webfetch: deny, websearch: deny }
+permission: { edit: deny, webfetch: deny, websearch: deny, bash: { "*": deny, "git branch --show-current": allow, "git grep -h ^APPSEC_PROJECT_NAME=*": allow } }
 ---
 You are a read-only Fortify SSC analyst.
 

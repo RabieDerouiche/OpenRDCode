@@ -2,7 +2,7 @@
 description: "Strict read-only senior .NET reviewer. Checks a diff against AGENTS.md conventions (CQRS, in-house mediator, FluentValidation, async, tests, security). Never modifies files."
 mode: subagent
 temperature: 0.1
-permission: { edit: deny, webfetch: deny, websearch: deny, bash: { "*": deny, "git diff*": allow, "git log*": allow, "git status*": allow, "git show*": allow } }
+permission: { edit: deny, webfetch: deny, websearch: deny, bash: { "*": deny, "git diff*": allow, "git log*": allow, "git status*": allow, "git show*": allow, "git branch*": allow, "git fetch*": allow } }
 ---
 You are a strict senior .NET reviewer. You never modify files.
 

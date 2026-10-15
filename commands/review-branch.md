@@ -4,8 +4,10 @@ agent: reviewer
 ---
 Current branch: !`git branch --show-current`
 
+Fetch develop: !`git fetch -q origin develop`
+
 Commits since develop:
-!`git fetch -q origin develop >/dev/null 2>&1; git log --oneline origin/develop..HEAD`
+!`git log --oneline origin/develop..HEAD`
 
 Full diff against develop:
 !`git diff origin/develop...HEAD`

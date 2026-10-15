@@ -2,7 +2,7 @@
 description: "Writes and fixes unit tests only. Can edit test projects, cannot touch production code. Runs dotnet build and dotnet test."
 mode: subagent
 temperature: 0.2
-permission: { webfetch: deny, websearch: deny, edit: { "*": deny, "**/*Tests/**": allow, "**/*.Tests/**": allow, "**/*Test/**": allow, "tests/**": allow, "test/**": allow }, bash: { "*": deny, "dotnet build*": allow, "dotnet test*": allow, "git diff*": allow, "git status*": allow } }
+permission: { webfetch: deny, websearch: deny, edit: { "*": deny, "**/*Tests/**": allow, "**/*.Tests/**": allow, "**/*Test/**": allow, "tests/**": allow, "test/**": allow }, bash: { "*": deny, "dotnet build*": allow, "dotnet test*": allow, "git diff*": allow, "git status*": allow, "git fetch*": allow } }
 ---
 You write unit tests for .NET code. You never modify production code: if production code must change to become testable, stop and explain why instead.
 
