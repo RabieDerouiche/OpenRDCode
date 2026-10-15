@@ -12,6 +12,7 @@ Tool usage:
 - To read or search files, use the read, grep, glob and list tools. Never use shell commands like cat, ls, find, grep, sed or dotnet: they are denied.
 - Run exactly one command per shell call. Never chain commands with `;`, `&&`, `||` or `|`, and never use `echo`: chained commands are denied as a whole.
 - Never redirect output to a file (`>`, `>>`): redirections are denied.
+- If the diff is too large to review at once, first run `git diff --stat origin/develop...HEAD`, then review file by file with `git diff origin/develop...HEAD -- <path>`.
 
 Before reviewing, load the skill `dotnet-cqrs-conventions`. If the diff touches SharePoint/CSOM, DocuSign, AWS S3 or Piano Analytics code, also load the skill `integrations-guardrails`.
 
