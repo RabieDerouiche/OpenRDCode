@@ -22,7 +22,7 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 | Début de ticket | `/ticket [DNA-123]` | Choix du ticket (dans ton sprint si tu ne donnes pas de clé), branche depuis develop, analyse du ticket, de Confluence et du code, puis **fiche ticket** enregistrée. |
 | Dev | tu parles à l'agent `build` | « implémente l'étape 1 de la fiche », « pourquoi ça plante », « explique ce flux », « corrige le build »… |
 | Tests | `/test [fichier]` | Critères d'acceptation et code modifié → tests manquants écrits dans le style du projet et lancés jusqu'au vert. La fiche est mise à jour. |
-| Avant de pousser | `/check` | Review, build, tests, critères d'acceptation, pré-scan sécurité. En local et en lecture seule. |
+| Avant de pousser | `/check` | Review, build, tests, critères d'acceptation, pré-scan sécurité, et au plus 3 suggestions de bonnes pratiques non bloquantes. En local et en lecture seule. |
 | Livrer | `/ship` | Commit, récupération des changements distants, push (avec ta validation), lien et description de la MR. |
 | Après la CI | `/scans` | Pipeline du commit poussé, puis Sonar et Fortify fusionnés et priorisés, avec la commande de correction de chaque point. |
 | Corriger | `/fortify-fix <id>` · `/sonar-fix <clé>` | Corrige UN point, avec test, build et message de commit. Puis `/check` → `/ship` → `/scans`. |
@@ -34,6 +34,7 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 
 | Commande | Usage |
 |---|---|
+| `/audit [domaine]` | Audit des bonnes pratiques de tout le repo selon son type (health checks, gestion d'erreurs, config, résilience, logs, sécurité, tests), avec preuves et la plus petite façon d'ajouter ce qui manque. |
 | `/sync` | Met la branche à jour : commit local, changements distants de la branche, merge de develop (jamais de rebase), puis push si tu veux. |
 | `/release-notes` | Release note d'une MEP depuis master. Avec un nom de groupe (`/release-notes DNA`), une seule note pour plusieurs repos, regroupée par ticket. |
 | `/cqrs command CreateInvoice Invoices` | Command ou query, handler, validator et tests (projets CQRS uniquement). |
@@ -48,12 +49,12 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 | `reviewer` | la fiche ticket (ligne de suivi) | `/check`, review dans `/ship`. Lance le build et les tests. |
 | `test-writer` | les dossiers de tests et la fiche ticket | `/test`. Ne touche jamais au code de production. |
 | `analyst` | rien | `/daily`, `/scans`, `/next`, analyse de `/ticket`. Lecture seule sur Jira, Confluence, GitLab, Sonar et Fortify. |
-| `debugger` · `architect` | rien | Appelés par l'agent `build` quand tu demandes « pourquoi ça plante » ou « fais-moi un plan ». |
+| `debugger` · `architect` | rien | Appelés par l'agent `build` quand tu demandes « pourquoi ça plante » ou « fais-moi un plan ». `architect` fait aussi `/audit`. |
 | `release-writer` | une page Confluence, avec ta validation | `/release-notes`. |
 
 ## Skills (chargés à la demande)
 
-`dotnet-cqrs-conventions`, `fortify-remediation`, `integrations-guardrails`, `build-fix`, `explain-code`, et les `pattern-*` créés par `/extract-pattern`.
+`dotnet-cqrs-conventions`, `fortify-remediation`, `integrations-guardrails`, `build-fix`, `explain-code`, `best-practices`, et les `pattern-*` créés par `/extract-pattern`.
 
 ## Pour la maintenance du pack
 
