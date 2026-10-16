@@ -9,7 +9,8 @@ Base branch: `origin/develop` if it is listed above. Otherwise, if exactly one o
 Current branch: !`git branch --show-current`
 
 Commits since develop:
-!`git fetch -q origin develop >/dev/null 2>&1; git log --oneline origin/develop..HEAD`
+!`git fetch -q origin develop`
+!`git log --oneline origin/develop..HEAD`
 
 Changed files:
 !`git diff --stat origin/develop...HEAD`

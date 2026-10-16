@@ -5,13 +5,13 @@ agent: build
 Project detection:
 !`sh ~/.config/opencode/scripts/detect-project-type.sh`
 
-SSC application (from appsec-ci.env): !`f=$(git ls-files '*appsec-ci.env' | head -1); if [ -n "$f" ]; then grep -E '^APPSEC_PROJECT_NAME=' "$f" | head -1 | cut -d= -f2- | tr -d '"\r'; fi`
+SSC application line (from appsec-ci.env): !`git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'`
 Current git branch: !`git branch --show-current`
 
 Fix the Fortify issue with id $1, and only this one.
 
 Rules:
-- Never read appsec-ci.env yourself. Use the application name injected above.
+- Never read appsec-ci.env yourself. Use the line injected above: the SSC application is the value after `=`, without quotes.
 - Never invent application, version, filter set or filter names. Use the same version selection as the /fortify command (current branch version if it has scans, otherwise develop; if unclear, ask me with the question tool (multiple choice, recommended option first)).
 
 Steps:
