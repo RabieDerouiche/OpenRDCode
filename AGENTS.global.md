@@ -33,6 +33,7 @@
 
 ## Daily
 - Default scope of /daily: Jira project or board `[KEY or board name]`, GitLab group or projects `[group/path]`. Replace the placeholders, or delete this section to be asked each time.
+- Jira URL (for links in /daily): `[https://jira.mycompany.com]`. Optional: without it, the URL returned by the Jira tools is used.
 
 ## Release groups
 - Used by /release-notes-group to write one release note for several repositories deployed together. One block per group:
