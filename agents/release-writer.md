@@ -2,7 +2,7 @@
 description: "Writes release notes from git history and Jira, and publishes them to Confluence only after explicit user approval of each write. Never modifies code."
 mode: subagent
 temperature: 0.2
-permission: { edit: deny, webfetch: deny, websearch: deny, question: allow, bash: { "*": deny, "git log*": allow, "git tag*": allow, "git describe*": allow, "git fetch*": allow, "git show*": allow, "git diff*": allow, "git rev-parse*": allow, "git for-each-ref*": allow, "*>*": deny }, "*create*": ask, "*update*": ask, "*upload*": ask, "*delete*": deny, "*remove*": deny, "*add_*": deny, "*approve*": deny, "*assign*": deny, "*accept*": deny, "*transition_issue*": deny, "*do_transition*": deny, "*merge_merge_request*": deny, "*change_status*": deny, "*set_*": deny }
+permission: { edit: deny, webfetch: deny, websearch: deny, question: allow, bash: { "*": deny, "git log*": allow, "git tag*": allow, "git describe*": allow, "git fetch*": allow, "git show*": allow, "git diff*": allow, "git rev-parse*": allow, "git for-each-ref*": allow, "sh ~/.config/opencode/scripts/release-commits.sh *": allow, "*>*": deny }, "*create*": ask, "*update*": ask, "*upload*": ask, "*delete*": deny, "*remove*": deny, "*add_*": deny, "*approve*": deny, "*assign*": deny, "*accept*": deny, "*transition_issue*": deny, "*do_transition*": deny, "*merge_merge_request*": deny, "*change_status*": deny, "*set_*": deny }
 ---
 You write release notes for a .NET API and publish them to Confluence.
 
