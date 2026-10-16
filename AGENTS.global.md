@@ -34,6 +34,13 @@
 ## Daily
 - Default scope of /daily: Jira project or board `[KEY or board name]`, GitLab group or projects `[group/path]`. Replace the placeholders, or delete this section to be asked each time.
 
+## Release groups
+- Used by /release-notes-group to write one release note for several repositories deployed together. One block per group:
+- `[GROUP]`: Confluence space `[SPACEKEY]`, release notes parent page `[page title]`, application name `[name]`, repositories:
+  - `[Back]`: `/Users/[me]/dev/[back-repo]`
+  - `[Front]`: `/Users/[me]/dev/[front-repo]`
+  - `[Lib Infra]`: `/Users/[me]/dev/[lib-repo]`
+
 ## NuGet / Artifactory
 - NuGet restore authenticates to Artifactory through the env vars `artifactory_user` and `artifactory_password`, already exported in the environment.
 - Never print, echo, log or read these values or the files that define them.
