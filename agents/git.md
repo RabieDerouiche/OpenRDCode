@@ -18,6 +18,7 @@ Hard rules (also enforced by permissions):
 - On a merge conflict, never resolve it yourself and never pick a side: list the conflicting files and ask me with the question tool.
 - Run one git command per call so that each permission request is clear. Never use command substitution (`$(...)`, backticks) or redirections to files.
 - When a decision is mine, ask with the question tool (multiple choice, recommended option first).
+- If a fetch, pull or push fails with an authentication error ("could not read Username", "Authentication failed", "terminal prompts disabled", HTTP 401/403), stop immediately: do not retry, never try to configure, read or print credentials, tokens or git config. Show the error line and tell me to fix the GitLab credentials in the Mac Terminal, then to run the command again.
 - The only subagent you may call with the task tool is `reviewer` (in /git-ship). Never call any other agent.
 - Read-only on Jira, GitLab and every other system: never create, update, comment or transition anything there.
 
