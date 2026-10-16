@@ -1,6 +1,15 @@
 #!/bin/sh
-# Detects the project type of the current git repository from tracked files only (read-only).
+# Detects the project type of a git repository from tracked files only (read-only).
+# Usage: detect-project-type.sh [repository path]
 # Output is injected into OpenCode commands. A "Project type" section in AGENTS.md overrides it.
+
+# Optional argument: path of the repository to analyze (default: current directory).
+if [ -n "$1" ]; then
+  if ! cd "$1" 2>/dev/null; then
+    echo "Project type (auto-detected): unknown (folder not found: $1)"
+    exit 0
+  fi
+fi
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Project type (auto-detected): unknown (not a git repository)"
