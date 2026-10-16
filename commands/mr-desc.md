@@ -2,6 +2,10 @@
 description: "Write a GitLab merge request description for the current branch against develop"
 agent: plan
 ---
+Remote base branches: !`git branch -r --list origin/develop origin/main origin/master`
+
+Base branch: `origin/develop` if it is listed above. Otherwise, if exactly one of `origin/main` / `origin/master` is listed, use it; if none or several, ask me with the question tool (multiple choice, recommended option first) with the listed branches as options. If the git output injected below failed because `origin/develop` does not exist, run the same git commands yourself with the chosen base, one command per call.
+
 Current branch: !`git branch --show-current`
 
 Commits since develop:

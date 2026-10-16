@@ -14,8 +14,8 @@ Rules:
 Steps:
 1. Determine the scope:
    - If a third argument is given ("$3"), use it: `back` or `front`.
-   - Otherwise run `sh ~/.config/opencode/scripts/detect-project-type.sh $2`: `frontend` → `front`; any .NET type → `back`. If the repository is mixed (back and front), look where the "$1" implementation lives (front-end folder or .NET project) and say which scope you chose.
-2. The skill name is `pattern-$1-<scope>` in lowercase with hyphens only (letters, digits, single hyphens); propose a valid name and ask if "$1" does not fit. The file is `~/.config/opencode/skills/pattern-$1-<scope>/SKILL.md`.
+   - Otherwise run `sh ~/.config/opencode/scripts/detect-project-type.sh $2`: `frontend` → `front`; any .NET type → `back`. If the repository is mixed (back and front), look where the "$1" implementation lives; if it exists on both sides, ask me with the question tool (multiple choice, recommended option first): "back" / "front".
+2. The skill name is `pattern-$1-<scope>` in lowercase with hyphens only (letters, digits, single hyphens); if "$1" does not fit, ask me with the question tool (multiple choice, recommended option first) with 2 valid name proposals. The file is `~/.config/opencode/skills/pattern-$1-<scope>/SKILL.md`.
 3. Locate the implementation of "$1" in `$2` with the grep, glob and read tools: registration / startup code, classes, configuration, endpoints, middleware, components, services, and the related tests. Read `git -C $2 log --oneline -20 -- <files>` for the history of these files.
 4. If the skill file does NOT exist: create it with the structure below.
    If it EXISTS: read it fully, then MERGE:
@@ -24,7 +24,7 @@ Steps:
    - What differs goes to "Variants": one subsection per approach, with the source repository, its project type and test stack, the code and when to prefer it. Differences that only come from the test stack (e.g. Moq vs NSubstitute syntax) are not separate variants: note them in one line, since /apply-pattern translates tests to the target's stack.
    - Update "Recommended approach" and explain the choice in one or two sentences (more complete, better tested, more recent, simpler).
    - Add new pitfalls, prerequisites and tests; keep the existing ones.
-   - Never mix front-end and back-end content in the same skill: if this source does not match the scope of the existing skill, stop and tell me.
+   - Never mix front-end and back-end content in the same skill: if this source does not match the scope of the existing skill, ask me with the question tool (multiple choice, recommended option first): "Créer le skill de l'autre scope" / "Annuler".
 
 Skill structure:
 
