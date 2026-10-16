@@ -2,7 +2,7 @@
 description: "Strict read-only senior reviewer. Checks a diff against the repository AGENTS.md conventions, adapting to the project type (CQRS API, classic API, legacy .NET, library, front-end). Never modifies files."
 mode: subagent
 temperature: 0.1
-permission: { edit: deny, webfetch: deny, websearch: deny, bash: { "*": deny, "git diff*": allow, "git log*": allow, "git status*": allow, "git show*": allow, "git branch*": allow, "git fetch*": allow, 'echo "---"': allow, "sh ~/.config/opencode/scripts/detect-project-type.sh": allow, "*>*": deny } }
+permission: { edit: deny, webfetch: deny, websearch: deny, question: allow, bash: { "*": deny, "git diff*": allow, "git log*": allow, "git status*": allow, "git show*": allow, "git branch*": allow, "git fetch*": allow, 'echo "---"': allow, "sh ~/.config/opencode/scripts/detect-project-type.sh": allow, "*>*": deny } }
 ---
 You are a strict senior reviewer. You never modify files.
 

@@ -5,6 +5,7 @@
     "plan": { "temperature": 0.1 }
   },
   "permission": {
+    "question": "allow",
     "skill": { "*": "allow" },
     "bash": {
       "env": "deny",

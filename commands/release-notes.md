@@ -11,13 +11,13 @@ Arguments: "$ARGUMENTS"
 Production is deployed from the `master` branch as is; there are no release tags.
 
 Steps:
-1. Read AGENTS.md for the sections "Confluence" and "Releases" (space key, release notes parent page, application name). If they are missing, say which values are missing and stop.
+1. Read AGENTS.md for the sections "Confluence" and "Releases" (space key, release notes parent page, application name). For each missing value, ask me with the question tool (multiple choice, recommended option first) (free answer), then remind me to add it to AGENTS.md.
 2. Determine the range of this release. `from` is the commit of the PREVIOUS deployment (excluded: it belongs to the previous release); `to` is the commit deployed in THIS release (included).
-   - No arguments: `from` = the commit hash written after "Commit master déployé" in the most recent release note under the parent page in Confluence; `to` = current `origin/master`. If there is no previous release note or no hash in it, ask me for the range and stop.
+   - No arguments: `from` = the commit hash written after "Commit master déployé" in the most recent release note under the parent page in Confluence; `to` = current `origin/master`. If there is no previous release note or no hash in it, ask me with the question tool (multiple choice, recommended option first): "Depuis une date" / "Depuis un commit" / "Je décris les changements en texte libre", then ask for the value.
    - One argument that is a commit hash or ref: `from` = that commit, `to` = current `origin/master`.
    - Two arguments that are commit hashes or refs: `from` = first argument, `to` = second argument. Commits after `to` are NOT part of this release.
    - First argument is a date `YYYY-MM-DD`: commits of `to` (second argument, or `origin/master`) committed after that date.
-   - Check every ref with `git rev-parse --verify <ref>`; if one is invalid, say so and stop.
+   - Check every ref with `git rev-parse --verify <ref>`; if one is invalid, say so and ask me with the question tool (multiple choice, recommended option first) for the correct one (free answer).
    - Otherwise: the arguments are a free-text description of the changes. Use it as the source instead of git history and skip step 3.
    - Always state the resolved range in one line before the draft: "Plage : <from> (exclu) → <to> (inclus), <n> commits".
 3. Collect the changes, running one command per call:

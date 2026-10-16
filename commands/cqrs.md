@@ -7,7 +7,7 @@ Project detection:
 
 Create a new CQRS $1 named $2 in the feature $3.
 
-This command is only for `cqrs-api` projects (AGENTS.md "Project type" if present, otherwise the project detection above). If it is another type, say so and stop: suggest a plain implementation following the existing code instead.
+This command is only for `cqrs-api` projects (AGENTS.md "Project type" if present, otherwise the project detection above). If it is another type, ask me with the question tool (multiple choice, recommended option first): "Implémenter sans CQRS en suivant le code existant" (recommandé) or "Annuler".
 
 Before writing any code:
 1. Load the skill `dotnet-cqrs-conventions`.
@@ -23,7 +23,7 @@ Generate:
 
 Rules:
 - Do not modify existing files, except DI registration or endpoint mapping if strictly required. List every existing file you modified.
-- If the handler needs a new port (interface) for an external system, declare it in Application and stop: tell me, do not implement Infrastructure without asking.
-- If an argument is missing or unclear, ask before generating.
+- If the handler needs a new port (interface) for an external system, declare it in Application, then ask me with the question tool (multiple choice, recommended option first): "Implémenter aussi l'Infrastructure" or "M'arrêter là".
+- If an argument is missing or unclear, ask me with the question tool (multiple choice, recommended option first) before generating (for the feature, propose the existing feature folders as options).
 
 When done, run `dotnet build` then `dotnet test` and report the result. Fix only compilation or test errors in the files you created.

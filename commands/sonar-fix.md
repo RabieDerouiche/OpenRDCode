@@ -19,13 +19,13 @@ Steps:
 1. Retrieve issue or hotspot $1 with the SonarQube MCP tools: type (bug, vulnerability, code smell, security hotspot), severity, rule key, message, file, line.
 2. Retrieve the description of the rule to understand what it expects.
 3. Read the code at that location.
-4. Decide, and tell me before editing:
-   - "To fix": explain in two sentences what is wrong and the risk.
-   - "Likely not relevant": explain why (e.g. the code is generated, the value is never user-controlled, the rule does not fit this context), propose the justification text I can put in SonarQube, and STOP without editing.
-   - For a security hotspot: say whether the code is "Safe" or "To fix", with the reason. If it is safe, propose the justification text and STOP.
+4. Give your diagnosis in two sentences ("To fix": what is wrong and the risk; "Likely not relevant": why, e.g. generated code, value never user-controlled; for a security hotspot: "Safe" or "To fix" with the reason), then ask me with the question tool (multiple choice, recommended option first):
+   - "Corriger" (recommandé when the finding is relevant)
+   - "Non pertinent : donne-moi la justification Sonar" (recommandé when it is not) → write the justification text and stop without editing.
+   - "Passer cette issue" → stop without editing.
 5. For a fix:
    - If the rule is a security one (vulnerability or hotspot), load the skill `fortify-remediation` and apply the matching pattern.
-   - If the code touches SharePoint/CSOM, DocuSign, AWS S3, Piano Analytics or authentication, load `integrations-guardrails` and ask for confirmation before editing.
+   - If the code touches SharePoint/CSOM, DocuSign, AWS S3, Piano Analytics or authentication, load `integrations-guardrails` and ask me with the question tool (multiple choice, recommended option first) ("Appliquer le correctif" / "Me montrer le diff d'abord" / "Annuler") before editing.
    - For a code smell, change only what the rule asks (e.g. remove the unused variable, reduce the nesting of this method), keeping the behavior identical.
 6. If the fix changes behavior (bug or vulnerability), add or update a unit test proving it, if the project has tests. Code smells need no new test.
 7. Run the build and test commands (AGENTS.md "Build & test" if present, otherwise the project detection above). If a legacy .NET Framework project cannot build on macOS, say so instead of changing project files.

@@ -2,6 +2,10 @@
 description: "Merge SonarQube and Fortify findings for the current branch into one prioritized, deduplicated list (read-only)"
 agent: analyst
 ---
+Remote base branches: !`git branch -r --list origin/develop origin/main origin/master`
+
+Base branch: `origin/develop` if it is listed above. Otherwise, if exactly one of `origin/main` / `origin/master` is listed, use it; if none or several, ask me with the question tool (multiple choice, recommended option first) with the listed branches as options. If the git output injected below failed because `origin/develop` does not exist, run the same git commands yourself with the chosen base, one command per call.
+
 SSC application line (from appsec-ci.env): !`git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'`
 Current git branch: !`git branch --show-current`
 Files changed on this branch: !`git diff --name-only origin/develop...HEAD`
