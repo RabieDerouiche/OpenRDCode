@@ -49,7 +49,7 @@ Answer in French, complete (do not shorten), in markdown, with exactly these sec
 ## Questions ouvertes — ambiguities to clarify with the product owner before coding, written ready to paste as a Jira comment (do not post it). "Aucune" if none.
 ## Zones de code concernées — file paths and why.
 ## Tests attendus — table | # | Critère | Test (class and scenario) | Statut |, one row per test, every criterion covered at least once, Statut = "à écrire".
-## Plan — ordered checklist `- [ ] 1. ...`, each step leaving the project building. Mention /cqrs only if the project type is cqrs-api and a step creates a command or query.
+## Plan — ordered checklist `- [ ] 1. ...`, each step leaving the project building. Mention /cqrs only if the project type is cqrs-api and a step creates a command or query. If an available skill whose name starts with `pattern-` matches a step (e.g. health checks, unit tests), name it in that step: "(s'appuyer sur le skill pattern-<name>)".
 ## Sources — the Jira key and the Confluence page titles used."
 
 ## Step 5 - Ticket sheet
