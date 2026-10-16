@@ -32,5 +32,14 @@
 - Handler test: `[path/to/HandlerTests.cs]`
 - Validator test: `[path/to/ValidatorTests.cs]`
 
+## Confluence
+- Space key: `[SPACEKEY]`
+- Project documentation root page: `[page title]`
+- Release notes parent page: `[page title]`
+
+## Releases
+- Production releases are marked by: `[git tags like v1.2.3 | merges to main | release/* branches]`
+- Application name in release notes: `[name]`
+
 ## Repository-specific rules
 - [Add here every mistake the agent made twice]
