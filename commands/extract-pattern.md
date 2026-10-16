@@ -1,44 +1,59 @@
 ---
-description: "Turn a good implementation from another repository into a reusable skill (pattern-<name>) that can be applied to any project later. Usage: /extract-pattern <name> <absolute path of the source repository>"
+description: "Create or enrich a reusable skill (pattern-<name>-back or pattern-<name>-front) from a good implementation in a repository. Run it again on another repository to merge its approach into the same skill. Usage: /extract-pattern <name> <absolute path of the source repository> [back|front]"
 agent: build
 ---
-Extract the "$1" implementation from the repository at `$2` and save it as a reusable skill.
+Extract the "$1" implementation from the repository at `$2` and save it as a reusable skill, or enrich the existing one.
 
 Rules:
 - Read-only on `$2`: never modify anything in the source repository.
-- The ONLY file you may create or modify is `~/.config/opencode/skills/pattern-$1/SKILL.md`. Do not touch the current repository.
-- The skill name must be `pattern-$1` in lowercase with hyphens only (letters, digits, single hyphens). If "$1" does not fit, propose a valid name and ask before writing.
+- The ONLY file you may create or modify is the skill file defined in step 2. Do not touch the current repository.
 - Never copy secrets, connection strings, internal URLs, hostnames, tokens, personal data or business data into the skill. Replace them with placeholders like `<HealthCheckUrl>`.
-- Never invent code that is not in the source: generalize what exists, and mark any addition as "(suggestion)".
+- Never invent code that is not in a source: generalize what exists, and mark any addition as "(suggestion)".
+- Never delete content from an existing skill unless it is proven wrong by a source; when two sources differ, keep both as variants.
 
 Steps:
-1. Locate the implementation of "$1" in `$2` with the grep, glob and read tools: registration / startup code, classes, configuration (appsettings, options classes), endpoints, middleware, and the related tests.
-2. Detect the source project type by reading its project files (.csproj target framework and SDK, package.json).
-3. Separate what is essential to the pattern from what is specific to that project (business names, specific dependencies, environment values).
-4. Write `~/.config/opencode/skills/pattern-$1/SKILL.md` with exactly this structure:
+1. Determine the scope:
+   - If a third argument is given ("$3"), use it: `back` or `front`.
+   - Otherwise run `sh ~/.config/opencode/scripts/detect-project-type.sh $2`: `frontend` → `front`; any .NET type → `back`. If the repository is mixed (back and front), look where the "$1" implementation lives (front-end folder or .NET project) and say which scope you chose.
+2. The skill name is `pattern-$1-<scope>` in lowercase with hyphens only (letters, digits, single hyphens); propose a valid name and ask if "$1" does not fit. The file is `~/.config/opencode/skills/pattern-$1-<scope>/SKILL.md`.
+3. Locate the implementation of "$1" in `$2` with the grep, glob and read tools: registration / startup code, classes, configuration, endpoints, middleware, components, services, and the related tests. Read `git -C $2 log --oneline -20 -- <files>` for the history of these files.
+4. If the skill file does NOT exist: create it with the structure below.
+   If it EXISTS: read it fully, then MERGE:
+   - Add the repository to "Sources" (do not add it twice; if it is already listed, refresh its entry).
+   - What both sources do the same way stays in "Code" as the common approach.
+   - What differs goes to "Variants": one subsection per approach, with the source repository, the code and when to prefer it.
+   - Update "Recommended approach" and explain the choice in one or two sentences (more complete, better tested, more recent, simpler).
+   - Add new pitfalls, prerequisites and tests; keep the existing ones.
+   - Never mix front-end and back-end content in the same skill: if this source does not match the scope of the existing skill, stop and tell me.
+
+Skill structure:
 
    ---
-   name: pattern-$1
-   description: <one sentence: what the pattern does and when to load it>
+   name: pattern-$1-<scope>
+   description: <one sentence: what the pattern does, back-end or front-end, and when to load it>
    compatibility: opencode
+   metadata: { scope: <back|front> }
    ---
-   # Pattern: <title>
-   ## Source
-   Repository name (folder name only), date of extraction, files the pattern comes from.
+   # Pattern: <title> (<back-end|front-end>)
+   ## Sources
+   One line per source: repository folder name, project type, date of extraction, files used.
    ## When to use
+   ## Recommended approach
+   Which approach to use by default, and why.
    ## Prerequisites
-   NuGet / npm packages with the exact versions found in the source, target framework constraints.
+   Packages with the exact versions found in each source, target framework or framework version constraints.
    ## Files to create or modify
    One line per file, with its role.
    ## Code
-   Generalized code for each file, with placeholders for project-specific names. Comments in English.
+   The common, generalized code with placeholders for project-specific names. Comments in English.
+   ## Variants
+   One subsection per differing approach, with its source and when to prefer it. "None" if all sources agree.
    ## Registration and configuration
-   DI registration, middleware order, configuration keys with placeholder values.
+   DI registration or module/provider setup, middleware or interceptor order, configuration keys with placeholder values.
    ## Tests
-   The test approach and generalized test code from the source.
+   The test approach and generalized test code.
    ## Adapting to other project types
-   What changes for cqrs-api, api, dotnet-app, legacy (.NET Framework) and frontend, or "not applicable" when it does not make sense.
+   Back-end: cqrs-api, api, dotnet-app, legacy (.NET Framework). Front-end: Angular, React, Vue as relevant. "Not applicable" where it does not make sense.
    ## Pitfalls
-   Mistakes to avoid, deduced from the source code and its history (`git -C $2 log` on these files).
 
-5. Final answer in French: the path of the skill, a 5-line summary of the pattern, and what you deliberately left out as project-specific.
+5. Final answer in French: the skill path, "créé" or "enrichi", a 5-line summary, what changed compared to the previous version of the skill (if enriched), and what you deliberately left out as project-specific.
