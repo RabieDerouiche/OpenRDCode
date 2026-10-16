@@ -16,8 +16,8 @@ Steps:
 
 Output, in French:
 - First line: "Fortify: <application:version> — Sonar: <project> / <branch>".
-- Table: priority, source (Fortify/Sonar/both), id or rule, category, file:line, changed on this branch (oui/non).
+- Table: priority, source (Fortify/Sonar/both), Fortify issue id or Sonar issue key, rule or category, file:line, changed on this branch (oui/non).
 - Counts per source and severity.
-- The 5 findings to fix first, with the command to use: `/fortify-fix <id>` for Fortify, or a short fix description for Sonar.
+- The 5 findings to fix first, with the command to use: `/fortify-fix <id>` for Fortify, `/sonar-fix <issue key>` for Sonar. For a finding reported by both, use `/fortify-fix`.
 
 Rules: read-only. Never mark issues as false positive or change any status.
