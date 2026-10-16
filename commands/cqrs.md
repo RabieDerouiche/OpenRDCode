@@ -4,6 +4,8 @@ agent: build
 ---
 Create a new CQRS $1 named $2 in the feature $3.
 
+This command is only for projects whose AGENTS.md "Project type" is `cqrs-api`. If it is another type, or if the project has no mediator, say so and stop.
+
 Before writing any code:
 1. Load the skill `dotnet-cqrs-conventions`.
 2. Read the reference examples listed in AGENTS.md (section "Reference examples"). If there are none, find the most recent existing $1 in the Application layer and read it with its handler, validator and tests.

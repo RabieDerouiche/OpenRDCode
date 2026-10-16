@@ -1,6 +1,6 @@
 ---
 name: fortify-remediation
-description: Remediation patterns for common Fortify SAST categories in C#/.NET (log forging, path manipulation, privacy violation, header manipulation, open redirect, injection, weak crypto, insecure randomness, SSL validation, hardcoded secrets, unreleased resources) and how to judge false positives. Load before triaging or fixing a Fortify issue.
+description: Remediation patterns for common Fortify SAST categories in C#/.NET (modern and legacy) and front-end TypeScript/JavaScript (log forging, path manipulation, privacy violation, header manipulation, open redirect, injection, weak crypto, insecure randomness, SSL validation, hardcoded secrets, unreleased resources) and how to judge false positives. Load before triaging or fixing a Fortify issue.
 compatibility: opencode
 ---
 # Fortify remediation patterns for .NET
@@ -67,3 +67,18 @@ Cause: untrusted data written to logs can inject fake lines (CR/LF).
 
 ## Mass Assignment / Overposting
 - Bind requests to dedicated request records, never to domain entities.
+
+## Legacy .NET Framework (WebForms, MVC 5)
+- Keep `ValidateRequest`, `EnableViewStateMac` and anti-forgery tokens enabled; never disable them to make a scan or a feature pass.
+- Encode output: `HttpUtility.HtmlEncode` / `<%: %>` in WebForms, `@` (not `Html.Raw`) in Razor.
+- Session and forms authentication cookies: `requireSSL="true"` and `httpOnlyCookies="true"` in web.config.
+- Do not upgrade the target framework or add packages unsupported by it as part of a security fix: fix the code with what the framework offers.
+
+## Front-end (TypeScript / JavaScript)
+- DOM XSS: never put untrusted data in `innerHTML`, `outerHTML`, `document.write`, `dangerouslySetInnerHTML`, or Angular `bypassSecurityTrust*`. Use text binding (`textContent`, `{{ }}`, JSX text) or the framework sanitizer.
+- Open redirect: only navigate to relative routes or to a whitelist of origins from configuration.
+- `postMessage`: always check `event.origin` against an allowed list; never use `*` as target origin with sensitive data.
+- Tokens: prefer HttpOnly cookies managed by the backend; do not add new tokens to localStorage / sessionStorage.
+- `eval`, `new Function`, `setTimeout` with a string: remove, replace with direct code.
+- Dependency findings: upgrade the vulnerable package to the fixed version (`npm audit` lists it); do not ignore the finding without a justification.
+

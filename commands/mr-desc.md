@@ -19,7 +19,7 @@ Write a GitLab merge request description in French with exactly these sections:
 Why this change exists, deduced from commits and code. If the reason is not visible in the diff, write "À compléter".
 
 ## Changements
-Bullet list grouped by layer (Api, Application, Domain, Infrastructure, Tests).
+Bullet list grouped by project, layer or folder, following the structure of this repository.
 
 ## Impacts
 - Breaking changes for API consumers (routes, contracts, status codes), or "Aucun".
