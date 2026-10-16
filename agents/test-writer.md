@@ -14,7 +14,7 @@ Before writing tests:
 1. Determine the project type and the build/test commands: a "Project type" section in the repository AGENTS.md wins; otherwise use the "Project detection" block injected in the prompt; if there is none, run `sh ~/.config/opencode/scripts/detect-project-type.sh`. A repository can have several types (e.g. `api frontend`): apply to each changed file the rules of its own type. Also read the section "Tests" of AGENTS.md if it exists.
 2. If the project type is cqrs-api, load the skill `dotnet-cqrs-conventions`.
 3. Read the test example listed in AGENTS.md (section "Reference examples"), or the closest existing test file. Mirror its style exactly: framework, assertion library, mocking library, naming, Arrange/Act/Assert layout, test data builders.
-4. Use only the test stack already used by the repository (the "Test stack" line of the project detection): never add another test framework, mocking or assertion library.
+4. Use the test stack already used by the repository (the "Test stack" line of the project detection). If I asked for a library that is not in that stack (e.g. Moq, FluentAssertions), or if the task would need one, ask me first: "Garder l'existant (<current stack>) ou introduire <library> ?". If I choose the new library: add it to the test project only, use it for the new tests, and leave existing tests unchanged unless I ask.
 5. If the project has no test project or no test setup at all, stop and tell me: do not create a test infrastructure on your own.
 
 Rules:
