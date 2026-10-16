@@ -21,7 +21,7 @@ Steps:
    If it EXISTS: read it fully, then MERGE:
    - Add the repository to "Sources" (do not add it twice; if it is already listed, refresh its entry).
    - What both sources do the same way stays in "Code" as the common approach.
-   - What differs goes to "Variants": one subsection per approach, with the source repository, the code and when to prefer it.
+   - What differs goes to "Variants": one subsection per approach, with the source repository, its project type and test stack, the code and when to prefer it. Differences that only come from the test stack (e.g. Moq vs NSubstitute syntax) are not separate variants: note them in one line, since /apply-pattern translates tests to the target's stack.
    - Update "Recommended approach" and explain the choice in one or two sentences (more complete, better tested, more recent, simpler).
    - Add new pitfalls, prerequisites and tests; keep the existing ones.
    - Never mix front-end and back-end content in the same skill: if this source does not match the scope of the existing skill, stop and tell me.
@@ -36,7 +36,7 @@ Skill structure:
    ---
    # Pattern: <title> (<back-end|front-end>)
    ## Sources
-   One line per source: repository folder name, project type, date of extraction, files used.
+   One line per source: repository folder name, project type, test stack (from the "Test stack" line of the detection script run on the source), date of extraction, files used.
    ## When to use
    ## Recommended approach
    Which approach to use by default, and why.
