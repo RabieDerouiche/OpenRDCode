@@ -2,10 +2,13 @@
 description: "Explain a file, an endpoint, a page or a feature flow end to end, for onboarding or legacy code (read-only). Usage: /explain <file path, route, page or feature name>"
 agent: plan
 ---
+Project detection:
+!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+
 Explain the following in French: $ARGUMENTS
 
 Steps:
-1. Read the section "Project type" of AGENTS.md, or deduce the type from the files.
+1. Use the "Project type" section of AGENTS.md if it exists, otherwise the project detection above.
 2. Locate the entry point: endpoint, controller action, page, component, route, consumer, background job, public library method or file.
 3. Follow the flow through the layers that actually exist in this project, for example:
    - CQRS API: endpoint → request → validator → handler → ports → infrastructure → external systems.

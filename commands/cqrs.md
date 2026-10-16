@@ -2,9 +2,12 @@
 description: "Scaffold a CQRS command or query with handler, validator and tests. Usage: /cqrs <command|query> <Name> <Feature>"
 agent: build
 ---
+Project detection:
+!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+
 Create a new CQRS $1 named $2 in the feature $3.
 
-This command is only for projects whose AGENTS.md "Project type" is `cqrs-api`. If it is another type, or if the project has no mediator, say so and stop.
+This command is only for `cqrs-api` projects (AGENTS.md "Project type" if present, otherwise the project detection above). If it is another type, say so and stop: suggest a plain implementation following the existing code instead.
 
 Before writing any code:
 1. Load the skill `dotnet-cqrs-conventions`.

@@ -2,6 +2,9 @@
 description: "Find code changed on the current branch that has no tests, and write the missing tests with the test-writer agent (.NET or front-end)"
 agent: test-writer
 ---
+Project detection:
+!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+
 Fetch develop: !`git fetch -q origin develop`
 
 Files changed on this branch compared to develop:

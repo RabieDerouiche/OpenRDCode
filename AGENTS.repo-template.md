@@ -1,9 +1,10 @@
 # AGENTS.md (template for one repository — copy to the repo root, fill the [...] parts and delete the sections that do not apply)
 
-## Project type
-- `[cqrs-api | api | legacy | library | frontend]`
+## Project type (optional: auto-detected, fill only if the detection is wrong)
+- `[cqrs-api | api | dotnet-app | legacy | library | frontend]`
   - cqrs-api: .NET API with Clean Architecture + CQRS and the in-house mediator
   - api: .NET API without CQRS (controllers / services)
+  - dotnet-app: .NET console or worker application
   - legacy: .NET Framework web project (WebForms, MVC 5, WCF)
   - library: shared .NET package published to Artifactory
   - frontend: web front-end (Angular, React, Vue...)
@@ -19,7 +20,7 @@
 - `src/[Project].Infrastructure` — SharePoint/CSOM, DocuSign, S3, persistence
 - `tests/[...]` — unit tests
 
-## Build & test
+## Build & test (optional: auto-detected, fill only if the detection is wrong)
 - Build: `[dotnet build | npm run build | not buildable on macOS (.NET Framework)]`
 - Test: `[dotnet test | npm test | none]`
 
