@@ -28,7 +28,7 @@
 - Merge requests target `develop`. Production is deployed from `master` as is; there are no release tags.
 
 ## Available helpers (use them instead of improvising)
-- Read-only review: `@reviewer`. Read-only debugging: `@debugger`. Read-only design: `@architect`. Tests only: `@test-writer`. Fortify: `@fortify`.
+- Git operations: `@git`. Read-only review: `@reviewer`. Read-only debugging: `@debugger`. Read-only design: `@architect`. Tests only: `@test-writer`. Fortify: `@fortify`.
 - Do not invoke these subagents on your own initiative unless I ask for a review, a plan, a debug investigation, tests or a Fortify analysis.
 
 ## Daily
@@ -54,5 +54,5 @@
 - Always use the filter set "Security Auditor View" unless I ask otherwise. If a filter or filter set is rejected, list the valid ones and retry with a listed value.
 
 ## Git
-- Never push, force-push, rebase, reset or delete branches unless I explicitly ask.
-- Never commit unless I explicitly ask.
+- Git writes (branch creation, commit, merge, push) go through the `git` agent and the /git-start, /git-sync and /git-ship commands. The team keeps branches up to date with develop by MERGE, never by rebase.
+- Outside of them: never commit, push, merge, rebase, reset or delete branches unless I explicitly ask. Never force-push.
