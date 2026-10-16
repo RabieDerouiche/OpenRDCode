@@ -33,3 +33,4 @@ Steps:
    - bug or vulnerability: `fix(sonar): <summary> (<rule key>)`
    - security hotspot: `fix(security): <summary> (<rule key>)`
    - code smell: `refactor(sonar): <summary> (<rule key>)`
+9. Last line: "Prochaine étape : /check puis /ship (avec ce message de commit), puis /scans pour vérifier que l'issue a disparu."

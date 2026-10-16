@@ -20,6 +20,33 @@ backup_if_exists() {
 
 mkdir -p "$TARGET_DIR/agents" "$TARGET_DIR/commands" "$TARGET_DIR/skills"
 
+# Files from older versions of the pack, merged into the workflow commands: backed up, then removed.
+OBSOLETE="agents/fortify.md
+commands/review.md
+commands/review-branch.md
+commands/test-for.md
+commands/test-branch.md
+commands/commit-msg.md
+commands/mr-desc.md
+commands/quality.md
+commands/fortify.md
+commands/start-ticket.md
+commands/git-start.md
+commands/git-sync.md
+commands/git-ship.md
+commands/explain.md
+commands/debug.md
+commands/plan-feature.md
+commands/build-fix.md
+commands/release-notes-group.md"
+for rel in $OBSOLETE; do
+  if [ -e "$TARGET_DIR/$rel" ]; then
+    backup_if_exists "$rel"
+    rm -f "$TARGET_DIR/$rel"
+    echo "Removed (merged):  $rel"
+  fi
+done
+
 for f in "$PACK_DIR"/agents/*.md; do
   name="$(basename "$f")"
   backup_if_exists "agents/$name"

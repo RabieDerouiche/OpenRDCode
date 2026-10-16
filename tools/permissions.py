@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Regenerates the one-line `permission:` frontmatter of every agent in ../agents.
+
+Run from the repository root: python3 tools/permissions.py
+Rules are last-match-wins in OpenCode, so the order of the keys is the policy.
+Duplicate keys are forbidden: OpenCode's YAML parser (gray-matter) rejects them.
+"""
+import re
+import sys
+
+DETECT = "sh ~/.config/opencode/scripts/detect-project-type.sh*"
+RELEASE = "sh ~/.config/opencode/scripts/release-commits.sh *"
+TICKET_SHEETS = ".git/opencode/**"
+
+READ = ["ls*", "pwd", "cd *", "cat *", "head*", "tail*", "wc*", "sort*", "uniq*", "cut *", "tr *",
+        "find *", "grep *", "egrep *", "rg *", "tree*", "file *", "stat *", "which *", "basename *",
+        "dirname *", "date*", "echo *", "printf *", "sed -n*", "jq *", "diff *", "test *", "[ *", "true"]
+GIT_READ = ["git status*", "git log*", "git diff*", "git show*", "git branch*", "git fetch*", "git rev-parse*",
+            "git ls-files*", "git ls-tree*", "git grep*", "git blame*", "git describe*", "git tag", "git tag -l*",
+            "git tag --list*", "git merge-base*", "git shortlog*", "git cat-file*", "git for-each-ref*",
+            "git rev-list*", "git name-rev*", "git remote", "git remote -v", "git remote show*", "git remote get-url*",
+            "git stash list*", "git reflog*", "git --no-pager *", "git -C *"]
+DOTNET_INFO = ["dotnet --info", "dotnet --version", "dotnet --list-sdks", "dotnet --list-runtimes", "dotnet list*"]
+DOTNET_RUN = ["dotnet build*", "dotnet test*", "dotnet restore*"]
+FRONT_TEST = ["npm test*", "npm run test*", "npx jest*", "npx vitest*", "yarn test*", "pnpm test*", "npm ls*",
+              "node --version", "npm --version"]
+FRONT_BUILD = ["npm run build*", "npx tsc*"]
+
+REDIRECT = [("*>*", "deny"), ("*2>&1*", "allow"), ("*> *", "deny"), ("*>>*", "deny"), ("*>/*", "deny"),
+            ("*>~*", "deny"), ("*>.*", "deny")]
+GIT_WRITE = ["git* push*", "git* commit*", "git* reset*", "git* checkout*", "git* switch*", "git* rebase*",
+             "git* merge *", "git* cherry-pick*", "git* revert*", "git stash", "git* stash push*", "git* stash pop*",
+             "git* stash drop*", "git* stash apply*", "git* stash clear*", "git* clean*", "git* rm *", "git* mv *",
+             "git* add *", "git* restore*", "git* tag -d*", "git* tag -a*", "git* tag -f*", "git* branch -d*",
+             "git* branch -D*", "git* branch -m*", "git* branch -M*", "git* branch -f*", "git* branch --delete*",
+             "git* branch --move*", "git* config*", "git* remote add*", "git* remote set-url*", "git* remote remove*",
+             "git* remote rm*", "git* gc*", "git* update-ref*", "git* apply*", "git* am *", "git* worktree*",
+             "git* submodule*"]
+OTHER_DENY = ["*-exec*", "*-execdir*", "*-delete*", "*-ok *", "*-fprint*", "*-fls*", "*sed*-i*", "*sed*--in-place*"]
+SECRETS = ["*zshenv*", "*zshrc*", "*bash_profile*", "*appsec-ci.env*", "*/.ssh/*", "*/.aws/*", "*.npmrc*",
+           "*credentials*", "*artifactory_*", "*echo *$*", "*printf *$*", "*$(*", "*${*", "*`*"]
+
+MCP_WRITE_DENY = [(p, "deny") for p in ["*create*", "*update*", "*delete*", "*remove*", "*upload*", "*add_*",
+                                         "*approve*", "*assign*", "*accept*", "*transition_issue*", "*do_transition*",
+                                         "*merge_merge_request*", "*change_status*", "*set_*"]]
+# release-writer: may create or update ONE Confluence page, each write asks first
+MCP_RELEASE = [("*create*", "ask"), ("*update*", "ask"), ("*upload*", "ask")] + \
+              [r for r in MCP_WRITE_DENY if r[0] not in ("*create*", "*update*", "*upload*")]
+
+TEST_PATHS = ["**/*Tests/**", "**/*.Tests/**", "**/*Test/**", "tests/**", "test/**", "**/__tests__/**",
+              "**/*.spec.ts", "**/*.test.ts", "**/*.spec.tsx", "**/*.test.tsx", "**/*.spec.js", "**/*.test.js"]
+
+
+# The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS).
+SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
+
+
+def read_only_bash(extra_allows, after_secrets=()):
+    rules = [("*", "deny")]
+    rules += [(p, "allow") for p in READ + GIT_READ + extra_allows]
+    rules += REDIRECT
+    rules += [(p, "deny") for p in GIT_WRITE + OTHER_DENY + SECRETS]
+    rules += [(p, "allow") for p in after_secrets]
+    return rules
+
+
+def git_bash():
+    rules = [("*", "deny")]
+    rules += [(p, "allow") for p in READ + GIT_READ + [DETECT]]
+    # writes the git agent may do without asking
+    rules += [(p, "allow") for p in ["git switch *", "git checkout -b *", "git add *", "git add -A", "git commit -m *",
+                                     "git commit -F *", "git commit --no-edit", "git merge --abort",
+                                     "git merge --ff-only origin/*"]]
+    # writes that need my approval each time
+    rules += [(p, "ask") for p in ["git push*", "git merge origin/*", "git merge --no-edit origin/*", "git pull*",
+                                   "git stash", "git stash push*", "git stash pop*", "git commit --amend*"]]
+    rules += REDIRECT
+    # always forbidden
+    rules += [(p, "deny") for p in [
+        "*--force*", "*push* -f*", "*push*+*", "git* push* origin develop*", "git* push* origin master*",
+        "git* push* origin main*", "*push*:develop*", "*push*:master*", "*push*:main*", "git* push* --all*",
+        "git* push* --mirror*", "git* push* --delete*", "git* push* --tags*", "git* reset*", "git* rebase*",
+        "git* clean*", "git* branch -d*", "git* branch -D*", "git* branch -m*", "git* branch -M*", "git* branch -f*",
+        "git* branch --delete*", "git* tag -*", "git* config*", "git* remote add*", "git* remote set-url*",
+        "git* remote remove*", "git* remote rm*", "git* gc*", "git* update-ref*", "git* cherry-pick*", "git* revert*",
+        "git* stash drop*", "git* stash clear*", "git* worktree*", "git* submodule*", "git* restore *",
+        "git* checkout -- *", "git* checkout .", "git* switch*--discard-changes*", "git* switch -C*",
+        "git* checkout -B*", "git* rm *", "git* mv *", "git* apply*", "git* am *", "git* filter-branch*",
+        "git* reflog delete*", "git* reflog expire*"]]
+    # unstaging is safe (after the generic restore deny)
+    rules += [("git restore --staged *", "allow")]
+    rules += [(p, "deny") for p in OTHER_DENY + SECRETS]
+    return rules
+
+
+def only(paths):
+    return [("*", "deny")] + [(p, "allow") for p in paths]
+
+
+BASE = [("webfetch", "deny"), ("websearch", "deny"), ("question", "allow")]
+
+AGENTS = {
+    "analyst": [("edit", "deny")] + BASE + [("bash", read_only_bash([DETECT], [SSC_NAME]))] + MCP_WRITE_DENY,
+    "architect": [("edit", "deny")] + BASE + [("bash", read_only_bash(DOTNET_INFO + [DETECT]))],
+    "debugger": [("edit", "deny")] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT]))],
+    "reviewer": [("edit", only([TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT]))] + MCP_WRITE_DENY,
+    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT]))] + MCP_WRITE_DENY,
+    "release-writer": [("edit", "deny")] + BASE + [("bash", read_only_bash([RELEASE]))] + MCP_RELEASE,
+    "git": [("edit", only([TICKET_SHEETS]))] + BASE + [("task", only(["reviewer", "analyst"])), ("bash", git_bash())] + MCP_WRITE_DENY,
+}
+
+
+TOOL_KEYS = {"edit", "bash", "webfetch", "websearch", "question", "task"}
+
+
+def q(key):
+    # Only tool names stay bare: a bare `true` or `on` would be read as a boolean by YAML.
+    if key in TOOL_KEYS:
+        return key
+    return '"' + key.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def flow(rules):
+    keys = [k for k, _ in rules]
+    dupes = {k for k in keys if keys.count(k) > 1}
+    if dupes:
+        sys.exit(f"duplicate keys: {sorted(dupes)}")
+    parts = []
+    for key, value in rules:
+        parts.append(f"{q(key)}: {flow(value) if isinstance(value, list) else value}")
+    return "{ " + ", ".join(parts) + " }"
+
+
+for name, rules in AGENTS.items():
+    path = f"agents/{name}.md"
+    text = open(path).read()
+    text, count = re.subn(r"^permission: .*$", lambda _: "permission: " + flow(rules), text, count=1, flags=re.M)
+    if count != 1:
+        sys.exit(f"{path}: no permission line")
+    open(path, "w").write(text)
+    print("updated", path)

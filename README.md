@@ -1,72 +1,61 @@
 # Pack OpenCode — dev senior .NET
 
-Agents, commandes et skills pour OpenCode + Qwen, adaptés à : .NET 10, Clean Architecture + CQRS, médiateur maison, FluentValidation, SharePoint/CSOM, DocuSign, S3, Piano Analytics, GitLab, Artifactory, Fortify SSC.
+Agents, commandes et skills pour OpenCode (1.19, interface web) avec Qwen. Ils couvrent les API .NET 10 (CQRS ou non), le legacy .NET Framework, les librairies et le front, avec GitLab, Jira, Confluence, SonarQube, Fortify SSC et Artifactory.
 
-## Installation (5 min)
+## Installation et mise à jour
 
 ```bash
-git clone <url-du-repo> opencode-pack
-cd opencode-pack
-./install.sh
+cd ~/opencode-pack && git pull && ./install.sh
+opencode-web.sh stop && opencode-web.sh start
 ```
 
-Pour mettre à jour plus tard : `git pull && ./install.sh`.
+Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/opencode/`. Les fichiers remplacés sont sauvegardés dans `~/.config/opencode/backup-<date>/`, et les commandes des anciennes versions du pack sont retirées. Le script ne touche **jamais** à `AGENTS.md` ni à `opencode.json` :
+- `AGENTS.global.md` est à fusionner dans `~/.config/opencode/AGENTS.md`.
+- `opencode.snippet.json` est à fusionner dans `~/.config/opencode/opencode.json`.
+- `AGENTS.repo-template.md` sert de modèle pour le `AGENTS.md` à la racine de chaque repo (facultatif).
 
-Le script copie `agents/`, `commands/` et `skills/` dans `~/.config/opencode/`. Il sauvegarde les fichiers existants qui portent le même nom. Il ne touche **jamais** à `AGENTS.md` ni à `opencode.json` : ces deux fichiers sont à fusionner à la main.
+## La journée type
 
-1. **`AGENTS.global.md`** → copie son contenu dans `~/.config/opencode/AGENTS.md`. Remplace l'ancien bloc Fortify et l'ancien bloc NuGet s'ils y sont déjà.
-2. **`opencode.snippet.json`** → fusionne-le dans `~/.config/opencode/opencode.json`. Garde ta config du provider Qwen.
-3. **`AGENTS.repo-template.md`** → copie-le à la racine de chaque repo sous le nom `AGENTS.md`, et remplis les `[...]`. La section *Reference examples* est la plus importante.
-4. Quitte complètement OpenCode, puis relance-le. Tape `/` : les commandes doivent apparaître. Tape `@` : les agents doivent apparaître.
+| Moment | Commande | Ce qu'elle fait |
+|---|---|---|
+| Matin | `/daily [DNA]` | Ton sprint d'abord, tes MR et les reviews qui t'attendent, avec des liens, des signaux et un plan du jour. Termine par « Sur quoi tu bosses ? ». |
+| Début de ticket | `/ticket [DNA-123]` | Choix du ticket (dans ton sprint si tu ne donnes pas de clé), branche depuis develop, analyse du ticket, de Confluence et du code, puis **fiche ticket** enregistrée. |
+| Dev | tu parles à l'agent `build` | « implémente l'étape 1 de la fiche », « pourquoi ça plante », « explique ce flux », « corrige le build »… |
+| Tests | `/test [fichier]` | Critères d'acceptation et code modifié → tests manquants écrits dans le style du projet et lancés jusqu'au vert. La fiche est mise à jour. |
+| Avant de pousser | `/check` | Review, build, tests, critères d'acceptation, pré-scan sécurité. En local et en lecture seule. |
+| Livrer | `/ship` | Commit, récupération des changements distants, push (avec ta validation), lien et description de la MR. |
+| Après la CI | `/scans` | Pipeline du commit poussé, puis Sonar et Fortify fusionnés et priorisés, avec la commande de correction de chaque point. |
+| Corriger | `/fortify-fix <id>` · `/sonar-fix <clé>` | Corrige UN point, avec test, build et message de commit. Puis `/check` → `/ship` → `/scans`. |
+| Perdu ? | `/next` | Lit l'état de ta branche, de la fiche, du pipeline et de la MR, et te donne la prochaine étape. |
 
-## Commandes
+**La fiche ticket** est le fichier `.git/opencode/tickets/<CLÉ>.md` du repo. Comme elle est dans `.git`, elle n'est jamais commitée. Elle contient les critères d'acceptation, les tests attendus, le plan et un historique (`## Suivi`). `/test`, `/check`, `/ship` et `/next` s'en servent, ce qui leur évite de tout redemander.
 
-| Commande | Agent | Modifie le code ? | Usage |
-|---|---|---|---|
-| `/commit-msg` | plan | non | Message de commit à partir du staged |
-| `/mr-desc` | plan | non | Description de MR GitLab de la branche vs develop |
-| `/review` | reviewer | non | Review du staged, ou du non-staged s'il n'y a rien de staged |
-| `/review-branch` | reviewer | non | Review de toute la branche avant d'ouvrir la MR |
-| `/cqrs command CreateInvoice Invoices` | build | oui | Command/query + handler + validator + tests |
-| `/test-for src/.../InvoiceService.cs` | test-writer | tests uniquement | Tests unitaires pour une classe |
-| `/test-branch` | test-writer | tests uniquement | Repère le code de la branche sans test et écrit les tests manquants |
-| `/fortify` | fortify | non | Liste et trie les issues Fortify (branche courante, sinon develop) |
-| `/fortify-fix 1234` | build | oui | Corrige UNE issue Fortify + test + build |
-| `/build-fix` | build | oui | Corrige uniquement les erreurs de compilation |
-| `/debug <stack trace / test / description>` | debugger | non | Cause racine avec preuves + fix proposé |
-| `/plan-feature <description>` | architect | non | Plan d'implémentation étape par étape |
-| `/explain <fichier / route / feature>` | plan | non | Explique un flux de bout en bout |
+## Commandes ponctuelles
 
-## Agents (invocables avec `@nom`)
-
-| Agent | Droits |
+| Commande | Usage |
 |---|---|
-| `reviewer` | Lecture + git diff/log/show |
-| `architect` | Lecture + git log/diff + `dotnet list` (plans de features) |
-| `debugger` | Lecture + `dotnet build/test` + git log/blame + grep |
-| `test-writer` | Écrit uniquement dans les dossiers de tests + `dotnet build/test` |
-| `fortify` | Lecture + outils MCP Fortify |
+| `/sync` | Met la branche à jour : commit local, changements distants de la branche, merge de develop (jamais de rebase), puis push si tu veux. |
+| `/release-notes` | Release note d'une MEP depuis master. Avec un nom de groupe (`/release-notes DNA`), une seule note pour plusieurs repos, regroupée par ticket. |
+| `/cqrs command CreateInvoice Invoices` | Command ou query, handler, validator et tests (projets CQRS uniquement). |
+| `/extract-pattern <nom> <repo>` · `/apply-pattern <nom>` | Réutilise une bonne implémentation d'un repo dans un autre. |
+| `/agents-from-confluence <page>` | Complète le `AGENTS.md` du repo à partir de Confluence. |
 
-## Skills (chargés à la demande par les agents)
+## Agents
 
-- `dotnet-cqrs-conventions` : couches, CQRS, médiateur maison, validators, tests, checklist.
-- `fortify-remediation` : corrections .NET par catégorie Fortify, et quand c'est un faux positif.
-- `integrations-guardrails` : pièges connus SharePoint/CSOM, DocuSign, S3, Piano Analytics.
+| Agent | Peut écrire | Rôle |
+|---|---|---|
+| `git` | la fiche ticket ; git avec validation pour push, merge, pull, stash | `/ticket`, `/ship`, `/sync`. Jamais de force-push, rien sur develop, master ou main. |
+| `reviewer` | la fiche ticket (ligne de suivi) | `/check`, review dans `/ship`. Lance le build et les tests. |
+| `test-writer` | les dossiers de tests et la fiche ticket | `/test`. Ne touche jamais au code de production. |
+| `analyst` | rien | `/daily`, `/scans`, `/next`, analyse de `/ticket`. Lecture seule sur Jira, Confluence, GitLab, Sonar et Fortify. |
+| `debugger` · `architect` | rien | Appelés par l'agent `build` quand tu demandes « pourquoi ça plante » ou « fais-moi un plan ». |
+| `release-writer` | une page Confluence, avec ta validation | `/release-notes`. |
 
-## Ordre de mise en route conseillé
+## Skills (chargés à la demande)
 
-N'active pas tout le même jour. Si quelque chose se comporte mal, tu dois savoir quoi.
+`dotnet-cqrs-conventions`, `fortify-remediation`, `integrations-guardrails`, `build-fix`, `explain-code`, et les `pattern-*` créés par `/extract-pattern`.
 
-1. **Jour 1** : `AGENTS.md` du repo + `/review` + `/commit-msg`. Ce sont des commandes sans risque, en lecture seule.
-2. **Jour 2** : `/fortify` + `/explain` + `/debug`.
-3. **Jour 3** : `/test-for` sur une classe simple. Vérifie que `test-writer` n'écrit bien **que** dans les tests.
-4. **Jour 4+** : `/cqrs`, `/fortify-fix`, `/build-fix`, en relisant chaque diff.
+## Pour la maintenance du pack
 
-Chaque fois que Qwen répète la même erreur, ajoute une ligne dans la section *Repository-specific rules* du `AGENTS.md` du repo.
-
-## Points à vérifier (non testés sur ton environnement)
-
-- **`test-writer`** : les droits d'écriture reposent sur des motifs de chemin (`**/*Tests/**`, `tests/**`…). Si tes projets de tests ont un autre nommage, adapte la ligne `permission` de `agents/test-writer.md`. Teste-le une première fois sur une branche jetable.
-- **Médiateur maison** : je ne connais pas les noms exacts de ses interfaces. Remplis la section *In-house mediator* du `AGENTS.md` du repo, sinon `/cqrs` devra les chercher.
-- **Commandes qui comparent à `develop`** (`/mr-desc`, `/review-branch`, `/test-branch`) : elles lancent un `git fetch origin develop` silencieux. Si ta branche cible est différente, remplace `develop` dans ces fichiers.
-- **Frontmatter YAML** : les permissions sont écrites sur une seule ligne (`{ ... }`) pour résister aux problèmes d'indentation au copier-coller.
+- `tools/permissions.py` régénère les lignes `permission:` des agents. Ne les modifie pas à la main.
+- Avant chaque push, tous les fichiers sont validés avec `gray-matter`, le parseur YAML d'OpenCode : il refuse par exemple les clés en double.
