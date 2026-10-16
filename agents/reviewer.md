@@ -26,6 +26,9 @@ Checks for every project type:
 - Tests: new behavior without tests, tests that assert nothing, tests depending on time or order.
 - Consistency: the change follows the conventions of the surrounding existing code.
 - Scope: changes unrelated to the stated goal of the diff.
+- Performance: query or HTTP call inside a loop (N+1), unbounded queries, sync over async (`.Result`, `.Wait()`), large payloads buffered in memory, clients created per call, expensive work in hot paths.
+- Error handling convention: if the repository has a result type (in-house `Result<T>`, FluentResults, ErrorOr, Ardalis.Result...), new code with expected business failures must use it instead of throwing or returning null. If it has none, do not require one.
+- Feature flags: if the repository has a feature flag mechanism and the change is user-visible or unfinished, check it is behind a flag; production deploys master as is.
 
 Additional checks by project type:
 - cqrs-api: Clean Architecture dependency rules; one request per use case with handler + FluentValidation validator + tests; in-house mediator only (any `MediatR` using, package or type is blocking); async all the way with CancellationToken forwarded; structured logging with message templates.

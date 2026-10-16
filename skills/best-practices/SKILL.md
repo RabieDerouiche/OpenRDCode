@@ -1,6 +1,6 @@
 ---
 name: best-practices
-description: Checklist of best practices by project type (modern .NET API, CQRS API, legacy .NET Framework, library, front-end) with how to detect whether each one is already in place. Load to suggest improvements in /check, for a repository audit (/audit), or when asked "is there a better approach".
+description: Checklist of best practices by project type (modern .NET API, CQRS API, legacy .NET Framework, library, front-end), including the Result pattern, feature flags and performance, with how to detect whether each one is already in place. Load to suggest improvements in /check, for a repository audit (/audit), or when asked "is there a better approach".
 compatibility: opencode
 ---
 # Best practices by project type
@@ -27,12 +27,27 @@ compatibility: opencode
 | Nullable reference types enabled, warnings treated seriously | Fewer null bugs | `<Nullable>enable</Nullable>`; many `!` operators are a smell |
 | Rate limiting on public endpoints | Abuse protection | `AddRateLimiter`; only if the API is exposed outside |
 | Integration tests on the HTTP pipeline | Routing, serialization, auth tested together | `WebApplicationFactory` in the test projects |
+| Result pattern for expected business failures (not found, validation, conflict, forbidden, failure of an external system that the caller must handle): methods return a result (success value or typed error), exceptions stay for unexpected failures; the result is mapped to ProblemDetails / status codes in one place at the endpoint | Explicit failure paths, no exceptions for control flow, cheaper than throwing | An existing result type (in-house `Result<T>`, FluentResults, ErrorOr, Ardalis.Result, OneOf): if there is one, every new handler or service with expected failures must use it. If there is none, introducing one is a decision for the developer: propose a minimal in-house `Result<T>` / `Error` or keep exceptions. Smells: `throw new NotFoundException` caught in the controller, `null` returned to mean "not found", `bool` + `out` error message |
+| Feature flags for changes that must not be visible as soon as they reach master (production deploys master as is), progressive rollouts, or behavior that business may switch off | Merge unfinished or risky work without exposing it; instant rollback without redeploy | An existing mechanism (`Microsoft.FeatureManagement`, `IFeatureManager`, a `FeatureFlags` / `Features` section in appsettings, an in-house service): reuse it. If there is none, introducing one is a decision for the developer. Only suggest a flag when the change is user-visible, risky, or not finished for the next deployment; never for internal refactorings. Every flag needs an owner and a removal ticket |
+
+## Performance (every .NET project)
+| Practice | Why | Detect |
+|---|---|---|
+| No N+1: no query or HTTP call inside a loop over results | Latency grows with the data | `foreach` containing `await _repository...`, `await _client...`, lazy-loaded navigation properties |
+| Bounded queries: pagination or limits on lists, projection of the needed columns only | Memory and database load | `ToListAsync()` without `Take`/paging on large tables, `Include` chains loading whole graphs; with EF Core reads, `AsNoTracking` |
+| No sync over async, no blocking in request paths | Thread pool starvation | `.Result`, `.Wait()`, `GetAwaiter().GetResult()`, `Thread.Sleep` |
+| Payloads streamed, not buffered (files, S3, SharePoint, exports) | Memory peaks, large object heap | `ToArray()`, `ReadAllBytes`, `MemoryStream` on large content, `ReadAsStringAsync` on large responses |
+| Cache for data that is read often and changes rarely (reference data, configuration from external systems), with an expiration | Fewer calls to slow systems | repeated identical calls per request; `IMemoryCache`, `HybridCache` or an existing cache service |
+| Independent I/O calls run concurrently when the order does not matter | Latency | sequential awaits of unrelated calls; `Task.WhenAll` with a bounded degree of parallelism |
+| Cheap logging and string handling in hot paths | CPU and allocations | string interpolation in log calls, string concatenation in loops, `new Regex(` per call (use a static or generated regex) |
+| Outbound clients reused (`IHttpClientFactory`, singleton SDK clients such as the S3 client) | Socket and connection exhaustion | `new AmazonS3Client(`, `new HttpClient(` per call |
 
 ## CQRS API (type cqrs-api), in addition
 | Practice | Why | Detect |
 |---|---|---|
 | One request per use case with its validator and handler tests | Rules of `dotnet-cqrs-conventions` | handler without validator or tests |
 | Cross-cutting concerns (validation, logging) in pipeline behaviors of the in-house mediator, not repeated in handlers | No duplication | the same validation or logging code at the start of many handlers |
+| Handlers return the repository's result type for expected failures; validators' errors map to the same error model | One error contract for every endpoint | handlers throwing for "not found" or business rules |
 
 ## Legacy .NET Framework (type legacy)
 Keep the existing patterns. Suggest only what the target framework supports.
@@ -43,6 +58,7 @@ Keep the existing patterns. Suggest only what the target framework supports.
 | A single shared `HttpClient`, TLS 1.2 or more | Socket exhaustion, security | `new HttpClient(` per call, `ServicePointManager.SecurityProtocol` |
 | Secrets out of `web.config` (config transforms or environment) | Leaks through the repository | connection strings or passwords in plain text |
 | A simple health endpoint (for example `/health` returning 200 after a dependency check) | Monitoring | no such route or handler |
+| Feature switches through `appSettings` keys when a change must stay hidden in production | Same reason as for modern APIs | existing keys such as `Feature.*` or `Enable*` in `web.config` |
 
 ## Library (type library)
 | Practice | Why | Detect |

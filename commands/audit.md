@@ -10,7 +10,7 @@ Project detection:
 Solution projects:
 !`git ls-files '*.csproj'`
 
-Audit this repository against the best practices of its project type. Read-only: never modify a file.
+Audit this repository against the best practices of its project type, including the Result pattern, feature flags and performance. Read-only: never modify a file.
 
 Steps:
 1. Project type: the "Project type" section of AGENTS.md wins, otherwise the detection above. If several types apply, audit each part with its own section of the checklist.
@@ -21,4 +21,4 @@ Steps:
 Answer, in French:
 - First line: "Type de projet : <type>".
 - Table: pratique, statut, preuve (file:line), priorité (haute / moyenne / basse: security and production failures first).
-- "À faire en premier": the 3 to 5 most useful improvements, each with its smallest change and how to do it: `/apply-pattern <name>`, or "demande à l'agent build : « <phrase prête à coller> »". If the work is large, suggest creating a Jira ticket for it (write the summary and description ready to paste; do not create it).
+- "À faire en premier": up to 10 improvements, most useful first, each with its smallest change and how to do it: `/apply-pattern <name>`, or "demande à l'agent build : « <phrase prête à coller> »". If the work is large, suggest creating a Jira ticket for it (write the summary and description ready to paste; do not create it).

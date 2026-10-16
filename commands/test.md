@@ -14,13 +14,17 @@ Project detection:
 Current branch: !`git branch --show-current`
 Existing ticket sheets: !`ls .git/opencode/tickets`
 
-Fetch develop: !`git fetch -q origin develop`
+Fetch: !`git fetch -q origin`
+Branch vs its remote copy: !`git status -sb`
 
 Files changed on this branch compared to develop:
 !`git diff --name-only origin/develop...HEAD`
 
 Uncommitted and untracked files:
 !`git status --porcelain`
+
+## Step 0 - Changes pushed from another computer
+If the branch status above says "behind" its remote copy, commits were pushed from another computer (for example from Rider on my Mac) and are not here yet. Stop and say: "<n> commit(s) poussé(s) depuis un autre poste ne sont pas ici : lance /sync d'abord". Continue only if I ask.
 
 ## Step 1 - Scope
 - If a reference is given ("comme ..."), apply step 5 of your rules with it (pattern skill or other repository) before writing any test.

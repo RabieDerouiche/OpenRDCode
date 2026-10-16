@@ -30,6 +30,7 @@
 ## Workflow
 - My day: /daily → /ticket <KEY> → I code with you (build agent) → /test → /check → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. /sync brings develop into the branch. /next tells me where I am.
 - Sonar and Fortify run in the CI on every pushed commit: their results exist only after /ship, never before.
+- You may run on a remote machine while I sometimes code in Rider on my Mac: then we do NOT share the same files. My Mac changes reach you only through git (I push from Rider, then /sync), and your changes reach my Mac only after /ship or /sync pushed them (then I pull in Rider). The ticket sheet exists only on your side.
 - Ticket sheet: on a branch whose name contains a Jira key (pattern `[A-Z][A-Z0-9]+-[0-9]+`), the file `.git/opencode/tickets/<KEY>.md` holds the analysis of the ticket: acceptance criteria, expected tests, plan, and a "## Suivi" log. Read it before working on the ticket. When you finish a step of its "Plan", tick it (`- [x]`) with the edit tool. Never commit it (it lives inside `.git`).
 - When I ask "implémente l'étape N de la fiche", do only that step, build, run the tests, tick the step, then stop.
 
@@ -44,7 +45,8 @@
   3. For each library or mechanism the source uses and this repository does not (Moq vs NSubstitute, FluentAssertions, AutoFixture, xUnit fixtures, Testcontainers, a mediator, FluentValidation…), ask me with the question tool: "Garder l'existant (<current>)" (recommandé) / "Introduire <thing> comme dans <source>". Wait for the answers.
   4. Adapt to this repository's conventions (naming, folders, DI, logging), never copy configuration values, URLs, hosts or secrets from the other repository, then plan and implement step by step with a build after each step.
   5. At the end, if no skill existed, suggest `/extract-pattern <name> <source repo path>` so the approach is reusable next time.
-- "j'ai fait l'étape N à la main", "j'ai modifié X dans Rider" → re-read the files from disk (never trust an older version you read earlier), read `git diff` for them, check the change against the step and the acceptance criteria of the ticket sheet, report what is missing or wrong in a few lines, tick the step if it is complete. Do not rewrite my code unless I ask.
+- "j'ai poussé depuis mon Mac", "j'ai commité dans Rider" → tell me to run `/sync` first (it retrieves the branch's remote changes), then continue.
+- "j'ai fait l'étape N à la main", "j'ai modifié X dans Rider" → if the branch is behind its remote copy, tell me to run `/sync` first; then re-read the files from disk (never trust an older version you read earlier), read `git diff` for them, check the change against the step and the acceptance criteria of the ticket sheet, report what is missing or wrong in a few lines, tick the step if it is complete. Do not rewrite my code unless I ask.
 - "y a-t-il une meilleure approche", "bonnes pratiques", "il manque quoi" → load the skill `best-practices`; for the whole repository, tell me to run `/audit`.
 - "écris les tests", "teste ce fichier", "fais les tests comme dans <repo>" → tell me to run `/test`, `/test <file>` or `/test comme <repo or pattern>`.
 - "review", "vérifie avant de pousser" → tell me to run `/check`.
