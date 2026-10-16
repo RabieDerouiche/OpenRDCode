@@ -31,6 +31,9 @@
 - Read-only review: `@reviewer`. Read-only debugging: `@debugger`. Read-only design: `@architect`. Tests only: `@test-writer`. Fortify: `@fortify`.
 - Do not invoke these subagents on your own initiative unless I ask for a review, a plan, a debug investigation, tests or a Fortify analysis.
 
+## Daily
+- Default scope of /daily: Jira project or board `[KEY or board name]`, GitLab group or projects `[group/path]`. Replace the placeholders, or delete this section to be asked each time.
+
 ## NuGet / Artifactory
 - NuGet restore authenticates to Artifactory through the env vars `artifactory_user` and `artifactory_password`, already exported in the environment.
 - Never print, echo, log or read these values or the files that define them.
