@@ -1,19 +1,24 @@
 ---
-description: "Explain a file, an endpoint or a feature flow end to end, for onboarding or legacy code (read-only). Usage: /explain <file path, endpoint route or feature name>"
+description: "Explain a file, an endpoint, a page or a feature flow end to end, for onboarding or legacy code (read-only). Usage: /explain <file path, route, page or feature name>"
 agent: plan
 ---
 Explain the following in French: $ARGUMENTS
 
 Steps:
-1. Locate the entry point (endpoint, controller action, consumer, background job or file).
-2. Follow the flow layer by layer: endpoint → request → validator → handler → ports → infrastructure implementations → external systems (SharePoint, DocuSign, S3, Piano Analytics, database).
-3. Read the real code. Never describe code you did not read.
+1. Read the section "Project type" of AGENTS.md, or deduce the type from the files.
+2. Locate the entry point: endpoint, controller action, page, component, route, consumer, background job, public library method or file.
+3. Follow the flow through the layers that actually exist in this project, for example:
+   - CQRS API: endpoint → request → validator → handler → ports → infrastructure → external systems.
+   - Classic or legacy .NET: controller / page code-behind → services → data access → external systems.
+   - Front-end: route → component → services / store → HTTP calls → API.
+   - Library: public API → internal classes → dependencies.
+4. Read the real code. Never describe code you did not read.
 
 Output:
 - Résumé: what it does in 3 sentences.
-- Flux: numbered steps with file paths and method names.
+- Flux: numbered steps with file paths and method or component names.
 - Données: what is read, written or sent, and where.
 - Erreurs: how failures are handled at each step (validation, not found, external errors, retries).
-- Points fragiles: hard-coded values, missing tests, missing CancellationToken, swallowed exceptions, TODOs.
+- Points fragiles: hard-coded values, missing tests, swallowed exceptions, missing cancellation or async misuse (.NET), memory leaks or missing cleanup (front-end), TODOs.
 
 Do not modify any file.

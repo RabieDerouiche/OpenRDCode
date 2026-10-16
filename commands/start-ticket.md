@@ -30,6 +30,6 @@ One line per test: class, scenario, expected result. Covers every acceptance cri
 Suggested branch name: `feature/$1-<short-kebab-summary>` (or `hotfix/` / `bugfix/` according to the ticket type).
 
 ## Plan
-Ordered steps, each leaving the solution building. Mention when to use /cqrs, /test-for and /review.
+Ordered steps, each leaving the solution building. Mention when to use /test-for and /review, and /cqrs only if the AGENTS.md project type is cqrs-api.
 
 Rules: read-only. Do not create the branch, do not comment on Jira, do not change the ticket status.

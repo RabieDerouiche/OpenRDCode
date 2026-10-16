@@ -7,14 +7,20 @@
 ## Working style
 - Read existing code before writing new code, and mirror its conventions.
 - Smallest change that solves the request. No unrelated refactoring, renaming or reformatting.
-- Never claim success without running `dotnet build` and `dotnet test` when code was changed.
+- Never claim success without running the build and test commands of the repository when code was changed.
 - If a request is ambiguous, ask one question before acting.
 - Never invent file paths, types, methods, package names, application names or filter names. Look them up, or ask.
 
-## .NET stack
-- .NET 10, C#, Clean Architecture with CQRS, FluentValidation.
-- In-house mediator, NOT MediatR. Never add MediatR. Load the skill `dotnet-cqrs-conventions` before writing or reviewing handlers.
+## Project types
+- I work on several kinds of repositories: .NET 10 APIs with Clean Architecture + CQRS, classic .NET APIs without CQRS, legacy .NET Framework web projects, libraries, and front-end projects.
+- The section "Project type" of the repository AGENTS.md says which one this is. If it is missing, deduce it from the files and say which type you assumed.
+- Follow the conventions of the existing code of the repository. Never introduce CQRS, a mediator or Clean Architecture layers in a project that does not already use them.
+- For CQRS APIs only: in-house mediator, NOT MediatR (never add MediatR); load the skill `dotnet-cqrs-conventions` before writing or reviewing handlers.
+- Build and test with the commands from the section "Build & test" of the repository AGENTS.md. Legacy .NET Framework projects may not build on macOS: say so instead of changing project files.
 - Integrations: SharePoint (CSOM), DocuSign, AWS S3, Piano Analytics. Load the skill `integrations-guardrails` before touching them. Never modify authentication or credentials handling without asking.
+
+## Branches and releases
+- Merge requests target `develop`. Production is deployed from `master` as is; there are no release tags.
 
 ## Available helpers (use them instead of improvising)
 - Read-only review: `@reviewer`. Read-only debugging: `@debugger`. Read-only design: `@architect`. Tests only: `@test-writer`. Fortify: `@fortify`.
