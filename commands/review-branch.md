@@ -2,6 +2,9 @@
 description: "Review the whole current branch against develop with the read-only reviewer agent (before opening a MR)"
 agent: reviewer
 ---
+Project detection:
+!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+
 Current branch: !`git branch --show-current`
 
 Fetch develop: !`git fetch -q origin develop`

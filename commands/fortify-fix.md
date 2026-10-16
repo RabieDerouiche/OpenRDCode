@@ -2,6 +2,9 @@
 description: "Fix ONE Fortify SSC issue with a minimal change, then build and test. Usage: /fortify-fix <issueId>"
 agent: build
 ---
+Project detection:
+!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+
 SSC application (from appsec-ci.env): !`f=$(git ls-files '*appsec-ci.env' | head -1); if [ -n "$f" ]; then grep -E '^APPSEC_PROJECT_NAME=' "$f" | head -1 | cut -d= -f2- | tr -d '"\r'; fi`
 Current git branch: !`git branch --show-current`
 

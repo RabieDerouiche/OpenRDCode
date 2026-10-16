@@ -42,6 +42,16 @@ for d in "$PACK_DIR"/skills/*/; do
   echo "Installed skill:   $name"
 done
 
+mkdir -p "$TARGET_DIR/scripts"
+for f in "$PACK_DIR"/scripts/*.sh; do
+  [ -e "$f" ] || continue
+  name="$(basename "$f")"
+  backup_if_exists "scripts/$name"
+  cp "$f" "$TARGET_DIR/scripts/$name"
+  chmod +x "$TARGET_DIR/scripts/$name"
+  echo "Installed script:  $name"
+done
+
 echo
 if [ "$backed_up" -eq 1 ]; then
   echo "Previous versions of overwritten files were saved to: $BACKUP_DIR"

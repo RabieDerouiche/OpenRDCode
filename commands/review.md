@@ -2,6 +2,9 @@
 description: "Review staged changes (or unstaged if nothing is staged) with the read-only reviewer agent"
 agent: reviewer
 ---
+Project detection:
+!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+
 Staged changes:
 !`git diff --staged`
 
