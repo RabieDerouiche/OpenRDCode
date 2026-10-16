@@ -38,7 +38,13 @@
 - "fais-moi un plan", "comment tu ferais" for a feature or refactoring → invoke the `architect` subagent.
 - "explique", "comment marche" → load the skill `explain-code` and follow it.
 - "corrige le build", compilation errors, failed CI build job → load the skill `build-fix` and follow it.
-- "écris les tests", "teste ce fichier" → tell me to run `/test` (or `/test <file>`).
+- "fais comme dans <repo>", "inspire-toi de ce que j'ai fait sur <repo>" →
+  1. If a skill `pattern-<name>-back` or `pattern-<name>-front` matches, load it: it is the reference (same as /apply-pattern).
+  2. Otherwise read ONLY the files of that implementation in the other repository, read-only, with the read, grep and glob tools (ask me for its path if I did not give it).
+  3. For each library or mechanism the source uses and this repository does not (Moq vs NSubstitute, FluentAssertions, AutoFixture, xUnit fixtures, Testcontainers, a mediator, FluentValidation…), ask me with the question tool: "Garder l'existant (<current>)" (recommandé) / "Introduire <thing> comme dans <source>". Wait for the answers.
+  4. Adapt to this repository's conventions (naming, folders, DI, logging), never copy configuration values, URLs, hosts or secrets from the other repository, then plan and implement step by step with a build after each step.
+  5. At the end, if no skill existed, suggest `/extract-pattern <name> <source repo path>` so the approach is reusable next time.
+- "écris les tests", "teste ce fichier", "fais les tests comme dans <repo>" → tell me to run `/test`, `/test <file>` or `/test comme <repo or pattern>`.
 - "review", "vérifie avant de pousser" → tell me to run `/check`.
 - commit, push, branch, merge, sync → tell me to run `/ship`, `/sync` or `/ticket`: you never run git writes yourself.
 - Do not invoke subagents for anything else unless I ask.
