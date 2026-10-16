@@ -41,7 +41,7 @@ Skill structure:
    ## Recommended approach
    Which approach to use by default, and why.
    ## Prerequisites
-   Packages with the exact versions found in each source, target framework or framework version constraints.
+   Packages with the exact versions found in each source, target framework or framework version constraints. Mark in-house packages (from the company feed, e.g. Artifactory) as "interne" and keep their exact names: they are reused as is, never re-implemented.
    ## Files to create or modify
    One line per file, with its role.
    ## Code
@@ -49,7 +49,7 @@ Skill structure:
    ## Variants
    One subsection per differing approach, with its source and when to prefer it. "None" if all sources agree.
    ## Registration and configuration
-   DI registration or module/provider setup, middleware or interceptor order, configuration keys with placeholder values.
+   DI registration or module/provider setup, middleware or interceptor order. Configuration: one table of keys (full path, e.g. `Storage:S3:BucketName`) with, per environment file found in the source (`appsettings.json`, `appsettings.<Environment>.json`), whether the key is set there, and a placeholder value. Mark keys that hold secrets (keys, passwords, tokens) as "secret: environment variable or secret store, never in appsettings".
    ## Tests
    The test approach and generalized test code.
    ## Adapting to other project types

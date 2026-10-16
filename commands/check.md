@@ -15,7 +15,8 @@ HEAD: !`git rev-parse --short HEAD`
 Uncommitted changes summary: !`git diff HEAD --shortstat`
 Untracked files: !`git ls-files --others --exclude-standard`
 
-Fetch develop: !`git fetch -q origin develop`
+Fetch: !`git fetch -q origin`
+Branch vs its remote copy: !`git status -sb`
 
 Commits since develop:
 !`git log --oneline origin/develop..HEAD`
@@ -27,6 +28,9 @@ Uncommitted diff (staged and unstaged):
 !`git diff HEAD`
 
 Check the current work before it is pushed. Everything here is local: Sonar and Fortify results only exist after the push, in the CI.
+
+## Step 0 - Changes pushed from another computer
+If the branch status above says "behind" its remote copy, commits were pushed from another computer (for example from Rider on my Mac) and are not here yet. Stop and say: "<n> commit(s) poussé(s) depuis un autre poste ne sont pas ici : lance /sync d'abord". Continue only if I ask.
 
 ## Step 1 - Scope
 The committed diff, the uncommitted diff and the untracked files above (read the untracked source files with the read tool). If all three are empty, say "Rien à vérifier" and stop.
@@ -51,7 +55,7 @@ On the changed lines only, look for what Fortify or Sonar will most likely repor
 This does not replace the CI scans: say so in one line.
 
 ## Step 6 - Suggestions (non-blocking)
-Load the skill `best-practices`. On the code areas touched by this branch only, propose AT MOST 3 improvements: a best practice of the checklist that applies to this project type and is missing (for example a readiness health check for the new dependency this branch adds), or a clearly better approach for code written on this branch. For each one: what, why in one sentence, the evidence (file:line, and where you checked it is not already in place), the smallest change, and `/apply-pattern <name>` if a `pattern-` skill covers it. Never put a suggestion in the verdict. If nothing is worth it, write "Aucune".
+Load the skill `best-practices`. On the code areas touched by this branch only, propose AT MOST 5 improvements: a best practice of the checklist that applies to this project type and is missing (for example a readiness health check for the new dependency this branch adds, the result type for a new expected failure, a feature flag for an unfinished user-visible change, a performance issue), or a clearly better approach for code written on this branch. For each one: what, why in one sentence, the evidence (file:line, and where you checked it is not already in place), the smallest change, and `/apply-pattern <name>` if a `pattern-` skill covers it. Never put a suggestion in the verdict. If nothing is worth it, write "Aucune".
 
 ## Step 7 - Ticket sheet
 If the sheet exists, append to its "## Suivi" section with the edit tool (date with `date "+%Y-%m-%d %H:%M"`):

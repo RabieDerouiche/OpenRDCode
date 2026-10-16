@@ -22,16 +22,17 @@ The workflow is: /daily → /ticket → code with the build agent → /test → 
 Decide with the FIRST matching rule:
 1. On `develop`, `master` or `main`: "/daily, puis /ticket <KEY>". If there are uncommitted changes, warn that they must not be committed on this branch.
 2. A merge is in progress (MERGE_HEAD above is a hash) or the working tree has conflicts (`UU`, `AA`, `DU`, `UD` lines): "Résous les conflits dans Rider, puis préviens l'agent git (« conflits résolus, termine le merge »)".
-3. The branch has a Jira key but no ticket sheet: "/ticket <KEY>" (it keeps the branch and creates the sheet).
-4. Uncommitted changes exist:
+3. The branch is "behind" its remote copy (commits pushed from another computer, e.g. Rider on my Mac): "/sync (récupère ce que tu as poussé depuis l'autre poste)".
+4. The branch has a Jira key but no ticket sheet: "/ticket <KEY>" (it keeps the branch and creates the sheet).
+5. Uncommitted changes exist:
    - no `/test` line in "Suivi" after the last code change, or rows of "Tests attendus" still "à écrire" or "❌": "/test";
    - no `/check` line with the current HEAD and the current uncommitted changes summary, or its verdict is BLOCKING: "/check";
    - otherwise: "/ship".
-5. No uncommitted changes but local commits not pushed ("ahead" in the branch status): "/ship".
-6. Pushed: pipeline of the pushed commit running → "Attends la fin du pipeline (<link>), puis /scans"; failed → "/scans (il te dira quel job a échoué)"; success and no `/scans` asked since the last /ship → "/scans".
-7. Merge request with unresolved discussions: "Réponds aux discussions de la MR <link>". Approved, pipeline green, no discussion left: "MR prête à merger <link>".
-8. Plan steps still unchecked: "Continue l'étape <n> : <text> (avec l'agent build)".
-9. Otherwise: "Rien en attente sur cette branche : /daily pour la suite".
+6. No uncommitted changes but local commits not pushed ("ahead" in the branch status): "/ship".
+7. Pushed: pipeline of the pushed commit running → "Attends la fin du pipeline (<link>), puis /scans"; failed → "/scans (il te dira quel job a échoué)"; success and no `/scans` asked since the last /ship → "/scans".
+8. Merge request with unresolved discussions: "Réponds aux discussions de la MR <link>". Approved, pipeline green, no discussion left: "MR prête à merger <link>".
+9. Plan steps still unchecked: "Continue l'étape <n> : <text> (avec l'agent build)".
+10. Otherwise: "Rien en attente sur cette branche : /daily pour la suite".
 In addition, if develop has 10 commits or more that are not in the branch, add: "develop a avancé de <n> commits : /sync quand tu peux".
 
 ## Answer, in French, at most 8 lines
