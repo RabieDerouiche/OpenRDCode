@@ -74,11 +74,14 @@ Table: Ticket (link), Type, Titre, Statut, Prio, Dernière MAJ, Signal. If there
 
 ## 6. Plan du jour
 3 to 5 numbered actions, one line each, with the link and the command to use when one applies. Order:
-1. My merge requests with a failed pipeline (`/build-fix`) or conflicts with develop (`/git-sync`).
+1. My merge requests with a failed pipeline (`/scans` on that branch tells which job failed) or conflicts with develop (`/sync`).
 2. Reviews waiting for me: they block teammates.
 3. Unresolved discussions on my merge requests.
 4. Blocked tickets: who to contact, with the blocker link.
 5. Continue my in-progress sprint tickets, in rank order.
-6. If nothing is in progress: start the first ticket of section 4 or the first To Do of section 1 with `/git-start <KEY>` then `/start-ticket <KEY>`.
+6. If nothing is in progress: start the first ticket of section 4 or the first To Do of section 1 with `/ticket <KEY>`.
+
+## Then
+Ask me with the question tool "Sur quoi tu bosses ?": as options, the 3 tickets that come first in the plan of the day (`<KEY> - <summary>`, the first one "(recommandé)"). I can type another answer. Then answer with one line: "Lance `/ticket <KEY>`" (it resumes the ticket sheet if the ticket is already started).
 
 Rules: read-only, no comment, assignment or status change anywhere. If a system is unreachable, say so in one line and build the rest.

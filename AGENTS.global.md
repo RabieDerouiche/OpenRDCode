@@ -27,16 +27,28 @@
 ## Branches and releases
 - Merge requests target `develop`. Production is deployed from `master` as is; there are no release tags.
 
-## Available helpers (use them instead of improvising)
-- Git operations: `@git`. Read-only review: `@reviewer`. Read-only debugging: `@debugger`. Read-only design: `@architect`. Tests only: `@test-writer`. Fortify: `@fortify`.
-- Do not invoke these subagents on your own initiative unless I ask for a review, a plan, a debug investigation, tests or a Fortify analysis.
+## Workflow
+- My day: /daily → /ticket <KEY> → I code with you (build agent) → /test → /check → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. /sync brings develop into the branch. /next tells me where I am.
+- Sonar and Fortify run in the CI on every pushed commit: their results exist only after /ship, never before.
+- Ticket sheet: on a branch whose name contains a Jira key (pattern `[A-Z][A-Z0-9]+-[0-9]+`), the file `.git/opencode/tickets/<KEY>.md` holds the analysis of the ticket: acceptance criteria, expected tests, plan, and a "## Suivi" log. Read it before working on the ticket. When you finish a step of its "Plan", tick it (`- [x]`) with the edit tool. Never commit it (it lives inside `.git`).
+- When I ask "implémente l'étape N de la fiche", do only that step, build, run the tests, tick the step, then stop.
+
+## Routing (when I ask in plain words instead of a command)
+- "pourquoi ça plante", a stack trace, a failing test → invoke the `debugger` subagent with the task tool.
+- "fais-moi un plan", "comment tu ferais" for a feature or refactoring → invoke the `architect` subagent.
+- "explique", "comment marche" → load the skill `explain-code` and follow it.
+- "corrige le build", compilation errors, failed CI build job → load the skill `build-fix` and follow it.
+- "écris les tests", "teste ce fichier" → tell me to run `/test` (or `/test <file>`).
+- "review", "vérifie avant de pousser" → tell me to run `/check`.
+- commit, push, branch, merge, sync → tell me to run `/ship`, `/sync` or `/ticket`: you never run git writes yourself.
+- Do not invoke subagents for anything else unless I ask.
 
 ## Daily
 - Default scope of /daily: Jira project or board `[KEY or board name]`, GitLab group or projects `[group/path]`. Replace the placeholders, or delete this section to be asked each time.
 - Jira URL (for links in /daily): `[https://jira.mycompany.com]`. Optional: without it, the URL returned by the Jira tools is used.
 
 ## Release groups
-- Used by /release-notes-group to write one release note for several repositories deployed together. One block per group:
+- Used by `/release-notes <group name>` to write one release note for several repositories deployed together. One block per group:
 - `[GROUP]`: Confluence space `[SPACEKEY]`, release notes parent page `[page title]`, application name `[name]`, repositories:
   - `[Back]`: `/Users/[me]/dev/[back-repo]`
   - `[Front]`: `/Users/[me]/dev/[front-repo]`
@@ -50,10 +62,10 @@
 
 ## Fortify SSC (MCP)
 - The SSC application name of each repository is the value of APPSEC_PROJECT_NAME in its appsec-ci.env file.
-- Use the /fortify command to resolve the application version; never guess application or version names.
+- /scans resolves the application version (current branch version if it has scans, otherwise develop); never guess application or version names.
 - Never read appsec-ci.env entirely: it may contain secrets.
 - Always use the filter set "Security Auditor View" unless I ask otherwise. If a filter or filter set is rejected, list the valid ones and retry with a listed value.
 
 ## Git
-- Git writes (branch creation, commit, merge, push) go through the `git` agent and the /git-start, /git-sync and /git-ship commands. The team keeps branches up to date with develop by MERGE, never by rebase.
+- Git writes (branch creation, commit, merge, push) go through the `git` agent and the /ticket, /sync and /ship commands. The team keeps branches up to date with develop by MERGE, never by rebase.
 - Outside of them: never commit, push, merge, rebase, reset or delete branches unless I explicitly ask. Never force-push.

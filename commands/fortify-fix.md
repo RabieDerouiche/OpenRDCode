@@ -12,7 +12,7 @@ Fix the Fortify issue with id $1, and only this one.
 
 Rules:
 - Never read appsec-ci.env yourself. Use the line injected above: the SSC application is the value after `=`, without quotes.
-- Never invent application, version, filter set or filter names. Use the same version selection as the /fortify command (current branch version if it has scans, otherwise develop; if unclear, ask me with the question tool (multiple choice, recommended option first)).
+- Never invent application, version, filter set or filter names. Version selection: list ALL versions of the application; use the version matching the current branch (exact name, then `/` replaced by `-`, then by `_`) if it has at least one uploaded scan, otherwise `develop`; if `develop` does not exist either, ask me with the question tool (multiple choice, recommended option first) with the versions as options. Use the filter set "Security Auditor View".
 
 Steps:
 1. Load the skill `fortify-remediation`.
@@ -26,5 +26,6 @@ Steps:
 6. Add or update a unit test proving the fix (e.g. malicious input rejected or sanitized), if the project has tests.
 7. Run the build and test commands from AGENTS.md (default .NET: `dotnet build` then `dotnet test`; front-end: `npm test`). If a legacy .NET Framework project cannot build on macOS, say so instead of changing project files.
 8. Report: the category, the change (file:line), the test added, build/test result, and a commit message `fix(security): <summary> (Fortify #$1)`.
+9. Last line: "Prochaine étape : /check puis /ship (avec ce message de commit), puis /scans pour vérifier que l'issue a disparu."
 
 If the fix touches authentication, SharePoint/CSOM, DocuSign or S3 code, load `integrations-guardrails` and ask me with the question tool (multiple choice, recommended option first) ("Appliquer le correctif" / "Me montrer le diff d'abord" / "Annuler") before editing.

@@ -1,5 +1,5 @@
 ---
-description: "Bring the current branch up to date: commit local work locally (no push), pull the branch's own remote changes, merge develop, then offer to push. Merge only. Stops on conflicts and asks."
+description: "Bring the current branch up to date: commit local work locally (no push), retrieve the branch's own remote changes, merge develop, then offer to push. Merge only. Stops on conflicts and asks. Usage: /sync"
 agent: git
 ---
 Current branch: !`git branch --show-current`
@@ -12,7 +12,7 @@ Steps:
 2. Local work. If the working tree above is not empty, ask me with the question tool:
    - "Commit local de tout, sans push" (recommandé): `git add -A`.
    - "Commit local des fichiers déjà suivis seulement, sans push": `git add -u`.
-   - "Mettre de côté (stash) pendant la synchro": `git stash push -u -m "git-sync"` (asks for approval).
+   - "Mettre de côté (stash) pendant la synchro": `git stash push -u -m "sync"` (asks for approval).
    - "Annuler".
    For a commit: write a Conventional Commits message in English from `git diff --staged` (`type(scope): summary`, max 72 characters, Jira key from the branch name in the summary, at most 5 bullets in the body, no backticks, `$` or double quotes), ask me with the question tool "Commiter avec ce message" (recommandé) / "Modifier le message" (free answer), then run `git commit -m "<summary>" -m "<body>"`. Do not push.
 3. Run `git fetch origin`.
@@ -28,4 +28,4 @@ Steps:
    - "Annuler la synchro": run `git merge --abort` and stop. Do not push.
    Never edit the conflicting files yourself.
 8. If a stash was made in step 2, run `git stash pop` (asks for approval); if it conflicts, list the files and stop.
-9. If something was merged, suggest running the build and tests (`/build-fix` if the build breaks). End with the branch state.
+9. If something was merged, say that the build and tests must be run again: "Prochaine étape : /check" (if the build breaks: ask the build agent « corrige le build », it uses the skill `build-fix`). End with the branch state.

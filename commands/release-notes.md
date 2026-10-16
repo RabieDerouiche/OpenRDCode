@@ -1,16 +1,24 @@
 ---
-description: "Draft release notes for a production deployment from master (or from a free-text description), enrich them with Jira, and publish to Confluence after approval. Usage: /release-notes [previous-deployed-commit|YYYY-MM-DD] [deployed-commit] — or /release-notes <description of the changes>"
+description: "Release note of a production deployment, published to Confluence after approval. One repository (deployed from master), or a release group of several repositories (back, front, libraries) grouped by Jira ticket, or a free-text description. Usage: /release-notes [group name [YYYY-MM-DD]] | [previous-deployed-commit|YYYY-MM-DD] [deployed-commit] | <description of the changes>"
 agent: release-writer
 ---
+Arguments: "$ARGUMENTS"
+Current repository: !`git rev-parse --show-toplevel`
 Fetch master: !`git fetch -q origin master`
-
 Current master: !`git log -1 --format='%H %cs %s' origin/master`
 
-Arguments: "$ARGUMENTS"
+## Step 0 - Mode
+Read the section "Release groups" of AGENTS.md.
+- If the first argument is the name of a group there: GROUP MODE with that group (the optional second argument is a date `YYYY-MM-DD`).
+- Otherwise, if there are no arguments and the current repository path above is listed in a group: ask me with the question tool: "Release note du groupe <group>" (recommandé) / "Seulement ce dépôt". 
+- Otherwise: SINGLE REPOSITORY MODE with the arguments as given.
+Say the mode in one line before anything else.
+
+# SINGLE REPOSITORY MODE
 
 Production is deployed from the `master` branch as is; there are no release tags.
 
-Steps:
+Steps (single repository mode):
 1. Read AGENTS.md for the sections "Confluence" and "Releases" (space key, release notes parent page, application name). For each missing value, ask me with the question tool (multiple choice, recommended option first) (free answer), then remind me to add it to AGENTS.md.
 2. Determine the range of this release. `from` is the commit of the PREVIOUS deployment (excluded: it belongs to the previous release); `to` is the commit deployed in THIS release (included).
    - No arguments: `from` = the commit hash written after "Commit master déployé" in the most recent release note under the parent page in Confluence; `to` = current `origin/master`. If there is no previous release note or no hash in it, ask me with the question tool (multiple choice, recommended option first): "Depuis une date" / "Depuis un commit" / "Je décris les changements en texte libre", then ask for the value.
@@ -52,3 +60,47 @@ Steps:
 7. Show me the full draft.
 8. Publish it as a child page of the release notes parent page, in the configured space, with the title from the draft. The publication will ask for my approval: if I refuse, stop and keep the draft as the final answer.
 9. Final answer: the page title and link if published, otherwise the draft in a markdown code block.
+
+# GROUP MODE
+
+Write ONE release note covering every repository of the release group "<group name>".
+
+Rules:
+- Collect data only with `sh ~/.config/opencode/scripts/release-commits.sh <repository path> <from> [<to>]`, one call per repository. Never run git yourself in these repositories.
+- Never write anything in the repositories, Jira, GitLab, SonarQube or Fortify.
+
+Steps:
+1. Read the section "Release groups" of AGENTS.md and find the group "<group name>": Confluence space key, release notes parent page, application name, and the list of repositories (label + absolute path). If the group is missing, ask me with the question tool (multiple choice, recommended option first) with the existing groups as options; if there is none, ask me for the values (free answer) and remind me to add them to AGENTS.md.
+2. Determine `from` for each repository:
+   - If a date is given (second argument), use it for every repository.
+   - Otherwise read the most recent release note of this group under the parent page in Confluence: its section "Informations de déploiement" has one line per repository "<label> : <full hash>". Use that hash as `from` for that repository.
+   - For a repository with no previous hash (new repository, first release note), ask me with the question tool: "Depuis une date" / "Depuis un commit" / "Ne pas inclure ce dépôt", then ask for the value.
+   - `to` is the current production branch of each repository (default of the script). If I say some commits on master are not deployed yet, ask me for the deployed commit of each repository and pass it as `<to>`.
+3. Run the script for each repository and keep its output. If a repository returns an ERROR line, say so and ask me how to proceed (fix the value / skip the repository).
+4. Merge across repositories BY JIRA TICKET, not by repository:
+   - Collect every Jira key from all repositories, read each ticket once with the Jira MCP tools (type, summary, status, epic).
+   - One line per ticket, followed by the repositories it touched, e.g. `[Back] [Front]`. A ticket touching several repositories appears ONCE.
+   - Commits without a Jira key stay listed per repository at the end.
+   - Library repositories: report their version change (from the "Version changes" section). If another repository of the group bumped its reference to that library in the same release, say it on the library line ("utilisée par Back en 2.3.0").
+5. Read the most recent release note of this group under the parent page and mirror its structure, title format and tone. Otherwise use:
+
+   # <Application name> — Release du <latest deployed commit date among repositories, YYYY-MM-DD>
+   ## Résumé
+   2-3 sentences for business readers.
+   ## Nouveautés
+   One line per feature ticket: what changes for users, (JIRA-KEY) [repositories].
+   ## Corrections
+   One line per bug ticket, (JIRA-KEY) [repositories].
+   ## Sécurité et qualité
+   Fortify / Sonar / dependency fixes, without vulnerability details that could help an attacker.
+   ## Technique
+   Refactorings, dependency and library version upgrades, configuration changes, migrations.
+   ## Points d'attention pour le déploiement
+   Deployment order between repositories if one depends on another (for example library before back, back before front when the API contract changed), configuration to add, breaking API changes, or "Aucun".
+   ## Commits sans ticket
+   Per repository: short hash + message.
+   ## Informations de déploiement
+   One line per repository, mandatory for the next release note: `<label> : <full hash of the deployed commit>`.
+
+6. Before the draft, write one line per repository: "<label> : <range from the script>, <n> commits".
+7. Show me the full draft, then publish it as a child page of the parent page in the configured space. The publication asks for my approval: if I refuse, stop and keep the draft as the final answer.
