@@ -50,7 +50,10 @@ On the changed lines only, look for what Fortify or Sonar will most likely repor
 - resources not disposed (streams, HTTP responses, database readers).
 This does not replace the CI scans: say so in one line.
 
-## Step 6 - Ticket sheet
+## Step 6 - Suggestions (non-blocking)
+Load the skill `best-practices`. On the code areas touched by this branch only, propose AT MOST 3 improvements: a best practice of the checklist that applies to this project type and is missing (for example a readiness health check for the new dependency this branch adds), or a clearly better approach for code written on this branch. For each one: what, why in one sentence, the evidence (file:line, and where you checked it is not already in place), the smallest change, and `/apply-pattern <name>` if a `pattern-` skill covers it. Never put a suggestion in the verdict. If nothing is worth it, write "Aucune".
+
+## Step 7 - Ticket sheet
 If the sheet exists, append to its "## Suivi" section with the edit tool (date with `date "+%Y-%m-%d %H:%M"`):
 `- <date> /check - HEAD <HEAD above> - <uncommitted changes summary above, or "aucun changement non commité"> - <untracked files count> fichiers non suivis - <verdict> - build <ok|ko> - tests <passed>/<total>`
 Write nothing else.
@@ -60,7 +63,8 @@ Write nothing else.
 2. "Build et tests" : one line each.
 3. "Critères d'acceptation" : table criterion / implemented / tested.
 4. "Pré-scan sécurité" : findings with the probable Fortify or Sonar category, or "Rien de détecté".
-5. One last line with the next step:
+5. "Suggestions (non bloquantes)" : the result of step 6.
+6. One last line with the next step:
    - blocking findings or build/tests failing: "Corrige avec l'agent build (« corrige les points bloquants du /check »), puis relance /check."
    - criteria or changed code without tests: "/test"
    - otherwise: "Prêt : /ship"

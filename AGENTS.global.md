@@ -44,6 +44,8 @@
   3. For each library or mechanism the source uses and this repository does not (Moq vs NSubstitute, FluentAssertions, AutoFixture, xUnit fixtures, Testcontainers, a mediator, FluentValidation…), ask me with the question tool: "Garder l'existant (<current>)" (recommandé) / "Introduire <thing> comme dans <source>". Wait for the answers.
   4. Adapt to this repository's conventions (naming, folders, DI, logging), never copy configuration values, URLs, hosts or secrets from the other repository, then plan and implement step by step with a build after each step.
   5. At the end, if no skill existed, suggest `/extract-pattern <name> <source repo path>` so the approach is reusable next time.
+- "j'ai fait l'étape N à la main", "j'ai modifié X dans Rider" → re-read the files from disk (never trust an older version you read earlier), read `git diff` for them, check the change against the step and the acceptance criteria of the ticket sheet, report what is missing or wrong in a few lines, tick the step if it is complete. Do not rewrite my code unless I ask.
+- "y a-t-il une meilleure approche", "bonnes pratiques", "il manque quoi" → load the skill `best-practices`; for the whole repository, tell me to run `/audit`.
 - "écris les tests", "teste ce fichier", "fais les tests comme dans <repo>" → tell me to run `/test`, `/test <file>` or `/test comme <repo or pattern>`.
 - "review", "vérifie avant de pousser" → tell me to run `/check`.
 - commit, push, branch, merge, sync → tell me to run `/ship`, `/sync` or `/ticket`: you never run git writes yourself.
