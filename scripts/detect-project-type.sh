@@ -101,8 +101,37 @@ if [ -n "$packages" ]; then
   fi
 fi
 
+# ---------- Test stack (frameworks, mocking and assertion libraries actually referenced) ----------
+test_stack=""
+add_lib() {
+  case " $test_stack " in *" $1 "*) ;; *) test_stack="${test_stack:+$test_stack }$1" ;; esac
+}
+dotnet_refs=$(git grep -h -o -i -E '(PackageReference|PackageVersion) Include="[^"]+"|<package id="[^"]+"' -- '*.csproj' '*.vbproj' 'Directory.Packages.props' '*packages.config' 2>/dev/null | sed -E 's/.*"([^"]+)"/\1/' | tr 'A-Z' 'a-z' | sort -u)
+for lib in $dotnet_refs; do
+  case "$lib" in
+    xunit|xunit.v3) add_lib xunit ;;
+    nunit) add_lib nunit ;;
+    mstest.testframework|mstest) add_lib mstest ;;
+    moq) add_lib moq ;;
+    nsubstitute) add_lib nsubstitute ;;
+    fakeiteasy) add_lib fakeiteasy ;;
+    rhino.mocks) add_lib rhino.mocks ;;
+    fluentassertions) add_lib fluentassertions ;;
+    shouldly) add_lib shouldly ;;
+    autofixture) add_lib autofixture ;;
+    bogus) add_lib bogus ;;
+    microsoft.aspnetcore.mvc.testing) add_lib webapplicationfactory ;;
+  esac
+done
+if [ -n "$packages" ]; then
+  for lib in jest vitest karma jasmine-core mocha @testing-library/react @testing-library/angular @testing-library/vue cypress @playwright/test; do
+    git grep -q -F "\"$lib\"" -- $packages 2>/dev/null && add_lib "$lib"
+  done
+fi
+
 [ -z "$types" ] && types="unknown"
 echo "Project type (auto-detected): $types"
 echo "Build: ${build:-unknown}"
 echo "Test: ${test:-unknown}"
+echo "Test stack: ${test_stack:-none detected}"
 echo "Evidence:$evidence"
