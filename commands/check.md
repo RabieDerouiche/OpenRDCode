@@ -56,6 +56,7 @@ This does not replace the CI scans: say so in one line.
 
 ## Step 6 - Suggestions (non-blocking)
 Load the skill `best-practices`. On the code areas touched by this branch only, propose AT MOST 5 improvements: a best practice of the checklist that applies to this project type and is missing (for example a readiness health check for the new dependency this branch adds, the result type for a new expected failure, a feature flag for an unfinished user-visible change, a performance issue), or a clearly better approach for code written on this branch. For each one: what, why in one sentence, the evidence (file:line, and where you checked it is not already in place), the smallest change, and `/apply-pattern <name>` if a `pattern-` skill covers it. Never put a suggestion in the verdict. If nothing is worth it, write "Aucune".
+AGENTS.md drift (not counted in the 5): if the scope adds, removes or renames a project (`.csproj`, `.sln`, `.slnx`), changes `Directory.*.props`, test or logging packages, `Program.cs` / `Startup.cs` registration, the error handling convention or the folder organization, and the repository AGENTS.md does not reflect it, add one line: "AGENTS.md à mettre à jour (<sections>) : /agents-md une fois le ticket livré".
 
 ## Step 7 - Ticket sheet
 If the sheet exists, append to its "## Suivi" section with the edit tool (date with `date "+%Y-%m-%d %H:%M"`):
