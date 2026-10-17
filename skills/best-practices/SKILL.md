@@ -42,11 +42,6 @@ compatibility: opencode
 | Cheap logging and string handling in hot paths | CPU and allocations | string interpolation in log calls, string concatenation in loops, `new Regex(` per call (use a static or generated regex) |
 | Outbound clients reused (`IHttpClientFactory`, singleton SDK clients such as the S3 client) | Socket and connection exhaustion | `new AmazonS3Client(`, `new HttpClient(` per call |
 
-## Dependencies (every .NET project)
-| Practice | Why | Detect |
-|---|---|---|
-| No package in a commercial, maintenance-fee or AGPL version without approval, and free versions kept below the paid one | A routine upgrade (Renovate, `dotnet outdated`, "update all" in Rider) can cross a license line: license costs or legal risk | `sh ~/.config/opencode/scripts/package-licenses.sh` (injected by /audit); for one package: `--check <PackageId> [<version>]` |
-
 ## CQRS API (type cqrs-api), in addition
 | Practice | Why | Detect |
 |---|---|---|

@@ -15,6 +15,8 @@ Rules:
 - Never read appsec-ci.env yourself. Use the line injected above: the SSC application is the value after `=`, without quotes.
 - Never invent application, version, filter set or filter names. Version selection: list ALL versions of the application; use the version matching the current branch (exact name, then `/` replaced by `-`, then by `_`) if it has at least one uploaded scan, otherwise `develop`; if `develop` does not exist either, ask me with the question tool (multiple choice, recommended option first) with the versions as options. Use the filter set "Security Auditor View".
 
+Speed: in your first turn, load the skill and list the versions of the SSC application together; then get the issue; then read the files of its data flow together.
+
 Steps:
 1. Load the skill `fortify-remediation`.
 2. Retrieve the details of issue $1 with the Fortify SSC MCP tools: category, file, line, source and sink of the data flow.

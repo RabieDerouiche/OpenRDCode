@@ -13,7 +13,7 @@ Workflow state (one fetch, then the state of the branch and of the ticket sheet)
 
 Sonar and Fortify both run in the CI on every pushed commit. Never read appsec-ci.env yourself: it may contain secrets; use only the line injected above (the SSC application is the value after `=`, without quotes). Read-only everywhere: never mark an issue as false positive, never change a status, never comment.
 
-Speed: send the independent MCP calls together. First turn: the pipeline of the pushed commit (step 2), the versions of the SSC application (step 3) and the search of the Sonar project (step 4). Second turn: the Fortify issues of the selected version, and the Sonar issues and security hotspots of the branch. If step 2 stops, ignore the other results.
+Speed: send the independent MCP calls together. First turn: the pipeline of the pushed commit (step 2), the versions of the SSC application (step 3) and the search of the Sonar project (step 4). Second turn: the Fortify issues of the selected version, the Sonar issues and security hotspots of the branch, and the skill `fortify-remediation`. If step 2 stops, ignore the other results.
 
 ## Step 1 - Pushed or not
 - If the workflow state says "Upstream: none", the branch was never pushed: say "Branche jamais poussée : lance /ship" and stop.
@@ -37,7 +37,7 @@ Give the pipeline link (`web_url`).
    d. If the current branch is empty (detached HEAD), use `develop`.
    e. If `develop` does not exist either, ask me with the question tool (multiple choice, recommended option first) with the available versions as options.
 4. Freshness: compare the date of the latest uploaded artifact with the "Pushed commit date" of the workflow state. If the artifact is older, say "Scan Fortify pas encore à jour (dernier upload <date>) : relance /scans plus tard" and still show the current results, marked "anciens".
-5. List the issues with the filter set "Security Auditor View". Never invent application, version, filter set or filter names; if one is rejected, list the valid ones and retry with a listed value. Load the skill `fortify-remediation` to classify each category and spot likely false positives.
+5. List the issues with the filter set "Security Auditor View". Never invent application, version, filter set or filter names; if one is rejected, list the valid ones and retry with a listed value. Use the skill `fortify-remediation` to classify each category and spot likely false positives.
 
 ## Step 4 - SonarQube
 Find the Sonar project of this repository (search by repository name or by the SSC application name; if several match, ask me with the question tool with the candidates as options). Get the open issues and security hotspots of this branch. If the analysis exposes its revision or date, check it matches the pushed commit; otherwise say "Analyse Sonar pas encore à jour". If the branch is not analyzed, use the main branch and say so.

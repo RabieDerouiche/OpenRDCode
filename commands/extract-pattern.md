@@ -1,7 +1,10 @@
 ---
 description: "Create or enrich a reusable skill (pattern-<name>-back or pattern-<name>-front) from a good implementation in a repository. Run it again on another repository to merge its approach into the same skill. Usage: /extract-pattern <name> <absolute path of the source repository> [back|front]"
-agent: build
+agent: dev
 ---
+Source repository detection:
+!`sh ~/.config/opencode/scripts/detect-project-type.sh '$2'`
+
 Extract the "$1" implementation from the repository at `$2` and save it as a reusable skill, or enrich the existing one.
 
 Rules:
@@ -14,9 +17,9 @@ Rules:
 Steps:
 1. Determine the scope:
    - If a third argument is given ("$3"), use it: `back` or `front`.
-   - Otherwise run `sh ~/.config/opencode/scripts/detect-project-type.sh $2`: `frontend` → `front`; any .NET type → `back`. If the repository is mixed (back and front), look where the "$1" implementation lives; if it exists on both sides, ask me with the question tool (multiple choice, recommended option first): "back" / "front".
+   - Otherwise use the source repository detection above: `frontend` → `front`; any .NET type → `back`. If the repository is mixed (back and front), look where the "$1" implementation lives; if it exists on both sides, ask me with the question tool (multiple choice, recommended option first): "back" / "front".
 2. The skill name is `pattern-$1-<scope>` in lowercase with hyphens only (letters, digits, single hyphens); if "$1" does not fit, ask me with the question tool (multiple choice, recommended option first) with 2 valid name proposals. The file is `~/.config/opencode/skills/pattern-$1-<scope>/SKILL.md`.
-3. Locate the implementation of "$1" in `$2` with the grep, glob and read tools: registration / startup code, classes, configuration, endpoints, middleware, components, services, and the related tests. Read `git -C $2 log --oneline -20 -- <files>` for the history of these files.
+3. Locate the implementation of "$1" in `$2` with the grep, glob and read tools: registration / startup code, classes, configuration, endpoints, middleware, components, services, and the related tests. Read `git -C $2 log --oneline -20 -- <files>` for the history of these files. Send the searches together in one turn, with the read of the existing skill file of step 4 (it may not exist).
 4. If the skill file does NOT exist: create it with the structure below.
    If it EXISTS: read it fully, then MERGE:
    - Add the repository to "Sources" (do not add it twice; if it is already listed, refresh its entry).

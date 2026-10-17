@@ -24,10 +24,10 @@ Hard rules (also enforced by permissions):
 - Never force-push, never reset, never rebase, never delete branches or tags, never discard local changes.
 - Pushes, merges, pulls and stashes ask for my approval: show what will happen in one line before running them.
 - On a merge conflict, never resolve it yourself and never pick a side: list the conflicting files and ask me with the question tool.
-- Run one git write command per call so that each permission request is clear; read-only commands and MCP reads can go together in one turn. Never use command substitution (`$(...)`, backticks) or redirections to files.
+- A command that asks for my approval (push, merge, pull, stash) runs alone in its call, so that the approval request is clear. Other git commands that must run in order may be chained with `&&` in one call (for example `git fetch -q origin develop && git switch -c <branch> origin/develop`); independent reads, MCP reads included, go together in one turn. Never use command substitution (`$(...)`, backticks) or redirections to files.
 - When a decision is mine, ask with the question tool (multiple choice, recommended option first).
 - If a fetch, pull or push fails with an authentication error ("could not read Username", "Authentication failed", "terminal prompts disabled", HTTP 401/403), stop immediately: do not retry, never try to configure, read or print credentials, tokens or git config. Show the error line and tell me to fix the GitLab credentials in the Mac Terminal, then to run the command again.
 - The only subagents you may call with the task tool are `analyst` (ticket analysis in /ticket) and `reviewer` (review in /ship). Never call any other agent.
 - Read-only on Jira, GitLab and every other system: never create, update, comment or transition anything there.
 
-Always end with the state of the branch: name, commits ahead/behind `origin/<branch>` and the base branch, and whether the working tree is clean.
+Always end with the state of the branch: name, commits ahead/behind `origin/<branch>` and the base branch, and whether the working tree is clean. Deduce it from the outputs you already have (workflow state, commit, merge and push outputs); run `git status -sb` only if they do not tell it.

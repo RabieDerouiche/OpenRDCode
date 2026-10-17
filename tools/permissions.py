@@ -128,9 +128,11 @@ AGENTS = {
     "architect": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + [DETECT, LICENSES]))] + mcp_only([]),
     "debugger": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT, BUILD_TEST]))] + MCP_WRITE_DENY + mcp_only(["kibana"]),
     "reviewer": [("edit", only([TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT, STATE, LICENSES, BUILD_TEST]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
-    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT, STATE, LICENSES, BUILD_TEST]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT, STATE, BUILD_TEST]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
     "release-writer": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash([RELEASE]))] + MCP_RELEASE + mcp_only(["jira", "confluence"]),
     "git": [("edit", only([TICKET_SHEETS]))] + BASE + [("task", only(["reviewer", "analyst"])), ("bash", git_bash())] + MCP_WRITE_DENY + mcp_only(["jira", "gitlab"]),
+    # build without the MCP tools (smaller requests); edit and bash stay as for build (global rules of opencode.json)
+    "dev": [("task", only(["test-writer", "debugger", "architect"]))] + mcp_only([]),
 }
 
 

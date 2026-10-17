@@ -4,14 +4,11 @@ agent: build
 ---
 Confluence source given: "$ARGUMENTS"
 Repository root: !`git rev-parse --show-toplevel`
-Current AGENTS.md: !`ls AGENTS.md`
-Last change of AGENTS.md: !`git log -1 --format='%h %cs' -- AGENTS.md`
+Current AGENTS.md: !`if [ -f AGENTS.md ]; then git log -1 --format='exists, last changed in %h on %cs' -- AGENTS.md; else echo "none (creation mode)"; fi`
 Project detection:
 !`sh ~/.config/opencode/scripts/detect-project-type.sh`
 Solution and project files:
 !`git ls-files '*.sln' '*.slnx' '*.csproj' 'package.json' 'Directory.Build.props' 'Directory.Packages.props' 'nuget.config'`
-Package licenses:
-!`sh ~/.config/opencode/scripts/package-licenses.sh`
 
 Create or update the AGENTS.md at the repository root so that every agent works like this repository, from the code as it is today.
 
@@ -29,7 +26,7 @@ Rules:
 - Otherwise read it. If it was last changed a while ago, list the structural changes since then: `git diff --stat <hash of the last change>..HEAD -- '*.sln' '*.slnx' '*.csproj' 'Directory.*.props' 'package.json'` and `git log --oneline <hash>..HEAD | head -30`. Sections touched by these changes are the first to re-check.
 
 ## Step 2 - Analyze the code, section by section
-For each section below, determine its content from the code. Skip a section that does not apply to the project type.
+For each section below, determine its content from the code. Skip a section that does not apply to the project type. Send the reads and searches of several sections together in one turn.
 1. `## Project type`: only if the detection above is wrong or the repository mixes several types (say which folder is which).
 2. `## Project overview`: what it does and who calls it, 2-3 lines (from README, Program/Startup, controllers or endpoints, Confluence if given).
 3. `## Solution structure`: one line per project or main folder with its role, and the dependency rules actually observed between projects (from project references).
@@ -45,8 +42,7 @@ For each section below, determine its content from the code. Skip a section that
    - configuration: options classes, `appsettings.<Environment>.json` files present, where secrets come from (never their values);
    - feature flags mechanism, if any;
    - persistence and external integrations (SharePoint/CSOM, DocuSign, S3 storage interfaces, Piano Analytics…) with the interface or class that wraps each one;
-   - in-house packages from the company feed (names only);
-   - license limits, from the "Package licenses" block above: one line per package used in a free version that becomes paid later ("FluentAssertions: stay on 7.x, 8.0+ is commercial"), and one line per package already in a paid range ("MediatR 13: commercial license, approval needed").
+   - in-house packages from the company feed (names only).
 6. `## In-house mediator` (cqrs-api only): package, namespaces, request and handler interfaces, pipeline behaviors, registration.
 7. `## Tests`: framework, assertions, mocks, fixtures (`IClassFixture`, `ICollectionFixture`, base classes), test data builders, naming convention, test project layout, integration tests (`WebApplicationFactory`) if any.
 8. `## Reference examples`: for each kind of file the agents generate in this project type, ONE representative, recent, tested file (cqrs-api: command or query, handler, validator, endpoint, handler test, validator test; api: controller, service, service test; library: public class and its test; front-end: component, service, their tests). Prefer files changed recently, with tests, following the dominant convention.

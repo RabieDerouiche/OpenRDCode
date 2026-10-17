@@ -3,13 +3,15 @@
 # A package can be free up to a version and paid from the next one, so the rules below are per version.
 # Read-only (temporary files only). Output in English: the agents translate.
 #
+# Run on demand only (/licences, or the question of /check when the branch changes a project file).
 # Usage:
 #   package-licenses.sh                  every package of the repository with a license issue: direct references
 #                                        (project files, Directory.Packages.props, packages.config), then transitive
 #                                        ones from obj/project.assets.json (state of the last restore)
 #   package-licenses.sh --diff [<base>]  packages added or changed since the merge base with <base> (default:
-#                                        origin/develop, otherwise origin/main or origin/master), working tree included
-#   package-licenses.sh --check <PackageId> [<version>]
+#                                        origin/develop, otherwise origin/main or origin/master), working tree included;
+#                                        "branche" or "branch" instead of --diff also works
+#   package-licenses.sh [--check] <PackageId> [<version>]
 #                                        the rule for one package, before adding or upgrading it
 #
 # Rules, one per line: package ids (exact, or "Prefix.*") | first version concerned (0 = every version) |
@@ -18,18 +20,33 @@
 
 RULES_DATE="2026-10"
 
+usage() {
+  echo "Usage: package-licenses.sh [--diff [<base>] | branche | [--check] <PackageId> [<version>]]"
+}
+
+# One argument with spaces comes from the /licences command ('$ARGUMENTS'): split it into words
+if [ $# -eq 1 ]; then
+  case "$1" in
+    *" "*)
+      set -f
+      # shellcheck disable=SC2086 # word splitting wanted
+      set -- $1
+      set +f ;;
+  esac
+fi
+
 mode="scan"
 case "$1" in
   "") ;;
-  --diff) mode="diff"; base=$2 ;;
-  --check)
-    mode="check"; check_id=$2; check_version=$3
-    if [ -z "$check_id" ]; then
-      echo "Usage: package-licenses.sh --check <PackageId> [<version>]"
-      exit 0
-    fi ;;
-  *) echo "Usage: package-licenses.sh [--diff [<base>] | --check <PackageId> [<version>]]"; exit 0 ;;
+  --diff|branche|branch) mode="diff"; base=$2 ;;
+  --check) mode="check"; check_id=$2; check_version=$3 ;;
+  -*) usage; exit 0 ;;
+  *) mode="check"; check_id=$1; check_version=$2 ;;
 esac
+if [ "$mode" = "check" ] && [ -z "$check_id" ]; then
+  usage
+  exit 0
+fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/package-licenses.XXXXXX") || exit 0
 trap 'rm -rf "$tmp"' EXIT

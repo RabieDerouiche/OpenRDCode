@@ -16,6 +16,8 @@ Rules:
 - Smallest possible change. No refactoring around it, no reformatting of unrelated lines.
 - Never suppress the finding with `// NOSONAR`, `#pragma warning disable`, `[SuppressMessage]` or an exclusion in the Sonar configuration.
 
+Speed: get the issue first; then, in one turn, the description of its rule and the code at its location.
+
 Steps:
 1. Retrieve issue or hotspot $1 with the SonarQube MCP tools: type (bug, vulnerability, code smell, security hotspot), severity, rule key, message, file, line.
 2. Retrieve the description of the rule to understand what it expects.
