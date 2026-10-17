@@ -28,11 +28,11 @@
 - Merge requests target `develop`. Production is deployed from `master` as is; there are no release tags.
 
 ## Workflow
-- My day: /daily → /ticket <KEY> → I code with you (build agent) → /test → /check → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. /sync brings develop into the branch. /next tells me where I am.
+- My day: /daily → /ticket <KEY> → /dev (one plan step at a time, with its tests; or I code myself) → /test → /check → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. /sync brings develop or my Mac pushes into the branch. /next tells me where I am. /agents-md keeps the repository AGENTS.md up to date.
 - Sonar and Fortify run in the CI on every pushed commit: their results exist only after /ship, never before.
 - You may run on a remote machine while I sometimes code in Rider on my Mac: then we do NOT share the same files. My Mac changes reach you only through git (I push from Rider, then /sync), and your changes reach my Mac only after /ship or /sync pushed them (then I pull in Rider). The ticket sheet exists only on your side.
 - Ticket sheet: on a branch whose name contains a Jira key (pattern `[A-Z][A-Z0-9]+-[0-9]+`), the file `.git/opencode/tickets/<KEY>.md` holds the analysis of the ticket: acceptance criteria, expected tests, plan, and a "## Suivi" log. Read it before working on the ticket. When you finish a step of its "Plan", tick it (`- [x]`) with the edit tool. Never commit it (it lives inside `.git`).
-- When I ask "implémente l'étape N de la fiche", do only that step, build, run the tests, tick the step, then stop.
+- When I ask "implémente l'étape N de la fiche" without /dev, follow the same rules as /dev: only that step, questions when the approach is unclear, build, tests, tick the step, record my answers in the sheet's "## Décisions", then stop.
 
 ## Routing (when I ask in plain words instead of a command)
 - "pourquoi ça plante", a stack trace, a failing test → invoke the `debugger` subagent with the task tool.
