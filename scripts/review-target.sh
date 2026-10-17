@@ -94,7 +94,7 @@ short=$(git rev-parse --short "$rev")
 echo "Reviewed revision: $short ($label). Read its files with: git show $short:<path>"
 echo "Target branch: $base"
 echo "Commits of $base not merged into it: $(git rev-list --count "$rev..$base")"
-keys=$({ printf '%s\n' "$branch"; git log --no-merges --format='%s%n%b' "$base..$rev"; } | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | sort -u | tr '\n' ' ')
+keys=$({ printf '%s\n' "$branch"; git log --no-merges --format='%s%n%b' "$base..$rev"; } | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | sort -u | tr '\n' ' ')
 echo "Jira keys (branch name and commit messages): ${keys:-none}"
 echo
 echo "=== Commits ($(git rev-list --no-merges --count "$base..$rev"), merges of the target branch not shown)"

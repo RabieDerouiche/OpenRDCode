@@ -31,7 +31,7 @@ Steps (single repository mode):
 3. Collect the changes, running one command per call:
    - Merged merge requests: `git log --first-parent --merges --format=%h%x09%cs%x09%s <from>..<to>`
    - All commits: `git log --no-merges --format=%h%x09%an%x09%s <from>..<to>`
-   Collect every Jira key (pattern `[A-Z][A-Z0-9]+-[0-9]+`) from merge request titles, branch names in merge messages and commit messages.
+   Collect every Jira key (pattern `[A-Z][A-Z0-9_]+-[0-9]+`) from merge request titles, branch names in merge messages and commit messages.
 4. For each Jira key, read the ticket with the Jira MCP tools: type, summary, status, epic. Do not change anything in Jira.
 5. Read the most recent release note under the parent page and mirror its structure, title format and tone. If none exists, use the structure below.
 6. Write the draft:

@@ -39,7 +39,7 @@ For each ticket keep: key, type, summary, status, priority, story points if pres
 In the GitLab group or projects of AGENTS.md "Daily" if defined, otherwise in the projects whose merge requests reference keys of this Jira project:
 - My open merge requests (author = me).
 - Open merge requests where I am a reviewer and have not approved yet.
-For each: web_url, project, title, source and target branch, draft, head pipeline status, merge conflicts, unresolved discussions, approvals given / required, creation date, and the Jira key found in the title or source branch (pattern `[A-Z][A-Z0-9]+-[0-9]+`).
+For each: web_url, project, title, source and target branch, draft, head pipeline status, merge conflicts, unresolved discussions, approvals given / required, creation date, and the Jira key found in the title or source branch (pattern `[A-Z][A-Z0-9_]+-[0-9]+`).
 Match merge requests to tickets with that key.
 
 ## Step 5 - Signals (computed from the data, never guessed)
