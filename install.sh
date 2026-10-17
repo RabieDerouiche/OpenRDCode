@@ -76,6 +76,15 @@ for d in "$PACK_DIR"/skills/*/; do
   echo "Installed skill:   $name"
 done
 
+mkdir -p "$TARGET_DIR/plugins"
+for f in "$PACK_DIR"/plugins/*.js; do
+  [ -e "$f" ] || continue
+  name="$(basename "$f")"
+  backup_if_exists "plugins/$name" "$f"
+  cp "$f" "$TARGET_DIR/plugins/$name"
+  echo "Installed plugin:  $name"
+done
+
 mkdir -p "$TARGET_DIR/scripts"
 for f in "$PACK_DIR"/scripts/*.sh; do
   [ -e "$f" ] || continue
