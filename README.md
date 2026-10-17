@@ -61,6 +61,10 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 
 `dotnet-cqrs-conventions`, `fortify-remediation`, `integrations-guardrails`, `build-fix`, `explain-code`, `best-practices`, `ship-procedure` et `sync-procedure` (la logique de `/ship` et `/sync`, partagée avec `/next`), et les `pattern-*` créés par `/extract-pattern`.
 
+## Plugin (copié dans `~/.config/opencode/plugins/`)
+
+- `compact-commands.js` : quand tu lances une commande, la conversation affiche seulement `/next` (ou `/dev 2 …`) au lieu du gros bloc injecté (état de la branche, fiche, diffs). Le bloc part toujours au modèle, en partie « synthétique » que l'interface web n'affiche pas. Pour revoir le bloc, retire le fichier et redémarre. Ne mets jamais d'autre fichier `.js` ou `.ts` dans `plugins/` ou `tools/` : OpenCode les exécute tous.
+
 ## Scripts (copiés dans `~/.config/opencode/scripts/`)
 
 - `workflow-state.sh` : l'état complet de la branche en une seule passe (date et heure, branche, ticket, base, copie distante, conflits, fichiers modifiés, résumé des fiches ; contenu de la fiche avec `--sheet`, lien Jira et résumé des autres tickets avec `--tickets`, diffs avec `--diff`, remplacés par la liste des fichiers au-delà de 1500 lignes). Il ne récupère que develop et la branche courante (`--fetch-all` pour `/ticket`, qui cherche les branches existantes d'un ticket), et force les messages de git en anglais. OpenCode lance les commandes injectées en parallèle : tout regrouper ici évite des références distantes périmées et des allers-retours avec le modèle.
