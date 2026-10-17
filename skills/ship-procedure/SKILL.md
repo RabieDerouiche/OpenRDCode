@@ -8,7 +8,7 @@ compatibility: opencode
 ## Inputs
 The workflow state injected by the command (branch, ticket key and sheet content, base branch, HEAD, remote copy and upstream, uncommitted, staged and untracked files). If no command injected it, run `sh ~/.config/opencode/scripts/workflow-state.sh --sheet` once. Use `git status --porcelain` only when you need the exact working tree.
 
-Ship the current work of this branch. The Jira key is in the branch name (pattern `[A-Z][A-Z0-9]+-[0-9]+`); its ticket sheet is printed in the workflow state when it exists: do not read it again.
+Ship the current work of this branch. The Jira key is in the branch name (pattern `[A-Z][A-Z0-9_]+-[0-9]+`); its ticket sheet is printed in the workflow state when it exists: do not read it again.
 
 Base branch for the merge request: the "Base branch" line of the workflow state. If it says NONE, ask me with the question tool for the base branch (free answer).
 

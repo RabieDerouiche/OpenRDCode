@@ -23,7 +23,7 @@ GIT_READ = ["git status*", "git log*", "git diff*", "git show*", "git branch*", 
             "git ls-files*", "git ls-tree*", "git grep*", "git blame*", "git describe*", "git tag", "git tag -l*",
             "git tag --list*", "git merge-base*", "git shortlog*", "git cat-file*", "git for-each-ref*",
             "git rev-list*", "git name-rev*", "git remote", "git remote -v", "git remote show*", "git remote get-url*",
-            "git stash list*", "git reflog*", "git --no-pager *", "git -C *"]
+            "git stash list*", "git reflog*", "git --no-pager *", "git -C *", "git worktree list*"]
 DOTNET_INFO = ["dotnet --info", "dotnet --version", "dotnet --list-sdks", "dotnet --list-runtimes", "dotnet list*"]
 DOTNET_RUN = ["dotnet build*", "dotnet test*", "dotnet restore*"]
 FRONT_TEST = ["npm test*", "npm run test*", "npx jest*", "npx vitest*", "yarn test*", "pnpm test*", "npm ls*",
@@ -38,7 +38,7 @@ GIT_WRITE = ["git* push*", "git* commit*", "git* reset*", "git* checkout*", "git
              "git* add *", "git* restore*", "git* tag -d*", "git* tag -a*", "git* tag -f*", "git* branch -d*",
              "git* branch -D*", "git* branch -m*", "git* branch -M*", "git* branch -f*", "git* branch --delete*",
              "git* branch --move*", "git* config*", "git* remote add*", "git* remote set-url*", "git* remote remove*",
-             "git* remote rm*", "git* gc*", "git* update-ref*", "git* apply*", "git* am *", "git* worktree*",
+             "git* remote rm*", "git* gc*", "git* update-ref*", "git* apply*", "git* am *", "git* worktree add*", "git* worktree remove*", "git* worktree move*", "git* worktree prune*", "git* worktree lock*", "git* worktree unlock*", "git* worktree repair*",
              "git* submodule*"]
 OTHER_DENY = ["*-exec*", "*-execdir*", "*-delete*", "*-ok *", "*-fprint*", "*-fls*", "*sed*-i*", "*sed*--in-place*"]
 SECRETS = ["*zshenv*", "*zshrc*", "*bash_profile*", "*appsec-ci.env*", "*/.ssh/*", "*/.aws/*", "*.npmrc*",
@@ -105,7 +105,7 @@ def git_bash():
         "git* clean*", "git* branch -d*", "git* branch -D*", "git* branch -m*", "git* branch -M*", "git* branch -f*",
         "git* branch --delete*", "git* tag -*", "git* config*", "git* remote add*", "git* remote set-url*",
         "git* remote remove*", "git* remote rm*", "git* gc*", "git* update-ref*", "git* cherry-pick*", "git* revert*",
-        "git* stash drop*", "git* stash clear*", "git* worktree*", "git* submodule*", "git* restore *",
+        "git* stash drop*", "git* stash clear*", "git* worktree add*", "git* worktree remove*", "git* worktree move*", "git* worktree prune*", "git* worktree lock*", "git* worktree unlock*", "git* worktree repair*", "git* submodule*", "git* restore *",
         "git* checkout -- *", "git* checkout .", "git* switch*--discard-changes*", "git* switch -C*",
         "git* checkout -B*", "git* rm *", "git* mv *", "git* apply*", "git* am *", "git* filter-branch*",
         "git* reflog delete*", "git* reflog expire*"]]

@@ -78,7 +78,7 @@ elif [ "$fetch" = branch ]; then
   git fetch -q --no-tags origin "$@" 2>/dev/null || fetch_failed
 fi
 
-key=$(printf '%s' "$branch" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+key=$(printf '%s' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -1)
 sheets="$root/.git/opencode/tickets"
 remote_url=$(git remote get-url origin 2>/dev/null | sed -E 's#://[^@/]+@#://#')
 

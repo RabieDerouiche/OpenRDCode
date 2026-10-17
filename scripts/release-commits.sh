@@ -67,7 +67,7 @@ git log --no-merges --format='%h%x09%an%x09%s' $range_args
 echo
 echo "## Jira keys"
 # shellcheck disable=SC2086
-git log --format='%s%n%b' $range_args | grep -o -E '[A-Z][A-Z0-9]+-[0-9]+' | sort -u | tr '\n' ' '
+git log --format='%s%n%b' $range_args | grep -o -E '[A-Z][A-Z0-9_]+-[0-9]+' | sort -u | tr '\n' ' '
 echo
 echo
 echo "## Version changes (csproj, Directory.Packages.props, package.json)"
