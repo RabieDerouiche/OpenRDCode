@@ -3,10 +3,8 @@ description: "Start (or resume) a Jira ticket: pick it from my sprint if no key 
 agent: git
 ---
 Ticket given: "$1"
-Current branch: !`git branch --show-current`
-Working tree: !`git status --porcelain`
-Repository root: !`git rev-parse --show-toplevel`
-Existing ticket sheets: !`ls .git/opencode/tickets`
+Workflow state (one fetch, then the state of the branch and of the ticket sheet):
+!`sh ~/.config/opencode/scripts/workflow-state.sh`
 Project detection:
 !`sh ~/.config/opencode/scripts/detect-project-type.sh`
 
@@ -28,7 +26,7 @@ If `<KEY>.md` is in the list of existing ticket sheets above, ask me with the qu
 ## Step 3 - Branch
 - If the current branch name already contains the key, keep it and say "Branche déjà en place".
 - Otherwise:
-  1. If the working tree above is not empty, ask me with the question tool: "Annuler, je commite d'abord" (recommandé) / "Mettre de côté (stash) et continuer". Stash only if I choose it (`git stash push -u -m "ticket <KEY>"`).
+  1. If there are uncommitted or untracked files in the workflow state, ask me with the question tool: "Annuler, je commite d'abord" (recommandé) / "Mettre de côté (stash) et continuer". Stash only if I choose it (`git stash push -u -m "ticket <KEY>"`).
   2. Read the ticket type and summary with the Jira MCP tools.
   3. Propose the branch name: `feature/<KEY>-<summary in 3 to 5 kebab-case words, ASCII, lowercase>`; `bugfix/` for a bug; `hotfix/` if the ticket is marked urgent or as a production incident. Ask me with the question tool: "<proposed name>" (recommandé) / "Autre nom" (free answer).
   4. If a local or remote branch for this key already exists (`git branch -a --list "*<KEY>*"`), ask me with the question tool: "Basculer sur <existing branch>" (recommandé) → `git switch <existing branch without remotes/origin/>` / "Créer une nouvelle branche".
@@ -64,12 +62,16 @@ Write the file `<repository root>/.git/opencode/tickets/<KEY>.md` with the write
 
 <the analyst answer, sections unchanged>
 
+## Décisions
+(choix faits pendant le développement, ajoutés par /dev)
+
 ## Suivi
 - <date> /ticket - fiche créée
 ```
 When the analysis is redone, keep the previous "## Suivi" lines and add `- <date> /ticket - analyse refaite`. Never write any other file.
 
 ## Step 6 - Answer, in French
+- First line: "**[<KEY>](<Jira link>) - <summary>**".
 - The branch state (see your general rules).
 - The sections "Résumé", "Critères d'acceptation", "Questions ouvertes" and "Plan" of the sheet.
-- One last line: "Prochaine étape : /dev (étape 1, tu peux ajouter des directives : /dev comme dans <repo>, /dev avec un Result…), puis /test, /check et /ship. En cas de doute : /next."
+- One last line: "Prochaine étape : /dev (étape 1, tu peux ajouter des directives : /dev comme dans <repo>, /dev avec un Result…), puis /test, /check et /ship. En cas de doute : /next. Astuce : une session OpenCode par ticket ; pour reprendre plus tard, nouvelle session puis /next."

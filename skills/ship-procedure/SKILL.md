@@ -6,20 +6,11 @@ compatibility: opencode
 # Ship procedure
 
 ## Inputs
-When a command injected these values, use them. Otherwise get each one yourself, one git command per call:
-- Remote base branches: `git branch -r --list origin/develop origin/main origin/master`
-- Current branch: `git branch --show-current`
-- Working tree: `git status --porcelain`
-- HEAD: `git rev-parse --short HEAD`
-- Uncommitted changes summary: `git diff HEAD --shortstat`
-- Untracked files: `git ls-files --others --exclude-standard`
-- Staged changes summary: `git diff --staged --stat`
-- Unstaged changes summary: `git diff --stat`
-- Existing ticket sheets: `ls .git/opencode/tickets`
+The workflow state injected by the command (branch, ticket key and sheet, base branch, HEAD, remote copy and upstream, uncommitted, staged and untracked files). If no command injected it, run `sh ~/.config/opencode/scripts/workflow-state.sh` once. Use `git status --porcelain` when you need the exact working tree.
 
-Ship the current work of this branch. The Jira key is in the branch name (pattern `[A-Z][A-Z0-9]+-[0-9]+`); the ticket sheet is `.git/opencode/tickets/<KEY>.md` if it is listed above. Read it now if it exists.
+Ship the current work of this branch. The Jira key is in the branch name (pattern `[A-Z][A-Z0-9]+-[0-9]+`); the ticket sheet is `.git/opencode/tickets/<KEY>.md` if the workflow state lists it. Read it now if it exists.
 
-Base branch for the merge request: `origin/develop` if it is listed above. Otherwise, if exactly one of `origin/main` / `origin/master` is listed, use it; if none or several, ask me with the question tool (multiple choice, recommended option first) with the listed branches as options.
+Base branch for the merge request: the "Base branch" line of the workflow state. If it says NONE, ask me with the question tool for the base branch (free answer).
 
 Steps:
 1. If the current branch is `develop`, `master` or `main`, stop and ask me with the question tool: "Créer une branche avec /ticket" (recommandé) / "Annuler". Never commit there.
@@ -50,4 +41,4 @@ Steps:
      - `## Comment tester`: concrete steps (endpoint + payload, or test names).
      Only describe what is in the diff. Never invent ticket numbers, features or tests.
 10. If the sheet exists, append to its "## Suivi": `- <date> /ship - <short hash> poussé - MR <link or "à créer">` (date with `date "+%Y-%m-%d %H:%M"`).
-11. Start the final answer with the header line "**Ticket <KEY> - <title>**" (title from the first line of the ticket sheet, or the branch name). End with the branch state, then: "La CI tourne (build, tests, Sonar, Fortify). Lance /scans quand le pipeline est terminé."
+11. Start the final answer with the header line "**[<KEY>](<Jira link>) - <title>**" (title from the "Ticket title line" of the workflow state, link from its "Ticket Jira line"; the branch name if there is no sheet). End with the branch state, then: "La CI tourne (build, tests, Sonar, Fortify). Lance /scans quand le pipeline est terminé."

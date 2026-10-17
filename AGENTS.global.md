@@ -33,7 +33,7 @@
 - Merge requests target `develop`. Production is deployed from `master` as is; there are no release tags.
 
 ## Workflow
-- My day: /daily → /ticket <KEY> → /dev (one plan step at a time, with its tests; or I code myself) → /test → /check → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. /sync brings develop or my Mac pushes into the branch. /next tells me where I am. /agents-md keeps the repository AGENTS.md up to date.
+- My day: /daily → /ticket <KEY> → /dev (one plan step at a time, with its tests; or I code myself) → /test → /check → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. /sync brings develop or my Mac pushes into the branch. /next tells me where I am and resumes a ticket. /agents-md keeps the repository AGENTS.md up to date. One OpenCode session per ticket: to resume, new session then /next.
 - Sonar and Fortify run in the CI on every pushed commit: their results exist only after /ship, never before.
 - You may run on a remote machine while I sometimes code in Rider on my Mac: then we do NOT share the same files. My Mac changes reach you only through git (I push from Rider, then /sync), and your changes reach my Mac only after /ship or /sync pushed them (then I pull in Rider). The ticket sheet exists only on your side.
 - Ticket sheet: on a branch whose name contains a Jira key (pattern `[A-Z][A-Z0-9]+-[0-9]+`), the file `.git/opencode/tickets/<KEY>.md` holds the analysis of the ticket: acceptance criteria, expected tests, plan, and a "## Suivi" log. Read it before working on the ticket. When you finish a step of its "Plan", tick it (`- [x]`) with the edit tool. Never commit it (it lives inside `.git`).
@@ -52,6 +52,7 @@
   5. At the end, if no skill existed, suggest `/extract-pattern <name> <source repo path>` so the approach is reusable next time.
 - "j'ai poussé depuis mon Mac", "j'ai commité dans Rider" → tell me to run `/sync` first (it retrieves the branch's remote changes), then continue.
 - "j'ai fait l'étape N à la main", "j'ai modifié X dans Rider" → if the branch is behind its remote copy, tell me to run `/sync` first; then re-read the files from disk (never trust an older version you read earlier), read `git diff` for them, check the change against the step and the acceptance criteria of the ticket sheet, report what is missing or wrong in a few lines, tick the step if it is complete. Do not rewrite my code unless I ask.
+- "où j'en suis", "on en est où", "et maintenant" → tell me to run `/next`.
 - "y a-t-il une meilleure approche", "bonnes pratiques", "il manque quoi" → load the skill `best-practices`; for the whole repository, tell me to run `/audit`.
 - "écris les tests", "teste ce fichier", "fais les tests comme dans <repo>" → tell me to run `/test`, `/test <file>` or `/test comme <repo or pattern>`.
 - "review", "vérifie avant de pousser" → tell me to run `/check`.
@@ -60,14 +61,14 @@
 
 ## Daily
 - Default scope of /daily: Jira project or board `[KEY or board name]`, GitLab group or projects `[group/path]`. Replace the placeholders, or delete this section to be asked each time.
-- Jira URL (for links in /daily): `[https://jira.mycompany.com]`. Optional: without it, the URL returned by the Jira tools is used.
+- Jira URL (for the ticket links of /daily, /ticket and the other commands): `[https://jira.mycompany.com]`. Optional: without it, the URL returned by the Jira tools is used.
 
 ## Release groups
 - Used by `/release-notes <group name>` to write one release note for several repositories deployed together. One block per group:
 - `[GROUP]`: Confluence space `[SPACEKEY]`, release notes parent page `[page title]`, application name `[name]`, repositories:
-  - `[Back]`: `/Users/[me]/dev/[back-repo]`
-  - `[Front]`: `/Users/[me]/dev/[front-repo]`
-  - `[Lib Infra]`: `/Users/[me]/dev/[lib-repo]`
+  - `[Back]`: `[absolute path on the machine where OpenCode runs]/[back-repo]`
+  - `[Front]`: `[absolute path on the machine where OpenCode runs]/[front-repo]`
+  - `[Lib Infra]`: `[absolute path on the machine where OpenCode runs]/[lib-repo]`
 
 ## NuGet / Artifactory
 - NuGet restore authenticates to Artifactory through the env vars `artifactory_user` and `artifactory_password`, already exported in the environment.
