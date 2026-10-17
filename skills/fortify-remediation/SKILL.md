@@ -1,6 +1,6 @@
 ---
 name: fortify-remediation
-description: Remediation patterns for common Fortify SAST categories in C#/.NET (modern and legacy) and front-end TypeScript/JavaScript (log forging, path manipulation, privacy violation, header manipulation, open redirect, injection, weak crypto, insecure randomness, SSL validation, hardcoded secrets, unreleased resources) and how to judge false positives. Load before triaging or fixing a Fortify issue.
+description: Remediation patterns for common Fortify SAST categories in C#/.NET (modern, Blazor and legacy) and front-end TypeScript/JavaScript (log forging, path manipulation, SSRF, privacy violation, header manipulation, security headers, open redirect, injection, XSS, weak crypto, insecure randomness, SSL validation, hardcoded secrets, required value types, unreleased resources) and how to judge false positives. Load before triaging or fixing a Fortify issue.
 compatibility: opencode
 ---
 # Fortify remediation patterns for .NET
@@ -10,7 +10,7 @@ compatibility: opencode
 - Smallest change that removes the vulnerability. No refactoring.
 - Never "fix" by suppressing: no pragma, no attribute, no rewriting the code just to hide it from the scanner.
 - Add a test with a malicious input proving the fix.
-- False positive = the value provably never comes from an untrusted source, or is already validated/encoded before the sink. Then the code stays as is and the developer marks it "Not an Issue" in SSC with a one-sentence justification.
+- False positive = the value provably never comes from an untrusted source, or is already validated/encoded before the sink. Then the code stays as is and the developer marks it "Not an Issue" in SSC with a one-sentence justification. Typical case: Heap Inspection on constant strings such as OAuth grant type names (`client_credentials`): no secret is held in memory.
 
 ## Log Forging
 Cause: untrusted data written to logs can inject fake lines (CR/LF).
@@ -27,6 +27,10 @@ Cause: untrusted data written to logs can inject fake lines (CR/LF).
 - Keep only the file name: `Path.GetFileName(input)`.
 - If a sub-path is allowed: `var full = Path.GetFullPath(Path.Combine(baseDir, input));` then check `full.StartsWith(Path.GetFullPath(baseDir) + Path.DirectorySeparatorChar, StringComparison.Ordinal)`; otherwise reject.
 - Same logic for SharePoint server-relative URLs and S3 keys built from input: whitelist characters, reject `..`.
+- Route parameters (Blazor `[Parameter]`, MVC, minimal APIs): Fortify does not credit route constraints such as `{id:guid}` on a `string` parameter. Type the parameter (`Guid`, `int`) so that the value cannot carry a path.
+
+## Server-Side Request Forgery (SSRF)
+- Input that ends up in the URL of an outbound call (`HttpClient.GetAsync`, an SDK endpoint): build the URL from a base address in configuration plus validated segments (`Uri.EscapeDataString`, typed ids). Never take a scheme, a host or an absolute URL from input; when the host can vary, check it against an allowlist from configuration.
 
 ## Header Manipulation / Cookie Security
 - Reject or strip CR/LF in any value written to a header.
@@ -41,6 +45,13 @@ Cause: untrusted data written to logs can inject fake lines (CR/LF).
 
 ## Cross-Site Scripting (API returning HTML or reflected values)
 - Return JSON with the proper content type. If HTML is produced, encode with `HtmlEncoder.Default.Encode`.
+- Blazor: `MarkupString` renders raw HTML. Never use it on content from users, templates or external systems without the sanitizer the repository already uses; otherwise render it as text.
+
+## Missing security headers (X-Content-Type-Options, X-Frame-Options, Content-Security-Policy...)
+- On Kestrel (containers, Kubernetes) a `web.config` entry does nothing: add the headers in a middleware early in the pipeline, or with the framework's helper when there is one (ABP: `UseAbpSecurityHeaders()`). Check them on a running instance with `curl -I`, not only in the next scan.
+
+## Model validation: `[Required]` on a non-nullable value type
+- A missing `int`, `Guid`, `bool`, `DateTime` or enum binds to its default value and passes `[Required]`. Make the property nullable (`Guid?`), keep `[Required]` (or the validator rule), and read `.Value` after validation.
 
 ## Weak Cryptographic Hash / Weak Encryption
 - Replace MD5/SHA1 used for security with SHA-256 (`SHA256.HashData`). If the hash is only a non-security checksum, it is a candidate false positive: justify it.

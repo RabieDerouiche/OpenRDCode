@@ -15,6 +15,7 @@ compatibility: opencode
 - Fix only what is needed to compile. No refactoring, no renaming, no behavior change.
 - Legacy .NET Framework projects may not build on this machine (.NET Framework needs Windows): if the build fails because the target framework is not supported, say so and stop. Do not change target frameworks or project files to make it build.
 - Restore errors (NU1101, NU1301, 401, 403, npm E401/E403): do not touch any file. Tell the user that credentials or registry access are the cause (Artifactory).
+- An in-house package behaves like an older build although its version did not change (the package was republished in Artifactory with the same version): the NuGet cache keeps the first copy of each version. Ask me before deleting `~/.nuget/packages/<package id in lowercase>/<version>/`, then run `dotnet restore --force --no-cache`. The real fix is a new version number: say so.
 - Missing MediatR reference: never add MediatR back. List the files that still reference MediatR and stop.
 - After fixing, build again. Repeat at most 3 times, then report what remains.
 

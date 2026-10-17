@@ -17,7 +17,7 @@ Rules:
 Steps:
 1. Determine the scope:
    - If a third argument is given ("$3"), use it: `back` or `front`.
-   - Otherwise use the source repository detection above: `frontend` → `front`; any .NET type → `back`. If the repository is mixed (back and front), look where the "$1" implementation lives; if it exists on both sides, ask me with the question tool (multiple choice, recommended option first): "back" / "front".
+   - Otherwise use the source repository detection above: `frontend` or `blazor` (Razor components) → `front`; any other .NET type → `back`. If the repository is mixed (back and front, or a Blazor app with its own services), look where the "$1" implementation lives; if it exists on both sides, ask me with the question tool (multiple choice, recommended option first): "back" / "front".
 2. The skill name is `pattern-$1-<scope>` in lowercase with hyphens only (letters, digits, single hyphens); if "$1" does not fit, ask me with the question tool (multiple choice, recommended option first) with 2 valid name proposals. The file is `~/.config/opencode/skills/pattern-$1-<scope>/SKILL.md`.
 3. Locate the implementation of "$1" in `$2` with the grep, glob and read tools: registration / startup code, classes, configuration, endpoints, middleware, components, services, and the related tests. Read `git -C $2 log --oneline -20 -- <files>` for the history of these files. Send the searches together in one turn, with the read of the existing skill file of step 4 (it may not exist).
 4. If the skill file does NOT exist: create it with the structure below.
@@ -56,7 +56,7 @@ Skill structure:
    ## Tests
    The test approach and generalized test code.
    ## Adapting to other project types
-   Back-end: cqrs-api, api, dotnet-app, legacy (.NET Framework). Front-end: Angular, React, Vue as relevant. "Not applicable" where it does not make sense.
+   Back-end: cqrs-api, api, dotnet-app, legacy (.NET Framework). Front-end: Angular, React, Vue, Blazor as relevant. "Not applicable" where it does not make sense.
    ## Pitfalls
 
 5. Final answer in French: the skill path, "créé" or "enrichi", a 5-line summary, what changed compared to the previous version of the skill (if enriched), and what you deliberately left out as project-specific.

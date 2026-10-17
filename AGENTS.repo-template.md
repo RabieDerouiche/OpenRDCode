@@ -1,9 +1,10 @@
 # AGENTS.md (template for one repository — the simplest is to run /agents-md, which fills it from the code; otherwise copy it to the repo root, fill the [...] parts and delete the sections that do not apply)
 
 ## Project type (optional: auto-detected, fill only if the detection is wrong)
-- `[cqrs-api | api | dotnet-app | legacy | library | frontend]`
+- `[cqrs-api | api | blazor | dotnet-app | legacy | library | frontend]`
   - cqrs-api: .NET API with Clean Architecture + CQRS and the in-house mediator
-  - api: .NET API without CQRS (controllers / services)
+  - api: .NET API without CQRS (controllers / services, or ABP application services)
+  - blazor: Blazor application or Razor component library (`.razor` components)
   - dotnet-app: .NET console or worker application
   - legacy: .NET Framework web project (WebForms, MVC 5, WCF)
   - library: shared .NET package published to Artifactory

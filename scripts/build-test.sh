@@ -7,7 +7,9 @@
 #   build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~InvoiceServiceTests
 #                                                         only some tests (the test project and what it references)
 # Output: the build errors (each once) and the build summary, then the end of the test output (failures and totals),
-# preceded by the summary line of the test assemblies that scrolled out of it.
+# preceded by the summary line of the test assemblies that scrolled out of it. After a run of the whole solution
+# (no target, or a .sln/.slnx, and no test option), a last line gives the code fingerprint that was built and tested
+# (state-fingerprint.sh): /check does not run the build and tests again while the code keeps this fingerprint.
 
 # English output whatever the machine's language, so that the summaries below are found
 DOTNET_CLI_UI_LANGUAGE=en
@@ -18,6 +20,17 @@ case "$1" in
   ""|-*) ;;
   *) target=$1; shift ;;
 esac
+
+# Whole solution: no test option, and no target or a solution file
+whole=0
+if [ $# -eq 0 ]; then
+  case "$target" in
+    ""|*.sln|*.slnx) whole=1 ;;
+  esac
+fi
+# Fingerprint of the code before the build: the code that is built and tested
+fingerprint=""
+[ "$whole" -eq 1 ] && fingerprint=$(sh "$(dirname "$0")/state-fingerprint.sh" 2>/dev/null)
 
 out=$(mktemp "${TMPDIR:-/tmp}/build-test.XXXXXX") || exit 1
 trap 'rm -f "$out"' EXIT
@@ -51,5 +64,8 @@ elif ! grep -q '[^[:space:]]' "$out" || grep -q -E 'No test matches|No test is a
   echo "TESTS: NONE RUN (no test project for this target, or no test matches the filter)"
 else
   echo "TESTS: OK"
+fi
+if [ -n "$fingerprint" ]; then
+  echo "Code fingerprint of this run: $fingerprint (whole solution)"
 fi
 exit "$status"

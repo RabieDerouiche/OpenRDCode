@@ -19,8 +19,12 @@ compatibility: opencode
 - Large files: use the chunked upload (StartUpload / ContinueUpload / FinishUpload). Keep the upload id and offsets consistent; a failure in the middle must cancel or clean up the upload session.
 - Resolving files or folders by URL can be non-recursive: a lookup that works for files at the root can fail for files in subfolders. Check how the path is resolved before blaming the upload logic.
 - Server-relative URLs: build them from validated segments, encode special characters, reject `..`.
-- Shared NuGet packages wrapping CSOM may contain the bug: confirm whether the faulty code is in the repository or in the package before patching.
+- Shared NuGet packages wrapping CSOM may contain the bug: confirm whether the faulty code is in the repository or in the package before patching. After a version change of such a package, compare its query building (CAML, `Load` / `Include`) between the two versions first.
 - Throttling (HTTP 429/503): respect `Retry-After`, exponential backoff, never tight retry loops.
+- Uploads do not create missing folders: create the folder tree explicitly before a batch upload.
+- Lists above 5,000 items (list view threshold): queries must filter on indexed columns and page (`RowLimit` + `ListItemCollectionPosition`); a list that crosses the threshold makes old queries slow or failing without any code change.
+- Managed metadata (taxonomy) fields: write a `TaxonomyFieldValue` with `TermGuid`, `Label` and `WssId = -1`.
+- Certificate (app-only) authentication that works locally but fails once deployed (`invalid_client`, wrong identity): compare the client id, tenant id and certificate thumbprint of each environment's configuration and the App Registration the certificate is uploaded to; it is configuration or an Entra admin action, not code.
 
 ## DocuSign
 - Validate PDFs before sending (magic number `%PDF`, size, not encrypted unless expected, page count if relevant). DocuSign rejects some valid-looking PDFs.
@@ -36,6 +40,8 @@ compatibility: opencode
 - Presigned URLs: shortest reasonable expiry, correct HTTP method, never logged in full.
 - Credentials come from the environment/role chain, never from code or committed config.
 - Handle `NoSuchKey` explicitly (404 in API), not as a generic 500.
+- AWS SDK for .NET v4: collections of responses are `null` when empty (`response.S3Objects ?? []`) and value types are nullable (`response.IsTruncated == true`). Shared packages written for v3 can crash on an empty prefix.
+- `ListObjectsV2` with `Delimiter = "/"` returns only the first level: objects in sub-prefixes are in `CommonPrefixes`. An empty `S3Objects` without exception means the request worked and matched nothing (prefix, case, bucket, objects already moved), never a credentials problem (that is a 403).
 
 ## Piano Analytics
 - Tracking is subject to CNIL/GDPR consent rules: no tracking call for users without valid consent unless the event is in the exempted category approved by the organization.

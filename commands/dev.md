@@ -1,5 +1,5 @@
 ---
-description: "Implement the next step of the ticket sheet (or step N) following my directives, write the unit tests of that step, build and run them, tick the step, then offer the next one. Asks multiple-choice questions whenever the approach is unclear. Usage: /dev [N] [directives, e.g. « comme dans ~/dev/dna-api », « avec un Result », « sans nouvelle lib », « tests avec fixtures xUnit »]"
+description: "Implement the next step of the ticket sheet (or step N) following my directives, write the unit tests of that step, build and run them, tick the step, then offer the next one. Asks multiple-choice questions whenever the approach is unclear. Usage: /dev [N] [directives, e.g. « comme dans ~/dev/autre-api », « avec un Result », « sans nouvelle lib », « tests avec fixtures xUnit »]"
 agent: dev
 ---
 Arguments: "$ARGUMENTS"
@@ -43,6 +43,7 @@ Before writing code, list for yourself the decisions this step needs. For each o
 Never ask what you can find in the code, the sheet or AGENTS.md. Then show the step's mini-plan in 3 to 6 lines (files to create or modify) and go on without waiting.
 
 ## Step 5 - Implement
+A step written "(test d'abord)" fixes a bug: before changing the code, invoke the `test-writer` subagent with the prompt of step 7 ("Files changed in this step: none yet, the code to test is <files of the bug>"), adding: "This test must reproduce the bug, so it must FAIL on the current code: run it, report its failure message, do not make it pass and do not mark it as a suspected bug. In "Tests attendus", give its row the status `⏳ <TestName> (rouge avant correction)`." If it passes, it does not reproduce the bug: say so and ask me with the question tool "Ajuster le test" (recommandé) / "Corriger sans test rouge". Then fix the code.
 Only this step. Smallest change that does it, mirroring the existing code and the reference examples. Code comments and log messages in English. No unrelated refactoring, renaming or reformatting.
 
 ## Step 6 - Build
@@ -52,10 +53,12 @@ Run the build command (AGENTS.md "Build & test", otherwise the detection above),
 Unless the step has no testable behavior (pure configuration, documentation) or my directives say otherwise, invoke the `test-writer` subagent with the task tool and this prompt (fill the placeholders):
 "Write the unit tests for step <N> of ticket <KEY>: <step text>. Files changed in this step: <list>. Acceptance criteria concerned: <list>. Test project and closest existing test file, if known: <paths>. Directives about tests: <my directives about tests, or none>. Decisions already made (do not ask again): <the sheet's Décisions about tests>. Follow your rules (reference approach, existing style, questions before any new library or mechanism). Update the rows of these tests in the "Tests attendus" table of `.git/opencode/tickets/<KEY>.md`. Run only the tests of this step, in one call that rebuilds the test project quietly first: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestClass>`, and report. The full suite runs later in /test and /check."
 If a test it wrote fails because of a real bug in the code of this step, fix the production code (at most 2 rounds) and run the tests again.
+For a step written "(test d'abord)", the reproducing test was written in step 5: do not invoke `test-writer` again, run that test class with the command above; it must now pass.
 
 ## Step 8 - Ticket sheet
 With the edit tool, in `.git/opencode/tickets/<KEY>.md`, in one turn (exact lines from the sheet printed above, updated with your own changes of this run):
 - tick the step (`- [x]`);
+- for a step written "(test d'abord)" whose test now passes: replace `⏳ <TestName> (rouge avant correction)` with `✅ <TestName>`;
 - add each answer I gave in step 1 or 4 to a "## Décisions" section (create it before "## Suivi" if missing): `- <topic> : <choice> (étape <N>)`;
 - append to "## Suivi": `- <date> /dev étape <N> - <files changed count> fichiers - build <ok|ko> - tests <passed>/<total>` (date: the "Now" line of the workflow state for the first step of this run, otherwise the one fetched in step 6).
 

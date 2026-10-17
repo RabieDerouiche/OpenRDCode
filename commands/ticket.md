@@ -64,7 +64,7 @@ File paths and why.
 ## Tests attendus
 Table | # | Critère | Test (class and scenario) | Statut |, one row per test, every criterion covered at least once, Statut = "à écrire".
 ## Plan
-Ordered checklist `- [ ] 1. ...`, each step leaving the project building. Mention /cqrs only if the project type is cqrs-api and a step creates a command or query. If an available skill whose name starts with `pattern-` matches a step (e.g. health checks, unit tests), name it in that step: "(s'appuyer sur le skill pattern-<name>)".
+Ordered checklist `- [ ] 1. ...`, each step leaving the project building. Mention /cqrs only if the project type is cqrs-api and a step creates a command or query. If an available skill whose name starts with `pattern-` matches a step (e.g. health checks, unit tests), name it in that step: "(s'appuyer sur le skill pattern-<name>)". For a Bug that a unit test can reproduce, the fix step ends with "(test d'abord)": /dev then writes the test that reproduces the bug and checks that it fails before fixing it. If no unit test can reproduce it (configuration, environment, external system), write in "Zones de code concernées" how to reproduce it (request and payload, logs to search).
 ## Sources
 The Jira key and the Confluence page titles used.
 
