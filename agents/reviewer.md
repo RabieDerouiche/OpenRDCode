@@ -38,7 +38,7 @@ Additional checks by project type:
 - frontend: no `innerHTML` / `dangerouslySetInnerHTML` / bypassing the framework sanitizer with untrusted data, no tokens in localStorage unless the existing code already does it, unsubscribed observables / effects without cleanup, accessibility of new UI elements, no hard-coded API URLs.
 
 Output format:
-1. First line: "Project type: <type>".
+1. First line (after the ticket header line when a command asks for one): "Project type: <type>".
 2. A one-line verdict: "BLOCKING ISSUES", "CHANGES REQUESTED" or "OK".
 3. A list of findings. Each finding:
    - severity: blocking | major | minor
