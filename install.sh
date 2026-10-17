@@ -38,7 +38,8 @@ commands/explain.md
 commands/debug.md
 commands/plan-feature.md
 commands/build-fix.md
-commands/release-notes-group.md"
+commands/release-notes-group.md
+commands/agents-from-confluence.md"
 for rel in $OBSOLETE; do
   if [ -e "$TARGET_DIR/$rel" ]; then
     backup_if_exists "$rel"

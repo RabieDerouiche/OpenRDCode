@@ -1,4 +1,4 @@
-# AGENTS.md (template for one repository — copy to the repo root, fill the [...] parts and delete the sections that do not apply)
+# AGENTS.md (template for one repository — the simplest is to run /agents-md, which fills it from the code; otherwise copy it to the repo root, fill the [...] parts and delete the sections that do not apply)
 
 ## Project type (optional: auto-detected, fill only if the detection is wrong)
 - `[cqrs-api | api | dotnet-app | legacy | library | frontend]`
@@ -20,6 +20,14 @@
 - `src/[Project].Infrastructure` — SharePoint/CSOM, DocuSign, S3, persistence
 - `tests/[...]` — unit tests
 
+## Architecture & conventions
+- Endpoints: `[controllers | minimal APIs | endpoint classes]` in `[folder]`
+- Error handling: `[Result<T> in namespace X | exceptions + middleware]`, mapped to HTTP responses in `[file]`
+- Validation: `[FluentValidation in Application | data annotations]`
+- Configuration: options classes in `[folder]`, files `appsettings.json`, `appsettings.[Env].json`; secrets from `[environment variables | secret store]`
+- Feature flags: `[mechanism | none]`
+- Integrations: `[S3 via IStorageService (in-house package X), SharePoint via ...]`
+
 ## Build & test (optional: auto-detected, fill only if the detection is wrong)
 - Build: `[dotnet build | npm run build | not buildable on macOS (.NET Framework)]`
 - Test: `[dotnet test | npm test | none]`
@@ -33,6 +41,7 @@
 - Framework: [xUnit / NUnit / MSTest]
 - Assertions: [FluentAssertions / Shouldly / built-in]
 - Mocks: [NSubstitute / Moq / FakeItEasy]
+- Fixtures and builders: [IClassFixture / ICollectionFixture / base class / builders in `[folder]`]
 
 ## Reference examples (read these before generating similar code)
 - Command: `[path/to/Command.cs]`

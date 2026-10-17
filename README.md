@@ -20,7 +20,7 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 |---|---|---|
 | Matin | `/daily [DNA]` | Ton sprint d'abord, tes MR et les reviews qui t'attendent, avec des liens, des signaux et un plan du jour. Termine par « Sur quoi tu bosses ? ». |
 | Début de ticket | `/ticket [DNA-123]` | Choix du ticket (dans ton sprint si tu ne donnes pas de clé), branche depuis develop, analyse du ticket, de Confluence et du code, puis **fiche ticket** enregistrée. |
-| Dev | tu parles à l'agent `build` | « implémente l'étape 1 de la fiche », « pourquoi ça plante », « explique ce flux », « corrige le build »… |
+| Dev | `/dev [N] [directives]` | Implémente l'étape suivante du plan (ou l'étape N) selon tes directives (« comme dans ~/dev/x », « avec un Result », « sans nouvelle lib »), pose un QCM dès qu'un choix d'approche n'est pas tranché, compile, écrit et lance les tests de l'étape, coche l'étape, note tes choix dans la fiche, puis propose l'étape suivante. Tu peux aussi parler librement à `build` (« pourquoi ça plante », « explique ce flux », « corrige le build ») ou coder dans Rider. |
 | Tests | `/test [fichier]` | Critères d'acceptation et code modifié → tests manquants écrits dans le style du projet et lancés jusqu'au vert. La fiche est mise à jour. |
 | Avant de pousser | `/check` | Review, build, tests, critères d'acceptation, pré-scan sécurité, et au plus 3 suggestions de bonnes pratiques non bloquantes. En local et en lecture seule. |
 | Livrer | `/ship` | Commit, récupération des changements distants, push (avec ta validation), lien et description de la MR. |
@@ -39,7 +39,7 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 | `/release-notes` | Release note d'une MEP depuis master. Avec un nom de groupe (`/release-notes DNA`), une seule note pour plusieurs repos, regroupée par ticket. |
 | `/cqrs command CreateInvoice Invoices` | Command ou query, handler, validator et tests (projets CQRS uniquement). |
 | `/extract-pattern <nom> <repo>` · `/apply-pattern <nom>` | Réutilise une bonne implémentation d'un repo dans un autre. |
-| `/agents-from-confluence <page>` | Complète le `AGENTS.md` du repo à partir de Confluence. |
+| `/agents-md [page Confluence]` | Crée ou met à jour le `AGENTS.md` du repo à partir du code (structure, build et test, conventions, gestion des erreurs, handlers, tests, exemples de référence, packages internes) et de Confluence si tu donnes une page. Une fois par repo, puis après un gros changement d'architecture ou d'organisation. |
 
 ## Agents
 

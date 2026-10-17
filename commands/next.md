@@ -17,7 +17,7 @@ Tell me where I am in my workflow and the ONE next step. Read-only. Be fast: no 
 
 Read the ticket sheet `.git/opencode/tickets/<KEY>.md` if the Jira key of the branch name (pattern `[A-Z][A-Z0-9]+-[0-9]+`) has one in the list above: its "Plan" checklist and its "## Suivi" lines (/test, /check, /ship) are the history of the work. If the branch was pushed, read with the GitLab MCP tools the latest pipeline of the branch (status, commit SHA) and its open merge request (unresolved discussions, approvals, conflicts).
 
-The workflow is: /daily → /ticket → code with the build agent → /test → /check → /ship → /scans → fixes (/fortify-fix, /sonar-fix) → back to /check. /sync brings develop into the branch.
+The workflow is: /daily → /ticket → /dev (one plan step at a time, with its tests) → /test → /check → /ship → /scans → fixes (/fortify-fix, /sonar-fix) → back to /check. /sync brings develop or my Mac pushes into the branch.
 
 Decide with the FIRST matching rule:
 1. On `develop`, `master` or `main`: "/daily, puis /ticket <KEY>". If there are uncommitted changes, warn that they must not be committed on this branch.
@@ -25,13 +25,14 @@ Decide with the FIRST matching rule:
 3. The branch is "behind" its remote copy (commits pushed from another computer, e.g. Rider on my Mac): "/sync (récupère ce que tu as poussé depuis l'autre poste)".
 4. The branch has a Jira key but no ticket sheet: "/ticket <KEY>" (it keeps the branch and creates the sheet).
 5. Uncommitted changes exist:
+   - plan steps still unchecked: "/dev (étape <n> : <text>)", or "dis à l'agent build « j'ai fait l'étape <n> à la main »" if the changes look like that step;
    - no `/test` line in "Suivi" after the last code change, or rows of "Tests attendus" still "à écrire" or "❌": "/test";
    - no `/check` line with the current HEAD and the current uncommitted changes summary, or its verdict is BLOCKING: "/check";
    - otherwise: "/ship".
 6. No uncommitted changes but local commits not pushed ("ahead" in the branch status): "/ship".
 7. Pushed: pipeline of the pushed commit running → "Attends la fin du pipeline (<link>), puis /scans"; failed → "/scans (il te dira quel job a échoué)"; success and no `/scans` asked since the last /ship → "/scans".
 8. Merge request with unresolved discussions: "Réponds aux discussions de la MR <link>". Approved, pipeline green, no discussion left: "MR prête à merger <link>".
-9. Plan steps still unchecked: "Continue l'étape <n> : <text> (avec l'agent build)".
+9. Plan steps still unchecked: "/dev (étape <n> : <text>)".
 10. Otherwise: "Rien en attente sur cette branche : /daily pour la suite".
 In addition, if develop has 10 commits or more that are not in the branch, add: "develop a avancé de <n> commits : /sync quand tu peux".
 

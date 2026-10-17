@@ -72,4 +72,4 @@ When the analysis is redone, keep the previous "## Suivi" lines and add `- <date
 ## Step 6 - Answer, in French
 - The branch state (see your general rules).
 - The sections "Résumé", "Critères d'acceptation", "Questions ouvertes" and "Plan" of the sheet.
-- One last line: "Prochaine étape : demande à l'agent build « implémente l'étape 1 de la fiche <KEY> », puis /test, /check et /ship. En cas de doute : /next."
+- One last line: "Prochaine étape : /dev (étape 1, tu peux ajouter des directives : /dev comme dans <repo>, /dev avec un Result…), puis /test, /check et /ship. En cas de doute : /next."
