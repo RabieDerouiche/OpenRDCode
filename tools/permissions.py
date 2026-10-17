@@ -46,6 +46,8 @@ MCP_WRITE_DENY = [(p, "deny") for p in ["*create*", "*update*", "*delete*", "*re
 # release-writer: may create or update ONE Confluence page, each write asks first
 MCP_RELEASE = [("*create*", "ask"), ("*update*", "ask"), ("*upload*", "ask")] + \
               [r for r in MCP_WRITE_DENY if r[0] not in ("*create*", "*update*", "*upload*")]
+# ...but never in Jira
+MCP_RELEASE += [(p, "deny") for p in ["*jira*create*", "*jira*update*", "*Jira*create*", "*Jira*update*", "*JIRA*create*", "*JIRA*update*"]]
 
 TEST_PATHS = ["**/*Tests/**", "**/*.Tests/**", "**/*Test/**", "tests/**", "test/**", "**/__tests__/**",
               "**/*.spec.ts", "**/*.test.ts", "**/*.spec.tsx", "**/*.test.tsx", "**/*.spec.js", "**/*.test.js"]
@@ -53,6 +55,22 @@ TEST_PATHS = ["**/*Tests/**", "**/*.Tests/**", "**/*Test/**", "tests/**", "test/
 
 # The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS).
 SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
+
+
+# MCP servers, matched by tool name (OpenCode names MCP tools "<server>_<tool>"). Hiding a server from an agent
+# removes its tool descriptions from every request of that agent: faster and less confusing for the model.
+MCP_SERVERS = {
+    "jira": ["*jira*", "*Jira*", "*JIRA*"],
+    "confluence": ["*confluence*", "*Confluence*"],
+    "gitlab": ["*gitlab*", "*GitLab*", "*Gitlab*"],
+    "sonar": ["*sonar*", "*Sonar*"],
+    "fortify": ["*fortify*", "*Fortify*"],
+    "kibana": ["*kibana*", "*Kibana*", "*elastic*", "*Elastic*"],
+}
+
+
+def mcp_only(keep):
+    return [(p, "deny") for server, patterns in MCP_SERVERS.items() if server not in keep for p in patterns]
 
 
 def read_only_bash(extra_allows, after_secrets=()):
@@ -101,12 +119,12 @@ BASE = [("webfetch", "deny"), ("websearch", "deny"), ("question", "allow")]
 
 AGENTS = {
     "analyst": [("edit", "deny")] + BASE + [("bash", read_only_bash([DETECT], [SSC_NAME]))] + MCP_WRITE_DENY,
-    "architect": [("edit", "deny")] + BASE + [("bash", read_only_bash(DOTNET_INFO + [DETECT]))],
-    "debugger": [("edit", "deny")] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT]))],
-    "reviewer": [("edit", only([TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT]))] + MCP_WRITE_DENY,
-    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT]))] + MCP_WRITE_DENY,
-    "release-writer": [("edit", "deny")] + BASE + [("bash", read_only_bash([RELEASE]))] + MCP_RELEASE,
-    "git": [("edit", only([TICKET_SHEETS]))] + BASE + [("task", only(["reviewer", "analyst"])), ("bash", git_bash())] + MCP_WRITE_DENY,
+    "architect": [("edit", "deny")] + BASE + [("bash", read_only_bash(DOTNET_INFO + [DETECT]))] + mcp_only([]),
+    "debugger": [("edit", "deny")] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT]))] + MCP_WRITE_DENY + mcp_only(["kibana"]),
+    "reviewer": [("edit", only([TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    "release-writer": [("edit", "deny")] + BASE + [("bash", read_only_bash([RELEASE]))] + MCP_RELEASE + mcp_only(["jira", "confluence"]),
+    "git": [("edit", only([TICKET_SHEETS]))] + BASE + [("task", only(["reviewer", "analyst"])), ("bash", git_bash())] + MCP_WRITE_DENY + mcp_only(["jira", "gitlab"]),
 }
 
 
