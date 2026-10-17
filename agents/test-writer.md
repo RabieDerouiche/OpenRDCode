@@ -28,6 +28,6 @@ Rules:
 - Legacy .NET Framework projects may not build on macOS: if the test command fails because the framework is not supported, say so and stop instead of changing project files.
 
 When done:
-1. Run the build and test commands from AGENTS.md (default .NET: `dotnet build` then `dotnet test`; default front-end: `npm test`).
+1. Run the build and test commands from AGENTS.md (default .NET: `dotnet build -nologo -v q 2>&1 | tail -60` then `dotnet test --no-build -nologo -v q 2>&1 | tail -60`; default front-end: `npm test`). To rerun only the tests you wrote after editing them, run `dotnet test <test project> -nologo -v q --filter FullyQualifiedName~<TestClass> 2>&1 | tail -60` (without `--no-build`: the test project must be rebuilt).
 2. If tests you wrote fail, fix the tests only. If a failure reveals a real bug in production code, keep the failing test, mark it with a clear English comment, and report the bug.
 3. Report: tests added (name + one line each), test command result, suspected bugs.

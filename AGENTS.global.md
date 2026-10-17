@@ -14,6 +14,11 @@
 - Never claim success without running the build and test commands of the repository when code was changed.
 - Never invent file paths, types, methods, package names, application names or filter names. Look them up, or ask.
 
+## Speed
+- Keep tool output small: quiet build and test options (`dotnet build -nologo -v q`, `dotnet test --no-build -nologo -v q`), long outputs piped through `tail -60`, `git diff --stat` before a full diff, `--filter` to run only the tests you are working on (never `--no-build` right after editing code or tests).
+- Read only the files and sections a step needs; do not re-read a file you already read unless it may have changed (for example after I edited it in Rider).
+- Several independent reads or searches: request them in the same turn.
+
 ## Project types
 - I work on several kinds of repositories: .NET 10 APIs with Clean Architecture + CQRS, classic .NET APIs without CQRS, legacy .NET Framework web projects, libraries, and front-end projects.
 - The project type is auto-detected by `sh ~/.config/opencode/scripts/detect-project-type.sh` (types: cqrs-api, api, dotnet-app, legacy, library, frontend; several can apply). A "Project type" section in the repository AGENTS.md overrides the detection.
