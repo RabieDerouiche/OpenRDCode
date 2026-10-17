@@ -56,6 +56,14 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 
 `dotnet-cqrs-conventions`, `fortify-remediation`, `integrations-guardrails`, `build-fix`, `explain-code`, `best-practices`, `ship-procedure` et `sync-procedure` (la logique de `/ship` et `/sync`, partagée avec `/next`), et les `pattern-*` créés par `/extract-pattern`.
 
+## Scripts (copiés dans `~/.config/opencode/scripts/`)
+
+- `workflow-state.sh` : l'état complet de la branche en une seule passe, après un seul `git fetch` (branche, ticket et fiche, base, copie distante, fichiers modifiés, diffs avec `--diff`). OpenCode lance les commandes injectées en parallèle : tout regrouper ici évite des références distantes périmées et accélère `/next`, `/dev`, `/test`, `/check`, `/ship`, `/sync`, `/ticket` et `/scans`.
+- `detect-project-type.sh` : type de projet, commandes de build et de test, stack de test.
+- `release-commits.sh` : commits, MR et tickets d'une plage de MEP pour `/release-notes`.
+
+Chaque réponse du flux commence par le ticket en cours : **[DNA-123](lien Jira) - titre**.
+
 ## Pour la maintenance du pack
 
 - `tools/permissions.py` régénère les lignes `permission:` des agents. Ne les modifie pas à la main.

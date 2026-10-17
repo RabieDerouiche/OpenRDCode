@@ -4,23 +4,17 @@ agent: analyst
 ---
 Explicit Fortify target: "$ARGUMENTS"
 
-Remote base branches: !`git branch -r --list origin/develop origin/main origin/master`
-
-Base branch: `origin/develop` if it is listed above. Otherwise, if exactly one of `origin/main` / `origin/master` is listed, use it; if none or several, ask me with the question tool (multiple choice, recommended option first) with the listed branches as options. If the git output injected below failed because `origin/develop` does not exist, run the same git commands yourself with the chosen base, one command per call.
+Base branch: the "Base branch" line of the workflow state (origin/develop, otherwise origin/main or origin/master). If it says NONE, ask me with the question tool for the base branch (free answer).
 
 SSC application line (from appsec-ci.env): !`git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'`
-Current git branch: !`git branch --show-current`
 Remote: !`git remote get-url origin`
-Fetch: !`git fetch -q origin`
-Local HEAD: !`git rev-parse HEAD`
-Pushed commit (origin of this branch): !`git rev-parse @{u}`
-Local commits not pushed: !`git log --oneline @{u}..HEAD`
-Files changed on this branch: !`git diff --name-only origin/develop...HEAD`
+Workflow state (one fetch, then the state of the branch and of the ticket sheet):
+!`sh ~/.config/opencode/scripts/workflow-state.sh`
 
 Sonar and Fortify both run in the CI on every pushed commit. Never read appsec-ci.env yourself: it may contain secrets; use only the line injected above (the SSC application is the value after `=`, without quotes). Read-only everywhere: never mark an issue as false positive, never change a status, never comment.
 
 ## Step 1 - Pushed or not
-- If "Pushed commit" above is an error (no upstream), the branch was never pushed: say "Branche jamais poussée : lance /ship" and stop.
+- If the workflow state says "Upstream: none", the branch was never pushed: say "Branche jamais poussée : lance /ship" and stop.
 - If there are local commits not pushed, say in one line that the scans will not include them (suggest /ship), and continue with the pushed commit.
 
 ## Step 2 - Pipeline of the pushed commit
@@ -40,7 +34,7 @@ Give the pipeline link (`web_url`).
    c. Otherwise use the `develop` version.
    d. If the current branch is empty (detached HEAD), use `develop`.
    e. If `develop` does not exist either, ask me with the question tool (multiple choice, recommended option first) with the available versions as options.
-4. Freshness: compare the date of the latest uploaded artifact with the date of the pushed commit (`git log -1 --format=%cI @{u}`). If the artifact is older, say "Scan Fortify pas encore à jour (dernier upload <date>) : relance /scans plus tard" and still show the current results, marked "anciens".
+4. Freshness: compare the date of the latest uploaded artifact with the "Pushed commit date" of the workflow state. If the artifact is older, say "Scan Fortify pas encore à jour (dernier upload <date>) : relance /scans plus tard" and still show the current results, marked "anciens".
 5. List the issues with the filter set "Security Auditor View". Never invent application, version, filter set or filter names; if one is rejected, list the valid ones and retry with a listed value. Load the skill `fortify-remediation` to classify each category and spot likely false positives.
 
 ## Step 4 - SonarQube
@@ -51,7 +45,7 @@ Find the Sonar project of this repository (search by repository name or by the S
 - Order: security first (Fortify Critical/High, Sonar vulnerabilities and hotspots), then bugs, then code smells. Inside each group, findings in files changed on this branch come first, then exploitability, then effort.
 
 ## Answer, in French
-First line: "**Ticket <KEY> - <title>**" with the title taken from the first line of the ticket sheet (`# <KEY> - <title>`), or from Jira if there is no sheet, or the branch name if there is no key.
+First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name.
 - Then: "Pipeline <link> (<short sha>) : <status> — Fortify : <application:version> (raison : <explicit target | current branch has scans | fallback to develop: no version for branch | fallback to develop: branch version has no scan>) — Sonar : <project> / <branch>".
 - Table: priorité, source (Fortify/Sonar/les deux), Fortify issue id ou Sonar issue key, règle ou catégorie, sévérité, fichier:ligne, modifié sur cette branche (oui/non).
 - Counts per source and severity (Fortify: Critical, High, Medium, Low).

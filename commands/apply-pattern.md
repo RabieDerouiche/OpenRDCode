@@ -17,7 +17,7 @@ Steps:
 6b. Configuration: list the environment files of this repository (`appsettings*.json`, or `web.config` transforms for legacy). Add the keys of the skill to each environment file that needs them, with the placeholders as values, and give me the list of values to fill per environment. Never copy values from the source project; never put secrets in appsettings: secrets come from environment variables or the secret store, as the skill says.
 7. Show the plan: files to create, files to modify, configuration keys to add, tests to write. Each step must leave the project building.
 8. Implement ONLY step 1 of the plan, following the conventions of this repository (naming, folders, logging, DI style), not the source projects' conventions.
-9. Run the build and test commands (AGENTS.md "Build & test" if present, otherwise the detection above) and report. Then stop and wait: I will ask for the next step.
+9. Run the build and test commands (AGENTS.md "Build & test" if present, otherwise the detection above), quietly (`-nologo -v q`, output through `tail -60`), and report. Then stop and wait: I will ask for the next step.
 
 Rules:
 - Placeholders from the skill must be replaced with values from this repository or its configuration; if a value is unknown, ask instead of inventing it.

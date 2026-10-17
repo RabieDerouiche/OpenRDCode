@@ -2,30 +2,13 @@
 description: "Pre-push check of the current work, local and read-only: review of the branch and of the uncommitted changes, build and tests, acceptance criteria, security pre-scan. Sonar and Fortify run in the CI: see /scans after /ship. Usage: /check"
 agent: reviewer
 ---
-Remote base branches: !`git branch -r --list origin/develop origin/main origin/master`
-
-Base branch: `origin/develop` if it is listed above. Otherwise, if exactly one of `origin/main` / `origin/master` is listed, use it; if none or several, ask me with the question tool (multiple choice, recommended option first) with the listed branches as options. If the git output injected below failed because `origin/develop` does not exist, run the same git commands yourself with the chosen base, one command per call.
+Base branch: the "Base branch" line of the workflow state (origin/develop, otherwise origin/main or origin/master). If it says NONE, ask me with the question tool for the base branch (free answer).
 
 Project detection:
 !`sh ~/.config/opencode/scripts/detect-project-type.sh`
 
-Current branch: !`git branch --show-current`
-Existing ticket sheets: !`ls .git/opencode/tickets`
-HEAD: !`git rev-parse --short HEAD`
-Uncommitted changes summary: !`git diff HEAD --shortstat`
-Untracked files: !`git ls-files --others --exclude-standard`
-
-Fetch: !`git fetch -q origin`
-Branch vs its remote copy: !`git status -sb`
-
-Commits since develop:
-!`git log --oneline origin/develop..HEAD`
-
-Committed diff against develop:
-!`git diff origin/develop...HEAD`
-
-Uncommitted diff (staged and unstaged):
-!`git diff HEAD`
+Workflow state (one fetch, then the state of the branch, its commits and its diffs):
+!`sh ~/.config/opencode/scripts/workflow-state.sh --diff`
 
 Check the current work before it is pushed. Everything here is local: Sonar and Fortify results only exist after the push, in the CI.
 
@@ -33,7 +16,7 @@ Check the current work before it is pushed. Everything here is local: Sonar and 
 If the branch status above says "behind" its remote copy, commits were pushed from another computer (for example from Rider on my Mac) and are not here yet. Stop and say: "<n> commit(s) poussé(s) depuis un autre poste ne sont pas ici : lance /sync d'abord". Continue only if I ask.
 
 ## Step 1 - Scope
-The committed diff, the uncommitted diff and the untracked files above (read the untracked source files with the read tool). If all three are empty, say "Rien à vérifier" and stop.
+The committed diff, the uncommitted diff and the untracked files of the workflow state (read the untracked source files with the read tool). If all three are empty, say "Rien à vérifier" and stop.
 
 ## Step 2 - Review
 Review the whole scope as a merge request review, with your checks for the project type. Also check that the commits form a coherent change and flag files that seem unrelated to the branch goal.
@@ -64,7 +47,7 @@ If the sheet exists, append to its "## Suivi" section with the edit tool (date w
 Write nothing else.
 
 ## Answer, in French
-First line: "**Ticket <KEY> - <title>**" with the title taken from the first line of the ticket sheet (`# <KEY> - <title>`), or from Jira if there is no sheet, or the branch name if there is no key.
+First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name.
 1. Your usual review output (project type, verdict, findings).
 2. "Build et tests" : one line each.
 3. "Critères d'acceptation" : table criterion / implemented / tested.

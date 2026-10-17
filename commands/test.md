@@ -4,24 +4,13 @@ agent: test-writer
 ---
 Arguments: "$ARGUMENTS" (optional: a file path to test only that file, and/or "comme <pattern name or repository path>" for the reference approach)
 
-Remote base branches: !`git branch -r --list origin/develop origin/main origin/master`
-
-Base branch: `origin/develop` if it is listed above. Otherwise, if exactly one of `origin/main` / `origin/master` is listed, use it; if none or several, ask me with the question tool (multiple choice, recommended option first) with the listed branches as options. If the git output injected below failed because `origin/develop` does not exist, run the same git commands yourself with the chosen base, one command per call.
+Base branch: the "Base branch" line of the workflow state (origin/develop, otherwise origin/main or origin/master). If it says NONE, ask me with the question tool for the base branch (free answer).
 
 Project detection:
 !`sh ~/.config/opencode/scripts/detect-project-type.sh`
 
-Current branch: !`git branch --show-current`
-Existing ticket sheets: !`ls .git/opencode/tickets`
-
-Fetch: !`git fetch -q origin`
-Branch vs its remote copy: !`git status -sb`
-
-Files changed on this branch compared to develop:
-!`git diff --name-only origin/develop...HEAD`
-
-Uncommitted and untracked files:
-!`git status --porcelain`
+Workflow state (one fetch, then the state of the branch and of the ticket sheet):
+!`sh ~/.config/opencode/scripts/workflow-state.sh`
 
 ## Step 0 - Changes pushed from another computer
 If the branch status above says "behind" its remote copy, commits were pushed from another computer (for example from Rider on my Mac) and are not here yet. Stop and say: "<n> commit(s) poussé(s) depuis un autre poste ne sont pas ici : lance /sync d'abord". Continue only if I ask.
@@ -29,7 +18,7 @@ If the branch status above says "behind" its remote copy, commits were pushed fr
 ## Step 1 - Scope
 - If a reference is given ("comme ..."), apply step 5 of your rules with it (pattern skill or other repository) before writing any test.
 - If a file is given above: test only that file. Read it and write unit tests for the class, module or component it contains. If a test file for it already exists, add the missing cases to it instead of creating a new file. Cover every public method or exported member. Skip step 2 and go to step 4.
-- Otherwise: the scope is every file changed on this branch plus the uncommitted and untracked files above. Split this list yourself:
+- Otherwise: the scope is every file changed on the branch plus the uncommitted and untracked files of the workflow state. Split this list yourself:
   - Test files: paths containing `Tests/`, `.Tests/`, `tests/`, `test/`, `__tests__/`, or names ending in `.spec.*` / `.test.*`.
   - Production source files: `.cs`, `.ts`, `.tsx`, `.js`, `.jsx`, `.vb` files that are not test files.
   - Ignore everything else (configuration, assets, documentation, generated files, migrations), and ignore DTOs and models without logic and DI registration.
@@ -57,5 +46,5 @@ If the sheet exists, update it with the edit tool:
 Never write any other file outside the test folders.
 
 ## Answer, in French
-First line: "**Ticket <KEY> - <title>**" with the title taken from the first line of the ticket sheet (`# <KEY> - <title>`), or from Jira if there is no sheet, or the branch name if there is no key.
+First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name.
 The table of step 3 with the final status, the tests added (name + one line each), the test command result, the suspected bugs, then one line: "Prochaine étape : /check" (or "corrige le bug avec l'agent build, puis /test" if a bug was found).

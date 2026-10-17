@@ -10,6 +10,7 @@ import sys
 
 DETECT = "sh ~/.config/opencode/scripts/detect-project-type.sh*"
 RELEASE = "sh ~/.config/opencode/scripts/release-commits.sh *"
+STATE = "sh ~/.config/opencode/scripts/workflow-state.sh*"
 TICKET_SHEETS = ".git/opencode/**"
 
 READ = ["ls*", "pwd", "cd *", "cat *", "head*", "tail*", "wc*", "sort*", "uniq*", "cut *", "tr *",
@@ -84,7 +85,7 @@ def read_only_bash(extra_allows, after_secrets=()):
 
 def git_bash():
     rules = [("*", "deny")]
-    rules += [(p, "allow") for p in READ + GIT_READ + [DETECT]]
+    rules += [(p, "allow") for p in READ + GIT_READ + [DETECT, STATE]]
     # writes the git agent may do without asking
     rules += [(p, "allow") for p in ["git switch *", "git checkout -b *", "git add *", "git add -A", "git commit -m *",
                                      "git commit -F *", "git commit --no-edit", "git merge --abort",
@@ -118,11 +119,11 @@ def only(paths):
 BASE = [("webfetch", "deny"), ("websearch", "deny"), ("question", "allow")]
 
 AGENTS = {
-    "analyst": [("edit", "deny")] + BASE + [("bash", read_only_bash([DETECT], [SSC_NAME]))] + MCP_WRITE_DENY,
+    "analyst": [("edit", "deny")] + BASE + [("bash", read_only_bash([DETECT, STATE], [SSC_NAME]))] + MCP_WRITE_DENY,
     "architect": [("edit", "deny")] + BASE + [("bash", read_only_bash(DOTNET_INFO + [DETECT]))] + mcp_only([]),
     "debugger": [("edit", "deny")] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT]))] + MCP_WRITE_DENY + mcp_only(["kibana"]),
-    "reviewer": [("edit", only([TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
-    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    "reviewer": [("edit", only([TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT, STATE]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT, STATE]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
     "release-writer": [("edit", "deny")] + BASE + [("bash", read_only_bash([RELEASE]))] + MCP_RELEASE + mcp_only(["jira", "confluence"]),
     "git": [("edit", only([TICKET_SHEETS]))] + BASE + [("task", only(["reviewer", "analyst"])), ("bash", git_bash())] + MCP_WRITE_DENY + mcp_only(["jira", "gitlab"]),
 }

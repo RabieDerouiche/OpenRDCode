@@ -66,4 +66,4 @@ Show the plan of changes first: a table section | statut (ajoutée, mise à jour
 - The table of step 5 with the final status.
 - What I must fill myself (values only I know: Confluence pages, application name for release notes, `[à compléter]` lines).
 - Confluence pages used and skipped, and the Confluence-versus-code disagreements.
-- Last line: "AGENTS.md est un fichier du repo partagé avec l'équipe : relis le diff, puis /ship pour le commiter. Relance /agents-md après un gros changement d'architecture ou d'organisation."
+- Last line: "AGENTS.md est un fichier du repo partagé avec l'équipe : relis le diff, puis /ship pour le commiter (sur une branche : /ship refuse develop). Relance /agents-md après un gros changement d'architecture ou d'organisation."

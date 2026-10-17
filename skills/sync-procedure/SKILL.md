@@ -6,9 +6,7 @@ compatibility: opencode
 # Sync procedure
 
 ## Inputs
-When a command injected these values, use them. Otherwise get each one yourself, one git command per call:
-- Current branch: `git branch --show-current`
-- Working tree: `git status --porcelain`
+The workflow state injected by the command (branch, ticket key and sheet, base branch, HEAD, remote copy and upstream, uncommitted, staged and untracked files). If no command injected it, run `sh ~/.config/opencode/scripts/workflow-state.sh` once. Use `git status --porcelain` when you need the exact working tree.
 
 Bring the current branch up to date. Order: secure local work, retrieve remote changes, merge develop, and only then push. Merge only, never rebase. Never push before step 6.
 

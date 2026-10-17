@@ -82,6 +82,6 @@ Table: Ticket (link), Type, Titre, Statut, Prio, Dernière MAJ, Signal. If there
 6. If nothing is in progress: start the first ticket of section 4 or the first To Do of section 1 with `/ticket <KEY>`.
 
 ## Then
-Ask me with the question tool "Sur quoi tu bosses ?": as options, the 3 tickets that come first in the plan of the day (`<KEY> - <summary>`, the first one "(recommandé)"). I can type another answer. Then answer with one line: "Lance `/ticket <KEY>`" (it resumes the ticket sheet if the ticket is already started).
+Ask me with the question tool "Sur quoi tu bosses ?": as options, the 3 tickets that come first in the plan of the day (`<KEY> - <summary>`, the first one "(recommandé)"). I can type another answer. Then answer with one line: "Ouvre une nouvelle session et lance `/ticket <KEY>`" (it resumes the ticket sheet if the ticket is already started).
 
 Rules: read-only, no comment, assignment or status change anywhere. If a system is unreachable, say so in one line and build the rest.

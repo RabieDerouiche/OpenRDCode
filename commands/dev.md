@@ -3,10 +3,8 @@ description: "Implement the next step of the ticket sheet (or step N) following 
 agent: build
 ---
 Arguments: "$ARGUMENTS"
-Current branch: !`git branch --show-current`
-Existing ticket sheets: !`ls .git/opencode/tickets`
-Fetch: !`git fetch -q origin`
-Branch vs its remote copy: !`git status -sb`
+Workflow state (one fetch, then the state of the branch and of the ticket sheet):
+!`sh ~/.config/opencode/scripts/workflow-state.sh`
 Project detection:
 !`sh ~/.config/opencode/scripts/detect-project-type.sh`
 
@@ -62,7 +60,7 @@ With the edit tool, in `.git/opencode/tickets/<KEY>.md`:
 - append to "## Suivi": `- <date> /dev étape <N> - <files changed count> fichiers - build <ok|ko> - tests <passed>/<total>` (date with `date "+%Y-%m-%d %H:%M"`).
 
 ## Step 9 - Answer, in French, then the next step
-- First line: "**Ticket <KEY> - <title>**" with the title taken from the first line of the ticket sheet (`# <KEY> - <title>`), or from Jira if there is no sheet, or the branch name if there is no key. Then the step: "Étape <N>/<total> : <step text>".
+- First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name. Then the step: "Étape <N>/<total> : <step text>".
 - Files created or modified (one line each), build result, tests added and result, decisions taken.
 - Ask me with the question tool:
   - "Étape suivante : <text of the next unchecked step>" (recommandé) → go back to step 1 for that step, with the same directives unless they were specific to this step;
