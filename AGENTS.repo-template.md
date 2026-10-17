@@ -29,7 +29,7 @@
 - Integrations: `[S3 via IStorageService (in-house package X), SharePoint via ...]`
 
 ## Build & test (optional: auto-detected, fill only if the detection is wrong)
-- Build: `[dotnet build | npm run build | not buildable on macOS (.NET Framework)]`
+- Build: `[dotnet build | npm run build | not buildable here: .NET Framework needs Windows]`
 - Test: `[dotnet test | npm test | none]`
 
 ## In-house mediator (cqrs-api only)

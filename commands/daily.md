@@ -1,6 +1,7 @@
 ---
 description: "Morning brief for ONE Jira project or board: my sprint first, reviews waiting for me, my merge requests linked to their tickets, what to pick next, and a plan for today, with links (read-only). Usage: /daily [Jira project key or board name]"
 agent: analyst
+subtask: false
 ---
 Scope given: "$ARGUMENTS"
 Today: !`date +%Y-%m-%d`

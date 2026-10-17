@@ -118,13 +118,15 @@ def only(paths):
 
 BASE = [("webfetch", "deny"), ("websearch", "deny"), ("question", "allow")]
 
+NO_TASK = [("task", "deny")]
+
 AGENTS = {
-    "analyst": [("edit", "deny")] + BASE + [("bash", read_only_bash([DETECT, STATE], [SSC_NAME]))] + MCP_WRITE_DENY,
-    "architect": [("edit", "deny")] + BASE + [("bash", read_only_bash(DOTNET_INFO + [DETECT]))] + mcp_only([]),
-    "debugger": [("edit", "deny")] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT]))] + MCP_WRITE_DENY + mcp_only(["kibana"]),
-    "reviewer": [("edit", only([TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT, STATE]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
-    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT, STATE]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
-    "release-writer": [("edit", "deny")] + BASE + [("bash", read_only_bash([RELEASE]))] + MCP_RELEASE + mcp_only(["jira", "confluence"]),
+    "analyst": [("edit", only([TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash([DETECT, STATE], [SSC_NAME]))] + MCP_WRITE_DENY,
+    "architect": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + [DETECT]))] + mcp_only([]),
+    "debugger": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT]))] + MCP_WRITE_DENY + mcp_only(["kibana"]),
+    "reviewer": [("edit", only([TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT, STATE]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT, STATE]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    "release-writer": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash([RELEASE]))] + MCP_RELEASE + mcp_only(["jira", "confluence"]),
     "git": [("edit", only([TICKET_SHEETS]))] + BASE + [("task", only(["reviewer", "analyst"])), ("bash", git_bash())] + MCP_WRITE_DENY + mcp_only(["jira", "gitlab"]),
 }
 

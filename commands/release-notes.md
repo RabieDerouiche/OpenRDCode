@@ -1,6 +1,7 @@
 ---
 description: "Release note of a production deployment, published to Confluence after approval. One repository (deployed from master), or a release group of several repositories (back, front, libraries) grouped by Jira ticket, or a free-text description. Usage: /release-notes [group name [YYYY-MM-DD]] | [previous-deployed-commit|YYYY-MM-DD] [deployed-commit] | <description of the changes>"
 agent: release-writer
+subtask: false
 ---
 Arguments: "$ARGUMENTS"
 Current repository: !`git rev-parse --show-toplevel`

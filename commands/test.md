@@ -1,6 +1,7 @@
 ---
 description: "Check and complete the unit tests of the current work: map the acceptance criteria and the changed code to tests, write the missing ones in the project's style (or like a pattern or another repository), run them until green, and update the ticket sheet (.NET or front-end). Usage: /test [path/to/file] [comme <pattern name or repository path>]"
 agent: test-writer
+subtask: false
 ---
 Arguments: "$ARGUMENTS" (optional: a file path to test only that file, and/or "comme <pattern name or repository path>" for the reference approach)
 
@@ -37,7 +38,7 @@ Every acceptance criterion appears at least once. Business logic first.
 Follow your rules (project type, existing test style, reference approach and its questions, test stack question before any new library, no test project creation without asking, which test project to use).
 
 ## Step 5 - Run until green
-Run the build and test commands (AGENTS.md "Build & test" if present, otherwise the project detection above). Fast runs (.NET): build once with `dotnet build -nologo -v q 2>&1 | tail -60`, then run tests on that build with `dotnet test --no-build -nologo -v q 2>&1 | tail -60`. Use the AGENTS.md commands when they exist, with the same quiet options and `--no-build`. While fixing your own tests, rerun only them, without `--no-build` since the test files changed: `dotnet test <test project> -nologo -v q --filter FullyQualifiedName~<TestClass> 2>&1 | tail -60`; run the full suite once at the end. If tests you wrote fail, fix the tests only and run again, at most 3 rounds. A failure that reveals a real bug in production code stays failing, with a clear English comment, and is reported.
+Run the build and test commands (AGENTS.md "Build & test" if present, otherwise the project detection above). Fast runs (.NET): build once with `dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60`, then run the tests on that build with `dotnet test --no-build -nologo 2>&1 | tail -60`. Use the AGENTS.md commands when they exist, with the same options. While fixing your own tests, rerun only them, without `--no-build` since the test files changed: `dotnet test <test project> -nologo --filter FullyQualifiedName~<TestClass> 2>&1 | tail -60`; run the full suite once at the end. If tests you wrote fail, fix the tests only and run again, at most 3 rounds. A failure that reveals a real bug in production code stays failing, with a clear English comment, and is reported.
 
 ## Step 6 - Ticket sheet
 If the sheet exists, update it with the edit tool:

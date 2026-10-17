@@ -40,8 +40,10 @@ if [ -n "$projects" ]; then
     add_type legacy
     evidence="$evidence
 - legacy .NET Framework: $(echo "$legacy_projects $legacy_web" | tr '\n' ' ' | cut -c1-200)"
-    build="not buildable on macOS (.NET Framework)"
-    test="none on macOS"
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*) build="msbuild (Visual Studio Build Tools, .NET Framework)"; test="vstest.console (Visual Studio)" ;;
+      *) build="not buildable on this machine (.NET Framework needs Windows)"; test="none on this machine (.NET Framework needs Windows)" ;;
+    esac
   fi
 
   if [ -n "$web_sdk" ] && [ -n "$handlers" ]; then
@@ -119,6 +121,8 @@ for lib in $dotnet_refs; do
     fluentassertions) add_lib fluentassertions ;;
     shouldly) add_lib shouldly ;;
     autofixture) add_lib autofixture ;;
+    awesomeassertions) add_lib awesomeassertions ;;
+    testcontainers) add_lib testcontainers ;;
     bogus) add_lib bogus ;;
     microsoft.aspnetcore.mvc.testing) add_lib webapplicationfactory ;;
   esac

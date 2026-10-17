@@ -28,7 +28,7 @@ Steps:
    - If the code touches SharePoint/CSOM, DocuSign, AWS S3, Piano Analytics or authentication, load `integrations-guardrails` and ask me with the question tool (multiple choice, recommended option first) ("Appliquer le correctif" / "Me montrer le diff d'abord" / "Annuler") before editing.
    - For a code smell, change only what the rule asks (e.g. remove the unused variable, reduce the nesting of this method), keeping the behavior identical.
 6. If the fix changes behavior (bug or vulnerability), add or update a unit test proving it, if the project has tests. Code smells need no new test.
-7. Run the build and test commands (AGENTS.md "Build & test" if present, otherwise the project detection above), quietly: `dotnet build -nologo -v q 2>&1 | tail -60` then `dotnet test --no-build -nologo -v q 2>&1 | tail -60` for .NET. If a legacy .NET Framework project cannot build on macOS, say so instead of changing project files.
+7. Run the build and test commands (AGENTS.md "Build & test" if present, otherwise the project detection above), quietly: `dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60` then `dotnet test --no-build -nologo 2>&1 | tail -60` for .NET. If a legacy .NET Framework project cannot build on this machine (.NET Framework needs Windows), say so instead of changing project files.
 8. Report: rule key and title, the change (file:line), the test added if any, build/test result, and a commit message:
    - bug or vulnerability: `fix(sonar): <summary> (<rule key>)`
    - security hotspot: `fix(security): <summary> (<rule key>)`

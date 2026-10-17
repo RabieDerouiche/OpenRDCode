@@ -5,7 +5,11 @@
 # Read-only, except `git fetch`.
 # Usage: workflow-state.sh [--no-fetch] [--diff]
 #   --no-fetch  do not fetch origin first
-#   --diff      also print the commits and the full diffs of the branch (committed and uncommitted)
+#   --diff      also print the commits and the diffs of the branch (committed and uncommitted); a diff longer
+#               than MAX_DIFF_LINES is replaced by its file list, to be read file by file
+
+MAX_DIFF_LINES=1500
+MAX_SHEETS=10
 
 fetch=1
 diff=0
@@ -41,7 +45,10 @@ done
 upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)
 sheets="$root/.git/opencode/tickets"
 
+remote_url=$(git remote get-url origin 2>/dev/null | sed -E 's#://[^@/]+@#://#')
+
 echo "Repository root: $root"
+echo "Remote URL (credentials masked): ${remote_url:-none}"
 echo "Current branch: ${branch:-(detached HEAD)}"
 echo "Jira key from branch: ${key:-none}"
 echo "Base branch: ${base:-NONE (no origin/develop, origin/main or origin/master)}"
@@ -79,6 +86,20 @@ echo "Last change of AGENTS.md: $(git log -1 --format='%h %cs' -- AGENTS.md)"
 echo "Ticket sheets folder: $sheets"
 echo "Existing ticket sheets:"
 ls "$sheets" 2>/dev/null
+# One line per sheet, most recent first: key | title | branch | branch exists | plan done/total | last Suivi line
+if [ -d "$sheets" ]; then
+  echo "Ticket sheets summary (key | title | branch | branch exists | plan done/total | last Suivi line):"
+  ls -t "$sheets" 2>/dev/null | grep '\.md$' | head -n "$MAX_SHEETS" | while read -r file; do
+    f="$sheets/$file"
+    sheet_title=$(head -1 "$f" | sed 's/^# //')
+    sheet_branch=$(grep -m1 '^- Branche' "$f" | sed 's/^- Branche *: *//')
+    if [ -n "$sheet_branch" ] && git rev-parse -q --verify "refs/heads/$sheet_branch" >/dev/null; then exists=yes; else exists=no; fi
+    plan_done=$(grep -c '^- \[x\]' "$f")
+    plan_todo=$(grep -c '^- \[ \]' "$f")
+    last_suivi=$(grep '^- [0-9][0-9][0-9][0-9]-' "$f" | tail -1)
+    echo "- ${file%.md} | $sheet_title | ${sheet_branch:-?} | $exists | $plan_done/$((plan_done + plan_todo)) | $last_suivi"
+  done
+fi
 if [ -n "$key" ] && [ -f "$sheets/$key.md" ]; then
   echo "Current ticket sheet: $sheets/$key.md"
   echo "Ticket title line: $(head -1 "$sheets/$key.md")"
@@ -87,14 +108,25 @@ elif [ -n "$key" ]; then
   echo "Current ticket sheet: none for $key"
 fi
 
+# Prints a diff, or only its file list when it is too long to be reviewed in one read
+print_diff() {
+  lines=$(git diff "$@" | wc -l)
+  if [ "$lines" -gt "$MAX_DIFF_LINES" ]; then
+    echo "DIFF TOO LARGE ($lines lines): review it file by file with git diff $* -- <path>"
+    git diff --stat "$@"
+  else
+    git diff "$@"
+  fi
+}
+
 if [ "$diff" -eq 1 ] && [ -n "$base" ]; then
   echo
   echo "=== Commits since $base"
   git log --oneline "$base..HEAD"
   echo
   echo "=== Committed diff against $base"
-  git diff "$base...HEAD"
+  print_diff "$base...HEAD"
   echo
   echo "=== Uncommitted diff (staged and unstaged)"
-  git diff HEAD
+  print_diff HEAD
 fi
