@@ -26,7 +26,7 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 | Livrer | `/ship` | Commit, récupération des changements distants, push (avec ta validation), lien et description de la MR. |
 | Après la CI | `/scans` | Pipeline du commit poussé, puis Sonar et Fortify fusionnés et priorisés, avec la commande de correction de chaque point. |
 | Corriger | `/fortify-fix <id>` · `/sonar-fix <clé>` | Corrige UN point, avec test, build et message de commit. Puis `/check` → `/ship` → `/scans`. |
-| Perdu ? | `/next` | Lit l'état de ta branche, de la fiche, du pipeline et de la MR, et te donne la prochaine étape. |
+| Perdu ? | `/next` | Lit l'état (y compris ce que tu as modifié hors d'OpenCode ou poussé depuis ton Mac), la fiche, le pipeline et la MR, puis te propose la suite en QCM. Il exécute directement les actions git et fiche (synchroniser, livrer, terminer un merge, cocher une étape faite à la main) ; pour le reste il te donne la commande à taper. Il signale aussi quand `AGENTS.md` est à mettre à jour. |
 
 **La fiche ticket** est le fichier `.git/opencode/tickets/<CLÉ>.md` du repo. Comme elle est dans `.git`, elle n'est jamais commitée. Elle contient les critères d'acceptation, les tests attendus, le plan et un historique (`## Suivi`). `/test`, `/check`, `/ship` et `/next` s'en servent, ce qui leur évite de tout redemander.
 
@@ -54,7 +54,7 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 
 ## Skills (chargés à la demande)
 
-`dotnet-cqrs-conventions`, `fortify-remediation`, `integrations-guardrails`, `build-fix`, `explain-code`, `best-practices`, et les `pattern-*` créés par `/extract-pattern`.
+`dotnet-cqrs-conventions`, `fortify-remediation`, `integrations-guardrails`, `build-fix`, `explain-code`, `best-practices`, `ship-procedure` et `sync-procedure` (la logique de `/ship` et `/sync`, partagée avec `/next`), et les `pattern-*` créés par `/extract-pattern`.
 
 ## Pour la maintenance du pack
 
