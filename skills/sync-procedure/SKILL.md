@@ -1,6 +1,6 @@
 ---
 name: sync-procedure
-description: "Procedure of the git agent to bring a feature branch up to date: commit local work locally, retrieve the branch remote changes (for example pushed from another computer), merge develop, then offer to push. Merge only. Used by /sync and /next. Only for the git agent."
+description: "Procedure of the git agent to bring a feature branch up to date: commit local work locally, retrieve the branch remote changes (for example pushed from another computer), merge the base branch (develop), then offer to push. Merge only. Used by /sync and /next. Only for the git agent."
 compatibility: opencode
 ---
 # Sync procedure
@@ -8,11 +8,11 @@ compatibility: opencode
 ## Inputs
 The workflow state injected by the command (branch, ticket key and sheet, base branch, HEAD, remote copy and upstream, uncommitted, staged and untracked files). If no command injected it, run `sh ~/.config/opencode/scripts/workflow-state.sh` once. Use `git status --porcelain` when you need the exact working tree.
 
-Bring the current branch up to date. Order: secure local work, retrieve remote changes, merge develop, and only then push. Merge only, never rebase. Never push before step 6.
+Bring the current branch up to date. Order: secure local work, retrieve remote changes, merge the base branch (the "Base branch" line of the workflow state, normally `origin/develop`), and only then push. Merge only, never rebase. Never push before step 6.
 
 Steps:
 1. If the current branch is `develop`, `master` or `main`, run `git fetch origin`, then `git merge --ff-only origin/<branch>` and stop.
-2. Local work. If the working tree above is not empty, ask me with the question tool:
+2. Local work. If the workflow state shows uncommitted or untracked files, ask me with the question tool:
    - "Commit local de tout, sans push" (recommandé): `git add -A`.
    - "Commit local des fichiers déjà suivis seulement, sans push": `git add -u`.
    - "Mettre de côté (stash) pendant la synchro": `git stash push -u -m "sync"` (asks for approval).
@@ -24,7 +24,7 @@ Steps:
    - Remote only = 0: nothing to retrieve.
    - Remote only > 0 and local only = 0: run `git merge --ff-only origin/<branch>`.
    - Both > 0 (the branch was changed here and elsewhere): say it in one line, then run `git merge --no-edit origin/<branch>` (asks for approval).
-5. Develop: count with `git rev-list --left-right --count HEAD...origin/develop`. If develop has new commits, list them (`git log --oneline HEAD..origin/develop`, at most 15) and ask me with the question tool: "Merger develop maintenant" (recommandé) / "Plus tard". If yes, run `git merge --no-edit origin/develop` (asks for approval).
+5. Base branch (`<base>` below, normally `origin/develop`): count with `git rev-list --left-right --count HEAD...<base>`. If it has new commits, list them (`git log --oneline HEAD..<base>`, at most 15) and ask me with the question tool: "Merger <base> maintenant" (recommandé) / "Plus tard". If yes, run `git merge --no-edit <base>` (asks for approval).
 6. Push. If the branch now has commits that are not on `origin/<branch>` (or `origin/<branch>` does not exist), ask me with the question tool: "Pousser maintenant" (recommandé) / "Plus tard". If yes, run `git push -u origin <branch>` (asks for approval). Never force.
 7. On a merge conflict (in step 4 or 5): run `git diff --name-only --diff-filter=U`, list the files, and ask me with the question tool:
    - "Je résous dans Rider, préviens-moi ensuite" (recommandé): stop here. When I come back, check `git status`, finish the merge with `git commit --no-edit` only if no conflict remains, then continue with the next step.

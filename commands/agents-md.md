@@ -31,7 +31,7 @@ For each section below, determine its content from the code. Skip a section that
 1. `## Project type`: only if the detection above is wrong or the repository mixes several types (say which folder is which).
 2. `## Project overview`: what it does and who calls it, 2-3 lines (from README, Program/Startup, controllers or endpoints, Confluence if given).
 3. `## Solution structure`: one line per project or main folder with its role, and the dependency rules actually observed between projects (from project references).
-4. `## Build & test`: the exact commands. Run them once to verify (build, then tests); with several solutions, give the solution path. Legacy .NET Framework not buildable on macOS: say so. Front-end: the scripts of package.json. If restore fails with 401/403/NU1301, write the commands anyway and report an Artifactory access problem.
+4. `## Build & test`: the exact commands. Run them once to verify (build, then tests); with several solutions, give the solution path. Legacy .NET Framework that cannot build on this machine (.NET Framework needs Windows): say so, and write the Windows build command if the repository documents one. Front-end: the scripts of package.json. If restore fails with 401/403/NU1301, write the commands anyway and report an Artifactory access problem.
 5. `## Architecture & conventions`, one line each, only what is observed:
    - how endpoints are declared (controllers, minimal APIs, endpoint classes) and where;
    - request flow (endpoint → handler / service → ports → infrastructure);

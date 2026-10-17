@@ -24,7 +24,7 @@ Steps:
    - "Passer cette issue" → stop without editing.
 5. For a real issue: apply the remediation pattern from the skill matching the category, with the smallest possible change. Do not refactor around it. Do not suppress the warning with comments or attributes.
 6. Add or update a unit test proving the fix (e.g. malicious input rejected or sanitized), if the project has tests.
-7. Run the build and test commands from AGENTS.md (default .NET: `dotnet build -nologo -v q 2>&1 | tail -60` then `dotnet test --no-build -nologo -v q 2>&1 | tail -60`; front-end: `npm test`). If a legacy .NET Framework project cannot build on macOS, say so instead of changing project files.
+7. Run the build and test commands from AGENTS.md (default .NET: `dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60` then `dotnet test --no-build -nologo 2>&1 | tail -60`; front-end: `npm test`). If a legacy .NET Framework project cannot build on this machine (.NET Framework needs Windows), say so instead of changing project files.
 8. Report: the category, the change (file:line), the test added, build/test result, and a commit message `fix(security): <summary> (Fortify #$1)`.
 9. If the branch has a ticket sheet (`.git/opencode/tickets/<KEY>.md`, key from the branch name), append to its "## Suivi": `- <date> /fortify-fix $1 - <corrigé | faux positif | passé>` (date with `date "+%Y-%m-%d %H:%M"`).
 10. Last line: "Prochaine étape : /check puis /ship (avec ce message de commit), puis /scans pour vérifier que l'issue a disparu."

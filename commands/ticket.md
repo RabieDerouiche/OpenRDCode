@@ -30,7 +30,7 @@ If `<KEY>.md` is in the list of existing ticket sheets above, ask me with the qu
   2. Read the ticket type and summary with the Jira MCP tools.
   3. Propose the branch name: `feature/<KEY>-<summary in 3 to 5 kebab-case words, ASCII, lowercase>`; `bugfix/` for a bug; `hotfix/` if the ticket is marked urgent or as a production incident. Ask me with the question tool: "<proposed name>" (recommandé) / "Autre nom" (free answer).
   4. If a local or remote branch for this key already exists (`git branch -a --list "*<KEY>*"`), ask me with the question tool: "Basculer sur <existing branch>" (recommandé) → `git switch <existing branch without remotes/origin/>` / "Créer une nouvelle branche".
-  5. New branch: `git fetch origin develop`, then `git switch -c <name> origin/develop`.
+  5. New branch from the base branch of the workflow state (normally `origin/develop`): `git fetch origin <base without origin/>`, then `git switch -c <name> <base>`.
   6. Ask me with the question tool: "Publier plus tard, au premier /ship" (recommandé) / "Publier la branche maintenant (git push -u)".
   7. If a stash was made, ask me with the question tool: "Réappliquer mes modifications sur la branche" (recommandé) → `git stash pop` / "Les laisser dans le stash".
 
@@ -58,7 +58,7 @@ Write the file `<repository root>/.git/opencode/tickets/<KEY>.md` with the write
 - Jira : <link to the ticket: Jira URL of the "Daily" section of AGENTS.md, otherwise scheme and host of the self URL returned by the Jira tools, + /browse/<KEY>>
 - Branche : <branch>
 - Type de projet : <type>
-- Créée le : <date>
+- Créée le : <date from `date "+%Y-%m-%d %H:%M"`>
 
 <the analyst answer, sections unchanged>
 

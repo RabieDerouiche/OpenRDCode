@@ -20,7 +20,7 @@ Steps:
    - the last `/check` line of the sheet's "## Suivi" has the same HEAD and the same uncommitted changes summary as above (both read before staging),
    - its untracked files count is the same as the number of untracked files above,
    - its verdict is not "BLOCKING ISSUES".
-   Otherwise invoke the `reviewer` subagent with the task tool on the staged changes (`git diff --staged`). If its verdict is "BLOCKING ISSUES", show the blocking findings and ask me with the question tool: "Corriger d'abord" (recommandé, stop here) / "Commiter quand même". For "CHANGES REQUESTED", show the findings in 3 lines max and continue.
+   Otherwise invoke the `reviewer` subagent with the task tool and this prompt: "Review the staged changes of the repository for ticket <KEY or branch>. The diff is not in this prompt: get it with `git diff --staged` (if it is very long, start with `git diff --staged --stat` and review file by file). Use your usual output format." If its verdict is "BLOCKING ISSUES", show the blocking findings and ask me with the question tool: "Corriger d'abord" (recommandé, stop here) / "Commiter quand même". For "CHANGES REQUESTED", show the findings in 3 lines max and continue.
 5. Write a Conventional Commits message in English from the staged diff (types: feat, fix, refactor, test, chore, docs, perf, ci, build): `type(scope): summary` (max 72 characters, imperative mood, the scope is the feature or project name), a blank line, at most 5 bullets. Put the Jira key in the summary if there is one (e.g. `feat(export): add PDF export (DNA-123)`). If the changes include a breaking change for API consumers, add a `BREAKING CHANGE:` line at the end of the body. Never use backticks, `$` or double quotes inside the message (they would be blocked by the shell rules). Ask me with the question tool: "Commiter avec ce message" (recommandé) / "Modifier le message" (free answer) / "Annuler".
 6. Commit with `git commit -m "<summary>" -m "<body>"`.
 7. Retrieve the branch's remote changes before pushing. Run `git fetch origin`, then, if `origin/<branch>` exists, `git rev-list --left-right --count HEAD...origin/<branch>` (left = local only, right = remote only):
@@ -28,7 +28,7 @@ Steps:
    - Local only = 0: run `git merge --ff-only origin/<branch>`.
    - Both > 0: say it in one line, then run `git merge --no-edit origin/<branch>` (asks for approval).
    - On a conflict: run `git diff --name-only --diff-filter=U`, list the files, and ask me with the question tool: "Je résous dans Rider, préviens-moi ensuite" (recommandé: stop; when I come back, check `git status`, run `git commit --no-edit` only if no conflict remains, then go to step 8) / "Annuler" (run `git merge --abort` and stop without pushing). Never edit the conflicting files yourself.
-   Do not merge develop here: that is /sync.
+   Do not merge the base branch here: that is /sync.
 8. Push with `git push -u origin <branch>` (asks for approval). Never force.
 9. Merge request:
    - The link: the one printed by GitLab in the push output, otherwise look for an open merge request of this branch with the GitLab MCP tools (read-only). Never create the merge request yourself: if none exists, give the creation link from the push output.

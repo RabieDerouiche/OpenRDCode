@@ -1,13 +1,13 @@
 ---
 description: "After a push: check the CI pipeline of the pushed commit, then merge the SonarQube and Fortify results of this branch into one prioritized, deduplicated list with the fixes to run (read-only). Usage: /scans [ssc-application:version]"
 agent: analyst
+subtask: false
 ---
 Explicit Fortify target: "$ARGUMENTS"
 
 Base branch: the "Base branch" line of the workflow state (origin/develop, otherwise origin/main or origin/master). If it says NONE, ask me with the question tool for the base branch (free answer).
 
 SSC application line (from appsec-ci.env): !`git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'`
-Remote: !`git remote get-url origin`
 Workflow state (one fetch, then the state of the branch and of the ticket sheet):
 !`sh ~/.config/opencode/scripts/workflow-state.sh`
 
@@ -18,7 +18,7 @@ Sonar and Fortify both run in the CI on every pushed commit. Never read appsec-c
 - If there are local commits not pushed, say in one line that the scans will not include them (suggest /ship), and continue with the pushed commit.
 
 ## Step 2 - Pipeline of the pushed commit
-With the GitLab MCP tools (read-only), find the project from the remote URL above (its path after the host, without `.git`), then the most recent pipeline for this branch whose commit SHA is the pushed commit.
+With the GitLab MCP tools (read-only), find the project from the "Remote URL" line of the workflow state (its path after the host, without `.git`), then the most recent pipeline for this branch whose commit SHA is the pushed commit.
 - No pipeline for this SHA yet: say "Pipeline pas encore créé pour <short sha>, relance /scans dans quelques minutes" and stop.
 - Running or pending: list the jobs by stage with their status, say "Relance /scans quand le pipeline est terminé" and stop.
 - Failed: list the failed jobs. For each, read the end of the job log (last 50 lines) if the tools allow it and explain the cause in 2 lines. If the build or test job failed: "Corrige avec l'agent build (« corrige le build, voici l'erreur : ... »), puis /check et /ship". If a Sonar or Fortify job failed, say that its results are missing or outdated, and continue with step 3 for the other one.
@@ -52,3 +52,8 @@ First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticke
 - "Faux positifs probables": issue ids with a one-line reason (e.g. the value never comes from user input).
 - "À corriger en premier": the 5 findings to fix first, each with its command: `/fortify-fix <id>` for Fortify, `/sonar-fix <issue key>` for Sonar, `/fortify-fix` for a finding reported by both.
 - If nothing is open on the files of this branch: "Rien à corriger sur cette branche : la MR est prête côté qualité."
+
+## Ticket sheet
+If the workflow state lists a current ticket sheet, append to its "## Suivi" with the edit tool (date with `date "+%Y-%m-%d %H:%M"`):
+`- <date> /scans - <short sha> - pipeline <success|failed|running> - <n> points à corriger sur la branche`
+Write nothing else.

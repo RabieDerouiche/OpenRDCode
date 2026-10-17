@@ -10,7 +10,7 @@ Tell me where I am and get me to the next step as fast as possible. No review, n
 The workflow: /daily → /ticket → /dev (one plan step at a time, with its tests) → /test → /check → /ship → /scans → fixes (/fortify-fix, /sonar-fix) → back to /check. /sync brings develop, or what I pushed from my Mac, into the branch.
 
 ## Step 1 - Read the state
-- Which ticket: the one whose Jira key is in the current branch name (pattern `[A-Z][A-Z0-9]+-[0-9]+`). The other sheets listed above are other tickets started in this repository: for each, read only its title line (`# <KEY> - <title>`), its "- Jira :" line, the first sentence of its "## Résumé", its "Branche :" line, its count of unchecked plan steps and its last "## Suivi" line. A ticket is "en cours" if its branch still exists (`git branch --list <branch>`) and its last Suivi line is not a /ship with every plan step checked.
+- Which ticket: the one whose Jira key is in the current branch name ("Jira key from branch"). The "Ticket sheets summary" of the workflow state lists the other tickets started in this repository, most recent first (key, title, branch, branch exists, plan done/total, last Suivi line): use it as is, do not open those sheets. A ticket is "en cours" if its branch exists and its last Suivi line is not a /ship or /scans with the whole plan done. Open another sheet only to read the first sentence of its "## Résumé" and its "- Jira :" link, and only for the tickets you name in your answer.
 - The ticket sheet `.git/opencode/tickets/<KEY>.md` (Jira key from the branch name, pattern `[A-Z][A-Z0-9]+-[0-9]+`) if it is listed: unchecked steps of "Plan", "Tests attendus", "## Décisions", last lines of "## Suivi".
 - Changes made outside OpenCode or outside /dev: uncommitted or untracked files that no "/dev étape" line of "Suivi" explains. For each unchecked plan step, decide whether these changes implement it: compare the file names with the step and the "Zones de code concernées"; if unsure, read `git diff HEAD -- <file>` for at most 3 files. Keep the steps that look done by hand.
 - Only if the branch was pushed (it has a remote copy): the latest pipeline of the branch and its open merge request, with the GitLab MCP tools (read-only).
@@ -28,7 +28,7 @@ The workflow: /daily → /ticket → /dev (one plan step at a time, with its tes
    - no `/check` line with the current HEAD and the current uncommitted changes summary, or its verdict is BLOCKING: next = "/check";
    - otherwise: next = ACTION "Livrer (commit + push)".
 7. No uncommitted changes but local commits not pushed ("ahead" in the branch status): next = ACTION "Livrer (push)".
-8. Pushed: pipeline of the pushed commit running → next = "Attends la fin du pipeline (<link>), puis /scans"; failed or success without a later /scans → next = "/scans".
+8. Pushed: pipeline of the pushed commit running → next = "Attends la fin du pipeline (<link>), puis /scans"; failed, or success with no `/scans` line in "Suivi" for the pushed commit → next = "/scans"; a `/scans` line with points still to fix → next = "/fortify-fix <id> ou /sonar-fix <clé> (voir le dernier /scans)".
 9. Merge request with unresolved discussions: next = "Réponds aux discussions de la MR <link>". Approved, pipeline green, no discussion left: next = "MR prête à merger <link>".
 10. Unchecked plan steps: next = "/dev" (step <n>).
 11. Otherwise: next = "/daily pour la suite".

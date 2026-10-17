@@ -1,6 +1,7 @@
 ---
 description: "Best-practice audit of the whole repository for its project type (health checks, error handling, configuration, resilience, logging, security defaults, tests...), with evidence and the smallest way to add what is missing (read-only). Usage: /audit [area, e.g. health checks, logging, tests]"
 agent: architect
+subtask: false
 ---
 Focus given: "$ARGUMENTS"
 

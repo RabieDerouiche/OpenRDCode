@@ -15,7 +15,7 @@
 - Never invent file paths, types, methods, package names, application names or filter names. Look them up, or ask.
 
 ## Speed
-- Keep tool output small: quiet build and test options (`dotnet build -nologo -v q`, `dotnet test --no-build -nologo -v q`), long outputs piped through `tail -60`, `git diff --stat` before a full diff, `--filter` to run only the tests you are working on (never `--no-build` right after editing code or tests).
+- Keep tool output small: build with `dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60` (errors and the "Build succeeded/FAILED" summary only), test with `dotnet test --no-build -nologo 2>&1 | tail -60` right after that build, `--filter` to run only the tests you are working on (never `--no-build` right after editing code or tests), other long outputs through `tail -60`, `git diff --stat` before a full diff.
 - Read only the files and sections a step needs; do not re-read a file you already read unless it may have changed (for example after I edited it in Rider).
 - Several independent reads or searches: request them in the same turn.
 
@@ -26,7 +26,8 @@
 - For CQRS APIs only: in-house mediator, NOT MediatR (never add MediatR); load the skill `dotnet-cqrs-conventions` before writing or reviewing handlers.
 - New libraries or approaches: by default, use what the repository already uses (the "Test stack" line of the project detection for tests; the existing packages for the rest). When a task would bring something the repository does not use yet (for example Moq, FluentValidation, a mediator, a new test framework), ask me before writing code with the question tool: "Garder l'existant (<what is used today>)" (recommandé) or "Introduire <new thing> (<packages to add, files impacted>)". Wait for my answer. If I choose the new thing: add it, use it for the new code only, and do not rewrite existing code unless I ask.
 - If the repository has no tests at all, ask me with the question tool before creating a test project.
-- Build and test with the commands from the section "Build & test" of the repository AGENTS.md if it exists, otherwise from the detection script. Legacy .NET Framework projects may not build on macOS: say so instead of changing project files.
+- Licenses: some well-known packages became commercial (MediatR 13+, AutoMapper 15+, FluentAssertions 8+, MassTransit 9+). Never propose to introduce or upgrade to these versions without saying so in the question; prefer what the repository already uses or a free alternative (in-house mediator, manual mapping or Mapster, AwesomeAssertions or Shouldly).
+- Build and test with the commands from the section "Build & test" of the repository AGENTS.md if it exists, otherwise from the detection script. Legacy .NET Framework projects may not build on this machine (.NET Framework needs Windows): say so instead of changing project files.
 - Integrations: SharePoint (CSOM), DocuSign, AWS S3, Piano Analytics. Load the skill `integrations-guardrails` before touching them. Never modify authentication or credentials handling without asking.
 
 ## Branches and releases
