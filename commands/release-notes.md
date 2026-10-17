@@ -4,8 +4,7 @@ agent: release-writer
 ---
 Arguments: "$ARGUMENTS"
 Current repository: !`git rev-parse --show-toplevel`
-Fetch master: !`git fetch -q origin master`
-Current master: !`git log -1 --format='%H %cs %s' origin/master`
+Current master (after fetch): !`git fetch -q origin master 2>/dev/null; git log -1 --format='%H %cs %s' origin/master`
 
 ## Step 0 - Mode
 Read the section "Release groups" of AGENTS.md.
