@@ -27,10 +27,11 @@
 - Configuration: options classes in `[folder]`, files `appsettings.json`, `appsettings.[Env].json`; secrets from `[environment variables | secret store]`
 - Feature flags: `[mechanism | none]`
 - Integrations: `[S3 via IStorageService (in-house package X), SharePoint via ...]`
+- Licenses: `[FluentAssertions stays on 7.x (8.0+ is commercial) | none]`
 
 ## Build & test (optional: auto-detected, fill only if the detection is wrong)
-- Build: `[dotnet build | npm run build | not buildable here: .NET Framework needs Windows]`
-- Test: `[dotnet test | npm test | none]`
+- Build: `[dotnet build path/to/App.sln | npm run build | not buildable here: .NET Framework needs Windows]`
+- Test: `[dotnet test path/to/App.sln | npm test | none]`
 
 ## In-house mediator (cqrs-api only)
 - Package: `[package name]`
@@ -39,7 +40,7 @@
 
 ## Tests
 - Framework: [xUnit / NUnit / MSTest]
-- Assertions: [FluentAssertions / Shouldly / built-in]
+- Assertions: [AwesomeAssertions / FluentAssertions 7.x / Shouldly / built-in]
 - Mocks: [NSubstitute / Moq / FakeItEasy]
 - Fixtures and builders: [IClassFixture / ICollectionFixture / base class / builders in `[folder]`]
 

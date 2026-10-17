@@ -11,7 +11,8 @@ opencode-web.sh stop && opencode-web.sh start
 
 Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/opencode/`. Seuls les fichiers qui changent sont sauvegardés, dans `~/.config/opencode/backup-<date>/` (les 5 dernières sauvegardes sont gardées), et les commandes des anciennes versions du pack sont retirées. Le script ne touche **jamais** à `AGENTS.md` ni à `opencode.json` :
 - `AGENTS.global.md` est à fusionner dans `~/.config/opencode/AGENTS.md`.
-- `opencode.snippet.json` est à fusionner dans `~/.config/opencode/opencode.json`, en particulier les réglages de `build` et `plan` (`temperature` 0.6, `top_p` 0.95, recommandés pour Qwen 3.6).
+- `opencode.snippet.json` est à fusionner dans `~/.config/opencode/opencode.json` : réglages de `build` et `plan` (`temperature` 0.6, `top_p` 0.95), et règles de `permission` pour tous les agents (outils MCP d'écriture masqués, secrets, git destructif).
+- Le modèle lui-même se règle dans la section `provider` de `opencode.json` : voir « Réglages du modèle » plus bas, sinon la température n'est pas envoyée.
 - `AGENTS.repo-template.md` sert de modèle pour le `AGENTS.md` à la racine de chaque repo (facultatif).
 
 ## La journée type
@@ -22,7 +23,7 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 | Début de ticket | `/ticket [DNA-123]` | Choix du ticket (dans ton sprint si tu ne donnes pas de clé), branche depuis develop (ou main/master s'il n'y a pas de develop), analyse du ticket, de Confluence et du code, puis **fiche ticket** enregistrée. |
 | Dev | `/dev [N] [directives]` | Implémente l'étape suivante du plan (ou l'étape N) selon tes directives (« comme dans ~/dev/x », « avec un Result », « sans nouvelle lib »), pose un QCM dès qu'un choix d'approche n'est pas tranché, compile, écrit et lance les tests de l'étape, coche l'étape, note tes choix dans la fiche, puis propose l'étape suivante. Tu peux aussi parler librement à `build` (« pourquoi ça plante », « explique ce flux », « corrige le build ») ou coder dans Rider. |
 | Tests | `/test [fichier] [comme <repo ou pattern>]` | Critères d'acceptation et code modifié → tests manquants écrits dans le style du projet (ou d'une référence) et lancés jusqu'au vert. La fiche est mise à jour. |
-| Avant de pousser | `/check` | Review, build, tests, critères d'acceptation, pré-scan sécurité, au plus 5 suggestions de bonnes pratiques non bloquantes, et alerte si `AGENTS.md` n'est plus à jour. En local et en lecture seule. |
+| Avant de pousser | `/check` | Review, licences des packages ajoutés ou montés de version, build et tests, critères d'acceptation, pré-scan sécurité, au plus 5 suggestions de bonnes pratiques non bloquantes, et alerte si `AGENTS.md` n'est plus à jour. En local et en lecture seule. |
 | Livrer | `/ship` | Commit, récupération des changements distants, push (avec ta validation), lien et description de la MR. |
 | Après la CI | `/scans` | Pipeline du commit poussé, puis Sonar et Fortify fusionnés et priorisés, avec la commande de correction de chaque point. |
 | Corriger | `/fortify-fix <id>` · `/sonar-fix <clé>` | Corrige UN point, avec test, build et message de commit. Puis `/check` → `/ship` → `/scans`. |
@@ -34,7 +35,7 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 
 | Commande | Usage |
 |---|---|
-| `/audit [domaine]` | Audit des bonnes pratiques de tout le repo selon son type (health checks, gestion d'erreurs, config, résilience, logs, sécurité, tests), avec preuves et la plus petite façon d'ajouter ce qui manque. |
+| `/audit [domaine]` | Audit des bonnes pratiques de tout le repo selon son type (health checks, gestion d'erreurs, config, résilience, logs, sécurité, tests, licences des packages), avec preuves et la plus petite façon d'ajouter ce qui manque. |
 | `/sync` | Met la branche à jour : commit local, changements distants de la branche, merge de develop (jamais de rebase), puis push si tu veux. |
 | `/release-notes` | Release note d'une MEP depuis master. Avec un nom de groupe (`/release-notes DNA`), une seule note pour plusieurs repos, regroupée par ticket. |
 | `/cqrs command CreateInvoice Invoices` | Command ou query, handler, validator et tests (projets CQRS uniquement). |
@@ -48,7 +49,7 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 | `git` | la fiche ticket ; git avec validation pour push, merge, pull, stash | `/ticket`, `/ship`, `/sync`, `/next`. Jamais de force-push, rien sur develop, master ou main. Masqué du sélecteur d'agents : on passe par les commandes. |
 | `reviewer` | la fiche ticket (ligne de suivi) | `/check`, review dans `/ship`. Lance le build et les tests. |
 | `test-writer` | les dossiers de tests et la fiche ticket | `/test`. Ne touche jamais au code de production. |
-| `analyst` | la fiche ticket (ligne de suivi de `/scans`) | `/daily`, `/scans`, analyse de `/ticket`. Lecture seule sur Jira, Confluence, GitLab, Sonar et Fortify. |
+| `analyst` | la fiche ticket (écrite dans `/ticket`, ligne de suivi de `/scans`) | `/daily`, `/scans`, analyse de `/ticket`. Lecture seule sur Jira, Confluence, GitLab, Sonar et Fortify. |
 | `debugger` · `architect` | rien | Appelés par l'agent `build` quand tu demandes « pourquoi ça plante » ou « fais-moi un plan ». `architect` fait aussi `/audit`. |
 | `release-writer` | une page Confluence, avec ta validation | `/release-notes`. |
 
@@ -58,19 +59,45 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 
 ## Scripts (copiés dans `~/.config/opencode/scripts/`)
 
-- `workflow-state.sh` : l'état complet de la branche en une seule passe, après un seul `git fetch` (branche, ticket et fiche, résumé des autres fiches, base, copie distante, fichiers modifiés, diffs avec `--diff`, remplacés par la liste des fichiers au-delà de 1500 lignes). OpenCode lance les commandes injectées en parallèle : tout regrouper ici évite des références distantes périmées et accélère `/next`, `/dev`, `/test`, `/check`, `/ship`, `/sync`, `/ticket` et `/scans`.
+- `workflow-state.sh` : l'état complet de la branche en une seule passe, après un seul `git fetch` (date et heure, branche, ticket et fiche, résumé des autres fiches, base, copie distante, fichiers modifiés, diffs avec `--diff`, remplacés par la liste des fichiers au-delà de 1500 lignes, packages ajoutés ou modifiés avec `--packages`). OpenCode lance les commandes injectées en parallèle : tout regrouper ici évite des références distantes périmées et accélère `/next`, `/dev`, `/test`, `/check`, `/ship`, `/sync`, `/ticket` et `/scans`.
+- `build-test.sh [solution ou projet] [options de dotnet test]` : build silencieux puis tests seulement si le build passe, en un seul appel, avec des lignes `BUILD:` et `TESTS:` explicites (OpenCode ne montre pas le code retour d'une commande au modèle).
+- `package-licenses.sh` : les packages NuGet devenus payants ou copyleft à partir d'une version (MediatR 13+, AutoMapper 15+, FluentAssertions 8+, MassTransit 9+, NPOI 2.8+, EPPlus 5+, QuestPDF, ImageSharp 3+, Duende IdentityServer, iText, Polly à sa prochaine version majeure). Trois modes : tout le repo, références directes puis transitives d'après `obj/project.assets.json` (`/audit`, `/agents-md`) ; `--diff` pour ce que la branche ajoute ou monte de version (`/check`, review de `/ship`) ; `--check <package> [version]` avant d'ajouter ou de monter un package (`/dev`, `/test`, `/apply-pattern`). Il lit les `.csproj`, `Directory.Packages.props` (versions centralisées, `VersionOverride`), les propriétés `$(...)` et `packages.config`. Les règles, datées, sont en tête du script : à mettre à jour quand un package connu change de licence. NuGet seulement (pas npm).
 - `detect-project-type.sh` : type de projet, commandes de build et de test, stack de test.
 - `release-commits.sh` : commits, MR et tickets d'une plage de MEP pour `/release-notes`.
 
 Chaque réponse du flux commence par le ticket en cours : **[DNA-123](lien Jira) - titre**.
 
+## Réglages du modèle (section `provider` de `opencode.json`)
+
+OpenCode 1.19 n'envoie la température d'un agent que si le modèle déclare `"temperature": true`. Pour un modèle déclaré à la main dans `provider` (cas d'un serveur interne), la valeur par défaut est `false` : sans cette ligne, le `temperature: 0.6` des agents est ignoré et le serveur applique la sienne. `top_p` est toujours envoyé ; `top_k` jamais, sauf dans les `options` du modèle, qui sont ajoutées telles quelles à chaque requête et l'emportent sur les valeurs des agents.
+
+```json
+"provider": {
+  "<ton provider>": {
+    "models": {
+      "<ton modèle Qwen>": {
+        "temperature": true,
+        "limit": { "context": 131072, "output": 32768 },
+        "options": { "top_k": 20, "chat_template_kwargs": { "preserve_thinking": true } }
+      }
+    }
+  }
+}
+```
+- `temperature: true` : à ajouter dans tous les cas.
+- `limit` : `context` = la taille de contexte réelle du serveur (à demander, ou `max_model_len` dans la réponse de `/v1/models` pour vLLM), au plus 131072 pour garder des tours rapides ; `output` = 32768, ou le quart de `context` s'il est plus petit que 128K. OpenCode compacte la session quand elle dépasse `context - output` ; sans `limit`, il ne la compacte jamais et elle peut finir en erreur de contexte.
+- `options` (à tester une commande, puis à retirer si le serveur répond par une erreur) : `top_k` 20 est la valeur recommandée par Qwen ; `preserve_thinking` garde le raisonnement des tours précédents, ce que Qwen recommande pour les agents (moins de raisonnement répété, meilleur cache du serveur).
+- Si le serveur tourne sans le mode thinking (aucun bloc de réflexion dans l'interface), les réglages recommandés par Qwen sont `temperature` 0.7, `top_p` 0.8, `top_k` 20 et `presence_penalty` 1.5 : mets-les dans les `options` du modèle, elles s'appliquent alors à tous les agents.
+
 ## Réglages liés à OpenCode 1.19 et Qwen 3.6
 
 - Les commandes dont l'agent est un sous-agent (`/daily`, `/scans`, `/check`, `/test`, `/audit`, `/release-notes`) tournent directement dans ta session (`subtask: false`) : sinon OpenCode ajoute un tour où l'agent `build` résume la réponse, ce qui coûte du temps et abîme les tableaux.
-- Build et tests silencieux : `dotnet build -nologo -v q -clp:ErrorsOnly` (erreurs et résumé seulement), puis `dotnet test --no-build`.
-- Chaque agent ne voit que les MCP dont il a besoin. Seuls `build` (`test-writer` dans `/dev`, `debugger`, `architect`) et `git` (`analyst` dans `/ticket`, `reviewer` dans `/ship`) délèguent à d'autres agents, sur un seul niveau comme l'impose OpenCode.
+- Moins d'allers-retours avec le modèle : build et tests en un appel (`build-test.sh`), appels indépendants envoyés ensemble (lectures, recherches, requêtes MCP, skills : `/check`, `/scans` et `/daily` le disent étape par étape), questions regroupées dans un seul QCM, date déjà fournie par l'état de la branche, `AGENTS.md` jamais relu (OpenCode l'injecte déjà), et dans `/ticket` l'analyste écrit lui-même la fiche au lieu de la faire recopier par l'agent `git`.
+- Chaque agent ne voit que les MCP dont il a besoin, et les outils MCP d'écriture sont masqués pour tous les agents (snippet) : moins de descriptions d'outils envoyées à chaque requête. Seuls `build` (`test-writer` dans `/dev`, `debugger`, `architect`) et `git` (`analyst` dans `/ticket`, `reviewer` dans `/ship`) délèguent à d'autres agents, sur un seul niveau comme l'impose OpenCode.
+- Le mode thinking reste actif : le couper serait le gain de vitesse le plus fort, mais au prix de la qualité.
 
 ## Pour la maintenance du pack
 
-- `tools/permissions.py` régénère les lignes `permission:` des agents. Ne les modifie pas à la main.
+- `tools/permissions.py` régénère les lignes `permission:` des agents et `opencode.snippet.json`. Ne les modifie pas à la main.
 - Avant chaque push, tous les fichiers sont validés avec `gray-matter`, le parseur YAML d'OpenCode : il refuse par exemple les clés en double.
+- Les scripts sont vérifiés avec `shellcheck` et testés avec dash, bash et busybox sh, et avec les awk mawk, gawk, BWK (celui de macOS) et busybox.

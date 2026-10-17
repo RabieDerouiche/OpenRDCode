@@ -8,7 +8,7 @@ Current repository: !`git rev-parse --show-toplevel`
 Current master (after fetch): !`git fetch -q origin master 2>/dev/null; git log -1 --format='%H %cs %s' origin/master`
 
 ## Step 0 - Mode
-Read the section "Release groups" of AGENTS.md.
+Use the section "Release groups" of AGENTS.md (already in your instructions: do not read the file).
 - If the first argument is the name of a group there: GROUP MODE with that group (the optional second argument is a date `YYYY-MM-DD`).
 - Otherwise, if there are no arguments and the current repository path above is listed in a group: ask me with the question tool: "Release note du groupe <group>" (recommandé) / "Seulement ce dépôt". 
 - Otherwise: SINGLE REPOSITORY MODE with the arguments as given.
@@ -19,7 +19,7 @@ Say the mode in one line before anything else.
 Production is deployed from the `master` branch as is; there are no release tags.
 
 Steps (single repository mode):
-1. Read AGENTS.md for the sections "Confluence" and "Releases" (space key, release notes parent page, application name). For each missing value, ask me with the question tool (multiple choice, recommended option first) (free answer), then remind me to add it to AGENTS.md.
+1. Use the sections "Confluence" and "Releases" of the repository AGENTS.md, already in your instructions (space key, release notes parent page, application name). For each missing value, ask me with the question tool (multiple choice, recommended option first) (free answer), then remind me to add it to AGENTS.md.
 2. Determine the range of this release. `from` is the commit of the PREVIOUS deployment (excluded: it belongs to the previous release); `to` is the commit deployed in THIS release (included).
    - No arguments: `from` = the commit hash written after "Commit master déployé" in the most recent release note under the parent page in Confluence; `to` = current `origin/master`. If there is no previous release note or no hash in it, ask me with the question tool (multiple choice, recommended option first): "Depuis une date" / "Depuis un commit" / "Je décris les changements en texte libre", then ask for the value.
    - One argument that is a commit hash or ref: `from` = that commit, `to` = current `origin/master`.
@@ -70,7 +70,7 @@ Rules:
 - Never write anything in the repositories, Jira, GitLab, SonarQube or Fortify.
 
 Steps:
-1. Read the section "Release groups" of AGENTS.md and find the group "<group name>": Confluence space key, release notes parent page, application name, and the list of repositories (label + absolute path). If the group is missing, ask me with the question tool (multiple choice, recommended option first) with the existing groups as options; if there is none, ask me for the values (free answer) and remind me to add them to AGENTS.md.
+1. In the section "Release groups" of AGENTS.md, find the group "<group name>": Confluence space key, release notes parent page, application name, and the list of repositories (label + absolute path). If the group is missing, ask me with the question tool (multiple choice, recommended option first) with the existing groups as options; if there is none, ask me for the values (free answer) and remind me to add them to AGENTS.md.
 2. Determine `from` for each repository:
    - If a date is given (second argument), use it for every repository.
    - Otherwise read the most recent release note of this group under the parent page in Confluence: its section "Informations de déploiement" has one line per repository "<label> : <full hash>". Use that hash as `from` for that repository.

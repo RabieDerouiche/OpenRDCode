@@ -5,8 +5,8 @@
 - Code, code comments, log messages, commit messages and test names are in English.
 
 ## Asking me
-- When a decision is mine (which option, which version, which base branch, keep or change a library, fix or skip), do not stop and do not guess: ask me with the question tool, as a multiple-choice question with 2 to 4 short options, the recommended one first and marked "(recommandé)". I can always type another answer.
-- One question at a time, only when the answer changes what you do. Do not ask for things you can find in the code, the git history or AGENTS.md.
+- When a decision is mine (which option, which version, which base branch, keep or change a library, fix or skip), do not stop and do not guess: ask me with the question tool, as multiple-choice questions with 2 to 4 short options each, the recommended one first and marked "(recommandé)". I can always type another answer.
+- Ask only when the answer changes what you do; never ask for things you can find in the code, the git history or AGENTS.md. Put all the questions you already need into ONE question tool call (one question per decision, up to 4): I answer them in a row. Ask separately only a question that depends on a previous answer.
 
 ## Working style
 - Read existing code before writing new code, and mirror its conventions.
@@ -15,9 +15,10 @@
 - Never invent file paths, types, methods, package names, application names or filter names. Look them up, or ask.
 
 ## Speed
-- Keep tool output small: build with `dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60` (errors and the "Build succeeded/FAILED" summary only), test with `dotnet test --no-build -nologo 2>&1 | tail -60` right after that build, `--filter` to run only the tests you are working on (never `--no-build` right after editing code or tests), other long outputs through `tail -60`, `git diff --stat` before a full diff.
-- Read only the files and sections a step needs; do not re-read a file you already read unless it may have changed (for example after I edited it in Rider).
-- Several independent reads or searches: request them in the same turn.
+- .NET build and tests in one call: `sh ~/.config/opencode/scripts/build-test.sh [<solution or project>] [<dotnet test options>]`. It builds quietly (errors only), runs the tests only if the build passed, and ends with explicit "BUILD:" and "TESTS:" lines. Some tests only: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestClass>`. Build only, to fix compilation errors: `dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60`. When AGENTS.md "Build & test" names a solution or project, pass it as the first argument. Front-end: the commands of AGENTS.md or of the project detection.
+- Other long outputs through `| tail -60`; `git diff --stat` before a full diff.
+- Independent tool calls (reads, searches, MCP queries, skills to load, the build and tests) go together in ONE turn: they run in parallel. Chain calls only when one needs the result of another.
+- AGENTS.md files are already in your instructions: never read them again, except to edit one. Read only the files and sections a step needs; do not re-read a file you already read unless it may have changed (for example after I edited it in Rider).
 
 ## Project types
 - I work on several kinds of repositories: .NET 10 APIs with Clean Architecture + CQRS, classic .NET APIs without CQRS, legacy .NET Framework web projects, libraries, and front-end projects.
@@ -26,7 +27,7 @@
 - For CQRS APIs only: in-house mediator, NOT MediatR (never add MediatR); load the skill `dotnet-cqrs-conventions` before writing or reviewing handlers.
 - New libraries or approaches: by default, use what the repository already uses (the "Test stack" line of the project detection for tests; the existing packages for the rest). When a task would bring something the repository does not use yet (for example Moq, FluentValidation, a mediator, a new test framework), ask me before writing code with the question tool: "Garder l'existant (<what is used today>)" (recommandé) or "Introduire <new thing> (<packages to add, files impacted>)". Wait for my answer. If I choose the new thing: add it, use it for the new code only, and do not rewrite existing code unless I ask.
 - If the repository has no tests at all, ask me with the question tool before creating a test project.
-- Licenses: some well-known packages became commercial (MediatR 13+, AutoMapper 15+, FluentAssertions 8+, MassTransit 9+). Never propose to introduce or upgrade to these versions without saying so in the question; prefer what the repository already uses or a free alternative (in-house mediator, manual mapping or Mapster, AwesomeAssertions or Shouldly).
+- Licenses: well-known NuGet packages became paid or copyleft from a given version (MediatR 13+, AutoMapper 15+, FluentAssertions 8+, MassTransit 9+, NPOI 2.8+, EPPlus 5+, QuestPDF, ImageSharp 3+, Duende IdentityServer, iText; Polly from its next major version). Before adding or upgrading a NuGet package, run `sh ~/.config/opencode/scripts/package-licenses.sh --check <PackageId> [<version>]`. If it reports COMMERCIAL, MAINTENANCE FEE or AGPL, say it in the question and propose its free option first. Never move a package into such a version without my approval.
 - Build and test with the commands from the section "Build & test" of the repository AGENTS.md if it exists, otherwise from the detection script. Legacy .NET Framework projects may not build on this machine (.NET Framework needs Windows): say so instead of changing project files.
 - Integrations: SharePoint (CSOM), DocuSign, AWS S3, Piano Analytics. Load the skill `integrations-guardrails` before touching them. Never modify authentication or credentials handling without asking.
 
@@ -48,7 +49,7 @@
 - "fais comme dans <repo>", "inspire-toi de ce que j'ai fait sur <repo>" →
   1. If a skill `pattern-<name>-back` or `pattern-<name>-front` matches, load it: it is the reference (same as /apply-pattern).
   2. Otherwise read ONLY the files of that implementation in the other repository, read-only, with the read, grep and glob tools (ask me for its path if I did not give it).
-  3. For each library or mechanism the source uses and this repository does not (Moq vs NSubstitute, FluentAssertions, AutoFixture, xUnit fixtures, Testcontainers, a mediator, FluentValidation…), ask me with the question tool: "Garder l'existant (<current>)" (recommandé) / "Introduire <thing> comme dans <source>". Wait for the answers.
+  3. For each library or mechanism the source uses and this repository does not (Moq vs NSubstitute, FluentAssertions, AutoFixture, xUnit fixtures, Testcontainers, a mediator, FluentValidation…), ask me with the question tool, one question per item, all in one call: "Garder l'existant (<current>)" (recommandé) / "Introduire <thing> comme dans <source>". Wait for the answers.
   4. Adapt to this repository's conventions (naming, folders, DI, logging), never copy configuration values, URLs, hosts or secrets from the other repository, then plan and implement step by step with a build after each step.
   5. At the end, if no skill existed, suggest `/extract-pattern <name> <source repo path>` so the approach is reusable next time.
 - "j'ai poussé depuis mon Mac", "j'ai commité dans Rider" → tell me to run `/sync` first (it retrieves the branch's remote changes), then continue.

@@ -3,20 +3,23 @@
 # /ticket, /scans). OpenCode runs the shell injections of a command in parallel: running everything here, after a
 # single fetch, avoids stale remote refs and git lock conflicts.
 # Read-only, except `git fetch`.
-# Usage: workflow-state.sh [--no-fetch] [--diff]
+# Usage: workflow-state.sh [--no-fetch] [--diff] [--packages]
 #   --no-fetch  do not fetch origin first
 #   --diff      also print the commits and the diffs of the branch (committed and uncommitted); a diff longer
 #               than MAX_DIFF_LINES is replaced by its file list, to be read file by file
+#   --packages  also print the NuGet packages added or changed on the branch, with their license issues
 
 MAX_DIFF_LINES=1500
 MAX_SHEETS=10
 
 fetch=1
 diff=0
+packages=0
 for arg in "$@"; do
   case "$arg" in
     --no-fetch) fetch=0 ;;
     --diff) diff=1 ;;
+    --packages) packages=1 ;;
   esac
 done
 
@@ -47,6 +50,7 @@ sheets="$root/.git/opencode/tickets"
 
 remote_url=$(git remote get-url origin 2>/dev/null | sed -E 's#://[^@/]+@#://#')
 
+echo "Now: $(date '+%Y-%m-%d %H:%M')"
 echo "Repository root: $root"
 echo "Remote URL (credentials masked): ${remote_url:-none}"
 echo "Current branch: ${branch:-(detached HEAD)}"
@@ -89,6 +93,7 @@ ls "$sheets" 2>/dev/null
 # One line per sheet, most recent first: key | title | branch | branch exists | plan done/total | last Suivi line
 if [ -d "$sheets" ]; then
   echo "Ticket sheets summary (key | title | branch | branch exists | plan done/total | last Suivi line):"
+  # shellcheck disable=SC2010 # ls -t orders the sheets by date; their names are Jira keys
   ls -t "$sheets" 2>/dev/null | grep '\.md$' | head -n "$MAX_SHEETS" | while read -r file; do
     f="$sheets/$file"
     sheet_title=$(head -1 "$f" | sed 's/^# //')
@@ -129,4 +134,10 @@ if [ "$diff" -eq 1 ] && [ -n "$base" ]; then
   echo
   echo "=== Uncommitted diff (staged and unstaged)"
   print_diff HEAD
+fi
+
+if [ "$packages" -eq 1 ] && [ -n "$base" ]; then
+  echo
+  echo "=== Packages"
+  sh "$(dirname "$0")/package-licenses.sh" --diff "$base"
 fi

@@ -24,8 +24,11 @@ Steps:
    - Remote only = 0: nothing to retrieve.
    - Remote only > 0 and local only = 0: run `git merge --ff-only origin/<branch>`.
    - Both > 0 (the branch was changed here and elsewhere): say it in one line, then run `git merge --no-edit origin/<branch>` (asks for approval).
-5. Base branch (`<base>` below, normally `origin/develop`): count with `git rev-list --left-right --count HEAD...<base>`. If it has new commits, list them (`git log --oneline HEAD..<base>`, at most 15) and ask me with the question tool: "Merger <base> maintenant" (recommandé) / "Plus tard". If yes, run `git merge --no-edit <base>` (asks for approval).
-6. Push. If the branch now has commits that are not on `origin/<branch>` (or `origin/<branch>` does not exist), ask me with the question tool: "Pousser maintenant" (recommandé) / "Plus tard". If yes, run `git push -u origin <branch>` (asks for approval). Never force.
+5. Base branch (`<base>` below, normally `origin/develop`): count with `git rev-list --left-right --count HEAD...<base>`; if it has new commits, list them (`git log --oneline HEAD..<base>`, at most 15). Then ask me, in ONE question tool call, the questions that apply:
+   - `<base>` has new commits: "Merger <base> maintenant" (recommandé) / "Plus tard";
+   - the branch has, or will have after that merge, commits that are not on `origin/<branch>` (or `origin/<branch>` does not exist): "Pousser à la fin" (recommandé) / "Plus tard".
+   If the merge is chosen, run `git merge --no-edit <base>` (asks for approval).
+6. Push, if it was chosen in step 5 and no conflict is pending: `git push -u origin <branch>` (asks for approval). Never force.
 7. On a merge conflict (in step 4 or 5): run `git diff --name-only --diff-filter=U`, list the files, and ask me with the question tool:
    - "Je résous dans Rider, préviens-moi ensuite" (recommandé): stop here. When I come back, check `git status`, finish the merge with `git commit --no-edit` only if no conflict remains, then continue with the next step.
    - "Annuler la synchro": run `git merge --abort` and stop. Do not push.

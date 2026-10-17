@@ -25,18 +25,18 @@ The Jira key is in the branch name (pattern `[A-Z][A-Z0-9]+-[0-9]+`). Read `.git
 - Every step already checked: say "Toutes les étapes du plan sont faites : /test puis /check" and stop.
 
 ## Step 3 - Context
-Read only what the step needs:
-- The repository AGENTS.md: "Build & test", "Reference examples", "Tests", "Architecture & conventions", "Repository-specific rules".
+Read only what the step needs, and send these reads and skill loads together in one turn:
+- The repository AGENTS.md is already in your instructions (do not read it again): use its "Build & test", "Reference examples", "Tests", "Architecture & conventions" and "Repository-specific rules" sections.
 - Skills, only those this step needs: every `pattern-` skill named in the step or in my directives; `dotnet-cqrs-conventions` for a cqrs-api; `integrations-guardrails` if the step touches SharePoint/CSOM, DocuSign, S3, Piano Analytics or authentication; `best-practices` only when a decision of step 4 is about error handling (Result pattern), a feature flag or performance.
-- A directive "comme dans <repository>" without a matching skill: read ONLY the files of that implementation in the other repository, read-only, then for each library or mechanism it uses that this repository does not, ask me "Garder l'existant (<current>)" (recommandé) / "Introduire <item> comme dans <source>".
+- A directive "comme dans <repository>" without a matching skill: read ONLY the files of that implementation in the other repository, read-only, then for each library or mechanism it uses that this repository does not, ask me "Garder l'existant (<current>)" (recommandé) / "Introduire <item> comme dans <source>", in the same question tool call as the questions of step 4.
 - The existing code the step changes, and the closest existing example of what the step creates.
 
 ## Step 4 - Doubts: ask, do not guess
-Before writing code, list for yourself the decisions this step needs. For each one that is not settled by my directives, the "Décisions" of the sheet, AGENTS.md or the existing code, and where two reasonable options have different impact, ask me with the question tool, one question at a time, 2 to 4 short options, the recommended one first with its reason in a few words. Typical cases:
+Before writing code, list for yourself the decisions this step needs. For each one that is not settled by my directives, the "Décisions" of the sheet, AGENTS.md or the existing code, and where two reasonable options have different impact, ask me: all these questions in ONE question tool call, one question per decision, 2 to 4 short options each, the recommended one first with its reason in a few words (a question that depends on another answer comes after). Typical cases:
 - where the code goes (existing class or service vs a new one; which project or folder);
 - error handling for expected failures when the repository has no result type (introduce a minimal Result vs keep exceptions);
 - a feature flag for a user-visible or unfinished change (production deploys master as is);
-- a new package, or an in-house package version;
+- a new package, or an in-house package version: for a public package, run `sh ~/.config/opencode/scripts/package-licenses.sh --check <PackageId> [<version>]` first and put its verdict in the options (for example "Introduire FluentAssertions 8 (licence commerciale)" after "Garder l'existant");
 - a change to a public contract: API route, request or response shape, public library method, database schema;
 - two conventions coexisting in the repository (which one is the reference for new code);
 - an acceptance criterion that can be read two ways.
@@ -46,18 +46,18 @@ Never ask what you can find in the code, the sheet or AGENTS.md. Then show the s
 Only this step. Smallest change that does it, mirroring the existing code and the reference examples. Code comments and log messages in English. No unrelated refactoring, renaming or reformatting.
 
 ## Step 6 - Build
-Run the build command (AGENTS.md "Build & test", otherwise the detection above), quietly: `dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60` for .NET. Fix compilation errors with the rules of the skill `build-fix`, at most 3 rounds. A legacy .NET Framework project that cannot build on this machine (.NET Framework needs Windows): say so and continue.
+Run the build command (AGENTS.md "Build & test", otherwise the detection above), quietly: `dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60` for .NET. Fix compilation errors with the rules of the skill `build-fix`, at most 3 rounds. A legacy .NET Framework project that cannot build on this machine (.NET Framework needs Windows): say so and continue. For a step after the first one of this run, send `date "+%Y-%m-%d %H:%M"` together with the build (date of step 8).
 
 ## Step 7 - Tests of this step
 Unless the step has no testable behavior (pure configuration, documentation) or my directives say otherwise, invoke the `test-writer` subagent with the task tool and this prompt (fill the placeholders):
-"Write the unit tests for step <N> of ticket <KEY>: <step text>. Files changed in this step: <list>. Acceptance criteria concerned: <list>. Directives about tests: <my directives about tests, or none>. Decisions already made (do not ask again): <the sheet's Décisions about tests>. Follow your rules (reference approach, existing style, questions before any new library or mechanism). Update the rows of these tests in the "Tests attendus" table of `.git/opencode/tickets/<KEY>.md`. Run only the tests of this step on the test project, which rebuilds incrementally: `dotnet test <test project> -nologo --filter FullyQualifiedName~<TestClass> 2>&1 | tail -60`, and report. The full suite runs later in /test and /check."
+"Write the unit tests for step <N> of ticket <KEY>: <step text>. Files changed in this step: <list>. Acceptance criteria concerned: <list>. Test project and closest existing test file, if known: <paths>. Directives about tests: <my directives about tests, or none>. Decisions already made (do not ask again): <the sheet's Décisions about tests>. Follow your rules (reference approach, existing style, questions before any new library or mechanism). Update the rows of these tests in the "Tests attendus" table of `.git/opencode/tickets/<KEY>.md`. Run only the tests of this step, in one call that rebuilds the test project quietly first: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestClass>`, and report. The full suite runs later in /test and /check."
 If a test it wrote fails because of a real bug in the code of this step, fix the production code (at most 2 rounds) and run the tests again.
 
 ## Step 8 - Ticket sheet
 With the edit tool, in `.git/opencode/tickets/<KEY>.md`:
 - tick the step (`- [x]`);
 - add each answer I gave in step 1 or 4 to a "## Décisions" section (create it before "## Suivi" if missing): `- <topic> : <choice> (étape <N>)`;
-- append to "## Suivi": `- <date> /dev étape <N> - <files changed count> fichiers - build <ok|ko> - tests <passed>/<total>` (date with `date "+%Y-%m-%d %H:%M"`).
+- append to "## Suivi": `- <date> /dev étape <N> - <files changed count> fichiers - build <ok|ko> - tests <passed>/<total>` (date: the "Now" line of the workflow state for the first step of this run, otherwise the one fetched in step 6).
 
 ## Step 9 - Answer, in French, then the next step
 - First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name. Then the step: "Étape <N>/<total> : <step text>".

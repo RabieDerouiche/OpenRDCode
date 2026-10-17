@@ -13,6 +13,8 @@ Workflow state (one fetch, then the state of the branch and of the ticket sheet)
 
 Sonar and Fortify both run in the CI on every pushed commit. Never read appsec-ci.env yourself: it may contain secrets; use only the line injected above (the SSC application is the value after `=`, without quotes). Read-only everywhere: never mark an issue as false positive, never change a status, never comment.
 
+Speed: send the independent MCP calls together. First turn: the pipeline of the pushed commit (step 2), the versions of the SSC application (step 3) and the search of the Sonar project (step 4). Second turn: the Fortify issues of the selected version, and the Sonar issues and security hotspots of the branch. If step 2 stops, ignore the other results.
+
 ## Step 1 - Pushed or not
 - If the workflow state says "Upstream: none", the branch was never pushed: say "Branche jamais poussée : lance /ship" and stop.
 - If there are local commits not pushed, say in one line that the scans will not include them (suggest /ship), and continue with the pushed commit.
@@ -54,6 +56,6 @@ First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticke
 - If nothing is open on the files of this branch: "Rien à corriger sur cette branche : la MR est prête côté qualité."
 
 ## Ticket sheet
-If the workflow state lists a current ticket sheet, append to its "## Suivi" with the edit tool (date with `date "+%Y-%m-%d %H:%M"`):
+If the workflow state lists a current ticket sheet, append a line at the end of its "## Suivi" section, which ends the file, with the edit tool: insert it after the last Suivi line given by the "Ticket sheets summary" of the workflow state (read the sheet only if that edit fails). Date: the "Now" line of the workflow state.
 `- <date> /scans - <short sha> - pipeline <success|failed|running> - <n> points à corriger sur la branche`
 Write nothing else.

@@ -7,6 +7,7 @@
     },
     "plan": {
       "temperature": 0.6,
+      "top_p": 0.95,
       "permission": {
         "bash": {
           "*": "deny",
@@ -64,6 +65,7 @@
           "git remote": "allow",
           "git remote -v": "allow",
           "git remote show*": "allow",
+          "git remote get-url*": "allow",
           "git stash list*": "allow",
           "git reflog*": "allow",
           "git --no-pager *": "allow",
@@ -74,6 +76,7 @@
           "dotnet --list-runtimes": "allow",
           "dotnet list*": "allow",
           "sh ~/.config/opencode/scripts/detect-project-type.sh*": "allow",
+          "sh ~/.config/opencode/scripts/package-licenses.sh*": "allow",
           "*>*": "deny",
           "*2>&1*": "allow",
           "*> *": "deny",
@@ -145,8 +148,7 @@
           "*${*": "deny",
           "*`*": "deny"
         }
-      },
-      "top_p": 0.95
+      }
     }
   },
   "permission": {
@@ -165,6 +167,20 @@
       "git reset*": "ask",
       "git rebase*": "ask",
       "rm -rf*": "ask"
-    }
+    },
+    "*create*": "deny",
+    "*update*": "deny",
+    "*delete*": "deny",
+    "*remove*": "deny",
+    "*upload*": "deny",
+    "*add_*": "deny",
+    "*approve*": "deny",
+    "*assign*": "deny",
+    "*accept*": "deny",
+    "*transition_issue*": "deny",
+    "*do_transition*": "deny",
+    "*merge_merge_request*": "deny",
+    "*change_status*": "deny",
+    "*set_*": "deny"
   }
 }

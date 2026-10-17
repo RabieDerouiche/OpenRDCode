@@ -11,13 +11,17 @@ Project detection:
 Solution projects:
 !`git ls-files '*.csproj'`
 
+Package licenses (direct references, then transitive ones from the last restore):
+!`sh ~/.config/opencode/scripts/package-licenses.sh`
+
 Audit this repository against the best practices of its project type, including the Result pattern, feature flags and performance. Read-only: never modify a file.
 
 Steps:
 1. Project type: the "Project type" section of AGENTS.md wins, otherwise the detection above. If several types apply, audit each part with its own section of the checklist.
 2. Load the skill `best-practices`. If a focus is given above, audit only that area.
-3. For each practice that applies to this project type, check it in the code with the "Detect" hint (read, grep and glob tools). Status: "en place" (with file:line), "partiel" (what is missing, with file:line) or "absent" (where you looked). Never mark a practice absent without having searched for it.
+3. For each practice that applies to this project type, check it in the code with the "Detect" hint (read, grep and glob tools; send the searches of several practices together in one turn). Status: "en place" (with file:line), "partiel" (what is missing, with file:line) or "absent" (where you looked). Never mark a practice absent without having searched for it.
 4. For each "partiel" or "absent" practice: the benefit in one sentence, the smallest change (files to create or modify), the packages it needs that the repository does not use yet (the developer decides), and `/apply-pattern <name>` if a skill whose name starts with `pattern-` covers it.
+5. Package licenses, from the block above: each package marked COMMERCIAL, MAINTENANCE FEE or AGPL, direct or transitive, is a "Licence <package>" row with priority "haute", and its free option is the smallest change. The packages marked "free version" go in one line: "À ne pas monter de version sans validation : <package> (<version from which it is paid>), ...".
 
 Answer, in French:
 - First line: "Type de projet : <type>".
