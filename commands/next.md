@@ -2,23 +2,23 @@
 description: "Where am I and what next? Reads the branch, the working tree (including changes made outside OpenCode), the ticket sheet, the pipeline and the merge request, then proposes the next step in a multiple-choice question. Runs it right away when it is a git or ticket sheet action (sync, ship, finish a merge, tick a step done by hand); otherwise gives the command to type. Usage: /next"
 agent: git
 ---
-Workflow state (one fetch, then the state of the branch and of the ticket sheet):
-!`sh ~/.config/opencode/scripts/workflow-state.sh`
+Workflow state (one fetch, then the state of the branch, its ticket sheet and the other tickets):
+!`sh ~/.config/opencode/scripts/workflow-state.sh --sheet --tickets`
 
-Tell me where I am and get me to the next step as fast as possible. No review, no build, no full scan: read only what decides the next step.
+Tell me where I am and get me to the next step as fast as possible. No review, no build, no full scan: read only what decides the next step. Everything about the tickets is printed above: never read a ticket sheet.
 
 The workflow: /daily → /ticket → /dev (one plan step at a time, with its tests) → /test → /check → /ship → /scans → fixes (/fortify-fix, /sonar-fix) → back to /check. /sync brings develop, or what I pushed from my Mac, into the branch.
 
 ## Step 1 - Read the state
-- Which ticket: the one whose Jira key is in the current branch name ("Jira key from branch"). The "Ticket sheets summary" of the workflow state lists the other tickets started in this repository, most recent first (key, title, branch, branch exists, plan done/total, last Suivi line): use it as is, do not open those sheets. A ticket is "en cours" if its branch exists and its last Suivi line is not a /ship or /scans with the whole plan done. Open another sheet only to read the first sentence of its "## Résumé" and its "- Jira :" link, and only for the tickets you name in your answer.
-- The ticket sheet `.git/opencode/tickets/<KEY>.md` (Jira key from the branch name, pattern `[A-Z][A-Z0-9]+-[0-9]+`) if it is listed: unchecked steps of "Plan", "Tests attendus", "## Décisions", last lines of "## Suivi".
+- Which ticket: the one whose Jira key is in the current branch name ("Jira key from branch"). The "Ticket sheets summary" lists the tickets started in this repository, most recent first (key, title, branch, branch exists, plan done/total, last Suivi line, then their Jira link and the first sentence of their Résumé). A ticket is "en cours" if its branch exists and its last Suivi line is not a /ship or /scans with the whole plan done.
+- The ticket sheet of the current branch, printed above: unchecked steps of "Plan", "Tests attendus", "## Décisions", last lines of "## Suivi".
 - Changes made outside OpenCode or outside /dev: uncommitted or untracked files that no "/dev étape" line of "Suivi" explains. For each unchecked plan step, decide whether these changes implement it: compare the file names with the step and the "Zones de code concernées"; if unsure, read `git diff HEAD -- <file>` for at most 3 files. Keep the steps that look done by hand.
-- Only if the branch was pushed (it has a remote copy): the latest pipeline of the branch and its open merge request, with the GitLab MCP tools (read-only), in one turn together with the other reads you need (the ticket sheet, `git diff HEAD -- <file>`).
+- Only if the branch was pushed (it has a remote copy): the latest pipeline of the branch and its open merge request, with the GitLab MCP tools (read-only), in one turn together with the `git diff HEAD -- <file>` reads you need. Without a remote copy and without doubt about the changes, make no tool call before step 3.
 - AGENTS.md drift: if "Files changed on the branch" or the uncommitted files add, remove or rename a project (`.csproj`, `.sln`, `.slnx`), change `Directory.*.props`, `package.json` dependencies, `Program.cs` / `Startup.cs` registration, or add a new top-level folder, note which AGENTS.md sections are probably outdated (Solution structure, Build & test, Architecture & conventions, Tests). Do not run /agents-md.
 
 ## Step 2 - Decide, first matching rule
 1. On `develop`, `master` or `main`: if tickets are "en cours", next = ACTION "Reprendre <KEY>" for the most recent one (alternatives: the other ones, up to 2); otherwise next = "/daily, puis /ticket <KEY>". If there are uncommitted changes, warn that they must not be committed on this branch.
-2. A merge is in progress ("Merge in progress: yes"): if `git status --porcelain` still shows conflict lines (`UU`, `AA`, `DU`, `UD`), next = "Résous les conflits dans Rider"; otherwise next = ACTION "Terminer le merge".
+2. A merge is in progress ("Merge in progress: yes"): if the workflow state lists conflicted files, next = "Résous les conflits dans Rider" (name them); otherwise next = ACTION "Terminer le merge".
 3. The branch is "behind" its remote copy (commits pushed from another computer, e.g. Rider on my Mac): next = ACTION "Synchroniser".
 4. The branch has a Jira key but no ticket sheet: next = "/ticket <KEY>".
 5. Plan steps that look done by hand (step 1): next = ACTION "Cocher l'étape <n> (faite à la main)".
@@ -34,13 +34,13 @@ The workflow: /daily → /ticket → /dev (one plan step at a time, with its tes
 11. Otherwise: next = "/daily pour la suite".
 
 ## Step 3 - Answer and act
-Write at most 8 lines, in French; the branch state is part of "Où tu en es", no separate block. First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name. Then "Où tu en es" (branch, ticket link, plan <checked>/<total>, tests, last /check, push, pipeline, MR: only what exists), the changes made outside OpenCode if any, one line "Autres tickets en cours : [<KEY>](<link from its - Jira line>) - <title> (<branch>), ..." if any, and the AGENTS.md drift line if any: "AGENTS.md probablement à mettre à jour (<sections>) : /agents-md quand le ticket est livré".
+Write at most 8 lines, in French; the branch state is part of "Où tu en es", no separate block. First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name. Then "Où tu en es" (branch, ticket link, plan <checked>/<total>, tests, last /check, push, pipeline, MR: only what exists), the changes made outside OpenCode if any, one line "Autres tickets en cours : [<KEY>](<its Jira link>) - <title> (<branch>), ..." if any, and the AGENTS.md drift line if any: "AGENTS.md probablement à mettre à jour (<sections>) : /agents-md quand le ticket est livré".
 Then:
 - If the next step or a reasonable alternative is an ACTION, ask me with the question tool: the next step first "(recommandé)", then up to 2 alternatives that make sense now (for example "/check d'abord" before "Livrer", "Cocher l'étape 2" and "/dev étape 3", or "Basculer sur <other KEY>"), and "Rien pour l'instant". An option about a ticket always names it with its title, for example "Reprendre DNA-123 - Export PDF des contrats", and its description says in one line what the ticket is about (first sentence of its "Résumé") and where it stands (for example "étape 3/5, pas encore livré"). Then run the chosen ACTION right away:
   - "Synchroniser": load the skill `sync-procedure` and follow it.
   - "Livrer": load the skill `ship-procedure` and follow it.
   - "Terminer le merge": `git commit --no-edit`, then the branch state.
-  - "Reprendre <KEY>" or "Basculer sur <KEY>": if the working tree is not empty, ask me first: "Annuler, je commite d'abord" (recommandé) / "Mettre de côté (stash) et basculer" (`git stash push -u -m "next <current branch>"`); then `git switch <branch of that sheet>`, and go back to step 1 for that ticket, starting your answer with its header line and the first sentence of its "Résumé".
-  - "Cocher l'étape <n>": with the edit tool, tick the step in the sheet and append to "## Suivi" `- <date> /next - étape <n> faite à la main` (date: the "Now" line of the workflow state); then say that /test will write the missing tests for it.
+  - "Reprendre <KEY>" or "Basculer sur <KEY>": if the working tree is not empty, ask me first: "Annuler, je commite d'abord" (recommandé) / "Mettre de côté (stash) et basculer" (`git stash push -u -m "next <current branch>"`); then, in one call, `git switch <branch of that sheet> && sh ~/.config/opencode/scripts/workflow-state.sh --sheet`, and go back to step 1 for that ticket with this new state, starting your answer with its header line and the first sentence of its "Résumé".
+  - "Cocher l'étape <n>": with the edit tool, in one turn, tick the step in the sheet and append at the end of "## Suivi" `- <date> /next - étape <n> faite à la main` (exact lines from the sheet printed above; date: the "Now" line of the workflow state); then say that /test will write the missing tests for it.
   A chosen command (/dev, /test, /check, /scans, /ticket, /agents-md) cannot be launched from here: answer with one line "Tape `<command>`".
 - Otherwise do not ask: end with "**Prochaine étape : <command>**" and one line "Ensuite : <step after>".

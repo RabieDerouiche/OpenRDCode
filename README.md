@@ -23,19 +23,20 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 | Début de ticket | `/ticket [DNA-123]` | Choix du ticket (dans ton sprint si tu ne donnes pas de clé), branche depuis develop (ou main/master s'il n'y a pas de develop), analyse du ticket, de Confluence et du code, puis **fiche ticket** enregistrée. |
 | Dev | `/dev [N] [directives]` | Implémente l'étape suivante du plan (ou l'étape N) selon tes directives (« comme dans ~/dev/x », « avec un Result », « sans nouvelle lib »), pose un QCM dès qu'un choix d'approche n'est pas tranché, compile, écrit et lance les tests de l'étape, coche l'étape, note tes choix dans la fiche, puis propose l'étape suivante. Tu peux aussi parler librement à `build` (« pourquoi ça plante », « explique ce flux », « corrige le build ») ou coder dans Rider. |
 | Tests | `/test [fichier] [comme <repo ou pattern>]` | Critères d'acceptation et code modifié → tests manquants écrits dans le style du projet (ou d'une référence) et lancés jusqu'au vert. La fiche est mise à jour. |
-| Avant de pousser | `/check` | Review, licences des packages ajoutés ou montés de version, build et tests, critères d'acceptation, pré-scan sécurité, au plus 5 suggestions de bonnes pratiques non bloquantes, et alerte si `AGENTS.md` n'est plus à jour. En local et en lecture seule. |
+| Avant de pousser | `/check` | Review, build et tests, critères d'acceptation, pré-scan sécurité, au plus 5 suggestions de bonnes pratiques non bloquantes, et alerte si `AGENTS.md` n'est plus à jour. Si la branche touche un fichier projet (`.csproj`, `.props`…), un QCM te propose de vérifier les licences des packages modifiés. En local et en lecture seule. |
 | Livrer | `/ship` | Commit, récupération des changements distants, push (avec ta validation), lien et description de la MR. |
 | Après la CI | `/scans` | Pipeline du commit poussé, puis Sonar et Fortify fusionnés et priorisés, avec la commande de correction de chaque point. |
 | Corriger | `/fortify-fix <id>` · `/sonar-fix <clé>` | Corrige UN point, avec test, build et message de commit. Puis `/check` → `/ship` → `/scans`. |
 | Perdu ? | `/next` | Lit l'état (y compris ce que tu as modifié hors d'OpenCode ou poussé depuis ton Mac), la fiche, le pipeline et la MR, puis te propose la suite en QCM. Il exécute directement les actions git et fiche (synchroniser, livrer, terminer un merge, cocher une étape faite à la main) ; pour le reste il te donne la commande à taper. Il signale aussi quand `AGENTS.md` est à mettre à jour. |
 
-**La fiche ticket** est le fichier `.git/opencode/tickets/<CLÉ>.md` du repo. Comme elle est dans `.git`, elle n'est jamais commitée. Elle contient les critères d'acceptation, les tests attendus, le plan et un historique (`## Suivi`). `/dev`, `/test`, `/check`, `/ship`, `/scans` et `/next` la lisent et y notent leur passage, ce qui leur évite de tout redemander. La section `## Décisions` garde tes choix (Result, feature flag, librairie…) pour qu'ils ne te soient pas reposés.
+**La fiche ticket** est le fichier `.git/opencode/tickets/<CLÉ>.md` du repo. Comme elle est dans `.git`, elle n'est jamais commitée. Elle contient les critères d'acceptation, les tests attendus, le plan et un historique (`## Suivi`). `/dev`, `/test`, `/check`, `/ship`, `/scans` et `/next` la reçoivent avec l'état de la branche (sans la relire) et y notent leur passage, ce qui leur évite de tout redemander. La section `## Décisions` garde tes choix (Result, feature flag, librairie…) pour qu'ils ne te soient pas reposés.
 
 ## Commandes ponctuelles
 
 | Commande | Usage |
 |---|---|
-| `/audit [domaine]` | Audit des bonnes pratiques de tout le repo selon son type (health checks, gestion d'erreurs, config, résilience, logs, sécurité, tests, licences des packages), avec preuves et la plus petite façon d'ajouter ce qui manque. |
+| `/audit [domaine]` | Audit des bonnes pratiques de tout le repo selon son type (health checks, gestion d'erreurs, config, résilience, logs, sécurité, tests), avec preuves et la plus petite façon d'ajouter ce qui manque. |
+| `/licences` · `/licences branche` · `/licences <package> [version]` | À la demande : les packages NuGet devenus payants ou copyleft à partir d'une version (tout le repo avec les dépendances transitives, ce que la branche change, ou un package avant de l'ajouter), avec l'option gratuite. Un script, une réponse, aucun autre appel. |
 | `/sync` | Met la branche à jour : commit local, changements distants de la branche, merge de develop (jamais de rebase), puis push si tu veux. |
 | `/release-notes` | Release note d'une MEP depuis master. Avec un nom de groupe (`/release-notes DNA`), une seule note pour plusieurs repos, regroupée par ticket. |
 | `/cqrs command CreateInvoice Invoices` | Command ou query, handler, validator et tests (projets CQRS uniquement). |
@@ -47,10 +48,11 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 | Agent | Peut écrire | Rôle |
 |---|---|---|
 | `git` | la fiche ticket ; git avec validation pour push, merge, pull, stash | `/ticket`, `/ship`, `/sync`, `/next`. Jamais de force-push, rien sur develop, master ou main. Masqué du sélecteur d'agents : on passe par les commandes. |
+| `dev` | le code, comme `build` | `/dev`, `/cqrs`, `/apply-pattern`, `/extract-pattern` : l'agent `build` sans aucun outil MCP, pour que chaque requête reste légère. Masqué du sélecteur ; `build` garde tout pour la discussion libre, `/fortify-fix`, `/sonar-fix` et `/agents-md`. |
 | `reviewer` | la fiche ticket (ligne de suivi) | `/check`, review dans `/ship`. Lance le build et les tests. |
 | `test-writer` | les dossiers de tests et la fiche ticket | `/test`. Ne touche jamais au code de production. |
 | `analyst` | la fiche ticket (écrite dans `/ticket`, ligne de suivi de `/scans`) | `/daily`, `/scans`, analyse de `/ticket`. Lecture seule sur Jira, Confluence, GitLab, Sonar et Fortify. |
-| `debugger` · `architect` | rien | Appelés par l'agent `build` quand tu demandes « pourquoi ça plante » ou « fais-moi un plan ». `architect` fait aussi `/audit`. |
+| `debugger` · `architect` | rien | Appelés par l'agent `build` quand tu demandes « pourquoi ça plante » ou « fais-moi un plan ». `architect` fait aussi `/audit` et `/licences`. |
 | `release-writer` | une page Confluence, avec ta validation | `/release-notes`. |
 
 ## Skills (chargés à la demande)
@@ -59,9 +61,9 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 
 ## Scripts (copiés dans `~/.config/opencode/scripts/`)
 
-- `workflow-state.sh` : l'état complet de la branche en une seule passe, après un seul `git fetch` (date et heure, branche, ticket et fiche, résumé des autres fiches, base, copie distante, fichiers modifiés, diffs avec `--diff`, remplacés par la liste des fichiers au-delà de 1500 lignes, packages ajoutés ou modifiés avec `--packages`). OpenCode lance les commandes injectées en parallèle : tout regrouper ici évite des références distantes périmées et accélère `/next`, `/dev`, `/test`, `/check`, `/ship`, `/sync`, `/ticket` et `/scans`.
+- `workflow-state.sh` : l'état complet de la branche en une seule passe (date et heure, branche, ticket, base, copie distante, conflits, fichiers modifiés, résumé des fiches ; contenu de la fiche avec `--sheet`, lien Jira et résumé des autres tickets avec `--tickets`, diffs avec `--diff`, remplacés par la liste des fichiers au-delà de 1500 lignes). Il ne récupère que develop et la branche courante (`--fetch-all` pour `/ticket`, qui cherche les branches existantes d'un ticket), et force les messages de git en anglais. OpenCode lance les commandes injectées en parallèle : tout regrouper ici évite des références distantes périmées et des allers-retours avec le modèle.
 - `build-test.sh [solution ou projet] [options de dotnet test]` : build silencieux puis tests seulement si le build passe, en un seul appel, avec des lignes `BUILD:` et `TESTS:` explicites (OpenCode ne montre pas le code retour d'une commande au modèle).
-- `package-licenses.sh` : les packages NuGet devenus payants ou copyleft à partir d'une version (MediatR 13+, AutoMapper 15+, FluentAssertions 8+, MassTransit 9+, NPOI 2.8+, EPPlus 5+, QuestPDF, ImageSharp 3+, Duende IdentityServer, iText, Polly à sa prochaine version majeure). Trois modes : tout le repo, références directes puis transitives d'après `obj/project.assets.json` (`/audit`, `/agents-md`) ; `--diff` pour ce que la branche ajoute ou monte de version (`/check`, review de `/ship`) ; `--check <package> [version]` avant d'ajouter ou de monter un package (`/dev`, `/test`, `/apply-pattern`). Il lit les `.csproj`, `Directory.Packages.props` (versions centralisées, `VersionOverride`), les propriétés `$(...)` et `packages.config`. Les règles, datées, sont en tête du script : à mettre à jour quand un package connu change de licence. NuGet seulement (pas npm).
+- `package-licenses.sh` : lancé seulement à la demande (`/licences`, le QCM de `/check`, ou « vérifie les licences »). Les packages NuGet devenus payants ou copyleft à partir d'une version (MediatR 13+, AutoMapper 15+, FluentAssertions 8+, MassTransit 9+, NPOI 2.8+, EPPlus 5+, QuestPDF, ImageSharp 3+, Duende IdentityServer, iText, Polly à sa prochaine version majeure). Trois modes : tout le repo, références directes puis transitives d'après `obj/project.assets.json` ; `branche` pour ce que la branche ajoute ou change ; `<package> [version]` pour un package. Il lit les `.csproj`, `Directory.Packages.props` (versions centralisées, `VersionOverride`), les propriétés `$(...)` et `packages.config`. Les règles, datées, sont en tête du script : à mettre à jour quand un package connu change de licence. NuGet seulement (pas npm). En dehors de ça, les agents connaissent la liste par `AGENTS.md` et le disent dans le QCM s'ils proposent une version payante, sans aucun appel.
 - `detect-project-type.sh` : type de projet, commandes de build et de test, stack de test.
 - `release-commits.sh` : commits, MR et tickets d'une plage de MEP pour `/release-notes`.
 
@@ -88,12 +90,21 @@ OpenCode 1.19 n'envoie la température d'un agent que si le modèle déclare `"t
 - `limit` : `context` = la taille de contexte réelle du serveur (à demander, ou `max_model_len` dans la réponse de `/v1/models` pour vLLM), au plus 131072 pour garder des tours rapides ; `output` = 32768, ou le quart de `context` s'il est plus petit que 128K. OpenCode compacte la session quand elle dépasse `context - output` ; sans `limit`, il ne la compacte jamais et elle peut finir en erreur de contexte.
 - `options` (à tester une commande, puis à retirer si le serveur répond par une erreur) : `top_k` 20 est la valeur recommandée par Qwen ; `preserve_thinking` garde le raisonnement des tours précédents, ce que Qwen recommande pour les agents (moins de raisonnement répété, meilleur cache du serveur).
 - Si le serveur tourne sans le mode thinking (aucun bloc de réflexion dans l'interface), les réglages recommandés par Qwen sont `temperature` 0.7, `top_p` 0.8, `top_k` 20 et `presence_penalty` 1.5 : mets-les dans les `options` du modèle, elles s'appliquent alors à tous les agents.
+- Titre des sessions : OpenCode le fait écrire par le même modèle, en parallèle de ta première commande, et Qwen réfléchit avant d'écrire ce titre, ce qui occupe le serveur pour rien. À tester de la même façon (si le serveur refuse, la session garde juste son titre par défaut) : dans la section `agent` de `opencode.json`, `"title": { "options": { "chat_template_kwargs": { "enable_thinking": false } } }`. Si la plateforme propose un modèle plus petit, `"small_model": "<provider>/<modèle>"` fait encore mieux.
 
 ## Réglages liés à OpenCode 1.19 et Qwen 3.6
 
-- Les commandes dont l'agent est un sous-agent (`/daily`, `/scans`, `/check`, `/test`, `/audit`, `/release-notes`) tournent directement dans ta session (`subtask: false`) : sinon OpenCode ajoute un tour où l'agent `build` résume la réponse, ce qui coûte du temps et abîme les tableaux.
-- Moins d'allers-retours avec le modèle : build et tests en un appel (`build-test.sh`), appels indépendants envoyés ensemble (lectures, recherches, requêtes MCP, skills : `/check`, `/scans` et `/daily` le disent étape par étape), questions regroupées dans un seul QCM, date déjà fournie par l'état de la branche, `AGENTS.md` jamais relu (OpenCode l'injecte déjà), et dans `/ticket` l'analyste écrit lui-même la fiche au lieu de la faire recopier par l'agent `git`.
-- Chaque agent ne voit que les MCP dont il a besoin, et les outils MCP d'écriture sont masqués pour tous les agents (snippet) : moins de descriptions d'outils envoyées à chaque requête. Seuls `build` (`test-writer` dans `/dev`, `debugger`, `architect`) et `git` (`analyst` dans `/ticket`, `reviewer` dans `/ship`) délèguent à d'autres agents, sur un seul niveau comme l'impose OpenCode.
+- Les commandes dont l'agent est un sous-agent (`/daily`, `/scans`, `/check`, `/test`, `/audit`, `/licences`, `/release-notes`) tournent directement dans ta session (`subtask: false`) : sinon OpenCode ajoute un tour où l'agent `build` résume la réponse, ce qui coûte du temps et abîme les tableaux.
+- Ce qui coûte le plus avec un modèle qui réfléchit avant chaque action, c'est le nombre d'allers-retours, bien plus que la taille du prompt, que le serveur garde en général en cache. D'où :
+  - tout ce qu'un script peut donner est injecté avant le premier tour : état de la branche, fiche ticket, autres tickets, date ;
+  - build et tests en un appel (`build-test.sh`) ;
+  - appels indépendants envoyés ensemble (lectures, recherches, requêtes MCP, skills : `/check`, `/scans`, `/daily` et les commandes de correction le disent étape par étape) ;
+  - commandes git enchaînées avec `&&` quand elles doivent se suivre, sauf celles qui demandent ta validation ;
+  - questions regroupées dans un seul QCM ;
+  - `AGENTS.md` jamais relu (OpenCode l'injecte déjà) ;
+  - dans `/ticket`, l'analyste écrit lui-même la fiche au lieu de la faire recopier par l'agent `git` ;
+  - la vérification des licences n'est jamais automatique.
+- Chaque agent ne voit que les MCP dont il a besoin (aucun pour `dev`, qui fait `/dev`), et les outils MCP d'écriture sont masqués pour tous les agents (snippet) : moins de descriptions d'outils envoyées à chaque requête, et moins d'outils parmi lesquels le modèle doit choisir. Seuls `build` et `dev` (`test-writer`, `debugger`, `architect`) et `git` (`analyst` dans `/ticket`, `reviewer` dans `/ship`) délèguent à d'autres agents, sur un seul niveau comme l'impose OpenCode.
 - Le mode thinking reste actif : le couper serait le gain de vitesse le plus fort, mais au prix de la qualité.
 
 ## Pour la maintenance du pack

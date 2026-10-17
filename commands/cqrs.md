@@ -1,6 +1,6 @@
 ---
 description: "Scaffold a CQRS command or query with handler, validator and tests. Usage: /cqrs <command|query> <Name> <Feature>"
-agent: build
+agent: dev
 ---
 Project detection:
 !`sh ~/.config/opencode/scripts/detect-project-type.sh`
@@ -9,7 +9,7 @@ Create a new CQRS $1 named $2 in the feature $3.
 
 This command is only for `cqrs-api` projects (AGENTS.md "Project type" if present, otherwise the project detection above). If it is another type, ask me with the question tool (multiple choice, recommended option first): "Implémenter sans CQRS en suivant le code existant" (recommandé) or "Annuler".
 
-Before writing any code:
+Before writing any code (load the skill and read the examples in the same turn):
 1. Load the skill `dotnet-cqrs-conventions`.
 2. Read the reference examples listed in AGENTS.md (section "Reference examples"). If there are none, find the most recent existing $1 in the Application layer and read it with its handler, validator and tests.
 3. Mirror their structure exactly: folders, namespaces, naming, record vs class, response type, mediator interfaces.

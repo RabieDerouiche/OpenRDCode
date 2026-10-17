@@ -10,13 +10,13 @@ Base branch: the "Base branch" line of the workflow state (origin/develop, other
 Project detection:
 !`sh ~/.config/opencode/scripts/detect-project-type.sh`
 
-Workflow state (one fetch, then the state of the branch and of the ticket sheet):
-!`sh ~/.config/opencode/scripts/workflow-state.sh`
+Workflow state (one fetch, then the state of the branch and its ticket sheet):
+!`sh ~/.config/opencode/scripts/workflow-state.sh --sheet`
 
-Speed: send independent calls together in one turn (the reads of the files of step 1 and of the ticket sheet of step 2; later, the test files you write).
+Speed: the ticket sheet is printed above, do not read it again; send independent calls together in one turn (the reads of the files of step 1 and of their existing tests; later, the test files you write).
 
 ## Step 0 - Changes pushed from another computer
-If the branch status above says "behind" its remote copy, commits were pushed from another computer (for example from Rider on my Mac) and are not here yet. Stop and say: "<n> commit(s) poussé(s) depuis un autre poste ne sont pas ici : lance /sync d'abord". Continue only if I ask.
+If the "Branch vs its remote copy" line above says "behind", commits were pushed from another computer (for example from Rider on my Mac) and are not here yet. Stop and say: "<n> commit(s) poussé(s) depuis un autre poste ne sont pas ici : lance /sync d'abord". Continue only if I ask.
 
 ## Step 1 - Scope
 - If a reference is given ("comme ..."), apply step 5 of your rules with it (pattern skill or other repository) before writing any test.
@@ -28,8 +28,8 @@ If the branch status above says "behind" its remote copy, commits were pushed fr
   If there is no production source file, say "Aucun code à tester sur cette branche" and stop.
 
 ## Step 2 - Acceptance criteria
-- The Jira key is in the branch name (pattern `[A-Z][A-Z0-9]+-[0-9]+`). If `<KEY>.md` is in the list of ticket sheets above, read `.git/opencode/tickets/<KEY>.md`: its "Critères d'acceptation" and "Tests attendus" sections are the reference.
-- If there is no sheet, read the acceptance criteria of the ticket with the Jira MCP tools (read-only) and say "Pas de fiche ticket : lance /ticket <KEY> pour en créer une". If there is no key, skip the criteria.
+- The "Critères d'acceptation" and "Tests attendus" sections of the ticket sheet printed above are the reference.
+- If there is no sheet, read the acceptance criteria of the ticket with the Jira MCP tools (read-only, Jira key from the branch name) and say "Pas de fiche ticket : lance /ticket <KEY> pour en créer une". If there is no key, skip the criteria.
 
 ## Step 3 - What is missing
 For each production source file, check whether the changed behavior is covered by a test (existing, changed on this branch, or uncommitted). Show one table:
@@ -43,7 +43,7 @@ Follow your rules (project type, existing test style, reference approach and its
 .NET: while fixing your own tests, run only them: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestClass>` (one call: quiet build, then the tests if the build passed); at the end, run the full suite once: `sh ~/.config/opencode/scripts/build-test.sh`, with the solution or project of AGENTS.md "Build & test" as first argument if it names one. Front-end: the commands of AGENTS.md "Build & test", otherwise those of the project detection. If tests you wrote fail, fix the tests only and run again, at most 3 rounds. A failure that reveals a real bug in production code stays failing, with a clear English comment, and is reported.
 
 ## Step 6 - Ticket sheet
-If the sheet exists, update it with the edit tool:
+If the sheet exists, update it with the edit tool, in one turn (exact lines from the sheet printed above):
 - In "Tests attendus", set Statut of each row: `✅ <TestName>`, `❌ manquant` or `🐞 bug suspecté`; add rows for tests written for behaviors that were not listed.
 - Append to "## Suivi": `- <date> /test - <n> tests ajoutés - <passed>/<total> tests verts` (date: the "Now" line of the workflow state).
 Never write any other file outside the test folders.

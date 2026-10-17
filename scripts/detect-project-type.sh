@@ -81,6 +81,7 @@ fi
 # ---------- Front-end ----------
 packages=$(git ls-files 'package.json' '*/package.json' 2>/dev/null | grep -v node_modules)
 if [ -n "$packages" ]; then
+  # shellcheck disable=SC2086 # one argument per package.json
   ui=$(git grep -l -E '"(@angular/core|react|vue|svelte|next|nuxt)"[[:space:]]*:' -- $packages 2>/dev/null | head -3)
   if [ -n "$ui" ]; then
     add_type frontend
@@ -108,7 +109,7 @@ test_stack=""
 add_lib() {
   case " $test_stack " in *" $1 "*) ;; *) test_stack="${test_stack:+$test_stack }$1" ;; esac
 }
-dotnet_refs=$(git grep -h -o -i -E '(PackageReference|PackageVersion) Include="[^"]+"|<package id="[^"]+"' -- '*.csproj' '*.vbproj' 'Directory.Packages.props' '*packages.config' 2>/dev/null | sed -E 's/.*"([^"]+)"/\1/' | tr 'A-Z' 'a-z' | sort -u)
+dotnet_refs=$(git grep -h -o -i -E '(PackageReference|PackageVersion) Include="[^"]+"|<package id="[^"]+"' -- '*.csproj' '*.vbproj' 'Directory.Packages.props' '*packages.config' 2>/dev/null | sed -E 's/.*"([^"]+)"/\1/' | tr '[:upper:]' '[:lower:]' | sort -u)
 for lib in $dotnet_refs; do
   case "$lib" in
     xunit|xunit.v3) add_lib xunit ;;
@@ -129,6 +130,7 @@ for lib in $dotnet_refs; do
 done
 if [ -n "$packages" ]; then
   for lib in jest vitest karma jasmine-core mocha @testing-library/react @testing-library/angular @testing-library/vue cypress @playwright/test; do
+    # shellcheck disable=SC2086 # one argument per package.json
     git grep -q -F "\"$lib\"" -- $packages 2>/dev/null && add_lib "$lib"
   done
 fi

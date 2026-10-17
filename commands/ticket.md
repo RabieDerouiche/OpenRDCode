@@ -3,8 +3,8 @@ description: "Start (or resume) a Jira ticket: pick it from my sprint if no key 
 agent: git
 ---
 Ticket given: "$1"
-Workflow state (one fetch, then the state of the branch and of the ticket sheet):
-!`sh ~/.config/opencode/scripts/workflow-state.sh`
+Workflow state (fetch of every branch, then the state of the branch and of its ticket sheet):
+!`sh ~/.config/opencode/scripts/workflow-state.sh --fetch-all --sheet`
 Project detection:
 !`sh ~/.config/opencode/scripts/detect-project-type.sh`
 
@@ -20,7 +20,7 @@ Start or resume the work on a Jira ticket. Read-only on Jira, Confluence and Git
 
 ## Step 2 - Existing ticket sheet
 If `<KEY>.md` is in the list of existing ticket sheets above, ask me with the question tool:
-- "Reprendre la fiche existante" (recommandé): read it; if I am not on its branch, run step 3 to get there, then come back here; show the sections "Critères d'acceptation", "Plan" (unchecked steps) and the last 3 lines of "Suivi", then tell me the next step (last line of step 5) and stop.
+- "Reprendre la fiche existante" (recommandé): use the sheet printed in the workflow state when I am on its branch; otherwise run step 3 to get there and read the sheet; show the sections "Critères d'acceptation", "Plan" (unchecked steps) and the last 3 lines of "Suivi", then tell me the next step (last line of step 5) and stop.
 - "Refaire l'analyse": continue; step 4 rewrites the sheet and keeps its "## Décisions" and "## Suivi" sections.
 
 ## Step 3 - Branch
@@ -34,7 +34,7 @@ If `<KEY>.md` is in the list of existing ticket sheets above, ask me with the qu
   3. Then run, in this order:
      - "Annuler, je commite d'abord": stop.
      - "Les emporter" or "Les laisser de côté": `git stash push -u -m "ticket <KEY>"`.
-     - Existing branch: `git switch <existing branch without remotes/origin/>`. New branch, from the base branch of the workflow state (normally `origin/develop`): `git fetch origin <base without origin/>`, then `git switch -c <name> <base>`.
+     - Existing branch: `git switch <existing branch without remotes/origin/>`. New branch, from the base branch of the workflow state (normally `origin/develop`), in one call: `git fetch -q origin <base without origin/> && git switch -c <name> <base>`.
      - "Publier la branche maintenant": `git push -u origin <name>`.
      - "Les emporter": `git stash pop`.
 

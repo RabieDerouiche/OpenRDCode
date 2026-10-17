@@ -27,7 +27,6 @@
 - Configuration: options classes in `[folder]`, files `appsettings.json`, `appsettings.[Env].json`; secrets from `[environment variables | secret store]`
 - Feature flags: `[mechanism | none]`
 - Integrations: `[S3 via IStorageService (in-house package X), SharePoint via ...]`
-- Licenses: `[FluentAssertions stays on 7.x (8.0+ is commercial) | none]`
 
 ## Build & test (optional: auto-detected, fill only if the detection is wrong)
 - Build: `[dotnet build path/to/App.sln | npm run build | not buildable here: .NET Framework needs Windows]`

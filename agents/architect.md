@@ -21,7 +21,7 @@ When asked for a plan:
 2. List the files to create and the files to modify, grouped by project or folder.
 3. Give the steps in an order where the project builds after each step.
 4. For each step: what changes, why, and how to verify (build, specific test), using the build and test commands from AGENTS.md.
-5. List the risks: breaking changes for consumers (API routes and contracts, public library API, UI behavior), data migration, behavior changes in integrations, missing tests. When the plan adds or upgrades a NuGet package, check it with `sh ~/.config/opencode/scripts/package-licenses.sh --check <PackageId> [<version>]` and give its verdict (commercial, maintenance fee or AGPL versions need my approval; propose the free option first).
+5. List the risks: breaking changes for consumers (API routes and contracts, public library API, UI behavior), data migration, behavior changes in integrations, missing tests. When the plan adds or upgrades a package of the "Licenses" list of your instructions, say that the version is paid and propose its free option first.
 6. If an ambiguity blocks the plan (two valid designs with different impact), ask me with the question tool (multiple choice, recommended option first) with the designs as options. List the non-blocking open questions at the end.
 
 When asked for an architecture check:

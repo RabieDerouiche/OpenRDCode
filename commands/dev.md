@@ -1,26 +1,26 @@
 ---
 description: "Implement the next step of the ticket sheet (or step N) following my directives, write the unit tests of that step, build and run them, tick the step, then offer the next one. Asks multiple-choice questions whenever the approach is unclear. Usage: /dev [N] [directives, e.g. « comme dans ~/dev/dna-api », « avec un Result », « sans nouvelle lib », « tests avec fixtures xUnit »]"
-agent: build
+agent: dev
 ---
 Arguments: "$ARGUMENTS"
-Workflow state (one fetch, then the state of the branch and of the ticket sheet):
-!`sh ~/.config/opencode/scripts/workflow-state.sh`
+Workflow state (one fetch, then the state of the branch and its ticket sheet):
+!`sh ~/.config/opencode/scripts/workflow-state.sh --sheet`
 Project detection:
 !`sh ~/.config/opencode/scripts/detect-project-type.sh`
 
 Implement ONE step of the ticket plan, with its tests. Never commit or push: that is /ship.
 
 ## Step 0 - Before starting
-- If the branch status above says "behind" its remote copy, commits were pushed from another computer (for example from Rider on my Mac): say "Lance /sync d'abord" and stop, unless I answer that I want to continue.
+- If the "Branch vs its remote copy" line above says "behind", commits were pushed from another computer (for example from Rider on my Mac): say "Lance /sync d'abord" and stop, unless I answer that I want to continue.
 - On `develop`, `master` or `main`: stop and tell me to run `/ticket <KEY>`.
 
 ## Step 1 - Arguments
 - A leading number is the step to implement. Without it, take the first unchecked step of the plan.
 - Everything else is my directives for this step: a reference to follow ("comme dans <repository or pattern>"), an approach ("avec un Result", "derrière un feature flag", "sans nouvelle lib"), constraints on tests. Directives override the defaults of this command, but never the hard rules (security, secrets, no MediatR, never commit, never copy configuration values from another project).
-- If a directive contradicts the conventions of this repository or an acceptance criterion, ask me with the question tool before writing code: "Suivre ta directive" / "Suivre la convention du repo (<what it does>)" / the recommended one first, with the reason in a few words.
+- If a directive contradicts the conventions of this repository or an acceptance criterion, ask me before writing code, in the same question tool call as the questions of step 4: "Suivre ta directive" / "Suivre la convention du repo (<what it does>)", the recommended one first, with the reason in a few words.
 
 ## Step 2 - Ticket sheet
-The Jira key is in the branch name (pattern `[A-Z][A-Z0-9]+-[0-9]+`). Read `.git/opencode/tickets/<KEY>.md` if it is in the list above: the step, the acceptance criteria it serves, the expected tests, and the "## Décisions" section (choices already made for this ticket: never ask them again).
+Use the ticket sheet printed in the workflow state (do not read it again): the step, the acceptance criteria it serves, the expected tests, and the "## Décisions" section (choices already made for this ticket: never ask them again).
 - No sheet: ask me with the question tool: "Lancer /ticket <KEY> d'abord" (recommandé) / "Travailler sans fiche" (then I describe the task in a free answer, and steps 7 and 8 skip the sheet).
 - Every step already checked: say "Toutes les étapes du plan sont faites : /test puis /check" and stop.
 
@@ -36,7 +36,7 @@ Before writing code, list for yourself the decisions this step needs. For each o
 - where the code goes (existing class or service vs a new one; which project or folder);
 - error handling for expected failures when the repository has no result type (introduce a minimal Result vs keep exceptions);
 - a feature flag for a user-visible or unfinished change (production deploys master as is);
-- a new package, or an in-house package version: for a public package, run `sh ~/.config/opencode/scripts/package-licenses.sh --check <PackageId> [<version>]` first and put its verdict in the options (for example "Introduire FluentAssertions 8 (licence commerciale)" after "Garder l'existant");
+- a new package, or an in-house package version (for a package of the "Licenses" list of your instructions, say in the option that the version is paid and propose its free option first);
 - a change to a public contract: API route, request or response shape, public library method, database schema;
 - two conventions coexisting in the repository (which one is the reference for new code);
 - an acceptance criterion that can be read two ways.
@@ -54,13 +54,13 @@ Unless the step has no testable behavior (pure configuration, documentation) or 
 If a test it wrote fails because of a real bug in the code of this step, fix the production code (at most 2 rounds) and run the tests again.
 
 ## Step 8 - Ticket sheet
-With the edit tool, in `.git/opencode/tickets/<KEY>.md`:
+With the edit tool, in `.git/opencode/tickets/<KEY>.md`, in one turn (exact lines from the sheet printed above, updated with your own changes of this run):
 - tick the step (`- [x]`);
 - add each answer I gave in step 1 or 4 to a "## Décisions" section (create it before "## Suivi" if missing): `- <topic> : <choice> (étape <N>)`;
 - append to "## Suivi": `- <date> /dev étape <N> - <files changed count> fichiers - build <ok|ko> - tests <passed>/<total>` (date: the "Now" line of the workflow state for the first step of this run, otherwise the one fetched in step 6).
 
 ## Step 9 - Answer, in French, then the next step
-- First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name. Then the step: "Étape <N>/<total> : <step text>".
+- First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, the branch name. Then the step: "Étape <N>/<total> : <step text>".
 - Files created or modified (one line each), build result, tests added and result, decisions taken.
 - Ask me with the question tool:
   - "Étape suivante : <text of the next unchecked step>" (recommandé) → go back to step 1 for that step, with the same directives unless they were specific to this step;
