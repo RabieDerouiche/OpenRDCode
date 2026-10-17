@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Regenerates the one-line `permission:` frontmatter of every agent in ../agents.
+"""Regenerates the one-line `permission:` frontmatter of every agent in ../agents, and opencode.snippet.json.
 
 Run from the repository root: python3 tools/permissions.py
 Rules are last-match-wins in OpenCode, so the order of the keys is the policy.
 Duplicate keys are forbidden: OpenCode's YAML parser (gray-matter) rejects them.
 """
+import json
 import re
 import sys
 
 DETECT = "sh ~/.config/opencode/scripts/detect-project-type.sh*"
 RELEASE = "sh ~/.config/opencode/scripts/release-commits.sh *"
 STATE = "sh ~/.config/opencode/scripts/workflow-state.sh*"
+LICENSES = "sh ~/.config/opencode/scripts/package-licenses.sh*"
+BUILD_TEST = "sh ~/.config/opencode/scripts/build-test.sh*"
 TICKET_SHEETS = ".git/opencode/**"
 
 READ = ["ls*", "pwd", "cd *", "cat *", "head*", "tail*", "wc*", "sort*", "uniq*", "cut *", "tr *",
@@ -122,10 +125,10 @@ NO_TASK = [("task", "deny")]
 
 AGENTS = {
     "analyst": [("edit", only([TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash([DETECT, STATE], [SSC_NAME]))] + MCP_WRITE_DENY,
-    "architect": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + [DETECT]))] + mcp_only([]),
-    "debugger": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT]))] + MCP_WRITE_DENY + mcp_only(["kibana"]),
-    "reviewer": [("edit", only([TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT, STATE]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
-    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT, STATE]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    "architect": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + [DETECT, LICENSES]))] + mcp_only([]),
+    "debugger": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT, BUILD_TEST]))] + MCP_WRITE_DENY + mcp_only(["kibana"]),
+    "reviewer": [("edit", only([TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT, STATE, LICENSES, BUILD_TEST]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT, STATE, LICENSES, BUILD_TEST]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
     "release-writer": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash([RELEASE]))] + MCP_RELEASE + mcp_only(["jira", "confluence"]),
     "git": [("edit", only([TICKET_SHEETS]))] + BASE + [("task", only(["reviewer", "analyst"])), ("bash", git_bash())] + MCP_WRITE_DENY + mcp_only(["jira", "gitlab"]),
 }
@@ -160,3 +163,38 @@ for name, rules in AGENTS.items():
         sys.exit(f"{path}: no permission line")
     open(path, "w").write(text)
     print("updated", path)
+
+
+# ---------- opencode.snippet.json (merged by hand into ~/.config/opencode/opencode.json) ----------
+
+def as_dict(rules):
+    keys = [k for k, _ in rules]
+    dupes = {k for k in keys if keys.count(k) > 1}
+    if dupes:
+        sys.exit(f"duplicate keys: {sorted(dupes)}")
+    return {k: as_dict(v) if isinstance(v, list) else v for k, v in rules}
+
+
+# Qwen 3.6 recommended sampling for thinking mode and precise coding
+SAMPLING = [("temperature", 0.6), ("top_p", 0.95)]
+SNIPPET = as_dict([
+    ("$schema", "https://opencode.ai/config.json"),
+    ("agent", [
+        ("build", SAMPLING),
+        ("plan", SAMPLING + [("permission", [("bash", read_only_bash(DOTNET_INFO + [DETECT, LICENSES]))])]),
+    ]),
+    # Every agent, built-in ones included (build, plan, general, explore): no secrets read through the shell,
+    # destructive git asks first, and MCP write tools are hidden (read-only on Jira, Confluence, GitLab, Sonar, Fortify;
+    # release-writer re-allows its Confluence page with its own rules, which come after these ones).
+    ("permission", [
+        ("question", "allow"),
+        ("skill", [("*", "allow")]),
+        ("bash", [("env", "deny"), ("env *", "deny"), ("printenv*", "deny"), ("set", "deny"), ("*zshenv*", "deny"),
+                  ("*zshrc*", "deny"), ("git push*", "ask"), ("git reset*", "ask"), ("git rebase*", "ask"),
+                  ("rm -rf*", "ask")]),
+    ] + MCP_WRITE_DENY),
+])
+with open("opencode.snippet.json", "w") as out:
+    json.dump(SNIPPET, out, indent=2, ensure_ascii=False)
+    out.write("\n")
+print("updated opencode.snippet.json")

@@ -26,4 +26,4 @@ Rules:
 - If the handler needs a new port (interface) for an external system, declare it in Application, then ask me with the question tool (multiple choice, recommended option first): "Implémenter aussi l'Infrastructure" or "M'arrêter là".
 - If an argument is missing or unclear, ask me with the question tool (multiple choice, recommended option first) before generating (for the feature, propose the existing feature folders as options).
 
-When done, run `dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60` then `dotnet test --no-build -nologo 2>&1 | tail -60` and report the result. Fix only compilation or test errors in the files you created.
+When done, run `sh ~/.config/opencode/scripts/build-test.sh` (quiet build, then the tests if the build passed, in one call; with the solution or project of AGENTS.md "Build & test" as first argument if it names one) and report the result. Fix only compilation or test errors in the files you created.

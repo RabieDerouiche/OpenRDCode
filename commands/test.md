@@ -13,6 +13,8 @@ Project detection:
 Workflow state (one fetch, then the state of the branch and of the ticket sheet):
 !`sh ~/.config/opencode/scripts/workflow-state.sh`
 
+Speed: send independent calls together in one turn (the reads of the files of step 1 and of the ticket sheet of step 2; later, the test files you write).
+
 ## Step 0 - Changes pushed from another computer
 If the branch status above says "behind" its remote copy, commits were pushed from another computer (for example from Rider on my Mac) and are not here yet. Stop and say: "<n> commit(s) poussé(s) depuis un autre poste ne sont pas ici : lance /sync d'abord". Continue only if I ask.
 
@@ -38,12 +40,12 @@ Every acceptance criterion appears at least once. Business logic first.
 Follow your rules (project type, existing test style, reference approach and its questions, test stack question before any new library, no test project creation without asking, which test project to use).
 
 ## Step 5 - Run until green
-Run the build and test commands (AGENTS.md "Build & test" if present, otherwise the project detection above). Fast runs (.NET): build once with `dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60`, then run the tests on that build with `dotnet test --no-build -nologo 2>&1 | tail -60`. Use the AGENTS.md commands when they exist, with the same options. While fixing your own tests, rerun only them, without `--no-build` since the test files changed: `dotnet test <test project> -nologo --filter FullyQualifiedName~<TestClass> 2>&1 | tail -60`; run the full suite once at the end. If tests you wrote fail, fix the tests only and run again, at most 3 rounds. A failure that reveals a real bug in production code stays failing, with a clear English comment, and is reported.
+.NET: while fixing your own tests, run only them: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestClass>` (one call: quiet build, then the tests if the build passed); at the end, run the full suite once: `sh ~/.config/opencode/scripts/build-test.sh`, with the solution or project of AGENTS.md "Build & test" as first argument if it names one. Front-end: the commands of AGENTS.md "Build & test", otherwise those of the project detection. If tests you wrote fail, fix the tests only and run again, at most 3 rounds. A failure that reveals a real bug in production code stays failing, with a clear English comment, and is reported.
 
 ## Step 6 - Ticket sheet
 If the sheet exists, update it with the edit tool:
 - In "Tests attendus", set Statut of each row: `✅ <TestName>`, `❌ manquant` or `🐞 bug suspecté`; add rows for tests written for behaviors that were not listed.
-- Append to "## Suivi": `- <date> /test - <n> tests ajoutés - <passed>/<total> tests verts` (date with `date "+%Y-%m-%d %H:%M"`).
+- Append to "## Suivi": `- <date> /test - <n> tests ajoutés - <passed>/<total> tests verts` (date: the "Now" line of the workflow state).
 Never write any other file outside the test folders.
 
 ## Answer, in French

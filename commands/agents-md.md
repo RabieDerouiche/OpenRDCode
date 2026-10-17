@@ -10,6 +10,8 @@ Project detection:
 !`sh ~/.config/opencode/scripts/detect-project-type.sh`
 Solution and project files:
 !`git ls-files '*.sln' '*.slnx' '*.csproj' 'package.json' 'Directory.Build.props' 'Directory.Packages.props' 'nuget.config'`
+Package licenses:
+!`sh ~/.config/opencode/scripts/package-licenses.sh`
 
 Create or update the AGENTS.md at the repository root so that every agent works like this repository, from the code as it is today.
 
@@ -31,7 +33,7 @@ For each section below, determine its content from the code. Skip a section that
 1. `## Project type`: only if the detection above is wrong or the repository mixes several types (say which folder is which).
 2. `## Project overview`: what it does and who calls it, 2-3 lines (from README, Program/Startup, controllers or endpoints, Confluence if given).
 3. `## Solution structure`: one line per project or main folder with its role, and the dependency rules actually observed between projects (from project references).
-4. `## Build & test`: the exact commands. Run them once to verify (build, then tests); with several solutions, give the solution path. Legacy .NET Framework that cannot build on this machine (.NET Framework needs Windows): say so, and write the Windows build command if the repository documents one. Front-end: the scripts of package.json. If restore fails with 401/403/NU1301, write the commands anyway and report an Artifactory access problem.
+4. `## Build & test`: the exact commands, with the solution or project path when the root has several. Verify them once with `sh ~/.config/opencode/scripts/build-test.sh <solution or project>` (build, then tests, in one call), but write the plain `dotnet build` / `dotnet test` commands: AGENTS.md is shared with the team. Legacy .NET Framework that cannot build on this machine (.NET Framework needs Windows): say so, and write the Windows build command if the repository documents one. Front-end: the scripts of package.json. If restore fails with 401/403/NU1301, write the commands anyway and report an Artifactory access problem.
 5. `## Architecture & conventions`, one line each, only what is observed:
    - how endpoints are declared (controllers, minimal APIs, endpoint classes) and where;
    - request flow (endpoint → handler / service → ports → infrastructure);
@@ -43,7 +45,8 @@ For each section below, determine its content from the code. Skip a section that
    - configuration: options classes, `appsettings.<Environment>.json` files present, where secrets come from (never their values);
    - feature flags mechanism, if any;
    - persistence and external integrations (SharePoint/CSOM, DocuSign, S3 storage interfaces, Piano Analytics…) with the interface or class that wraps each one;
-   - in-house packages from the company feed (names only).
+   - in-house packages from the company feed (names only);
+   - license limits, from the "Package licenses" block above: one line per package used in a free version that becomes paid later ("FluentAssertions: stay on 7.x, 8.0+ is commercial"), and one line per package already in a paid range ("MediatR 13: commercial license, approval needed").
 6. `## In-house mediator` (cqrs-api only): package, namespaces, request and handler interfaces, pipeline behaviors, registration.
 7. `## Tests`: framework, assertions, mocks, fixtures (`IClassFixture`, `ICollectionFixture`, base classes), test data builders, naming convention, test project layout, integration tests (`WebApplicationFactory`) if any.
 8. `## Reference examples`: for each kind of file the agents generate in this project type, ONE representative, recent, tested file (cqrs-api: command or query, handler, validator, endpoint, handler test, validator test; api: controller, service, service test; library: public class and its test; front-end: component, service, their tests). Prefer files changed recently, with tests, following the dominant convention.
@@ -54,7 +57,7 @@ For each section below, determine its content from the code. Skip a section that
 From the root, list the child pages and read at most 15 relevant ones: architecture, conventions, environments, integrations, glossary, runbooks, decisions (ADR). Skip meeting notes and outdated pages (report which ones). Check each fact against the code; if they disagree, trust the code and report the disagreement (documentation to fix, not code to change). Add or update only: `## Business context` (3-5 lines), `## Glossary` (one line per domain term), `## Environments` (names and purpose, no URLs with credentials), `## External systems` (what each one is used for, with the code location), `## Architecture decisions` (one line each), `## Confluence` (space key and root page if empty).
 
 ## Step 4 - Doubts
-Ask me with the question tool, one question at a time, recommended option first, when:
+Ask me with the question tool, recommended option first, all the questions in one call (one question per doubt), when:
 - two conventions coexist (controllers and minimal APIs, Moq and NSubstitute, exceptions and a result type, two folder layouts): "La plus récente : <x> (recommandé)" / "<y>" / "Les deux, selon le dossier";
 - an existing line of AGENTS.md contradicts the code: "Mettre à jour selon le code" (recommandé) / "Garder la ligne actuelle";
 - a section cannot be determined from the code: "Laisser [à compléter]" (recommandé) / free answer.
