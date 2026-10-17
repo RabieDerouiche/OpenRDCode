@@ -12,6 +12,10 @@
 MAX_DIFF_LINES=1500
 MAX_SHEETS=10
 
+# English git messages ("behind", "ahead") whatever the language of the machine: the commands look for these words
+LC_ALL=C
+export LC_ALL
+
 fetch=1
 diff=0
 packages=0

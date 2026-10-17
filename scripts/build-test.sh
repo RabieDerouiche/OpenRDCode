@@ -9,6 +9,10 @@
 # Output: the build errors (each once) and the build summary, then the end of the test output (failures and totals),
 # preceded by the summary line of the test assemblies that scrolled out of it.
 
+# English output whatever the machine's language, so that the summaries below are found
+DOTNET_CLI_UI_LANGUAGE=en
+export DOTNET_CLI_UI_LANGUAGE
+
 target=""
 case "$1" in
   ""|-*) ;;
@@ -43,9 +47,9 @@ fi
 tail -n 80 "$out"
 if [ "$status" -ne 0 ]; then
   echo "TESTS: FAILED (exit $status)"
-elif grep -q -E 'Passed!|Failed!|Skipped!|Test run summary|Total tests' "$out"; then
-  echo "TESTS: OK"
-else
+elif ! grep -q '[^[:space:]]' "$out" || grep -q -E 'No test matches|No test is available|No test source files' "$out"; then
   echo "TESTS: NONE RUN (no test project for this target, or no test matches the filter)"
+else
+  echo "TESTS: OK"
 fi
 exit "$status"
