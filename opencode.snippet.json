@@ -2,10 +2,11 @@
   "$schema": "https://opencode.ai/config.json",
   "agent": {
     "build": {
-      "temperature": 0.2
+      "temperature": 0.6,
+      "top_p": 0.95
     },
     "plan": {
-      "temperature": 0.1,
+      "temperature": 0.6,
       "permission": {
         "bash": {
           "*": "deny",
@@ -144,7 +145,8 @@
           "*${*": "deny",
           "*`*": "deny"
         }
-      }
+      },
+      "top_p": 0.95
     }
   },
   "permission": {
