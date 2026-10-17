@@ -64,6 +64,7 @@ If the sheet exists, append to its "## Suivi" section with the edit tool (date w
 Write nothing else.
 
 ## Answer, in French
+First line: "**Ticket <KEY> - <title>**" with the title taken from the first line of the ticket sheet (`# <KEY> - <title>`), or from Jira if there is no sheet, or the branch name if there is no key.
 1. Your usual review output (project type, verdict, findings).
 2. "Build et tests" : one line each.
 3. "Critères d'acceptation" : table criterion / implemented / tested.
