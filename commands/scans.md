@@ -52,7 +52,7 @@ Find the Sonar project of this repository (search by repository name or by the S
 
 ## Answer, in French
 First line: "**Ticket <KEY> - <title>**" with the title taken from the first line of the ticket sheet (`# <KEY> - <title>`), or from Jira if there is no sheet, or the branch name if there is no key.
-- First line: "Pipeline <link> (<short sha>) : <status> — Fortify : <application:version> (raison : <explicit target | current branch has scans | fallback to develop: no version for branch | fallback to develop: branch version has no scan>) — Sonar : <project> / <branch>".
+- Then: "Pipeline <link> (<short sha>) : <status> — Fortify : <application:version> (raison : <explicit target | current branch has scans | fallback to develop: no version for branch | fallback to develop: branch version has no scan>) — Sonar : <project> / <branch>".
 - Table: priorité, source (Fortify/Sonar/les deux), Fortify issue id ou Sonar issue key, règle ou catégorie, sévérité, fichier:ligne, modifié sur cette branche (oui/non).
 - Counts per source and severity (Fortify: Critical, High, Medium, Low).
 - "Faux positifs probables": issue ids with a one-line reason (e.g. the value never comes from user input).
