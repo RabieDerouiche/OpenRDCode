@@ -57,4 +57,5 @@ If the sheet exists, update it with the edit tool:
 Never write any other file outside the test folders.
 
 ## Answer, in French
+First line: "**Ticket <KEY> - <title>**" with the title taken from the first line of the ticket sheet (`# <KEY> - <title>`), or from Jira if there is no sheet, or the branch name if there is no key.
 The table of step 3 with the final status, the tests added (name + one line each), the test command result, the suspected bugs, then one line: "Prochaine étape : /check" (or "corrige le bug avec l'agent build, puis /test" if a bug was found).

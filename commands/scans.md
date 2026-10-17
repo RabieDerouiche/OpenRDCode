@@ -51,6 +51,7 @@ Find the Sonar project of this repository (search by repository name or by the S
 - Order: security first (Fortify Critical/High, Sonar vulnerabilities and hotspots), then bugs, then code smells. Inside each group, findings in files changed on this branch come first, then exploitability, then effort.
 
 ## Answer, in French
+First line: "**Ticket <KEY> - <title>**" with the title taken from the first line of the ticket sheet (`# <KEY> - <title>`), or from Jira if there is no sheet, or the branch name if there is no key.
 - First line: "Pipeline <link> (<short sha>) : <status> — Fortify : <application:version> (raison : <explicit target | current branch has scans | fallback to develop: no version for branch | fallback to develop: branch version has no scan>) — Sonar : <project> / <branch>".
 - Table: priorité, source (Fortify/Sonar/les deux), Fortify issue id ou Sonar issue key, règle ou catégorie, sévérité, fichier:ligne, modifié sur cette branche (oui/non).
 - Counts per source and severity (Fortify: Critical, High, Medium, Low).

@@ -50,4 +50,4 @@ Steps:
      - `## Comment tester`: concrete steps (endpoint + payload, or test names).
      Only describe what is in the diff. Never invent ticket numbers, features or tests.
 10. If the sheet exists, append to its "## Suivi": `- <date> /ship - <short hash> poussé - MR <link or "à créer">` (date with `date "+%Y-%m-%d %H:%M"`).
-11. End with the branch state, then: "La CI tourne (build, tests, Sonar, Fortify). Lance /scans quand le pipeline est terminé."
+11. Start the final answer with the header line "**Ticket <KEY> - <title>**" (title from the first line of the ticket sheet, or the branch name). End with the branch state, then: "La CI tourne (build, tests, Sonar, Fortify). Lance /scans quand le pipeline est terminé."

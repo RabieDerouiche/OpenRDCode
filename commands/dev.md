@@ -62,6 +62,7 @@ With the edit tool, in `.git/opencode/tickets/<KEY>.md`:
 - append to "## Suivi": `- <date> /dev étape <N> - <files changed count> fichiers - build <ok|ko> - tests <passed>/<total>` (date with `date "+%Y-%m-%d %H:%M"`).
 
 ## Step 9 - Answer, in French, then the next step
+- First line: "**Ticket <KEY> - <title>**" with the title taken from the first line of the ticket sheet (`# <KEY> - <title>`), or from Jira if there is no sheet, or the branch name if there is no key. Then the step: "Étape <N>/<total> : <step text>".
 - Files created or modified (one line each), build result, tests added and result, decisions taken.
 - Ask me with the question tool:
   - "Étape suivante : <text of the next unchecked step>" (recommandé) → go back to step 1 for that step, with the same directives unless they were specific to this step;
