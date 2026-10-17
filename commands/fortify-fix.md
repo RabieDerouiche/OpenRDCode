@@ -29,7 +29,7 @@ Steps:
 6. Add or update a unit test proving the fix (e.g. malicious input rejected or sanitized), if the project has tests.
 7. Run the build and tests in one call. .NET: `sh ~/.config/opencode/scripts/build-test.sh`, with the solution or project of AGENTS.md "Build & test" as first argument if it names one; front-end: the commands of AGENTS.md (default `npm test`). In the same turn, read the ticket sheet if the branch has one (step 9). If a legacy .NET Framework project cannot build on this machine (.NET Framework needs Windows), say so instead of changing project files.
 8. Report: the category, the change (file:line), the test added, build/test result, and a commit message `fix(security): <summary> (Fortify #$1)`.
-9. If the branch has a ticket sheet (`.git/opencode/tickets/<KEY>.md`, key from the branch name), append to its "## Suivi": `- <date> /fortify-fix $1 - <corrigé | faux positif | passé>` (date: the "Now" line above).
+9. If the branch has a ticket sheet (`.git/opencode/tickets/<KEY>.md`, key from the branch name), append to its "## Suivi": `- <date> /fortify-fix $1 - <corrigé | faux positif | passé>` (date: the "Now" line above), followed for a fix by `- build <ok|ko> - tests <passed>/<total> - empreinte <the "Code fingerprint of this run" line of step 7, or ->`: /check then reuses that build and test run while the code does not change.
 10. Last line: "Prochaine étape : /check puis /ship (avec ce message de commit), puis /scans pour vérifier que l'issue a disparu."
 
 If the fix touches authentication, SharePoint/CSOM, DocuSign or S3 code, load `integrations-guardrails` and ask me with the question tool (multiple choice, recommended option first) ("Appliquer le correctif" / "Me montrer le diff d'abord" / "Annuler") before editing.

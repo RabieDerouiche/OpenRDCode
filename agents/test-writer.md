@@ -25,6 +25,7 @@ Rules:
 - Cover: nominal case, edge cases (null, empty, boundaries), error paths (exceptions, failed external calls), and for .NET methods taking a CancellationToken, cancellation.
 - CQRS handlers: mock only ports/interfaces, never the class under test. Validators: use FluentValidation's TestValidate when available.
 - Front-end: test behavior through the public surface (rendered output, emitted events, service results), mock HTTP calls, no real network.
+- Blazor components: with bUnit when the "Test stack" has it (render the component, interact with it, assert the markup and the calls to the mocked services); without bUnit, test the services and the code-behind logic the component calls, and adding bUnit is a step 4 question.
 - No sleeps, no real network, no real file system, no real clock: use the abstractions already used in the codebase.
 - Comments in English.
 - Legacy .NET Framework projects may not build on this machine (.NET Framework needs Windows): if the test command fails because the framework is not supported, say so and stop instead of changing project files.

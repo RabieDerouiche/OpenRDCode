@@ -35,6 +35,12 @@ if [ -n "$projects" ]; then
   mediatr=$(git grep -l -E 'PackageReference Include="MediatR' -- '*.csproj' 'Directory.Packages.props' 2>/dev/null | head -1)
   packable=$(git grep -l -E '<IsPackable>true|<GeneratePackageOnBuild>true|<PackageId>' -- '*.csproj' 2>/dev/null)
   test_projects=$(git ls-files '*.csproj' 2>/dev/null | grep -i -E 'tests?\.csproj$|\.tests?/' | head -3)
+  # Blazor: Razor components (.razor), with or without a .razor.cs code-behind
+  razor=$(git ls-files '*.razor' 2>/dev/null | wc -l | tr -d ' ')
+  code_behind=$(git ls-files '*.razor.cs' 2>/dev/null | wc -l | tr -d ' ')
+  endpoints=$(git grep -l -E '\[ApiController\]|:[[:space:]]*ControllerBase([^[:alnum:]_]|$)|\.Map(Get|Post|Put|Delete|Patch)\(' -- '*.cs' 2>/dev/null | grep -v -i -E '(^|/)[^/]*tests?[^/]*/' | head -1)
+  wasm=$(git grep -l 'Sdk="Microsoft.NET.Sdk.BlazorWebAssembly"' -- '*.csproj' 2>/dev/null | head -1)
+  abp=$(git grep -l -E 'Include="Volo\.Abp\.' -- '*.csproj' 'Directory.Packages.props' 2>/dev/null | head -1)
 
   if [ -n "$legacy_projects" ] || [ -n "$legacy_web" ]; then
     add_type legacy
@@ -52,13 +58,25 @@ if [ -n "$projects" ]; then
 - CQRS handlers: $(echo "$handlers" | tr '\n' ' ')"
     [ -n "$mediatr" ] && evidence="$evidence
 - WARNING: MediatR package still referenced in $mediatr"
-  elif [ -n "$web_sdk" ]; then
+  elif [ -n "$web_sdk" ] && { [ "$razor" -eq 0 ] || [ -n "$endpoints" ]; }; then
     add_type api
     evidence="$evidence
 - ASP.NET Core web project(s) without CQRS handlers: $(echo "$web_sdk" | tr '\n' ' ' | cut -c1-200)"
   fi
 
-  if [ -z "$web_sdk" ] && [ -z "$legacy_projects" ] && [ -z "$legacy_web" ]; then
+  if [ "$razor" -gt 0 ]; then
+    add_type blazor
+    ui_libs=$(git grep -h -o -i -E 'Include="(Blazorise|MudBlazor|Radzen\.Blazor|Syncfusion\.Blazor|Telerik\.UI\.for\.Blazor)[^"]*"' -- '*.csproj' 'Directory.Packages.props' 2>/dev/null | sed -E 's/Include="([^".]+).*/\1/' | sort -u | tr '\n' ' ')
+    evidence="$evidence
+- Blazor components: $razor .razor files, $code_behind with a .razor.cs code-behind${ui_libs:+; component library: $ui_libs}"
+  fi
+
+  if [ -n "$abp" ]; then
+    evidence="$evidence
+- ABP Framework (Volo.Abp packages, e.g. in $abp): follow the conventions of its existing modules (application services, repositories, permissions, DTO mapping)"
+  fi
+
+  if [ -z "$web_sdk" ] && [ -z "$wasm" ] && [ -z "$legacy_projects" ] && [ -z "$legacy_web" ]; then
     if [ -n "$packable" ] || ! git grep -q -E '<OutputType>(Exe|WinExe)' -- '*.csproj' 2>/dev/null; then
       add_type library
       evidence="$evidence
@@ -126,6 +144,7 @@ for lib in $dotnet_refs; do
     testcontainers) add_lib testcontainers ;;
     bogus) add_lib bogus ;;
     microsoft.aspnetcore.mvc.testing) add_lib webapplicationfactory ;;
+    bunit) add_lib bunit ;;
   esac
 done
 if [ -n "$packages" ]; then

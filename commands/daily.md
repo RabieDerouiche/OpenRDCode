@@ -10,7 +10,7 @@ Build my morning brief with the Jira and GitLab MCP tools. "Me" is the authentic
 Completeness matters more than brevity for this command: list every item returned by the queries, never cut a list to a few rows, and give the total count in each section heading.
 
 ## Step 1 - Scope
-- If a scope is given above, use it: a Jira project key (e.g. `DNA`) or a board name.
+- If a scope is given above, use it: a Jira project key (e.g. `ABC`) or a board name.
 - Otherwise use the section "Daily" of AGENTS.md.
 - Otherwise ask me with the question tool (multiple choice, recommended option first): the Jira projects where tickets assigned to me were updated in the last 30 days, most recent first.
 - If the scope is a board name, find the board and its project. If several boards match, ask me with the question tool.
@@ -18,7 +18,7 @@ Completeness matters more than brevity for this command: list every item returne
 
 ## Step 2 - Links
 Every Jira key and every merge request in the output is a markdown link:
-- Jira: `[DNA-123](<jira base url>/browse/DNA-123)`. Base URL: the "Jira URL" in AGENTS.md "Daily" if present, otherwise the scheme and host of the `self` URL returned by the Jira tools.
+- Jira: `[ABC-123](<jira base url>/browse/ABC-123)`. Base URL: the "Jira URL" in AGENTS.md "Daily" if present, otherwise the scheme and host of the `self` URL returned by the Jira tools.
 - GitLab: `[!42](<web_url>)` with the `web_url` returned by the GitLab tools.
 Never invent a URL. If none is available, write the key alone.
 
@@ -63,7 +63,7 @@ Table: Ticket (link), Type, Titre, Statut, Prio, MR (link + pipeline: ✅ succes
 Done tickets: a single line "Terminés : <links>".
 
 ## 2. Reviews en attente de moi (<n>)
-Table: MR (link), Projet, Titre, Auteur, Ticket (link), Ouverte depuis, Pipeline.
+Table: MR (link), Projet, Titre, Auteur, Ticket (link), Ouverte depuis, Pipeline, Commande (`/review !<iid>`, to run in a session opened on that project).
 
 ## 3. Mes merge requests (<n>)
 Table: MR (link), Ticket (link), Cible, Pipeline, Conflits, Discussions non résolues, Approbations, Draft, Signal.
@@ -77,8 +77,8 @@ Table: Ticket (link), Type, Titre, Statut, Prio, Dernière MAJ, Signal. If there
 ## 6. Plan du jour
 3 to 5 numbered actions, one line each, with the link and the command to use when one applies. Order:
 1. My merge requests with a failed pipeline (`/scans` on that branch tells which job failed) or conflicts with develop (`/sync`).
-2. Reviews waiting for me: they block teammates.
-3. Unresolved discussions on my merge requests.
+2. Reviews waiting for me: they block teammates (`/review !<iid>` in a session on that project).
+3. Unresolved discussions on my merge requests (`/mr` on that branch).
 4. Blocked tickets: who to contact, with the blocker link.
 5. Continue my in-progress sprint tickets, in rank order.
 6. If nothing is in progress: start the first ticket of section 4 or the first To Do of section 1 with `/ticket <KEY>`.

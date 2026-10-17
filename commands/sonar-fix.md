@@ -30,11 +30,12 @@ Steps:
    - If the rule is a security one (vulnerability or hotspot), load the skill `fortify-remediation` and apply the matching pattern.
    - If the code touches SharePoint/CSOM, DocuSign, AWS S3, Piano Analytics or authentication, load `integrations-guardrails` and ask me with the question tool (multiple choice, recommended option first) ("Appliquer le correctif" / "Me montrer le diff d'abord" / "Annuler") before editing.
    - For a code smell, change only what the rule asks (e.g. remove the unused variable, reduce the nesting of this method), keeping the behavior identical.
+   - Known traps of the obvious fix: a property whose getter builds a collection (LINQ, `ToList()`) becomes a method (`GetActiveItems()`), never a property with a cache field (stale data); a URL path segment is encoded with `Uri.EscapeDataString` (or becomes a typed `Guid` parameter), not `HttpUtility.UrlEncode` (meant for query strings: spaces become `+`).
 6. If the fix changes behavior (bug or vulnerability), add or update a unit test proving it, if the project has tests. Code smells need no new test.
 7. Run the build and tests in one call. .NET: `sh ~/.config/opencode/scripts/build-test.sh`, with the solution or project of AGENTS.md "Build & test" as first argument if it names one; front-end: the commands of AGENTS.md "Build & test", otherwise those of the project detection. In the same turn, read the ticket sheet if the branch has one (step 9). If a legacy .NET Framework project cannot build on this machine (.NET Framework needs Windows), say so instead of changing project files.
 8. Report: rule key and title, the change (file:line), the test added if any, build/test result, and a commit message:
    - bug or vulnerability: `fix(sonar): <summary> (<rule key>)`
    - security hotspot: `fix(security): <summary> (<rule key>)`
    - code smell: `refactor(sonar): <summary> (<rule key>)`
-9. If the branch has a ticket sheet (`.git/opencode/tickets/<KEY>.md`, key from the branch name), append to its "## Suivi": `- <date> /sonar-fix $1 - <corrigé | non pertinent | passé>` (date: the "Now" line above).
+9. If the branch has a ticket sheet (`.git/opencode/tickets/<KEY>.md`, key from the branch name), append to its "## Suivi": `- <date> /sonar-fix $1 - <corrigé | non pertinent | passé>` (date: the "Now" line above), followed for a fix by `- build <ok|ko> - tests <passed>/<total> - empreinte <the "Code fingerprint of this run" line of step 7, or ->`: /check then reuses that build and test run while the code does not change.
 10. Last line: "Prochaine étape : /check puis /ship (avec ce message de commit), puis /scans pour vérifier que l'issue a disparu."

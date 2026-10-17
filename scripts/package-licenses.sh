@@ -65,6 +65,7 @@ SixLabors.ImageSharp|3.0|direct|COMMERCIAL|Six Labors Split License since 3.0: p
 SixLabors.ImageSharp.Web|3.0|direct|COMMERCIAL|Six Labors Split License since 3.0, same terms as ImageSharp|stay on 2.0.x (Apache-2.0)
 SixLabors.ImageSharp.Drawing|2.0|direct|COMMERCIAL|Six Labors Split License, same terms as ImageSharp|SkiaSharp (MIT)
 SixLabors.Fonts|2.0|direct|COMMERCIAL|Six Labors Split License since 2.0, same terms as ImageSharp|SkiaSharp (MIT)
+Blazorise,Blazorise.*|0.9.4|any|COMMERCIAL|Commercial since 0.9.4 (July 2021); since 2023-07-15 every company needs a paid license per front-end developer whatever its size, contractors included for client work; the free Community license is only for eligible individual developers|MudBlazor (MIT) or Radzen.Blazor (MIT); 0.9.3 is the last MIT version (outdated)
 Duende.IdentityServer,Duende.IdentityServer.*|0|any|COMMERCIAL|Duende commercial license for production; free Community edition only under 1M USD yearly revenue, with a license key|OpenIddict (Apache-2.0), Keycloak or the company identity provider
 itext,itext.*,itext7,itext7.*|0|any|AGPL|AGPL-3.0 or commercial license: in a closed-source application, AGPL means buying a license|PdfSharp/MigraDoc (MIT), or QuestPDF if eligible
 iTextSharp|5.0|any|AGPL|AGPL-3.0 or commercial license since 5.0|iTextSharp.LGPLv2.Core (LGPL) or PdfSharp/MigraDoc (MIT)

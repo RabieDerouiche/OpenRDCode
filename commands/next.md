@@ -1,5 +1,5 @@
 ---
-description: "Where am I and what next? Reads the branch, the working tree (including changes made outside OpenCode), the ticket sheet, the pipeline and the merge request, then proposes the next step in a multiple-choice question. Runs it right away when it is a git or ticket sheet action (sync, ship, finish a merge, tick a step done by hand); otherwise gives the command to type. Usage: /next"
+description: "Where am I and what next? Reads the branch, the working tree (including changes made outside OpenCode), the ticket sheet, the pipeline and the merge request (with its review discussions), then proposes the next step in a multiple-choice question. Runs it right away when it is a git or ticket sheet action (sync, ship, finish a merge, tick a step done by hand); otherwise gives the command to type. Usage: /next"
 agent: git
 ---
 Workflow state (one fetch, then the state of the branch, its ticket sheet and the other tickets):
@@ -7,7 +7,7 @@ Workflow state (one fetch, then the state of the branch, its ticket sheet and th
 
 Tell me where I am and get me to the next step as fast as possible. No review, no build, no full scan: read only what decides the next step. Everything about the tickets is printed above: never read a ticket sheet.
 
-The workflow: /daily → /ticket → /dev (one plan step at a time, with its tests) → /test → /check → /ship → /scans → fixes (/fortify-fix, /sonar-fix) → back to /check. /sync brings develop, or what I pushed from my Mac, into the branch.
+The workflow: /daily → /ticket → /dev (one plan step at a time, with its tests) → /test → /check → /ship → /scans → fixes (/fortify-fix, /sonar-fix) → back to /check; when reviewers comment on the merge request: /mr → /check → /ship. /sync brings develop, or what I pushed from my Mac, into the branch.
 
 ## Step 1 - Read the state
 - Which ticket: the one whose Jira key is in the current branch name ("Jira key from branch"). The "Ticket sheets summary" lists the tickets started in this repository, most recent first (key, title, branch, branch exists, plan done/total, last Suivi line, then their Jira link and the first sentence of their Résumé). A ticket is "en cours" if its branch exists and its last Suivi line is not a /ship or /scans with the whole plan done.
@@ -24,23 +24,23 @@ The workflow: /daily → /ticket → /dev (one plan step at a time, with its tes
 5. Plan steps that look done by hand (step 1): next = ACTION "Cocher l'étape <n> (faite à la main)".
 6. Uncommitted changes:
    - unchecked plan steps remain: next = "/dev" (step <n>);
-   - no `/test` line in "Suivi" after the last change, or "Tests attendus" rows still "à écrire" or "❌": next = "/test";
-   - no `/check` line with the current HEAD and the current uncommitted changes summary, or its verdict is BLOCKING: next = "/check";
-   - otherwise: next = ACTION "Livrer (commit + push)".
-7. No uncommitted changes but local commits not pushed ("ahead" in the branch status): next = ACTION "Livrer (push)".
+   - "Tests attendus" rows still "à écrire" or "❌": next = "/test";
+   - no `/check` line in "Suivi" whose `empreinte` is the "Code fingerprint" of the workflow state with a verdict other than BLOCKING (the code changed since the last /check, or it was never checked): next = "/check";
+   - otherwise: next = ACTION "Livrer (commit + push)". Without a ticket sheet (nothing records a /check), offer "/check d'abord" as the first alternative.
+7. No uncommitted changes but local commits not pushed ("ahead" in the branch status): the same `/check` test as rule 6 → next = "/check"; otherwise next = ACTION "Livrer (push)".
 8. Pushed: pipeline of the pushed commit running → next = "Attends la fin du pipeline (<link>), puis /scans"; failed, or success with no `/scans` line in "Suivi" for the pushed commit → next = "/scans"; a `/scans` line with points still to fix → next = "/fortify-fix <id> ou /sonar-fix <clé> (voir le dernier /scans)".
-9. Merge request with unresolved discussions: next = "Réponds aux discussions de la MR <link>". Approved, pipeline green, no discussion left: next = "MR prête à merger <link>".
+9. Merge request with unresolved discussions: if the last `/mr` line of "Suivi" says "0 corrigées" or is followed by a `/ship` line (its fixes are pushed), next = "Colle les réponses de /mr dans la MR <link> et résous les discussions" (then "/mr" if new comments came in); otherwise next = "/mr" (« <n> discussions ouvertes sur la MR <link> »). Approved, pipeline green, no discussion left: next = "MR prête à merger <link>".
 10. Unchecked plan steps: next = "/dev" (step <n>).
 11. Otherwise: next = "/daily pour la suite".
 
 ## Step 3 - Answer and act
 Write at most 8 lines, in French; the branch state is part of "Où tu en es", no separate block. First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name. Then "Où tu en es" (branch, ticket link, plan <checked>/<total>, tests, last /check, push, pipeline, MR: only what exists), the changes made outside OpenCode if any, one line "Autres tickets en cours : [<KEY>](<its Jira link>) - <title> (<branch>), ..." if any, and the AGENTS.md drift line if any: "AGENTS.md probablement à mettre à jour (<sections>) : /agents-md quand le ticket est livré".
 Then:
-- If the next step or a reasonable alternative is an ACTION, ask me with the question tool: the next step first "(recommandé)", then up to 2 alternatives that make sense now (for example "/check d'abord" before "Livrer", "Cocher l'étape 2" and "/dev étape 3", or "Basculer sur <other KEY>"), and "Rien pour l'instant". An option about a ticket always names it with its title, for example "Reprendre DNA-123 - Export PDF des contrats", and its description says in one line what the ticket is about (first sentence of its "Résumé") and where it stands (for example "étape 3/5, pas encore livré"). Then run the chosen ACTION right away:
+- If the next step or a reasonable alternative is an ACTION, ask me with the question tool: the next step first "(recommandé)", then up to 2 alternatives that make sense now (for example "/check d'abord" before "Livrer", "Cocher l'étape 2" and "/dev étape 3", or "Basculer sur <other KEY>"), and "Rien pour l'instant". An option about a ticket always names it with its title, for example "Reprendre ABC-123 - Export PDF des contrats", and its description says in one line what the ticket is about (first sentence of its "Résumé") and where it stands (for example "étape 3/5, pas encore livré"). Then run the chosen ACTION right away:
   - "Synchroniser": load the skill `sync-procedure` and follow it.
   - "Livrer": load the skill `ship-procedure` and follow it.
   - "Terminer le merge": `git commit --no-edit`, then the branch state.
   - "Reprendre <KEY>" or "Basculer sur <KEY>": if the working tree is not empty, ask me first: "Annuler, je commite d'abord" (recommandé) / "Mettre de côté (stash) et basculer" (`git stash push -u -m "next <current branch>"`); then, in one call, `git switch <branch of that sheet> && sh ~/.config/opencode/scripts/workflow-state.sh --sheet`, and go back to step 1 for that ticket with this new state, starting your answer with its header line and the first sentence of its "Résumé".
   - "Cocher l'étape <n>": with the edit tool, in one turn, tick the step in the sheet and append at the end of "## Suivi" `- <date> /next - étape <n> faite à la main` (exact lines from the sheet printed above; date: the "Now" line of the workflow state); then say that /test will write the missing tests for it.
-  A chosen command (/dev, /test, /check, /scans, /ticket, /agents-md) cannot be launched from here: answer with one line "Tape `<command>`".
+  A chosen command (/dev, /test, /check, /scans, /mr, /ticket, /agents-md) cannot be launched from here: answer with one line "Tape `<command>`".
 - Otherwise do not ask: end with "**Prochaine étape : <command>**" and one line "Ensuite : <step after>".

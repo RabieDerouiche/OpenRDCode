@@ -21,13 +21,13 @@
 - AGENTS.md files are already in your instructions: never read them again, except to edit one. Read only the files and sections a step needs; do not re-read a file you already read unless it may have changed (for example after I edited it in Rider).
 
 ## Project types
-- I work on several kinds of repositories: .NET 10 APIs with Clean Architecture + CQRS, classic .NET APIs without CQRS, legacy .NET Framework web projects, libraries, and front-end projects.
-- The project type is auto-detected by `sh ~/.config/opencode/scripts/detect-project-type.sh` (types: cqrs-api, api, dotnet-app, legacy, library, frontend; several can apply). A "Project type" section in the repository AGENTS.md overrides the detection.
+- I work on several kinds of repositories: .NET 10 APIs with Clean Architecture + CQRS, classic .NET APIs without CQRS (some on ABP Framework), Blazor applications, legacy .NET Framework web projects, libraries, and front-end projects.
+- The project type is auto-detected by `sh ~/.config/opencode/scripts/detect-project-type.sh` (types: cqrs-api, api, blazor, dotnet-app, legacy, library, frontend; several can apply). A "Project type" section in the repository AGENTS.md overrides the detection.
 - Follow the conventions of the existing code of the repository. Never introduce CQRS, a mediator or Clean Architecture layers in a project that does not already use them.
 - For CQRS APIs only: in-house mediator, NOT MediatR (never add MediatR); load the skill `dotnet-cqrs-conventions` before writing or reviewing handlers.
 - New libraries or approaches: by default, use what the repository already uses (the "Test stack" line of the project detection for tests; the existing packages for the rest). When a task would bring something the repository does not use yet (for example Moq, FluentValidation, a mediator, a new test framework), ask me before writing code with the question tool: "Garder l'existant (<what is used today>)" (recommandé) or "Introduire <new thing> (<packages to add, files impacted>)". Wait for my answer. If I choose the new thing: add it, use it for the new code only, and do not rewrite existing code unless I ask.
 - If the repository has no tests at all, ask me with the question tool before creating a test project.
-- Licenses: these NuGet packages became paid or copyleft from a given version: MediatR 13+, AutoMapper 15+, FluentAssertions 8+, MassTransit 9+, NPOI 2.8+, EPPlus 5+, QuestPDF, SixLabors.ImageSharp 3+, Duende IdentityServer, iText, and Polly from its next major version. Never propose such a version without saying it is paid, with its free option first (in-house mediator or plain services, Mapperly or manual mapping, AwesomeAssertions or Shouldly, MassTransit 8, ClosedXML...). Checking the repository's packages is on demand only: /licences.
+- Licenses: these NuGet packages became paid or copyleft from a given version: MediatR 13+, AutoMapper 15+, FluentAssertions 8+, MassTransit 9+, NPOI 2.8+, EPPlus 5+, QuestPDF, SixLabors.ImageSharp 3+, Blazorise (every company, contractors included), Duende IdentityServer, iText, and Polly from its next major version. Never propose such a version without saying it is paid, with its free option first (in-house mediator or plain services, Mapperly or manual mapping, AwesomeAssertions or Shouldly, MassTransit 8, ClosedXML...). Checking the repository's packages is on demand only: /licences.
 - Build and test with the commands from the section "Build & test" of the repository AGENTS.md if it exists, otherwise from the detection script. Legacy .NET Framework projects may not build on this machine (.NET Framework needs Windows): say so instead of changing project files.
 - Integrations: SharePoint (CSOM), DocuSign, AWS S3, Piano Analytics. Load the skill `integrations-guardrails` before touching them. Never modify authentication or credentials handling without asking.
 
@@ -35,7 +35,7 @@
 - Merge requests target `develop`. Production is deployed from `master` as is; there are no release tags.
 
 ## Workflow
-- My day: /daily → /ticket <KEY> → /dev (one plan step at a time, with its tests; or I code myself) → /test → /check → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. /sync brings develop or my Mac pushes into the branch. /next tells me where I am and resumes a ticket. /agents-md keeps the repository AGENTS.md up to date. One OpenCode session per ticket: to resume, new session then /next.
+- My day: /daily → /ticket <KEY> → /dev (one plan step at a time, with its tests; or I code myself) → /test → /check → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. When reviewers comment on my merge request: /mr → /check → /ship. /review !<iid> reviews a teammate's merge request. /sync brings develop or my Mac pushes into the branch. /next tells me where I am and resumes a ticket. /agents-md keeps the repository AGENTS.md up to date. One OpenCode session per ticket: to resume, new session then /next.
 - Sonar and Fortify run in the CI on every pushed commit: their results exist only after /ship, never before.
 - You may run on a remote machine while I sometimes code in Rider on my Mac: then we do NOT share the same files. My Mac changes reach you only through git (I push from Rider, then /sync), and your changes reach my Mac only after /ship or /sync pushed them (then I pull in Rider). The ticket sheet exists only on your side.
 - Ticket sheet: on a branch whose name contains a Jira key (pattern `[A-Z][A-Z0-9]+-[0-9]+`), the file `.git/opencode/tickets/<KEY>.md` holds the analysis of the ticket: acceptance criteria, expected tests, plan, and a "## Suivi" log. Read it before working on the ticket, unless the command already printed it in the workflow state. When you finish a step of its "Plan", tick it (`- [x]`) with the edit tool. Never commit it (it lives inside `.git`).
@@ -59,6 +59,8 @@
 - "écris les tests", "teste ce fichier", "fais les tests comme dans <repo>" → tell me to run `/test`, `/test <file>` or `/test comme <repo or pattern>`.
 - "vérifie les licences", "ce package est-il payant" → run `sh ~/.config/opencode/scripts/package-licenses.sh` (whole repository), `... branche` (packages changed on the branch) or `... <PackageId> [<version>]`, and summarize its result; this is what /licences does.
 - "review", "vérifie avant de pousser" → tell me to run `/check`.
+- "réponds aux commentaires de la MR", "retours de review" → tell me to run `/mr`.
+- "relis la MR de …", "review la MR !42" → tell me to run `/review !<iid>` (or `/review <branch>`) in a session opened on that repository.
 - commit, push, branch, merge, sync → tell me to run `/ship`, `/sync` or `/ticket`: you never run git writes yourself.
 - Do not invoke subagents for anything else unless I ask.
 

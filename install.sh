@@ -29,7 +29,6 @@ mkdir -p "$TARGET_DIR/agents" "$TARGET_DIR/commands" "$TARGET_DIR/skills"
 
 # Files from older versions of the pack, merged into the workflow commands: backed up, then removed.
 OBSOLETE="agents/fortify.md
-commands/review.md
 commands/review-branch.md
 commands/test-for.md
 commands/test-branch.md
@@ -92,6 +91,7 @@ if [ "$backed_up" -eq 1 ]; then
   echo "Previous versions of overwritten files were saved to: $BACKUP_DIR"
 fi
 # Keep only the 5 most recent backups (portable: GNU and BSD/macOS)
+# shellcheck disable=SC2012 # the backup folder names are generated: backup-<date>-<time>
 backups=$(ls -1d "$TARGET_DIR"/backup-* 2>/dev/null | sort || true)
 count=$(printf '%s\n' "$backups" | grep -c . || true)
 if [ "$count" -gt 5 ]; then

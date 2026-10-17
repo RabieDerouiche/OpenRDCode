@@ -23,7 +23,7 @@ If the "Branch vs its remote copy" line above says "behind", commits were pushed
 - If a file is given above: test only that file. Read it and write unit tests for the class, module or component it contains. If a test file for it already exists, add the missing cases to it instead of creating a new file. Cover every public method or exported member. Skip step 2 and go to step 4.
 - Otherwise: the scope is every file changed on the branch plus the uncommitted and untracked files of the workflow state. Split this list yourself:
   - Test files: paths containing `Tests/`, `.Tests/`, `tests/`, `test/`, `__tests__/`, or names ending in `.spec.*` / `.test.*`.
-  - Production source files: `.cs`, `.ts`, `.tsx`, `.js`, `.jsx`, `.vb` files that are not test files.
+  - Production source files: `.cs`, `.razor`, `.ts`, `.tsx`, `.js`, `.jsx`, `.vb` files that are not test files.
   - Ignore everything else (configuration, assets, documentation, generated files, migrations), and ignore DTOs and models without logic and DI registration.
   If there is no production source file, say "Aucun code à tester sur cette branche" and stop.
 
@@ -40,12 +40,12 @@ Every acceptance criterion appears at least once. Business logic first.
 Follow your rules (project type, existing test style, reference approach and its questions, test stack question before any new library, no test project creation without asking, which test project to use).
 
 ## Step 5 - Run until green
-.NET: while fixing your own tests, run only them: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestClass>` (one call: quiet build, then the tests if the build passed); at the end, run the full suite once: `sh ~/.config/opencode/scripts/build-test.sh`, with the solution or project of AGENTS.md "Build & test" as first argument if it names one. Front-end: the commands of AGENTS.md "Build & test", otherwise those of the project detection. If tests you wrote fail, fix the tests only and run again, at most 3 rounds. A failure that reveals a real bug in production code stays failing, with a clear English comment, and is reported.
+.NET: while fixing your own tests, run only them: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestClass>` (one call: quiet build, then the tests if the build passed); at the end, run the full suite once: `sh ~/.config/opencode/scripts/build-test.sh`, with the solution or project of AGENTS.md "Build & test" as first argument if it names one (after a run of the whole solution, its last line gives the "Code fingerprint of this run", for step 6). Front-end: the commands of AGENTS.md "Build & test", otherwise those of the project detection. If tests you wrote fail, fix the tests only and run again, at most 3 rounds. A failure that reveals a real bug in production code stays failing, with a clear English comment, and is reported.
 
 ## Step 6 - Ticket sheet
 If the sheet exists, update it with the edit tool, in one turn (exact lines from the sheet printed above):
 - In "Tests attendus", set Statut of each row: `✅ <TestName>`, `❌ manquant` or `🐞 bug suspecté`; add rows for tests written for behaviors that were not listed.
-- Append to "## Suivi": `- <date> /test - <n> tests ajoutés - <passed>/<total> tests verts` (date: the "Now" line of the workflow state).
+- Append to "## Suivi": `- <date> /test - <n> tests ajoutés - build <ok|ko> - tests <passed>/<total> - empreinte <the "Code fingerprint of this run" of the full suite>` (date: the "Now" line of the workflow state; without that fingerprint line, end with `- empreinte -`). /check then skips its own build and tests while the code keeps this fingerprint.
 Never write any other file outside the test folders.
 
 ## Answer, in French

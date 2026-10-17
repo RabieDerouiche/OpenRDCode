@@ -2,7 +2,8 @@
 # Prints, in one sequential run, the git state used by the workflow commands (/next, /dev, /test, /check, /ship, /sync,
 # /ticket, /scans). OpenCode runs the shell injections of a command in parallel: running everything here, after a
 # single fetch, avoids stale remote refs and git lock conflicts.
-# Read-only, except `git fetch`.
+# Read-only, except `git fetch`. The "Code fingerprint" line comes from state-fingerprint.sh (same folder): /check and
+# /test write it in the ticket sheet, /ship and /next compare it to know whether that review or test run is still valid.
 # Usage: workflow-state.sh [--fetch-all | --no-fetch] [--sheet] [--tickets] [--diff]
 #   (default)    fetch only the base branch and the current branch: fast, even with many branches on origin
 #   --fetch-all  fetch every branch of origin (/ticket looks for the existing branches of a ticket)
@@ -18,6 +19,12 @@ MAX_SHEETS=10
 # English git messages whatever the language of the machine
 LC_ALL=C
 export LC_ALL
+# File names as they are, without octal quoting of accented letters, so that they can be read (git 2.31 or later;
+# older versions ignore these variables)
+GIT_CONFIG_COUNT=1
+GIT_CONFIG_KEY_0=core.quotePath
+GIT_CONFIG_VALUE_0=false
+export GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 
 fetch=branch
 sheet=0
@@ -38,6 +45,7 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 0
 fi
 
+here=$(dirname "$0")
 root=$(git rev-parse --show-toplevel)
 branch=$(git branch --show-current)
 upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)
@@ -87,6 +95,7 @@ echo "Current branch: ${branch:-(detached HEAD)}"
 echo "Jira key from branch: ${key:-none}"
 echo "Base branch: ${base:-NONE (no origin/develop, origin/main or origin/master)}"
 echo "HEAD: $(git rev-parse --short HEAD 2>/dev/null)"
+echo "Code fingerprint: $(sh "$here/state-fingerprint.sh")"
 if [ -n "$remote_copy" ]; then
   counts=$(git rev-list --left-right --count "$remote_copy...HEAD" 2>/dev/null)
   behind=$(printf '%s' "$counts" | cut -f1)
