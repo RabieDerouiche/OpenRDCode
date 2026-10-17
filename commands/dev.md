@@ -48,11 +48,11 @@ Never ask what you can find in the code, the sheet or AGENTS.md. Then show the s
 Only this step. Smallest change that does it, mirroring the existing code and the reference examples. Code comments and log messages in English. No unrelated refactoring, renaming or reformatting.
 
 ## Step 6 - Build
-Run the build command (AGENTS.md "Build & test", otherwise the detection above). Fix compilation errors with the rules of the skill `build-fix`, at most 3 rounds. A legacy .NET Framework project that cannot build on macOS: say so and continue.
+Run the build command (AGENTS.md "Build & test", otherwise the detection above), quietly: `dotnet build -nologo -v q 2>&1 | tail -60` for .NET. Fix compilation errors with the rules of the skill `build-fix`, at most 3 rounds. A legacy .NET Framework project that cannot build on macOS: say so and continue.
 
 ## Step 7 - Tests of this step
 Unless the step has no testable behavior (pure configuration, documentation) or my directives say otherwise, invoke the `test-writer` subagent with the task tool and this prompt (fill the placeholders):
-"Write the unit tests for step <N> of ticket <KEY>: <step text>. Files changed in this step: <list>. Acceptance criteria concerned: <list>. Directives about tests: <my directives about tests, or none>. Decisions already made (do not ask again): <the sheet's Décisions about tests>. Follow your rules (reference approach, existing style, questions before any new library or mechanism). Update the rows of these tests in the "Tests attendus" table of `.git/opencode/tickets/<KEY>.md`. Run the test command and report."
+"Write the unit tests for step <N> of ticket <KEY>: <step text>. Files changed in this step: <list>. Acceptance criteria concerned: <list>. Directives about tests: <my directives about tests, or none>. Decisions already made (do not ask again): <the sheet's Décisions about tests>. Follow your rules (reference approach, existing style, questions before any new library or mechanism). Update the rows of these tests in the "Tests attendus" table of `.git/opencode/tickets/<KEY>.md`. Run only the tests of this step on the test project, which rebuilds incrementally: `dotnet test <test project> -nologo -v q --filter FullyQualifiedName~<TestClass> 2>&1 | tail -60`, and report. The full suite runs later in /test and /check."
 If a test it wrote fails because of a real bug in the code of this step, fix the production code (at most 2 rounds) and run the tests again.
 
 ## Step 8 - Ticket sheet

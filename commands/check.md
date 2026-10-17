@@ -39,7 +39,7 @@ The committed diff, the uncommitted diff and the untracked files above (read the
 Review the whole scope as a merge request review, with your checks for the project type. Also check that the commits form a coherent change and flag files that seem unrelated to the branch goal.
 
 ## Step 3 - Build and tests
-Run the build command, then the test command (AGENTS.md "Build & test" if present, otherwise the project detection above). Do not fix anything. If a legacy .NET Framework project cannot build on macOS, say so and continue. If restore fails with 401/403/NU1301, say "Problème d'accès Artifactory" and continue without retrying.
+Run the build command, then the test command (AGENTS.md "Build & test" if present, otherwise the project detection above). Fast runs (.NET): build once with `dotnet build -nologo -v q 2>&1 | tail -60`, then run tests on that build with `dotnet test --no-build -nologo -v q 2>&1 | tail -60`. Use the AGENTS.md commands when they exist, with the same quiet options and `--no-build`. Do not fix anything. If a legacy .NET Framework project cannot build on macOS, say so and continue. If restore fails with 401/403/NU1301, say "Problème d'accès Artifactory" and continue without retrying.
 
 ## Step 4 - Acceptance criteria
 The Jira key is in the branch name (pattern `[A-Z][A-Z0-9]+-[0-9]+`). Use the "Critères d'acceptation" and "Tests attendus" of `.git/opencode/tickets/<KEY>.md` if it is in the list above; otherwise read the criteria of the ticket with the Jira MCP tools (read-only) and say "Pas de fiche ticket". For each criterion: implemented (file:line as evidence, or "non trouvé") and tested (test name, or "non testé").
