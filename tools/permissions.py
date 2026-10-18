@@ -41,8 +41,14 @@ GIT_WRITE = ["git* push*", "git* commit*", "git* reset*", "git* checkout*", "git
              "git* remote rm*", "git* gc*", "git* update-ref*", "git* apply*", "git* am *", "git* worktree add*", "git* worktree remove*", "git* worktree move*", "git* worktree prune*", "git* worktree lock*", "git* worktree unlock*", "git* worktree repair*",
              "git* submodule*"]
 OTHER_DENY = ["*-exec*", "*-execdir*", "*-delete*", "*-ok *", "*-fprint*", "*-fls*", "*sed*-i*", "*sed*--in-place*"]
+# Secret stores and secret-looking names: NuGet configuration (Artifactory credentials), environment variables,
+# tokens and passwords. Upper and lower case only, so that code names such as PasswordValidator stay usable.
+SECRET_PROBES = ["*.nuget/NuGet*", "*NuGet.Config*", "*NuGet.config*", "*nuget.config*", "*Nuget.Config*",
+                 "*PASSWORD*", "*password*", "*PASSWD*", "*passwd*", "*TOKEN*", "*SECRET*", "*secret*",
+                 "*CREDENTIAL*", "*credential*", "*API_KEY*", "*APIKEY*", "*api_key*", "*apikey*",
+                 "*/proc/*environ*", "*.netrc*", "*.pypirc*", "*.git-credentials*"]
 SECRETS = ["*zshenv*", "*zshrc*", "*bash_profile*", "*appsec-ci.env*", "*/.ssh/*", "*/.aws/*", "*.npmrc*",
-           "*credentials*", "*artifactory_*", "*echo *$*", "*printf *$*", "*$(*", "*${*", "*`*"]
+           "*credentials*", "*artifactory_*", "*echo *$*", "*printf *$*", "*$(*", "*${*", "*`*"] + SECRET_PROBES
 
 MCP_WRITE_DENY = [(p, "deny") for p in ["*create*", "*update*", "*delete*", "*remove*", "*upload*", "*add_*",
                                          "*approve*", "*assign*", "*accept*", "*transition_issue*", "*do_transition*",
@@ -198,7 +204,12 @@ SNIPPET = as_dict([
         ("skill", [("*", "allow")]),
         ("bash", [("env", "deny"), ("env *", "deny"), ("printenv*", "deny"), ("set", "deny"), ("*zshenv*", "deny"),
                   ("*zshrc*", "deny"), ("git push*", "ask"), ("git reset*", "ask"), ("git rebase*", "ask"),
-                  ("rm -rf*", "ask")]),
+                  ("rm -rf*", "ask"), ("export -p*", "deny"), ("declare -p*", "deny"), ("declare -x*", "deny"),
+                  ("compgen*", "deny"), ("*echo *$*", "deny"), ("*printf *$*", "deny"), ("*artifactory_*", "deny"),
+                  ("*/.ssh/*", "deny"), ("*/.aws/*", "deny"), ("*.npmrc*", "deny"), ("*appsec-ci.env*", "deny")]
+                 + [(p, "deny") for p in SECRET_PROBES]),
+        # the read tool too: the user NuGet configuration holds the Artifactory credentials
+        ("read", [("*/.nuget/*", "deny")]),
     ] + MCP_WRITE_DENY),
 ])
 with open("opencode.snippet.json", "w") as out:

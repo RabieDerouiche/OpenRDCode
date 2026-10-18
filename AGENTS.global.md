@@ -79,9 +79,9 @@
 
 ## NuGet / Artifactory
 - NuGet restore authenticates to Artifactory through the env vars `artifactory_user` and `artifactory_password`, already exported in the environment.
-- Never print, echo, log or read these values or the files that define them.
+- Never print, echo, log or read these values or the files that define them: no NuGet.Config or nuget.config through the shell (the user one, `~/.nuget/NuGet/NuGet.Config`, never at all), no `echo`, `test -n` or `printenv` on environment variables, no search for passwords, tokens or credentials anywhere.
 - Never modify nuget.config to hardcode credentials.
-- If `dotnet restore` fails with 401/403/NU1301, stop and tell me instead of trying workarounds.
+- If `dotnet restore` fails with 401/403/NU1301, or `dotnet` is not found, stop and tell me in one line: it is an environment problem that I fix outside OpenCode. Never investigate it, never change PATH, DOTNET_ROOT or any variable to work around it.
 
 ## Fortify SSC (MCP)
 - The SSC application name of each repository is the value of APPSEC_PROJECT_NAME in its appsec-ci.env file.
