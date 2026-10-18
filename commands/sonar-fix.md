@@ -37,5 +37,5 @@ Steps:
    - bug or vulnerability: `fix(sonar): <summary> (<rule key>)`
    - security hotspot: `fix(security): <summary> (<rule key>)`
    - code smell: `refactor(sonar): <summary> (<rule key>)`
-9. If the branch has a ticket sheet (`.git/opencode/tickets/<KEY>.md`, key from the branch name), append to its "## Suivi": `- <date> /sonar-fix $1 - <corrigé | non pertinent | passé>` (date: the "Now" line above), followed for a fix by `- build <ok|ko> - tests <passed>/<total> - empreinte <the "Code fingerprint of this run" line of step 7, or ->`: /check then reuses that build and test run while the code does not change.
+9. If the branch has a ticket sheet (`.git/opencode-tickets/<KEY>.md`, key from the branch name), append to its "## Suivi": `- <date> /sonar-fix $1 - <corrigé | non pertinent | passé>` (date: the "Now" line above), followed for a fix by `- build <ok|ko> - tests <passed>/<total> - empreinte <the "Code fingerprint of this run" line of step 7, or ->`: /check then reuses that build and test run while the code does not change.
 10. Last line: "Prochaine étape : /check puis /ship (avec ce message de commit), puis /scans pour vérifier que l'issue a disparu."

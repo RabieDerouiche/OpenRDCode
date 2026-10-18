@@ -36,10 +36,10 @@
 - Merge requests target `develop`. Production is deployed from `master` as is; there are no release tags.
 
 ## Workflow
-- My day: /daily → /ticket <KEY> → /dev (one plan step at a time, with its tests; or I code myself) → /test → /check → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. When reviewers comment on my merge request: /mr → /check → /ship. /review !<iid> reviews a teammate's merge request. /sync brings develop or my Mac pushes into the branch. /next tells me where I am and resumes a ticket. /agents-md keeps the repository AGENTS.md up to date. One OpenCode session per ticket: to resume, new session then /next.
+- My day: /daily → /ticket <KEY> → /dev (one plan step at a time, with its tests; or I code myself) → /test → /check → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. When reviewers comment on my merge request: /mr → /check → /ship. /review !<iid> reviews a teammate's merge request. /abandon undoes a ticket started by mistake. /sync brings develop or my Mac pushes into the branch. /next tells me where I am and resumes a ticket. /agents-md keeps the repository AGENTS.md up to date. One OpenCode session per ticket: to resume, new session then /next.
 - Sonar and Fortify run in the CI on every pushed commit: their results exist only after /ship, never before.
 - You may run on a remote machine while I sometimes code in Rider on my Mac: then we do NOT share the same files. My Mac changes reach you only through git (I push from Rider, then /sync), and your changes reach my Mac only after /ship or /sync pushed them (then I pull in Rider). The ticket sheet exists only on your side.
-- Ticket sheet: on a branch whose name contains a Jira key (pattern `[A-Z][A-Z0-9_]+-[0-9]+`), the file `.git/opencode/tickets/<KEY>.md` holds the analysis of the ticket: acceptance criteria, expected tests, plan, and a "## Suivi" log. Read it before working on the ticket, unless the command already printed it in the workflow state. When you finish a step of its "Plan", tick it (`- [x]`) with the edit tool. Never commit it (it lives inside `.git`).
+- Ticket sheet: on a branch whose name contains a Jira key (pattern `[A-Z][A-Z0-9_]+-[0-9]+`), the file `.git/opencode-tickets/<KEY>.md` holds the analysis of the ticket: acceptance criteria, expected tests, plan, and a "## Suivi" log. Read it before working on the ticket, unless the command already printed it in the workflow state. When you finish a step of its "Plan", tick it (`- [x]`) with the edit tool. Never commit it (it lives inside `.git`).
 - When I ask "implémente l'étape N de la fiche" without /dev, follow the same rules as /dev: only that step, questions when the approach is unclear, build, tests, tick the step, record my answers in the sheet's "## Décisions", then stop.
 
 ## Routing (when I ask in plain words instead of a command)
@@ -62,6 +62,7 @@
 - "review", "vérifie avant de pousser" → tell me to run `/check`.
 - "réponds aux commentaires de la MR", "retours de review" → tell me to run `/mr`.
 - "relis la MR de …", "review la MR !42" → tell me to run `/review !<iid>` (or `/review <branch>`) in a session opened on that repository.
+- "ticket lancé par erreur", "mauvais dépôt", "annule ce ticket" → tell me to run `/abandon` (in a session on the repository where the ticket was started).
 - commit, push, branch, merge, sync → tell me to run `/ship`, `/sync` or `/ticket`: you never run git writes yourself.
 - Do not invoke subagents for anything else unless I ask.
 

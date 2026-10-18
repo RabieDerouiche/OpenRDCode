@@ -28,7 +28,7 @@ If `<KEY>.md` is in the list of existing ticket sheets above, ask me with the qu
 - Otherwise:
   1. In one turn: read the ticket type and summary with the Jira MCP tools, and list the branches of this key with `git branch -a --list "*<KEY>*"`.
   2. Ask me everything in ONE question tool call:
-     - "Branche": if a local or remote branch of this key exists, "Basculer sur <existing branch>" (recommandé) and "Créer <proposed name>"; otherwise "<proposed name>" (recommandé). Proposed name: `feature/<KEY>-<summary in 3 to 5 kebab-case words, ASCII, lowercase>`, `bugfix/` for a bug, `hotfix/` if the ticket is marked urgent or as a production incident. I can type another name.
+     - "Branche", with the repository folder name in the question ("Branche dans <folder name of the Repository root line>"), so that I notice a wrong repository before anything is created: if a local or remote branch of this key exists, "Basculer sur <existing branch>" (recommandé) and "Créer <proposed name>"; otherwise "<proposed name>" (recommandé). Proposed name: `feature/<KEY>-<summary in 3 to 5 kebab-case words, ASCII, lowercase>`, `bugfix/` for a bug, `hotfix/` if the ticket is marked urgent or as a production incident. I can type another name.
      - "Publication", only for a new branch: "Publier plus tard, au premier /ship" (recommandé) / "Publier la branche maintenant (git push -u)".
      - "Modifications en cours", only if the workflow state shows uncommitted or untracked files: "Annuler, je commite d'abord" (recommandé) / "Les emporter sur la branche du ticket" / "Les laisser de côté (stash)".
   3. Then run, in this order:
@@ -45,7 +45,7 @@ Invoke the `analyst` subagent with the task tool, with this prompt (replace the 
 1. Read the ticket with the Jira MCP tools: summary, description, acceptance criteria, comments, linked issues, attachments list, epic.
 2. Read the Confluence pages linked from the ticket or its epic. If none are linked, search Confluence for the 3 most relevant pages using the ticket's key terms. Read only what is relevant.
 3. Search the repository (read, grep, glob tools) for the code areas involved: endpoints, controllers, handlers, services, components, integrations.
-4. Write the ticket sheet `<repository root>/.git/opencode/tickets/<KEY>.md` with the write tool, in French, complete (do not shorten), exactly in this format. If the file already exists, read it first: keep its "Créée le" date and its "## Décisions" lines, keep its "## Suivi" lines and add `- <date> /ticket - analyse refaite`.
+4. Write the ticket sheet `<repository root>/.git/opencode-tickets/<KEY>.md` with the write tool, in French, complete (do not shorten), exactly in this format. If the file already exists, read it first: keep its "Créée le" date and its "## Décisions" lines, keep its "## Suivi" lines and add `- <date> /ticket - analyse refaite`.
 
 # <KEY> - <summary>
 - Jira : <link to the ticket: Jira URL of the "Daily" section of AGENTS.md, otherwise scheme and host of the self URL returned by the Jira tools, + /browse/<KEY>>
