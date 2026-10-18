@@ -30,8 +30,12 @@ FRONT_TEST = ["npm test*", "npm run test*", "npx jest*", "npx vitest*", "yarn te
               "node --version", "npm --version"]
 FRONT_BUILD = ["npm run build*", "npx tsc*"]
 
-REDIRECT = [("*>*", "deny"), ("*2>&1*", "allow"), ("*> *", "deny"), ("*>>*", "deny"), ("*>/*", "deny"),
-            ("*>~*", "deny"), ("*>.*", "deny")]
+# Read-only agents: forbid writing a file with `>` or `>>`, but allow the harmless stderr forms the model
+# reaches for reflexively (`2>&1`, `2>/dev/null`, `>/dev/null`). Denying those only cost a turn and a retry.
+# The allow rules come last so they win over the generic `*>*` deny (last match wins, insertion order).
+REDIRECT = [("*>*", "deny"), ("*>>*", "deny"), ("*2>&1*", "allow"),
+            ("*>/dev/null*", "allow"), ("*> /dev/null*", "allow"),
+            ("*2>/dev/null*", "allow"), ("*2> /dev/null*", "allow")]
 GIT_WRITE = ["git* push*", "git* commit*", "git* reset*", "git* checkout*", "git* switch*", "git* rebase*",
              "git* merge *", "git* cherry-pick*", "git* revert*", "git stash", "git* stash push*", "git* stash pop*",
              "git* stash drop*", "git* stash apply*", "git* stash clear*", "git* clean*", "git* rm *", "git* mv *",
@@ -202,6 +206,11 @@ SNIPPET = as_dict([
     ("permission", [
         ("question", "allow"),
         ("skill", [("*", "allow")]),
+        # NOTE: `export`, `declare`, `readonly`, `typeset`, `local` parse as tree-sitter `declaration_command`,
+        # which OpenCode's bash scanner does NOT match, so the `export -p*` / `declare -*` denies below never fire
+        # (verified against tree-sitter-bash 0.25). They are kept as belt-and-suspenders in case the parser changes;
+        # the real defense against an environment dump is the AGENTS.md "Speed" rule. `env`, `printenv`, `set`,
+        # `compgen` are ordinary commands and ARE blocked here.
         ("bash", [("env", "deny"), ("env *", "deny"), ("printenv*", "deny"), ("set", "deny"), ("*zshenv*", "deny"),
                   ("*zshrc*", "deny"), ("git push*", "ask"), ("git reset*", "ask"), ("git rebase*", "ask"),
                   ("rm -rf*", "ask"), ("export -p*", "deny"), ("declare -p*", "deny"), ("declare -x*", "deny"),

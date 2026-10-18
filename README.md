@@ -118,8 +118,34 @@ OpenCode 1.19 n'envoie la température d'un agent que si le modèle déclare `"t
 - Chaque agent ne voit que les MCP dont il a besoin (aucun pour `dev`, qui fait `/dev`), et les outils MCP d'écriture sont masqués pour tous les agents (snippet) : moins de descriptions d'outils envoyées à chaque requête, et moins d'outils parmi lesquels le modèle doit choisir. Seuls `build` et `dev` (`test-writer`, `debugger`, `architect`) et `git` (`analyst` dans `/ticket`, `reviewer` dans `/ship`) délèguent à d'autres agents, sur un seul niveau comme l'impose OpenCode.
 - Le mode thinking reste actif : le couper serait le gain de vitesse le plus fort, mais au prix de la qualité.
 
+## Environnement (à régler une fois sur la machine qui héberge OpenCode)
+
+OpenCode lance les commandes du modèle (`dotnet build`, `build-test.sh`…) dans un **zsh de login non interactif** qui source `~/.zshenv` **puis** `~/.zshrc` (`zsh -l -c`). Un `~/.zshrc` qui fait un `return` anticipé pour les shells non interactifs (motif très courant) n'est donc jamais atteint : c'est la raison la plus probable d'un `dotnet` « introuvable » dans OpenCode alors qu'il marche dans le terminal. Les exports de PATH et d'outils vont donc dans **`~/.zshenv`** (sourcé par toute invocation de zsh), pas dans `~/.zshrc` ni un `zshrc_perso`.
+
+`~/.zshenv` :
+```sh
+# .NET : disponible pour tout shell, y compris le zsh non interactif d'OpenCode.
+# DOTNET_ROOT = dossier qui contient l'exécutable dotnet ; le trouver dans un terminal normal avec :
+#   dirname "$(readlink -f "$(command -v dotnet)")"
+export DOTNET_ROOT="<ce dossier>"
+export PATH="$DOTNET_ROOT:$HOME/.dotnet/tools:$PATH"
+export DOTNET_CLI_TELEMETRY_OPTOUT=1
+export DOTNET_NOLOGO=1
+export DOTNET_CLI_UI_LANGUAGE=en
+```
+
+Réglages du **serveur** OpenCode (dans `opencode-web.sh`, avant le démarrage, pas dans `opencode.json`) :
+```sh
+export OPENCODE_DISABLE_MODELS_FETCH=1   # modèle interne : pas d'appel à models.dev
+export OPENCODE_DISABLE_AUTOUPDATE=1     # installation à la main
+export OPENCODE_DISABLE_LSP_DOWNLOAD=1   # pas de téléchargement de binaire LSP
+```
+
+Artifactory : `artifactory_user` et `artifactory_password` doivent être dans l'environnement du serveur pour que `dotnet restore` s'authentifie (le bash tool en hérite). Garde-les dans ton mécanisme de secrets existant ; ne mets jamais leur valeur en clair dans `~/.zshenv` s'il est versionné ou synchronisé. Les agents ne les lisent, n'affichent et ne journalisent jamais.
+
 ## Pour la maintenance du pack
 
 - `tools/permissions.py` régénère les lignes `permission:` des agents et `opencode.snippet.json`. Ne les modifie pas à la main.
 - Avant chaque push, tous les fichiers sont validés avec `gray-matter`, le parseur YAML d'OpenCode : il refuse par exemple les clés en double.
 - Les scripts sont vérifiés avec `shellcheck` et testés avec dash, bash et busybox sh, et avec les awk mawk, gawk, BWK (celui de macOS) et busybox.
+- Les permissions sont vérifiées par simulation : un portage fidèle du moteur d'OpenCode 1.19 (tree-sitter-bash 0.25 pour découper la commande, `evaluate` dernier-match-gagnant, ordre de fusion defaults → snippet → agent) rejoue un corpus de commandes réelles par agent (`/dev`, `/apply-pattern`, `/check`, `/ship`…) et contrôle lecture, écriture et visibilité des outils MCP. Attention : `export`, `declare`, `readonly`, `typeset`, `local` sont des `declaration_command` pour tree-sitter — OpenCode ne les analyse pas, donc aucune règle `permission` ne peut les bloquer. La défense contre un dump d'environnement passe par le prompt (section « Speed » d'AGENTS.md), pas par les permissions. Les redirections vers un fichier (`>`, `>>`) restent refusées aux agents en lecture seule, mais `2>&1`, `2>/dev/null` et `>/dev/null` sont autorisés (les refuser ne coûtait qu'un tour).

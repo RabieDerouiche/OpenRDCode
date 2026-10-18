@@ -10,6 +10,8 @@ Project detection:
 
 Implement ONE step of the ticket plan, with its tests. Never commit or push: that is /ship.
 
+Tools over shell: read files with the `read` tool, search with `grep` and `glob`, change files with `edit`/`write`. Use the shell only for the build, the tests, git reads and the `~/.config/opencode/scripts` commands. Never inspect the environment or the NuGet configuration (`cat`/`grep` on `nuget.config`, `~/.nuget`, `.env`, `~/.zshenv`, `env`, `export`, `printenv`): a failed `dotnet restore` (401/403/NU1301) or a missing `dotnet` is an environment problem I fix outside OpenCode — say so in one line and stop, never work around it.
+
 ## Step 0 - Before starting
 - If the "Branch vs its remote copy" line above says "behind", commits were pushed from another computer (for example from Rider on my Mac): say "Lance /sync d'abord" and stop, unless I answer that I want to continue.
 - On `develop`, `master` or `main`: stop and tell me to run `/ticket <KEY>`.
