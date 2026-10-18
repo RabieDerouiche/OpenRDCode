@@ -2,7 +2,7 @@
 # Prints, in one sequential run, the git state used by the workflow commands (/next, /dev, /test, /check, /ship, /sync,
 # /ticket, /scans). OpenCode runs the shell injections of a command in parallel: running everything here, after a
 # single fetch, avoids stale remote refs and git lock conflicts.
-# Read-only, except `git fetch`. The "Code fingerprint" line comes from state-fingerprint.sh (same folder): /check and
+# Read-only, except `git fetch` and a one-time move of the ticket sheets of older versions. The "Code fingerprint" line comes from state-fingerprint.sh (same folder): /check and
 # /test write it in the ticket sheet, /ship and /next compare it to know whether that review or test run is still valid.
 # Usage: workflow-state.sh [--fetch-all | --no-fetch] [--sheet] [--tickets] [--diff]
 #   (default)    fetch only the base branch and the current branch: fast, even with many branches on origin
@@ -79,7 +79,12 @@ elif [ "$fetch" = branch ]; then
 fi
 
 key=$(printf '%s' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -1)
-sheets="$root/.git/opencode/tickets"
+sheets="$root/.git/opencode-tickets"
+# Older versions of the pack kept the sheets in .git/opencode/tickets, but OpenCode 1.19 caches its project id in a
+# FILE named .git/opencode: move them once, then free that path for OpenCode
+if [ -d "$root/.git/opencode/tickets" ] && [ ! -e "$sheets" ]; then
+  mv "$root/.git/opencode/tickets" "$sheets" && rmdir "$root/.git/opencode" 2>/dev/null
+fi
 remote_url=$(git remote get-url origin 2>/dev/null | sed -E 's#://[^@/]+@#://#')
 
 # Remote copy of the branch: its upstream, otherwise origin/<branch> when it exists (pushed from another computer)

@@ -51,12 +51,12 @@ Run the build command (AGENTS.md "Build & test", otherwise the detection above),
 
 ## Step 7 - Tests of this step
 Unless the step has no testable behavior (pure configuration, documentation) or my directives say otherwise, invoke the `test-writer` subagent with the task tool and this prompt (fill the placeholders):
-"Write the unit tests for step <N> of ticket <KEY>: <step text>. Files changed in this step: <list>. Acceptance criteria concerned: <list>. Test project and closest existing test file, if known: <paths>. Directives about tests: <my directives about tests, or none>. Decisions already made (do not ask again): <the sheet's Décisions about tests>. Follow your rules (reference approach, existing style, questions before any new library or mechanism). Update the rows of these tests in the "Tests attendus" table of `.git/opencode/tickets/<KEY>.md`. Run only the tests of this step, in one call that rebuilds the test project quietly first: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestClass>`, and report. The full suite runs later in /test and /check."
+"Write the unit tests for step <N> of ticket <KEY>: <step text>. Files changed in this step: <list>. Acceptance criteria concerned: <list>. Test project and closest existing test file, if known: <paths>. Directives about tests: <my directives about tests, or none>. Decisions already made (do not ask again): <the sheet's Décisions about tests>. Follow your rules (reference approach, existing style, questions before any new library or mechanism). Update the rows of these tests in the "Tests attendus" table of `.git/opencode-tickets/<KEY>.md`. Run only the tests of this step, in one call that rebuilds the test project quietly first: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestClass>`, and report. The full suite runs later in /test and /check."
 If a test it wrote fails because of a real bug in the code of this step, fix the production code (at most 2 rounds) and run the tests again.
 For a step written "(test d'abord)", the reproducing test was written in step 5: do not invoke `test-writer` again, run that test class with the command above; it must now pass.
 
 ## Step 8 - Ticket sheet
-With the edit tool, in `.git/opencode/tickets/<KEY>.md`, in one turn (exact lines from the sheet printed above, updated with your own changes of this run):
+With the edit tool, in `.git/opencode-tickets/<KEY>.md`, in one turn (exact lines from the sheet printed above, updated with your own changes of this run):
 - tick the step (`- [x]`);
 - for a step written "(test d'abord)" whose test now passes: replace `⏳ <TestName> (rouge avant correction)` with `✅ <TestName>`;
 - add each answer I gave in step 1 or 4 to a "## Décisions" section (create it before "## Suivi" if missing): `- <topic> : <choice> (étape <N>)`;

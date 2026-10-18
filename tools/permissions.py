@@ -14,7 +14,7 @@ RELEASE = "sh ~/.config/opencode/scripts/release-commits.sh *"
 STATE = "sh ~/.config/opencode/scripts/workflow-state.sh*"
 LICENSES = "sh ~/.config/opencode/scripts/package-licenses.sh*"
 BUILD_TEST = "sh ~/.config/opencode/scripts/build-test.sh*"
-TICKET_SHEETS = ".git/opencode/**"
+TICKET_SHEETS = ".git/opencode-tickets/**"
 
 READ = ["ls*", "pwd", "cd *", "cat *", "head*", "tail*", "wc*", "sort*", "uniq*", "cut *", "tr *",
         "find *", "grep *", "egrep *", "rg *", "tree*", "file *", "stat *", "which *", "basename *",
@@ -102,7 +102,7 @@ def git_bash():
         "*--force*", "*push* -f*", "*push*+*", "git* push* origin develop*", "git* push* origin master*",
         "git* push* origin main*", "*push*:develop*", "*push*:master*", "*push*:main*", "git* push* --all*",
         "git* push* --mirror*", "git* push* --delete*", "git* push* --tags*", "git* reset*", "git* rebase*",
-        "git* clean*", "git* branch -d*", "git* branch -D*", "git* branch -m*", "git* branch -M*", "git* branch -f*",
+        "git* clean*", "git* branch -D*", "git* branch -m*", "git* branch -M*", "git* branch -f*",
         "git* branch --delete*", "git* tag -*", "git* config*", "git* remote add*", "git* remote set-url*",
         "git* remote remove*", "git* remote rm*", "git* gc*", "git* update-ref*", "git* cherry-pick*", "git* revert*",
         "git* stash drop*", "git* stash clear*", "git* worktree add*", "git* worktree remove*", "git* worktree move*", "git* worktree prune*", "git* worktree lock*", "git* worktree unlock*", "git* worktree repair*", "git* submodule*", "git* restore *",
@@ -111,6 +111,11 @@ def git_bash():
         "git* reflog delete*", "git* reflog expire*"]]
     # unstaging is safe (after the generic restore deny)
     rules += [("git restore --staged *", "allow")]
+    # /abandon: delete a ticket branch started by mistake (-d refuses a branch with unmerged work; -D and -f stay
+    # forbidden) and its ticket sheet, each time with my approval
+    rules += [("git branch -d *", "ask"), ("git branch -d -f*", "deny"), ("git branch -d * -f*", "deny"),
+              ("git branch -d *--force*", "deny"),
+              ("rm .git/opencode-tickets/*.md", "ask"), ("rm .git/opencode-tickets/* ?*", "deny"), ("rm *..*", "deny")]
     rules += [(p, "deny") for p in OTHER_DENY + SECRETS]
     return rules
 
