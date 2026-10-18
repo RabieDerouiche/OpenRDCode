@@ -47,6 +47,8 @@ DOTNET_RUN = ["dotnet build*", "dotnet test*", "dotnet restore*"]
 FRONT_TEST = ["npm test*", "npm run test*", "npx jest*", "npx vitest*", "npx ng test*", "yarn test*", "pnpm test*",
               "npm ls*", "node --version", "npm --version"]
 FRONT_BUILD = ["npm run build*", "npx tsc*", "npx ng build*"]
+# The read-only forms of the format and lint checks that the CI runs (/check); their fixing forms stay refused
+CHECKS = ["dotnet format *--verify-no-changes*", "npx eslint *", "npx prettier --check *", "npx prettier -c *"]
 
 # Read-only agents never write a file with a redirection. `>` inside a quoted search string (C# generics, lambdas)
 # is not refused: only a space before `>`, `2>` and `&>` are. The harmless forms (`2>&1`, `>/dev/null`) are re-allowed,
@@ -57,7 +59,7 @@ REDIRECT = [("* >*", "deny"), ("*2>*", "deny"), ("*&>*", "deny"),
             ("*>/dev/null 2>&1*", "allow"), ("*> /dev/null 2>&1*", "allow")]
 # find and sed forms that write or run commands
 OTHER_DENY = ["find *-exec*", "find *-execdir*", "find *-delete*", "find *-ok*", "find *-fprint*", "find *-fls*",
-              "sed *-i*", "sed *--in-place*"]
+              "sed *-i*", "sed *--in-place*", "*--fix*", "*--write*"]
 SUBST = ["*$(*", "*${*", "*`*"]
 
 # ---------- secrets: refused for every agent, build and dev included ----------
@@ -178,7 +180,7 @@ AGENTS = {
     "architect": NO_EDIT + BASE + NO_TASK + [("bash", read_only_bash())] + mcp_only([]),
     "debugger": NO_EDIT + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD))]
     + MCP_WRITE_DENY + mcp_only(["kibana"]),
-    "reviewer": SHEET + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD))]
+    "reviewer": SHEET + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS))]
     + MCP_WRITE_DENY + mcp_only(["jira"]),
     "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + NO_TASK
     + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST))] + MCP_WRITE_DENY + mcp_only(["jira"]),

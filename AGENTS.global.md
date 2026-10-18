@@ -15,7 +15,7 @@
 - Never invent file paths, types, methods, package names, application names or filter names. Look them up, or ask.
 
 ## Speed
-- .NET build and tests in one call: `sh ~/.config/opencode/scripts/build-test.sh [<solution or project>] [<dotnet test options>]`. It builds quietly (errors only), runs the tests only if the build passed, and ends with explicit "BUILD:" and "TESTS:" lines. Some tests only: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestClass>`. Build only, to fix compilation errors: `sh ~/.config/opencode/scripts/build-test.sh --build-only [<solution or project>]`. When AGENTS.md "Build & test" names a solution or project, pass it as the first argument. Front-end: the commands of AGENTS.md or of the project detection.
+- .NET build and tests in one call: `sh ~/.config/opencode/scripts/build-test.sh [<solution or project>] [<dotnet test options>]`. It builds quietly (errors only), runs the tests only if the build passed, and ends with explicit "BUILD:" and "TESTS:" lines. Some tests only: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestClass>`. Build only, to fix compilation errors: `sh ~/.config/opencode/scripts/build-test.sh --build-only [<solution or project>]`. When AGENTS.md "Build & test" names a solution or project, pass it as the first argument, followed by the options of its full test suite if it gives some (for example a filter that leaves out the tests that need Docker, a database or the network: those run in the CI only). Front-end: the commands of AGENTS.md (a test command that ends by itself, never a watch mode) or of the project detection.
 - A line "ENVIRONMENT PROBLEM" in an output is final: tell me in one line and stop. I fix it outside OpenCode.
 - A line `[[run <script> <arguments>]]` left in the prompt of a command means that the pack plugin did not run it: run `sh ~/.config/opencode/scripts/<script> <arguments>` yourself for each such line, all in one turn, and use their outputs in their place.
 - Other long outputs through `| tail -60`; `git diff --stat` before a full diff.
@@ -85,7 +85,7 @@
 - NuGet restore authenticates to Artifactory through the env vars `artifactory_user` and `artifactory_password`, already exported in the environment.
 - Never print, echo, log or read these values or the files that define them: no NuGet.Config or nuget.config through the shell (the user one, `~/.nuget/NuGet/NuGet.Config`, never at all), no `echo`, `test -n` or `printenv` on environment variables, no search for passwords, tokens or credentials anywhere.
 - Never modify nuget.config to hardcode credentials.
-- If `dotnet restore` fails with 401/403/NU1301, or `dotnet` is not found (build-test.sh then prints an "ENVIRONMENT PROBLEM" line), stop and tell me in one line: it is an environment problem that I fix outside OpenCode. Never investigate it, never change PATH, DOTNET_ROOT or any variable to work around it.
+- If `dotnet restore` fails with 401/403/NU1301, or `dotnet`, `node` or `npm` is not found (build-test.sh then prints an "ENVIRONMENT PROBLEM" line), stop and tell me in one line: it is an environment problem that I fix outside OpenCode. Never investigate it, never change PATH, DOTNET_ROOT or any variable to work around it.
 
 ## Fortify SSC (MCP)
 - The SSC application name of each repository is the value of APPSEC_PROJECT_NAME in its appsec-ci.env file.

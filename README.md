@@ -2,6 +2,8 @@
 
 Agents, commandes et skills pour OpenCode (1.19, interface web) avec Qwen. Ils couvrent les API .NET 10 (CQRS ou non, ABP), Blazor, le legacy .NET Framework, les librairies et le front, avec GitLab, Jira, Confluence, SonarQube, Fortify SSC et Artifactory.
 
+Les commandes à taper toi-même (chemins, vérifications de l'environnement, logs d'OpenCode) sont toutes dans [`COMMANDES.md`](COMMANDES.md).
+
 ## Installation et mise à jour
 
 ```bash
@@ -44,7 +46,7 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 | `/release-notes` | Release note d'une MEP depuis master. Avec un nom de groupe (`/release-notes MONAPP`), une seule note pour plusieurs repos, regroupée par ticket. |
 | `/cqrs command CreateInvoice Invoices` | Command ou query, handler, validator et tests (projets CQRS uniquement). |
 | `/extract-pattern <nom> <repo>` · `/apply-pattern <nom>` | Réutilise une bonne implémentation d'un repo dans un autre. |
-| `/agents-md [page Confluence]` | Crée ou met à jour le `AGENTS.md` du repo à partir du code (structure, build et test, conventions, gestion des erreurs, handlers, tests, exemples de référence, packages internes) et de Confluence si tu donnes une page. Une fois par repo, puis après un gros changement d'architecture ou d'organisation. |
+| `/agents-md [page Confluence]` | Crée ou met à jour le `AGENTS.md` du repo à partir du code et de Confluence si tu donnes une page : structure et frameworks cibles, commandes de build et de test qui tournent sur cette machine (tests « CI seulement » à part, front sans mode watch), ce que la CI vérifie (format, lint), style imposé par le build (nullable, warnings en erreur, analyseurs), conventions (autorisation, gestion des packages, gestion des erreurs…), tests, exemples de référence, format des commits et modèle de MR. Tout ce qu'un agent chercherait sinon à chaque session. Une fois par repo, puis après un gros changement d'architecture ou d'organisation. |
 
 ## Agents
 
@@ -66,7 +68,7 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 
 `compact-commands.js` fait trois choses :
 - **Il lance les scripts des commandes dans le bon dépôt.** Les commandes contiennent des lignes `[[run workflow-state.sh --sheet]]` que le plugin remplace par la sortie du script, exécuté dans le dossier du projet de la session. OpenCode 1.19 lance ses propres injections `` !`…` `` dans le dossier où le serveur a démarré : avec `opencode web`, un seul serveur sert tous les projets, donc l'état décrit était celui d'un autre dépôt dès que tu changeais de projet (d'où un agent qui part sur le mauvais repo). Sans le plugin, le modèle lance lui-même ces lignes (un tour de plus).
-- **Il stabilise l'environnement des commandes des agents** : messages .NET en anglais, sans bannière ni télémétrie, noms de fichiers git sans échappement octal, git qui échoue tout de suite au lieu d'attendre un mot de passe. Les variables déjà définies sont gardées ; le terminal de l'interface web n'est pas touché.
+- **Il stabilise l'environnement des commandes des agents** : messages .NET en anglais, sans bannière ni télémétrie, pas de notices npm, noms de fichiers git sans échappement octal, et git qui n'attend jamais un mot de passe ni un éditeur (une commande qui attend ne s'arrête qu'au bout des 2 minutes de délai). Les autres variables déjà définies sont gardées ; le terminal de l'interface web n'est pas touché.
 - **Il allège l'affichage** : la conversation montre seulement `/next` (ou `/dev 2 …`) au lieu du gros bloc injecté (état de la branche, fiche, diffs). Le bloc part toujours au modèle, en partie « synthétique » que l'interface web n'affiche pas.
 
 Ne mets jamais d'autre fichier `.js` ou `.ts` dans `plugins/` ou `tools/` : OpenCode les exécute tous.
@@ -136,7 +138,7 @@ OpenCode lance chaque commande d'un agent avec `<shell> -c "<commande>"`, dans l
 export DOTNET_ROOT="<ce dossier>"
 export PATH="$DOTNET_ROOT:$HOME/.dotnet/tools:$PATH"
 ```
-   PATH sert à trouver `dotnet` ; DOTNET_ROOT sert aux exécutables qui cherchent le runtime eux-mêmes (hôte de test de `dotnet test` en .NET 10, outils globaux comme `dotnet-ef`). Les deux sont nécessaires.
+   PATH sert à trouver `dotnet` ; DOTNET_ROOT sert aux exécutables qui cherchent le runtime eux-mêmes (hôte de test de `dotnet test` en .NET 10, outils globaux comme `dotnet-ef`). Les deux sont nécessaires. Pour le front, même chose avec le dossier de `node` quand il vient de nvm. `~/.zshenv` est lu avant **chaque** commande d'un agent : rien qui affiche quelque chose, rien de lent (pas de `source` de nvm ou d'oh-my-zsh). Les vérifications sont dans `COMMANDES.md`.
 3. Artifactory : `dotnet restore` lit `artifactory_user` et `artifactory_password` dans l'environnement de la commande. S'ils ne sont que dans `zshrc_perso`, l'agent ne les a que si le serveur OpenCode a été démarré depuis un terminal qui les avait chargés. Si `build-test.sh` répond « ENVIRONMENT PROBLEM: the package feed (Artifactory) refused access », déplace ces deux `export` de `zshrc_perso` vers `~/.zshenv`. Les agents ne peuvent lire ni `~/.zshenv`, ni `~/.zshrc*`, ni les fichiers NuGet (permissions).
 4. Redémarre OpenCode (`opencode-web.sh stop && opencode-web.sh start`), puis vérifie dans une nouvelle session : « lance `sh ~/.config/opencode/scripts/build-test.sh --build-only` ».
 

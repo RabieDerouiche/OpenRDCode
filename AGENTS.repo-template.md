@@ -20,18 +20,29 @@
 - `src/[Project].Domain` — entities, value objects, domain rules
 - `src/[Project].Infrastructure` — SharePoint/CSOM, DocuSign, S3, persistence
 - `tests/[...]` — unit tests
+- Target frameworks: `[net10.0]` everywhere, except `[src/[Project].Contracts: netstandard2.0]`
 
 ## Architecture & conventions
 - Endpoints: `[controllers | minimal APIs | endpoint classes]` in `[folder]`
+- Authorization: `[[Authorize(Policy = ...)] on each controller | fallback policy | ABP permissions]`, policies declared in `[file]`
 - Error handling: `[Result<T> in namespace X | exceptions + middleware]`, mapped to HTTP responses in `[file]`
 - Validation: `[FluentValidation in Application | data annotations]`
 - Configuration: options classes in `[folder]`, files `appsettings.json`, `appsettings.[Env].json`; secrets from `[environment variables | secret store]`
 - Feature flags: `[mechanism | none]`
 - Integrations: `[S3 via IStorageService (in-house package X), SharePoint via ...]`
+- Packages: `[central package management: versions in Directory.Packages.props, PackageReference without version | version in each project]`
 
-## Build & test (optional: auto-detected, fill only if the detection is wrong)
+## Code style enforced by the build
+- `[Nullable enable, ImplicitUsings enable, TreatWarningsAsErrors true]` (Directory.Build.props)
+- Analyzers: `[StyleCop.Analyzers, SonarAnalyzer.CSharp]`; .editorconfig errors: `[file-scoped namespaces, var for built-in types]`
+- Formatter: `[dotnet format | CSharpier | Prettier | none]`
+
+## Build & test
 - Build: `[dotnet build path/to/App.sln | npm run build | not buildable here: .NET Framework needs Windows]`
-- Test: `[dotnet test path/to/App.sln | npm test | none]`
+- Test (full suite that runs on this machine): `[dotnet test path/to/App.sln --filter "Category!=Integration" | npm test -- --watch=false | none]`
+- CI only: `[tests/App.IntegrationTests (Docker, Testcontainers)]`
+- CI also checks: `[dotnet format --verify-no-changes | npx eslint src | coverage >= 80%]`
+- EF Core migration: `[dotnet tool restore && dotnet ef migrations add <Name> --project src/[Project].Infrastructure --startup-project src/[Project].Api]`
 
 ## In-house mediator (cqrs-api only)
 - Package: `[package name]`
@@ -43,6 +54,7 @@
 - Assertions: [AwesomeAssertions / FluentAssertions 7.x / Shouldly / built-in]
 - Mocks: [NSubstitute / Moq / FakeItEasy]
 - Fixtures and builders: [IClassFixture / ICollectionFixture / base class / builders in `[folder]`]
+- Integration tests: [WebApplicationFactory / Testcontainers in `[project]`, need `[Docker | database | network]`]
 
 ## Reference examples (read these before generating similar code)
 - Command: `[path/to/Command.cs]`
@@ -51,6 +63,10 @@
 - Endpoint: `[path/to/Endpoint.cs]`
 - Handler test: `[path/to/HandlerTests.cs]`
 - Validator test: `[path/to/ValidatorTests.cs]`
+
+## Git conventions
+- Commit messages: `[type(scope): summary (KEY-123) | KEY-123 summary]`
+- Merge request template: `[.gitlab/merge_request_templates/Default.md | none]`
 
 ## Confluence
 - Space key: `[SPACEKEY]`

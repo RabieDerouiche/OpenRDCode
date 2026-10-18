@@ -19,7 +19,7 @@ Steps:
    - "Commit local des fichiers déjà suivis seulement, sans push": then, in one call, `git add -u && git diff --staged --stat && git diff --staged`.
    - "Mettre de côté (stash) pendant la synchro": `git stash push -u -m "sync"` (asks for approval).
    - "Annuler".
-   For a commit: write a Conventional Commits message in English from the staged diff (`type(scope): summary`, max 72 characters, Jira key from the branch name in the summary, at most 5 bullets in the body, no backticks, `$` or double quotes), and ask me with the question tool "Commiter avec ce message" (recommandé) / "Modifier le message" (free answer). The commit runs at the start of step 3. Do not push.
+   For a commit: write a commit message in English from the staged diff, in the format of AGENTS.md "Git conventions" if it has one, otherwise Conventional Commits (`type(scope): summary`, max 72 characters, Jira key from the branch name in the summary, at most 5 bullets in the body); never backticks, `$` or double quotes; and ask me with the question tool "Commiter avec ce message" (recommandé) / "Modifier le message" (free answer). The commit runs at the start of step 3. Do not push.
 3. In one call, after the commit of step 2 when there is one (`git commit -m "<summary>" -m "<body>" && ...`): `git fetch -q origin && git rev-list --left-right --count HEAD...<base> && git log --oneline -15 HEAD..<base> && git rev-list --left-right --count HEAD...origin/<branch>`. Counts: left = local only, right = remote only. The last command fails when `origin/<branch>` does not exist yet: then skip step 4.
 4. The branch's own remote changes, from the last count:
    - Remote only = 0: nothing to retrieve.

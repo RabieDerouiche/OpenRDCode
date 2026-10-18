@@ -224,3 +224,12 @@ add(RO, ["sh -c \"rm -rf ~\" ~/.config/opencode/scripts/x.sh", "sh ~/.config/ope
 add(["git"], ["git commit -m \"chore: update nuget.config and the .env.example file (ABC-3)\"",
   "git commit -m \"fix: read artifactory_user from the environment (ABC-4)\""], "allow")
 add(["git"], ["git push -u origin feature/ABC-1-head-office"], "ask")
+
+// ---------- /check: read-only forms of the format and lint checks of the CI ----------
+add(["reviewer"], ["dotnet format --verify-no-changes --include src/Foo.cs", "dotnet format whitespace --verify-no-changes",
+  "npx eslint src/app", "npx prettier --check src/app/foo.ts"], "allow")
+add(["reviewer"], ["dotnet format", "dotnet format --include src/Foo.cs", "npx eslint --fix src", "npx eslint src --fix",
+  "npx prettier --write src"], "deny")
+add(["analyst", "architect", "release-writer"], ["npx eslint src/app"], "deny")
+add(["build", "dev"], ["dotnet format --include src/Foo.cs", "npx eslint --fix src/app/foo.ts", "npx prettier --write src/app/foo.ts"], "allow")
+add(["git"], ["git switch -c feature/ABC-5-fix-login origin/develop", "git commit -m \"fix: handle the --fix flag (ABC-5)\""], "allow")

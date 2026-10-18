@@ -1,7 +1,9 @@
 #!/bin/sh
 # Detects the project type of a git repository from tracked files only (read-only).
 # Usage: detect-project-type.sh [--files] [repository path]
-#   --files  also print the repository root, the state of its AGENTS.md and its solution and project files
+#   --files  also print the repository root, the state of its AGENTS.md, its solution and project files, and the
+#            files that define how it is built, checked and contributed to (SDK, code style, CI, local tools,
+#            test settings, merge request templates): what /agents-md reads
 # Output is injected into OpenCode commands. A "Project type" section in AGENTS.md overrides it.
 
 files=0
@@ -181,6 +183,12 @@ if [ "$files" -eq 1 ]; then
     echo "AGENTS.md: none (creation mode)"
   fi
   echo "Solution and project files:"
-  git -c core.quotePath=false ls-files '*.sln' '*.slnx' '*.csproj' '*.vbproj' 'package.json' '*/package.json' \
+  git -c core.quotePath=false ls-files '*.sln' '*.slnx' '*.slnf' '*.csproj' '*.vbproj' 'package.json' '*/package.json' \
     'Directory.Build.props' 'Directory.Packages.props' | grep -v node_modules
+  echo "Build, code style, CI and contribution files:"
+  git -c core.quotePath=false ls-files 'global.json' 'Directory.Build.targets' '.editorconfig' '*/.editorconfig' \
+    '.config/dotnet-tools.json' '*.runsettings' '.gitlab-ci.yml' '.gitlab-ci/*' 'ci/*.yml' 'docker-compose*.yml' \
+    '.gitlab/merge_request_templates/*' '.nvmrc' 'angular.json' '*/angular.json' 'jest.config.*' '*/jest.config.*' \
+    'vitest.config.*' '*/vitest.config.*' 'karma.conf.*' '*/karma.conf.*' '.eslintrc*' '*/.eslintrc*' \
+    'eslint.config.*' '*/eslint.config.*' '.prettierrc*' '*/.prettierrc*' '.csharpierrc*' | grep -v node_modules
 fi

@@ -4,8 +4,9 @@
 //    the session's project. OpenCode 1.19 runs the !`...` injections of a command in the folder where the server
 //    was started; `opencode web` serves every project from one server, so they described the wrong repository.
 // 2. Gives every shell command of the agents a stable environment: English .NET messages, no .NET banner or
-//    telemetry, file names printed by git as they are (no octal escapes), git failing at once instead of waiting
-//    for a password. Variables already set in the environment are kept.
+//    telemetry, no npm notices, file names printed by git as they are (no octal escapes), and git never waiting for
+//    a password or an editor (a command that waits ends only at the 2-minute timeout). Other variables already set
+//    in the environment are kept.
 // 3. Shows only "/<command> <arguments>" in the conversation; the expanded prompt (workflow state, ticket sheet,
 //    diffs) is still sent to the model, as a "synthetic" part that the web interface does not display.
 // Any error leaves the command as it is: a "[[run ...]]" line left in the prompt is then run by the model itself.
@@ -106,7 +107,11 @@ export const CompactCommands = async (input) => {
         set("DOTNET_NOLOGO", "1")
         set("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
         set("MSBUILDTERMINALLOGGER", "off")
-        set("GIT_TERMINAL_PROMPT", "0")
+        set("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+        set("NPM_CONFIG_FUND", "false")
+        // Nobody can answer a prompt or close an editor in an agent's command: forced, whatever the environment
+        env.GIT_TERMINAL_PROMPT = "0"
+        env.GIT_EDITOR = "true"
         const count = Number(env.GIT_CONFIG_COUNT ?? process.env.GIT_CONFIG_COUNT ?? 0)
         if (Number.isInteger(count) && count >= 0) {
           env["GIT_CONFIG_KEY_" + count] = "core.quotePath"

@@ -58,7 +58,8 @@ If a test it wrote fails because of a real bug in the code of this step, fix the
 For a step written "(test d'abord)", the reproducing test was written in step 5: do not invoke `test-writer` again, run that test class with the command above; it must now pass.
 
 ## Step 8 - Ticket sheet
-With the edit tool, in `.git/opencode-tickets/<KEY>.md`, in one turn (exact lines from the sheet printed above, updated with your own changes of this run):
+If AGENTS.md says the CI checks formatting, first format the files changed in this step, code and tests, with its formatter (`dotnet format --include <files>`, `npx prettier --write <files>`, `npx eslint --fix <files>`).
+Then, with the edit tool, in `.git/opencode-tickets/<KEY>.md`, in one turn (exact lines from the sheet printed above, updated with your own changes of this run):
 - tick the step (`- [x]`);
 - for a step written "(test d'abord)" whose test now passes: replace `⏳ <TestName> (rouge avant correction)` with `✅ <TestName>`;
 - add each answer I gave in step 1 or 4 to a "## Décisions" section (create it before "## Suivi" if missing): `- <topic> : <choice> (étape <N>)`;
