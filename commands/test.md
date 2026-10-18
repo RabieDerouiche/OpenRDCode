@@ -8,10 +8,10 @@ Arguments: "$ARGUMENTS" (optional: a file path to test only that file, and/or "c
 Base branch: the "Base branch" line of the workflow state (origin/develop, otherwise origin/main or origin/master). If it says NONE, ask me with the question tool for the base branch (free answer).
 
 Project detection:
-!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+[[run detect-project-type.sh]]
 
 Workflow state (one fetch, then the state of the branch and its ticket sheet):
-!`sh ~/.config/opencode/scripts/workflow-state.sh --sheet`
+[[run workflow-state.sh --sheet]]
 
 Speed: the ticket sheet is printed above, do not read it again; send independent calls together in one turn (the reads of the files of step 1 and of their existing tests; later, the test files you write).
 

@@ -3,7 +3,7 @@ description: "Where am I and what next? Reads the branch, the working tree (incl
 agent: git
 ---
 Workflow state (one fetch, then the state of the branch, its ticket sheet and the other tickets):
-!`sh ~/.config/opencode/scripts/workflow-state.sh --sheet --tickets`
+[[run workflow-state.sh --sheet --tickets]]
 
 Tell me where I am and get me to the next step as fast as possible. No review, no build, no full scan: read only what decides the next step. Everything about the tickets is printed above: never read a ticket sheet.
 

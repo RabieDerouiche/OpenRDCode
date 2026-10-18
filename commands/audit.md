@@ -5,11 +5,8 @@ subtask: false
 ---
 Focus given: "$ARGUMENTS"
 
-Project detection:
-!`sh ~/.config/opencode/scripts/detect-project-type.sh`
-
-Solution projects:
-!`git ls-files '*.csproj'`
+Project detection, solution and project files:
+[[run detect-project-type.sh --files]]
 
 Audit this repository against the best practices of its project type, including the Result pattern, feature flags and performance. Read-only: never modify a file.
 

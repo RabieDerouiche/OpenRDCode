@@ -6,10 +6,10 @@ subtask: false
 Base branch: the "Base branch" line of the workflow state (origin/develop, otherwise origin/main or origin/master). If it says NONE, ask me with the question tool for the base branch (free answer).
 
 Project detection:
-!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+[[run detect-project-type.sh]]
 
 Workflow state (one fetch, then the state of the branch, its ticket sheet, its commits and its diffs):
-!`sh ~/.config/opencode/scripts/workflow-state.sh --sheet --diff`
+[[run workflow-state.sh --sheet --diff]]
 
 Check the current work before it is pushed. Everything here is local: Sonar and Fortify results only exist after the push, in the CI. The ticket sheet is printed above: do not read it again.
 

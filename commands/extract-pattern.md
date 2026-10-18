@@ -3,7 +3,7 @@ description: "Create or enrich a reusable skill (pattern-<name>-back or pattern-
 agent: dev
 ---
 Source repository detection:
-!`sh ~/.config/opencode/scripts/detect-project-type.sh '$2'`
+[[run detect-project-type.sh '$2']]
 
 Extract the "$1" implementation from the repository at `$2` and save it as a reusable skill, or enrich the existing one.
 

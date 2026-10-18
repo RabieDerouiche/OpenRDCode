@@ -3,7 +3,7 @@ description: "Undo a ticket started by mistake (wrong repository or wrong ticket
 agent: git
 ---
 Workflow state (one fetch, then the state of the branch and its ticket sheet):
-!`sh ~/.config/opencode/scripts/workflow-state.sh`
+[[run workflow-state.sh]]
 
 Undo the ticket of the current branch, started by mistake. Never lose work.
 

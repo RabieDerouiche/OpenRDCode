@@ -7,11 +7,10 @@ Explicit Fortify target: "$ARGUMENTS"
 
 Base branch: the "Base branch" line of the workflow state (origin/develop, otherwise origin/main or origin/master). If it says NONE, ask me with the question tool for the base branch (free answer).
 
-SSC application line (from appsec-ci.env): !`git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'`
-Workflow state (one fetch, then the state of the branch and of the ticket sheet):
-!`sh ~/.config/opencode/scripts/workflow-state.sh`
+Workflow state (one fetch, then the state of the branch, the SSC application line and the ticket sheets):
+[[run workflow-state.sh --appsec]]
 
-Sonar and Fortify both run in the CI on every pushed commit. Never read appsec-ci.env yourself: it may contain secrets; use only the line injected above (the SSC application is the value after `=`, without quotes). Read-only everywhere: never mark an issue as false positive, never change a status, never comment.
+Sonar and Fortify both run in the CI on every pushed commit. Never read appsec-ci.env yourself: it may contain secrets; use only the "Fortify SSC application line" of the workflow state (the SSC application is the value after `=`, without quotes). Read-only everywhere: never mark an issue as false positive, never change a status, never comment.
 
 Speed: send the independent MCP calls together. First turn: the pipeline of the pushed commit (step 2), the versions of the SSC application (step 3) and the search of the Sonar project (step 4). Second turn: the Fortify issues of the selected version, the Sonar issues and security hotspots of the branch, and the skill `fortify-remediation`. If step 2 stops, ignore the other results.
 
@@ -29,7 +28,7 @@ Give the pipeline link (`web_url`).
 
 ## Step 3 - Fortify
 1. If an explicit target is given above, use it as is and go to 4.
-2. If the SSC application line above is empty, ask me with the question tool (multiple choice, recommended option first) for the SSC application name (free answer). Do not search for it yourself.
+2. If the "Fortify SSC application line" of the workflow state says none, ask me with the question tool (multiple choice, recommended option first) for the SSC application name (free answer). Do not search for it yourself.
 3. List ALL versions of that SSC application. Do not guess version names. Then select the version:
    a. Look for a version matching the current branch, in this order: the exact branch name, then the branch name with `/` replaced by `-`, then with `/` replaced by `_`.
    b. If a matching version exists AND it has at least one uploaded scan (artifact), use it.

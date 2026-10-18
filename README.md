@@ -11,7 +11,7 @@ opencode-web.sh stop && opencode-web.sh start
 
 Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/opencode/`. Seuls les fichiers qui changent sont sauvegardés, dans `~/.config/opencode/backup-<date>/` (les 5 dernières sauvegardes sont gardées), et les commandes des anciennes versions du pack sont retirées. Le script ne touche **jamais** à `AGENTS.md` ni à `opencode.json` :
 - `AGENTS.global.md` est à fusionner dans `~/.config/opencode/AGENTS.md`.
-- `opencode.snippet.json` est à fusionner dans `~/.config/opencode/opencode.json` : réglages de `build` et `plan` (`temperature` 0.6, `top_p` 0.95), et règles de `permission` pour tous les agents (outils MCP d'écriture masqués, secrets, git destructif).
+- `opencode.snippet.json` est à fusionner dans `~/.config/opencode/opencode.json` : réglages de `build`, `plan`, `general` et `explore` (`temperature` 0.6, `top_p` 0.95), et règles de `permission` pour tous les agents (outils MCP d'écriture masqués, secrets, git destructif).
 - Le modèle lui-même se règle dans la section `provider` de `opencode.json` : voir « Réglages du modèle » plus bas, sinon la température n'est pas envoyée.
 - `AGENTS.repo-template.md` sert de modèle pour le `AGENTS.md` à la racine de chaque repo (facultatif).
 
@@ -62,19 +62,24 @@ Le script copie `agents/`, `commands/`, `skills/` et `scripts/` dans `~/.config/
 
 `dotnet-cqrs-conventions`, `fortify-remediation`, `integrations-guardrails`, `build-fix`, `explain-code`, `best-practices`, `ship-procedure` et `sync-procedure` (la logique de `/ship` et `/sync`, partagée avec `/next`), et les `pattern-*` créés par `/extract-pattern`.
 
-## Plugin (copié dans `~/.config/opencode/plugins/`)
+## Plugin (copié dans `~/.config/opencode/plugins/`, indispensable)
 
-- `compact-commands.js` : quand tu lances une commande, la conversation affiche seulement `/next` (ou `/dev 2 …`) au lieu du gros bloc injecté (état de la branche, fiche, diffs). Le bloc part toujours au modèle, en partie « synthétique » que l'interface web n'affiche pas. Pour revoir le bloc, retire le fichier et redémarre. Ne mets jamais d'autre fichier `.js` ou `.ts` dans `plugins/` ou `tools/` : OpenCode les exécute tous.
+`compact-commands.js` fait trois choses :
+- **Il lance les scripts des commandes dans le bon dépôt.** Les commandes contiennent des lignes `[[run workflow-state.sh --sheet]]` que le plugin remplace par la sortie du script, exécuté dans le dossier du projet de la session. OpenCode 1.19 lance ses propres injections `` !`…` `` dans le dossier où le serveur a démarré : avec `opencode web`, un seul serveur sert tous les projets, donc l'état décrit était celui d'un autre dépôt dès que tu changeais de projet (d'où un agent qui part sur le mauvais repo). Sans le plugin, le modèle lance lui-même ces lignes (un tour de plus).
+- **Il stabilise l'environnement des commandes des agents** : messages .NET en anglais, sans bannière ni télémétrie, noms de fichiers git sans échappement octal, git qui échoue tout de suite au lieu d'attendre un mot de passe. Les variables déjà définies sont gardées ; le terminal de l'interface web n'est pas touché.
+- **Il allège l'affichage** : la conversation montre seulement `/next` (ou `/dev 2 …`) au lieu du gros bloc injecté (état de la branche, fiche, diffs). Le bloc part toujours au modèle, en partie « synthétique » que l'interface web n'affiche pas.
+
+Ne mets jamais d'autre fichier `.js` ou `.ts` dans `plugins/` ou `tools/` : OpenCode les exécute tous.
 
 ## Scripts (copiés dans `~/.config/opencode/scripts/`)
 
-- `workflow-state.sh` : l'état complet de la branche en une seule passe (date et heure, branche, ticket, base, copie distante, conflits, fichiers modifiés, résumé des fiches ; contenu de la fiche avec `--sheet`, lien Jira et résumé des autres tickets avec `--tickets`, diffs avec `--diff`, remplacés par la liste des fichiers au-delà de 1500 lignes). Il ne récupère que develop et la branche courante (`--fetch-all` pour `/ticket`, qui cherche les branches existantes d'un ticket), et force les messages de git en anglais. OpenCode lance les commandes injectées en parallèle : tout regrouper ici évite des références distantes périmées et des allers-retours avec le modèle.
-- `build-test.sh [solution ou projet] [options de dotnet test]` : build silencieux puis tests seulement si le build passe, en un seul appel, avec des lignes `BUILD:` et `TESTS:` explicites (OpenCode ne montre pas le code retour d'une commande au modèle). Après un passage sur toute la solution, il donne l'empreinte du code testé : `/test` et les correctifs la notent dans la fiche, et `/check` ne relance pas build et tests tant que le code garde cette empreinte.
+- `workflow-state.sh` : l'état complet de la branche en une seule passe (date et heure, branche, ticket, base, copie distante, conflits, fichiers modifiés, résumé des fiches ; contenu de la fiche avec `--sheet`, lien Jira et résumé des autres tickets avec `--tickets`, diffs avec `--diff`, remplacés par la liste des fichiers au-delà de 1500 lignes). Il ne récupère que develop et la branche courante (`--fetch-all` pour `/ticket`, qui cherche les branches existantes d'un ticket), et force les messages de git en anglais. OpenCode lance les commandes injectées en parallèle : tout regrouper ici évite des références distantes périmées et des allers-retours avec le modèle. `--appsec` ajoute la ligne `APPSEC_PROJECT_NAME` d'`appsec-ci.env`, et elle seule.
+- `build-test.sh [--build-only] [solution ou projet] [options de dotnet test]` : build silencieux puis tests seulement si le build passe, en un seul appel, avec des lignes `BUILD:` et `TESTS:` explicites (OpenCode ne montre pas le code retour d'une commande au modèle). `--build-only` pour corriger la compilation. Un `dotnet` absent du PATH, un accès Artifactory refusé (NU1301, 401, 403) ou un `DOTNET_ROOT` manquant pour les tests finit par une ligne `ENVIRONMENT PROBLEM` : l'agent s'arrête et te le dit au lieu d'enquêter. Après un passage sur toute la solution, il donne l'empreinte du code testé : `/test` et les correctifs la notent dans la fiche, et `/check` ne relance pas build et tests tant que le code garde cette empreinte.
 - `state-fingerprint.sh` : l'empreinte du code de la copie de travail (fichiers suivis avec leur contenu actuel, et fichiers non suivis non ignorés), sans rien écrire. Même code, même empreinte, qu'il soit commité ou non ; la moindre modification la change. C'est ce qui permet à `/ship` de sauter la review et à `/next` de proposer de livrer sans risque.
 - `review-target.sh` : pour `/review`, récupère la MR d'un collègue (référence GitLab `refs/merge-requests/<n>/head`) ou sa branche sans toucher à ta copie de travail, puis donne ses commits, ses tickets et son diff.
 - `package-licenses.sh` : lancé seulement à la demande (`/licences`, le QCM de `/check`, ou « vérifie les licences »). Les packages NuGet devenus payants ou copyleft à partir d'une version (MediatR 13+, AutoMapper 15+, FluentAssertions 8+, MassTransit 9+, NPOI 2.8+, EPPlus 5+, QuestPDF, ImageSharp 3+, Blazorise, Duende IdentityServer, iText, Polly à sa prochaine version majeure). Trois modes : tout le repo, références directes puis transitives d'après `obj/project.assets.json` ; `branche` pour ce que la branche ajoute ou change ; `<package> [version]` pour un package. Il lit les `.csproj`, `Directory.Packages.props` (versions centralisées, `VersionOverride`), les propriétés `$(...)` et `packages.config`. Les règles, datées, sont en tête du script : à mettre à jour quand un package connu change de licence. NuGet seulement (pas npm). En dehors de ça, les agents connaissent la liste par `AGENTS.md` et le disent dans le QCM s'ils proposent une version payante, sans aucun appel.
-- `detect-project-type.sh` : type de projet (dont Blazor, avec la part de composants en code-behind, et ABP signalé), commandes de build et de test, stack de test (dont bUnit).
-- `release-commits.sh` : commits, MR et tickets d'une plage de MEP pour `/release-notes`.
+- `detect-project-type.sh [--files] [dépôt]` : type de projet (dont Blazor, avec la part de composants en code-behind, et ABP signalé), commandes de build et de test, stack de test (dont bUnit) ; avec `--files`, la racine du dépôt, l'état de son `AGENTS.md` et ses fichiers de solution et de projet.
+- `release-commits.sh` : commits, MR et tickets d'une plage de MEP pour `/release-notes` ; `<dépôt> --head` donne seulement la tête de master après un fetch.
 
 Chaque réponse du flux commence par le ticket en cours : **[ABC-123](lien Jira) - titre**.
 
@@ -120,19 +125,20 @@ OpenCode 1.19 n'envoie la température d'un agent que si le modèle déclare `"t
 
 ## Environnement (à régler une fois sur la machine qui héberge OpenCode)
 
-OpenCode lance les commandes du modèle (`dotnet build`, `build-test.sh`…) dans un **zsh de login non interactif** qui source `~/.zshenv` **puis** `~/.zshrc` (`zsh -l -c`). Un `~/.zshrc` qui fait un `return` anticipé pour les shells non interactifs (motif très courant) n'est donc jamais atteint : c'est la raison la plus probable d'un `dotnet` « introuvable » dans OpenCode alors qu'il marche dans le terminal. Les exports de PATH et d'outils vont donc dans **`~/.zshenv`** (sourcé par toute invocation de zsh), pas dans `~/.zshrc` ni un `zshrc_perso`.
+OpenCode lance chaque commande d'un agent avec `<shell> -c "<commande>"`, dans le dossier du projet. Le shell est celui de la clé `"shell"` d'`opencode.json`, sinon le `$SHELL` du serveur, sinon bash. Un zsh lancé ainsi lit **seulement `~/.zshenv`** : ni `~/.zshrc`, ni ton `zshrc_perso`. C'est pourquoi un `dotnet` qui marche dans ton terminal peut être « introuvable » pour l'agent.
 
-`~/.zshenv` :
+1. `opencode.json`, au premier niveau (le chemin est la sortie de `command -v zsh` dans ton terminal) :
+```json
+"shell": "/usr/bin/zsh",
+```
+2. `~/.zshenv` (DOTNET_ROOT = le dossier qui contient l'exécutable `dotnet` ; dans ton terminal : `dirname "$(readlink -f "$(command -v dotnet)")"`) :
 ```sh
-# .NET : disponible pour tout shell, y compris le zsh non interactif d'OpenCode.
-# DOTNET_ROOT = dossier qui contient l'exécutable dotnet ; le trouver dans un terminal normal avec :
-#   dirname "$(readlink -f "$(command -v dotnet)")"
 export DOTNET_ROOT="<ce dossier>"
 export PATH="$DOTNET_ROOT:$HOME/.dotnet/tools:$PATH"
-export DOTNET_CLI_TELEMETRY_OPTOUT=1
-export DOTNET_NOLOGO=1
-export DOTNET_CLI_UI_LANGUAGE=en
 ```
+   PATH sert à trouver `dotnet` ; DOTNET_ROOT sert aux exécutables qui cherchent le runtime eux-mêmes (hôte de test de `dotnet test` en .NET 10, outils globaux comme `dotnet-ef`). Les deux sont nécessaires.
+3. Artifactory : `dotnet restore` lit `artifactory_user` et `artifactory_password` dans l'environnement de la commande. S'ils ne sont que dans `zshrc_perso`, l'agent ne les a que si le serveur OpenCode a été démarré depuis un terminal qui les avait chargés. Si `build-test.sh` répond « ENVIRONMENT PROBLEM: the package feed (Artifactory) refused access », déplace ces deux `export` de `zshrc_perso` vers `~/.zshenv`. Les agents ne peuvent lire ni `~/.zshenv`, ni `~/.zshrc*`, ni les fichiers NuGet (permissions).
+4. Redémarre OpenCode (`opencode-web.sh stop && opencode-web.sh start`), puis vérifie dans une nouvelle session : « lance `sh ~/.config/opencode/scripts/build-test.sh --build-only` ».
 
 Réglages du **serveur** OpenCode (dans `opencode-web.sh`, avant le démarrage, pas dans `opencode.json`) :
 ```sh
@@ -141,11 +147,11 @@ export OPENCODE_DISABLE_AUTOUPDATE=1     # installation à la main
 export OPENCODE_DISABLE_LSP_DOWNLOAD=1   # pas de téléchargement de binaire LSP
 ```
 
-Artifactory : `artifactory_user` et `artifactory_password` doivent être dans l'environnement du serveur pour que `dotnet restore` s'authentifie (le bash tool en hérite). Garde-les dans ton mécanisme de secrets existant ; ne mets jamais leur valeur en clair dans `~/.zshenv` s'il est versionné ou synchronisé. Les agents ne les lisent, n'affichent et ne journalisent jamais.
-
 ## Pour la maintenance du pack
 
 - `tools/permissions.py` régénère les lignes `permission:` des agents et `opencode.snippet.json`. Ne les modifie pas à la main.
 - Avant chaque push, tous les fichiers sont validés avec `gray-matter`, le parseur YAML d'OpenCode : il refuse par exemple les clés en double.
 - Les scripts sont vérifiés avec `shellcheck` et testés avec dash, bash et busybox sh, et avec les awk mawk, gawk, BWK (celui de macOS) et busybox.
-- Les permissions sont vérifiées par simulation : un portage fidèle du moteur d'OpenCode 1.19 (tree-sitter-bash 0.25 pour découper la commande, `evaluate` dernier-match-gagnant, ordre de fusion defaults → snippet → agent) rejoue un corpus de commandes réelles par agent (`/dev`, `/apply-pattern`, `/check`, `/ship`…) et contrôle lecture, écriture et visibilité des outils MCP. Attention : `export`, `declare`, `readonly`, `typeset`, `local` sont des `declaration_command` pour tree-sitter — OpenCode ne les analyse pas, donc aucune règle `permission` ne peut les bloquer. La défense contre un dump d'environnement passe par le prompt (section « Speed » d'AGENTS.md), pas par les permissions. Les redirections vers un fichier (`>`, `>>`) restent refusées aux agents en lecture seule, mais `2>&1`, `2>/dev/null` et `>/dev/null` sont autorisés (les refuser ne coûtait qu'un tour).
+- Les permissions sont vérifiées par simulation : `tools/permission-sim.mjs` porte le moteur d'OpenCode 1.19 (tree-sitter-bash 0.25 pour découper la commande comme lui, `evaluate` dernier-match-gagnant, fusion defaults → snippet → agent, règles de session d'un sous-agent, chemins relatifs des outils read et edit) et rejoue `tools/permission-corpus.mjs` : les commandes que le pack fait lancer, les réflexes du modèle (`git status`, `grep "List<Order>"`, chemins `reset-password/`, `config/`), les secrets et les écritures interdites, agent par agent. Lancement : `cd tools && npm install --no-save web-tree-sitter@0.25.10 tree-sitter-bash@0.25.0 gray-matter@4.0.3 && node permission-sim.mjs ..` (jamais dans `~/.config/opencode`).
+- Un refus envoie au modèle toutes les règles bash de l'agent en JSON (plus de 10 Ko pour un agent en lecture seule) : un refus à tort coûte un tour, des milliers de tokens, et montre au modèle quelles formes passeraient. D'où des règles qui ne refusent jamais une commande normale : mots secrets en majuscules seulement (`*PASSWORD*`, pas `*password*`, qui bloquait les branches `reset-password` et les messages de commit des correctifs Fortify), redirection détectée par l'espace avant `>` (un `List<Order>` dans une recherche passe), `find -exec` et `sed -i` ciblés.
+- `export`, `declare`, `readonly`, `typeset`, `local` et `[ … ]` ne sont jamais analysés par OpenCode (tree-sitter ne les voit pas comme des commandes) : aucune règle ne peut les bloquer, la défense passe par le prompt (section « Speed » d'AGENTS.md). Pour `build` et `dev`, qui ont droit à tout le shell, les règles bloquent les formes évidentes (fichiers d'identifiants, `env`, `echo $…`) mais pas un `python -c` : la vraie protection est que l'agent n'ait jamais de raison de chercher (environnement réglé, scripts qui disent « arrête-toi »).

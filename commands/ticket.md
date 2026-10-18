@@ -4,9 +4,9 @@ agent: git
 ---
 Ticket given: "$1"
 Workflow state (fetch of every branch, then the state of the branch and of its ticket sheet):
-!`sh ~/.config/opencode/scripts/workflow-state.sh --fetch-all --sheet`
+[[run workflow-state.sh --fetch-all --sheet]]
 Project detection:
-!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+[[run detect-project-type.sh]]
 
 Start or resume the work on a Jira ticket. Read-only on Jira, Confluence and GitLab.
 

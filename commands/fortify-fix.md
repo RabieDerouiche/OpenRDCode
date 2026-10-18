@@ -3,17 +3,16 @@ description: "Fix ONE Fortify SSC issue with a minimal change, then build and te
 agent: build
 ---
 Project detection:
-!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+[[run detect-project-type.sh]]
 
-SSC application line (from appsec-ci.env): !`git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'`
-Current git branch: !`git branch --show-current`
-Now: !`date "+%Y-%m-%d %H:%M"`
+Workflow state (no fetch: the branch, the SSC application line, the code fingerprint and the ticket sheet):
+[[run workflow-state.sh --no-fetch --sheet --appsec]]
 
 Fix the Fortify issue with id $1, and only this one.
 
 Rules:
-- Never read appsec-ci.env yourself. Use the line injected above: the SSC application is the value after `=`, without quotes.
-- Never invent application, version, filter set or filter names. Version selection: list ALL versions of the application; use the version matching the current branch (exact name, then `/` replaced by `-`, then by `_`) if it has at least one uploaded scan, otherwise `develop`; if `develop` does not exist either, ask me with the question tool (multiple choice, recommended option first) with the versions as options. Use the filter set "Security Auditor View".
+- Never read appsec-ci.env yourself. Use the "Fortify SSC application line" of the workflow state: the SSC application is the value after `=`, without quotes.
+- Never invent application, version, filter set or filter names. Version selection: list ALL versions of the application; use the version matching the "Current branch" of the workflow state (exact name, then `/` replaced by `-`, then by `_`) if it has at least one uploaded scan, otherwise `develop`; if `develop` does not exist either, ask me with the question tool (multiple choice, recommended option first) with the versions as options. Use the filter set "Security Auditor View".
 
 Speed: in your first turn, load the skill and list the versions of the SSC application together; then get the issue; then read the files of its data flow together.
 
@@ -27,9 +26,9 @@ Steps:
    - "Passer cette issue" → stop without editing.
 5. For a real issue: apply the remediation pattern from the skill matching the category, with the smallest possible change. Do not refactor around it. Do not suppress the warning with comments or attributes.
 6. Add or update a unit test proving the fix (e.g. malicious input rejected or sanitized), if the project has tests.
-7. Run the build and tests in one call. .NET: `sh ~/.config/opencode/scripts/build-test.sh`, with the solution or project of AGENTS.md "Build & test" as first argument if it names one; front-end: the commands of AGENTS.md (default `npm test`). In the same turn, read the ticket sheet if the branch has one (step 9). If a legacy .NET Framework project cannot build on this machine (.NET Framework needs Windows), say so instead of changing project files.
+7. Run the build and tests in one call. .NET: `sh ~/.config/opencode/scripts/build-test.sh`, with the solution or project of AGENTS.md "Build & test" as first argument if it names one; front-end: the commands of AGENTS.md (default `npm test`). If a legacy .NET Framework project cannot build on this machine (.NET Framework needs Windows), say so instead of changing project files.
 8. Report: the category, the change (file:line), the test added, build/test result, and a commit message `fix(security): <summary> (Fortify #$1)`.
-9. If the branch has a ticket sheet (`.git/opencode-tickets/<KEY>.md`, key from the branch name), append to its "## Suivi": `- <date> /fortify-fix $1 - <corrigé | faux positif | passé>` (date: the "Now" line above), followed for a fix by `- build <ok|ko> - tests <passed>/<total> - empreinte <the "Code fingerprint of this run" line of step 7, or ->`: /check then reuses that build and test run while the code does not change.
+9. If the workflow state printed a ticket sheet, append at the end of its "## Suivi" section (`.git/opencode-tickets/<KEY>.md`, exact lines from the sheet printed above): `- <date> /fortify-fix $1 - <corrigé | faux positif | passé>` (date: the "Now" line of the workflow state), followed for a fix by `- build <ok|ko> - tests <passed>/<total> - empreinte <the "Code fingerprint of this run" line of step 7, or ->`: /check then reuses that build and test run while the code does not change.
 10. Last line: "Prochaine étape : /check puis /ship (avec ce message de commit), puis /scans pour vérifier que l'issue a disparu."
 
 If the fix touches authentication, SharePoint/CSOM, DocuSign or S3 code, load `integrations-guardrails` and ask me with the question tool (multiple choice, recommended option first) ("Appliquer le correctif" / "Me montrer le diff d'abord" / "Annuler") before editing.

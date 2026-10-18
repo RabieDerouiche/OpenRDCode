@@ -3,7 +3,7 @@ description: "Apply a pattern saved with /extract-pattern to the current reposit
 agent: dev
 ---
 Project detection:
-!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+[[run detect-project-type.sh]]
 
 Apply the pattern "$1" to the current repository.
 

@@ -3,12 +3,8 @@ description: "Create or update the repository AGENTS.md from the existing code (
 agent: build
 ---
 Confluence source given: "$ARGUMENTS"
-Repository root: !`git rev-parse --show-toplevel`
-Current AGENTS.md: !`if [ -f AGENTS.md ]; then git log -1 --format='exists, last changed in %h on %cs' -- AGENTS.md; else echo "none (creation mode)"; fi`
-Project detection:
-!`sh ~/.config/opencode/scripts/detect-project-type.sh`
-Solution and project files:
-!`git ls-files '*.sln' '*.slnx' '*.csproj' 'package.json' 'Directory.Build.props' 'Directory.Packages.props' 'nuget.config'`
+Project detection, repository root, state of AGENTS.md, solution and project files:
+[[run detect-project-type.sh --files]]
 
 Create or update the AGENTS.md at the repository root so that every agent works like this repository, from the code as it is today.
 
@@ -22,7 +18,7 @@ Rules:
 - Never read appsec-ci.env or nuget.config credentials.
 
 ## Step 1 - What exists
-- No AGENTS.md: creation mode.
+- "AGENTS.md: none": creation mode.
 - Otherwise read it. If it was last changed a while ago, list the structural changes since then: `git diff --stat <hash of the last change>..HEAD -- '*.sln' '*.slnx' '*.csproj' 'Directory.*.props' 'package.json'` and `git log --oneline <hash>..HEAD | head -30`. Sections touched by these changes are the first to re-check.
 
 ## Step 2 - Analyze the code, section by section

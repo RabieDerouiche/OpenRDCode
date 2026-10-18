@@ -3,6 +3,6 @@ description: "Ship the current work: review (skipped if /check already validated
 agent: git
 ---
 Workflow state (one fetch, then the state of the branch and its ticket sheet):
-!`sh ~/.config/opencode/scripts/workflow-state.sh --sheet`
+[[run workflow-state.sh --sheet]]
 
 Load the skill `ship-procedure` and follow it exactly, using the values above as its inputs.

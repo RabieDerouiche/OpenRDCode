@@ -1,12 +1,22 @@
 #!/bin/sh
 # Detects the project type of a git repository from tracked files only (read-only).
-# Usage: detect-project-type.sh [repository path]
+# Usage: detect-project-type.sh [--files] [repository path]
+#   --files  also print the repository root, the state of its AGENTS.md and its solution and project files
 # Output is injected into OpenCode commands. A "Project type" section in AGENTS.md overrides it.
 
+files=0
+repo=""
+for arg in "$@"; do
+  case "$arg" in
+    --files) files=1 ;;
+    *) [ -z "$repo" ] && repo=$arg ;;
+  esac
+done
+
 # Optional argument: path of the repository to analyze (default: current directory).
-if [ -n "$1" ]; then
-  if ! cd "$1" 2>/dev/null; then
-    echo "Project type (auto-detected): unknown (folder not found: $1)"
+if [ -n "$repo" ]; then
+  if ! cd "$repo" 2>/dev/null; then
+    echo "Project type (auto-detected): unknown (folder not found: $repo)"
     exit 0
   fi
 fi
@@ -160,3 +170,17 @@ echo "Build: ${build:-unknown}"
 echo "Test: ${test:-unknown}"
 echo "Test stack: ${test_stack:-none detected}"
 echo "Evidence:$evidence"
+
+if [ "$files" -eq 1 ]; then
+  root=$(git rev-parse --show-toplevel)
+  cd "$root" || exit 0
+  echo "Repository root: $root"
+  if [ -f AGENTS.md ]; then
+    echo "AGENTS.md: $(git log -1 --format='exists, last changed in %h on %cs' -- AGENTS.md 2>/dev/null | grep . || echo 'exists, never committed')"
+  else
+    echo "AGENTS.md: none (creation mode)"
+  fi
+  echo "Solution and project files:"
+  git -c core.quotePath=false ls-files '*.sln' '*.slnx' '*.csproj' '*.vbproj' 'package.json' '*/package.json' \
+    'Directory.Build.props' 'Directory.Packages.props' | grep -v node_modules
+fi

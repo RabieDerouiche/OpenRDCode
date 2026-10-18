@@ -3,7 +3,7 @@ description: "Scaffold a CQRS command or query with handler, validator and tests
 agent: dev
 ---
 Project detection:
-!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+[[run detect-project-type.sh]]
 
 Create a new CQRS $1 named $2 in the feature $3.
 

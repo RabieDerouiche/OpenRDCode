@@ -4,7 +4,7 @@
 # single fetch, avoids stale remote refs and git lock conflicts.
 # Read-only, except `git fetch` and a one-time move of the ticket sheets of older versions. The "Code fingerprint" line comes from state-fingerprint.sh (same folder): /check and
 # /test write it in the ticket sheet, /ship and /next compare it to know whether that review or test run is still valid.
-# Usage: workflow-state.sh [--fetch-all | --no-fetch] [--sheet] [--tickets] [--diff]
+# Usage: workflow-state.sh [--fetch-all | --no-fetch] [--sheet] [--tickets] [--diff] [--appsec]
 #   (default)    fetch only the base branch and the current branch: fast, even with many branches on origin
 #   --fetch-all  fetch every branch of origin (/ticket looks for the existing branches of a ticket)
 #   --no-fetch   do not fetch
@@ -12,6 +12,8 @@
 #   --tickets    also print the Jira link and the first sentence of the "Résumé" of the other ticket sheets
 #   --diff       also print the commits and the diffs of the branch (committed and uncommitted); a diff longer
 #                than MAX_DIFF_LINES is replaced by its file list, to be read file by file
+#   --appsec     also print the APPSEC_PROJECT_NAME line of appsec-ci.env (the Fortify SSC application), and only
+#                that line: the rest of the file may hold secrets
 
 MAX_DIFF_LINES=1500
 MAX_SHEETS=10
@@ -30,6 +32,7 @@ fetch=branch
 sheet=0
 tickets=0
 diff=0
+appsec=0
 for arg in "$@"; do
   case "$arg" in
     --fetch-all) fetch=all ;;
@@ -37,6 +40,7 @@ for arg in "$@"; do
     --sheet) sheet=1 ;;
     --tickets) tickets=1 ;;
     --diff) diff=1 ;;
+    --appsec) appsec=1 ;;
   esac
 done
 
@@ -101,6 +105,10 @@ echo "Jira key from branch: ${key:-none}"
 echo "Base branch: ${base:-NONE (no origin/develop, origin/main or origin/master)}"
 echo "HEAD: $(git rev-parse --short HEAD 2>/dev/null)"
 echo "Code fingerprint: $(sh "$here/state-fingerprint.sh")"
+if [ "$appsec" -eq 1 ]; then
+  ssc=$(git grep -h '^APPSEC_PROJECT_NAME=' -- '*appsec-ci.env' 2>/dev/null | head -1)
+  echo "Fortify SSC application line (appsec-ci.env): ${ssc:-none}"
+fi
 if [ -n "$remote_copy" ]; then
   counts=$(git rev-list --left-right --count "$remote_copy...HEAD" 2>/dev/null)
   behind=$(printf '%s' "$counts" | cut -f1)

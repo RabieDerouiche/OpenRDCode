@@ -2,74 +2,96 @@
 """Regenerates the one-line `permission:` frontmatter of every agent in ../agents, and opencode.snippet.json.
 
 Run from the repository root: python3 tools/permissions.py
-Rules are last-match-wins in OpenCode, so the order of the keys is the policy.
+Then check every decision with the simulator of tools/README.md (a port of OpenCode 1.19's permission engine).
+
+How OpenCode 1.19 decides (verified in its source):
+- Each command of a shell call (pipes, &&, ;, $(...) included) is checked on its own, with its full text,
+  redirections included. Rules are wildcards (`*` = anything, `?` = one character), case-sensitive, and the LAST
+  matching rule wins: the order of the keys is the policy. A pattern ending with " *" also matches the bare command.
+- An agent's rules are: OpenCode defaults, then the global `permission` of opencode.json, then the agent's own.
+- A refusal sends the model EVERY bash rule of the agent as JSON (10 KB and more): each wrong refusal costs a turn,
+  thousands of tokens, and shows the model which forms would pass. Hence: no rule that refuses a normal command
+  (a path, a branch name or a commit message that contains "password" or "config", a C# generic inside a search).
+- `export`, `declare`, `readonly`, `typeset`, `local` and `[ ... ]` are never checked (tree-sitter does not parse
+  them as commands): the defense against an environment dump of these forms is the prompt (AGENTS.md "Speed").
 Duplicate keys are forbidden: OpenCode's YAML parser (gray-matter) rejects them.
 """
 import json
 import re
 import sys
 
-DETECT = "sh ~/.config/opencode/scripts/detect-project-type.sh*"
-RELEASE = "sh ~/.config/opencode/scripts/release-commits.sh *"
-STATE = "sh ~/.config/opencode/scripts/workflow-state.sh*"
-LICENSES = "sh ~/.config/opencode/scripts/package-licenses.sh*"
-BUILD_TEST = "sh ~/.config/opencode/scripts/build-test.sh*"
 TICKET_SHEETS = ".git/opencode-tickets/**"
 
-READ = ["ls*", "pwd", "cd *", "cat *", "head*", "tail*", "wc*", "sort*", "uniq*", "cut *", "tr *",
-        "find *", "grep *", "egrep *", "rg *", "tree*", "file *", "stat *", "which *", "basename *",
+# The pack's scripts, whatever the way the model writes their path (~, $HOME or absolute). `sh -c ...` never matches:
+# the script path must follow `sh ` directly.
+SCRIPTS = ["sh ~/.config/opencode/scripts/*", "sh $HOME/.config/opencode/scripts/*",
+           "sh /*/.config/opencode/scripts/*", "bash ~/.config/opencode/scripts/*"]
+
+READ = ["ls*", "pwd", "cd *", "cat *", "head*", "tail*", "wc*", "sort*", "uniq*", "cut *", "tr *", "find *", "grep *",
+        "egrep *", "rg *", "tree*", "file *", "stat *", "which *", "command -v *", "realpath *", "basename *",
         "dirname *", "date*", "echo *", "printf *", "sed -n*", "jq *", "diff *", "test *", "[ *", "true"]
 GIT_READ = ["git status*", "git log*", "git diff*", "git show*", "git branch*", "git fetch*", "git rev-parse*",
             "git ls-files*", "git ls-tree*", "git grep*", "git blame*", "git describe*", "git tag", "git tag -l*",
             "git tag --list*", "git merge-base*", "git shortlog*", "git cat-file*", "git for-each-ref*",
-            "git rev-list*", "git name-rev*", "git remote", "git remote -v", "git remote show*", "git remote get-url*",
-            "git stash list*", "git reflog*", "git --no-pager *", "git -C *", "git worktree list*"]
-DOTNET_INFO = ["dotnet --info", "dotnet --version", "dotnet --list-sdks", "dotnet --list-runtimes", "dotnet list*"]
+            "git rev-list*", "git name-rev*", "git diff-tree*", "git remote", "git stash list*", "git stash show*",
+            "git reflog", "git reflog show*", "git worktree list*", "git --no-pager log*", "git --no-pager diff*",
+            "git --no-pager show*"]
+# Writes reachable through the read allows above (git branch*, git diff/log/show --output)
+GIT_READ_GUARD = ["git branch -d*", "git branch -D*", "git branch -m*", "git branch -M*", "git branch -c*",
+                  "git branch -C*", "git branch -f*", "git branch --delete*", "git branch --move*", "git branch --copy*",
+                  "git branch --force*", "git branch * -D*", "git branch * -f*", "git branch * --force*",
+                  "git diff*--output*", "git log*--output*", "git show*--output*"]
+DOTNET_INFO = ["dotnet --info", "dotnet --version", "dotnet --list-sdks", "dotnet --list-runtimes", "dotnet list*",
+               "dotnet nuget why*"]
 DOTNET_RUN = ["dotnet build*", "dotnet test*", "dotnet restore*"]
-FRONT_TEST = ["npm test*", "npm run test*", "npx jest*", "npx vitest*", "yarn test*", "pnpm test*", "npm ls*",
-              "node --version", "npm --version"]
-FRONT_BUILD = ["npm run build*", "npx tsc*"]
+FRONT_TEST = ["npm test*", "npm run test*", "npx jest*", "npx vitest*", "npx ng test*", "yarn test*", "pnpm test*",
+              "npm ls*", "node --version", "npm --version"]
+FRONT_BUILD = ["npm run build*", "npx tsc*", "npx ng build*"]
 
-# Read-only agents: forbid writing a file with `>` or `>>`, but allow the harmless stderr forms the model
-# reaches for reflexively (`2>&1`, `2>/dev/null`, `>/dev/null`). Denying those only cost a turn and a retry.
-# The allow rules come last so they win over the generic `*>*` deny (last match wins, insertion order).
-REDIRECT = [("*>*", "deny"), ("*>>*", "deny"), ("*2>&1*", "allow"),
-            ("*>/dev/null*", "allow"), ("*> /dev/null*", "allow"),
-            ("*2>/dev/null*", "allow"), ("*2> /dev/null*", "allow")]
-GIT_WRITE = ["git* push*", "git* commit*", "git* reset*", "git* checkout*", "git* switch*", "git* rebase*",
-             "git* merge *", "git* cherry-pick*", "git* revert*", "git stash", "git* stash push*", "git* stash pop*",
-             "git* stash drop*", "git* stash apply*", "git* stash clear*", "git* clean*", "git* rm *", "git* mv *",
-             "git* add *", "git* restore*", "git* tag -d*", "git* tag -a*", "git* tag -f*", "git* branch -d*",
-             "git* branch -D*", "git* branch -m*", "git* branch -M*", "git* branch -f*", "git* branch --delete*",
-             "git* branch --move*", "git* config*", "git* remote add*", "git* remote set-url*", "git* remote remove*",
-             "git* remote rm*", "git* gc*", "git* update-ref*", "git* apply*", "git* am *", "git* worktree add*", "git* worktree remove*", "git* worktree move*", "git* worktree prune*", "git* worktree lock*", "git* worktree unlock*", "git* worktree repair*",
-             "git* submodule*"]
-OTHER_DENY = ["*-exec*", "*-execdir*", "*-delete*", "*-ok *", "*-fprint*", "*-fls*", "*sed*-i*", "*sed*--in-place*"]
-# Secret stores and secret-looking names: NuGet configuration (Artifactory credentials), environment variables,
-# tokens and passwords. Upper and lower case only, so that code names such as PasswordValidator stay usable.
-SECRET_PROBES = ["*.nuget/NuGet*", "*NuGet.Config*", "*NuGet.config*", "*nuget.config*", "*Nuget.Config*",
-                 "*PASSWORD*", "*password*", "*PASSWD*", "*passwd*", "*TOKEN*", "*SECRET*", "*secret*",
-                 "*CREDENTIAL*", "*credential*", "*API_KEY*", "*APIKEY*", "*api_key*", "*apikey*",
-                 "*/proc/*environ*", "*.netrc*", "*.pypirc*", "*.git-credentials*"]
-SECRETS = ["*zshenv*", "*zshrc*", "*bash_profile*", "*appsec-ci.env*", "*/.ssh/*", "*/.aws/*", "*.npmrc*",
-           "*credentials*", "*artifactory_*", "*echo *$*", "*printf *$*", "*$(*", "*${*", "*`*"] + SECRET_PROBES
+# Read-only agents never write a file with a redirection. `>` inside a quoted search string (C# generics, lambdas)
+# is not refused: only a space before `>`, `2>` and `&>` are. The harmless forms (`2>&1`, `>/dev/null`) are re-allowed,
+# then a file redirection combined with them is refused again (last match wins).
+REDIRECT = [("* >*", "deny"), ("*2>*", "deny"), ("*&>*", "deny"),
+            ("*2>&1*", "allow"), ("*>/dev/null*", "allow"), ("*> /dev/null*", "allow"),
+            ("* >*2>&1*", "deny"), ("*2>&1 >*", "deny"), ("* >>*", "deny"),
+            ("*>/dev/null 2>&1*", "allow"), ("*> /dev/null 2>&1*", "allow")]
+# find and sed forms that write or run commands
+OTHER_DENY = ["find *-exec*", "find *-execdir*", "find *-delete*", "find *-ok*", "find *-fprint*", "find *-fls*",
+              "sed *-i*", "sed *--in-place*"]
+SUBST = ["*$(*", "*${*", "*`*"]
+
+# ---------- secrets: refused for every agent, build and dev included ----------
+# Files that hold credentials. *?u?et.?onfig* = nuget.config, NuGet.Config, NuGet.config, Nuget.Config.
+SECRET_FILES = ["*?u?et.?onfig*", "*.nuget/NuGet*", "*/.z*", "*zshrc*", "*/.bash*", "*/.profile*", "*/.ssh/*",
+                "*/.aws/*", "*/.docker/*", "*.npmrc*", "*.netrc*", "*.pypirc*", "*.git-credentials*",
+                "*/proc/*environ*", "*appsec-ci.env*", "* .env*", "*/.env*", "*opencode.json*",
+                "*opencode/auth.json*"]
+# Environment dumps and credential-bearing git output (a remote URL or the git config can hold a token)
+ENV_DUMP = ["env", "env *", "printenv*", "set", "compgen*", "*echo *$*", "*printf *$*", "*artifactory_*",
+            "dotnet user-secrets*", "git config*", "git remote -v*", "git remote get-url*", "git remote show*"]
+# Names of secret environment variables. Upper case only: code names (PasswordValidator, CancellationToken), branch
+# names and paths (reset-password, credentials/) stay usable.
+SECRET_NAMES = ["*PASSWORD*", "*PASSWD*", "*TOKEN*", "*SECRET*", "*CREDENTIAL*", "*API_KEY*", "*APIKEY*"]
+SECRETS = SECRET_FILES + ENV_DUMP + SECRET_NAMES
+
+# The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS)
+SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
 
 MCP_WRITE_DENY = [(p, "deny") for p in ["*create*", "*update*", "*delete*", "*remove*", "*upload*", "*add_*",
                                          "*approve*", "*assign*", "*accept*", "*transition_issue*", "*do_transition*",
                                          "*merge_merge_request*", "*change_status*", "*set_*"]]
-# release-writer: may create or update ONE Confluence page, each write asks first
+# release-writer: may create or update ONE Confluence page, each write asks first...
 MCP_RELEASE = [("*create*", "ask"), ("*update*", "ask"), ("*upload*", "ask")] + \
               [r for r in MCP_WRITE_DENY if r[0] not in ("*create*", "*update*", "*upload*")]
 # ...but never in Jira
-MCP_RELEASE += [(p, "deny") for p in ["*jira*create*", "*jira*update*", "*Jira*create*", "*Jira*update*", "*JIRA*create*", "*JIRA*update*"]]
+MCP_RELEASE += [(p, "deny") for p in ["*jira*create*", "*jira*update*", "*Jira*create*", "*Jira*update*",
+                                      "*JIRA*create*", "*JIRA*update*"]]
 
-TEST_PATHS = ["**/*Tests/**", "**/*.Tests/**", "**/*Test/**", "tests/**", "test/**", "**/__tests__/**",
-              "**/*.spec.ts", "**/*.test.ts", "**/*.spec.tsx", "**/*.test.tsx", "**/*.spec.js", "**/*.test.js"]
-
-
-# The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS).
-SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
-
+# test-writer: test projects at the root or nested (App.Tests/, tests/App.Tests/, src/App.UnitTests/, App.Test/),
+# test folders, and front-end test files. Never production code.
+TEST_PATHS = ["*Tests/**", "*.Test/**", "test/**", "tests/**", "*/test/**", "*/tests/**", "*__tests__/**",
+              "*.spec.ts", "*.test.ts", "*.spec.tsx", "*.test.tsx", "*.spec.js", "*.test.js", "*.spec.jsx",
+              "*.test.jsx"]
 
 # MCP servers, matched by tool name (OpenCode names MCP tools "<server>_<tool>"). Hiding a server from an agent
 # removes its tool descriptions from every request of that agent: faster and less confusing for the model.
@@ -83,73 +105,90 @@ MCP_SERVERS = {
 }
 
 
+def allow(patterns):
+    return [(p, "allow") for p in patterns]
+
+
+def ask(patterns):
+    return [(p, "ask") for p in patterns]
+
+
+def deny(patterns):
+    return [(p, "deny") for p in patterns]
+
+
 def mcp_only(keep):
     return [(p, "deny") for server, patterns in MCP_SERVERS.items() if server not in keep for p in patterns]
 
 
-def read_only_bash(extra_allows, after_secrets=()):
+def read_only_bash(extra_allows=(), after_secrets=()):
     rules = [("*", "deny")]
-    rules += [(p, "allow") for p in READ + GIT_READ + extra_allows]
+    rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + list(extra_allows))
     rules += REDIRECT
-    rules += [(p, "deny") for p in GIT_WRITE + OTHER_DENY + SECRETS]
-    rules += [(p, "allow") for p in after_secrets]
+    rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS)
+    rules += allow(after_secrets)
     return rules
 
 
 def git_bash():
     rules = [("*", "deny")]
-    rules += [(p, "allow") for p in READ + GIT_READ + [DETECT, STATE]]
-    # writes the git agent may do without asking
-    rules += [(p, "allow") for p in ["git switch *", "git checkout -b *", "git add *", "git add -A", "git commit -m *",
-                                     "git commit -F *", "git commit --no-edit", "git merge --abort",
-                                     "git merge --ff-only origin/*"]]
+    rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO)
+    # writes the git agent may do without asking (`git commit -m` comes after the secret rules, see below)
+    rules += allow(["git switch *", "git checkout -b *", "git add *", "git add -A", "git commit --no-edit",
+                    "git merge --abort", "git merge --ff-only origin/*", "git restore --staged *"])
     # writes that need my approval each time
-    rules += [(p, "ask") for p in ["git push*", "git merge origin/*", "git merge --no-edit origin/*", "git pull*",
-                                   "git stash", "git stash push*", "git stash pop*", "git commit --amend*"]]
+    rules += ask(["git push*", "git merge origin/*", "git merge --no-edit origin/*", "git pull*", "git stash",
+                  "git stash push*", "git stash pop*", "git commit --amend*", "git commit *--amend*"])
     rules += REDIRECT
-    # always forbidden
-    rules += [(p, "deny") for p in [
-        "*--force*", "*push* -f*", "*push*+*", "git* push* origin develop*", "git* push* origin master*",
-        "git* push* origin main*", "*push*:develop*", "*push*:master*", "*push*:main*", "git* push* --all*",
-        "git* push* --mirror*", "git* push* --delete*", "git* push* --tags*", "git* reset*", "git* rebase*",
-        "git* clean*", "git* branch -D*", "git* branch -m*", "git* branch -M*", "git* branch -f*",
-        "git* branch --delete*", "git* tag -*", "git* config*", "git* remote add*", "git* remote set-url*",
-        "git* remote remove*", "git* remote rm*", "git* gc*", "git* update-ref*", "git* cherry-pick*", "git* revert*",
-        "git* stash drop*", "git* stash clear*", "git* worktree add*", "git* worktree remove*", "git* worktree move*", "git* worktree prune*", "git* worktree lock*", "git* worktree unlock*", "git* worktree repair*", "git* submodule*", "git* restore *",
-        "git* checkout -- *", "git* checkout .", "git* switch*--discard-changes*", "git* switch -C*",
-        "git* checkout -B*", "git* rm *", "git* mv *", "git* apply*", "git* am *", "git* filter-branch*",
-        "git* reflog delete*", "git* reflog expire*"]]
-    # unstaging is safe (after the generic restore deny)
-    rules += [("git restore --staged *", "allow")]
+    # always forbidden among the forms that the rules above let through
+    rules += deny(GIT_READ_GUARD + [
+        "git push", "git push origin", "git push -u origin", "git push --set-upstream origin", "git push*--force*",
+        "git push* -f*", "git push*+*", "git push*HEAD*", "git push* origin develop*", "git push* origin master*",
+        "git push* origin main*", "git push*:develop*", "git push*:master*", "git push*:main*", "git push*--all*",
+        "git push*--mirror*", "git push*--delete*", "git push* -d *", "git push*--tags*", "git push*--prune*",
+        "git pull*--rebase*", "git pull* -r*", "git pull*--force*",
+        "git switch -C*", "git switch * -C*", "git switch -f*", "git switch * -f*", "git switch*--force*",
+        "git switch*--discard-changes*", "git checkout -b * -f*", "git checkout*--force*"])
+    rules += deny(OTHER_DENY + SECRETS)
     # /abandon: delete a ticket branch started by mistake (-d refuses a branch with unmerged work; -D and -f stay
     # forbidden) and its ticket sheet, each time with my approval
-    rules += [("git branch -d *", "ask"), ("git branch -d -f*", "deny"), ("git branch -d * -f*", "deny"),
-              ("git branch -d *--force*", "deny"),
-              ("rm .git/opencode-tickets/*.md", "ask"), ("rm .git/opencode-tickets/* ?*", "deny"), ("rm *..*", "deny")]
-    rules += [(p, "deny") for p in OTHER_DENY + SECRETS]
+    rules += ask(["git branch -d *", "rm .git/opencode-tickets/*.md"])
+    rules += deny(["git branch -d -f*", "git branch -d * -f*", "git branch -d *--force*", "git branch -d * -D*",
+                   "rm .git/opencode-tickets/* ?*", "rm *..*"])
+    # A commit message is free text: one that mentions a password, a TOKEN variable or nuget.config is not a secret.
+    # Allowed after the secret rules, then refused again when the message would come from a file or a command
+    # (the command substitution rules come last, so they apply to every command of this agent).
+    rules += allow(["git commit -m *"])
+    rules += ask(["git commit -m *--amend*"])
+    rules += deny(["git commit -m *-F*", "git commit -m *--file*"] + SUBST)
     return rules
 
 
 def only(paths):
-    return [("*", "deny")] + [(p, "allow") for p in paths]
+    return [("*", "deny")] + allow(paths)
 
 
 BASE = [("webfetch", "deny"), ("websearch", "deny"), ("question", "allow")]
-
 NO_TASK = [("task", "deny")]
+SHEET = [("edit", only([TICKET_SHEETS]))]
+NO_EDIT = [("edit", "deny")]
 
 AGENTS = {
-    "analyst": [("edit", only([TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash([DETECT, STATE], [SSC_NAME]))] + MCP_WRITE_DENY,
-    "architect": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + [DETECT, LICENSES]))] + mcp_only([]),
-    "debugger": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT, BUILD_TEST]))] + MCP_WRITE_DENY + mcp_only(["kibana"]),
-    "reviewer": [("edit", only([TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + [DETECT, STATE, LICENSES, BUILD_TEST]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
-    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_INFO + DOTNET_RUN + FRONT_TEST + [DETECT, STATE, BUILD_TEST]))] + MCP_WRITE_DENY + mcp_only(["jira"]),
-    "release-writer": [("edit", "deny")] + BASE + NO_TASK + [("bash", read_only_bash([RELEASE]))] + MCP_RELEASE + mcp_only(["jira", "confluence"]),
-    "git": [("edit", only([TICKET_SHEETS]))] + BASE + [("task", only(["reviewer", "analyst"])), ("bash", git_bash())] + MCP_WRITE_DENY + mcp_only(["jira", "gitlab"]),
+    "analyst": SHEET + BASE + NO_TASK + [("bash", read_only_bash(after_secrets=[SSC_NAME]))] + MCP_WRITE_DENY,
+    "architect": NO_EDIT + BASE + NO_TASK + [("bash", read_only_bash())] + mcp_only([]),
+    "debugger": NO_EDIT + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD))]
+    + MCP_WRITE_DENY + mcp_only(["kibana"]),
+    "reviewer": SHEET + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD))]
+    + MCP_WRITE_DENY + mcp_only(["jira"]),
+    "test-writer": [("edit", only(TEST_PATHS + [TICKET_SHEETS]))] + BASE + NO_TASK
+    + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    "release-writer": NO_EDIT + BASE + NO_TASK + [("bash", read_only_bash())] + MCP_RELEASE
+    + mcp_only(["jira", "confluence"]),
+    "git": SHEET + BASE + [("task", only(["reviewer", "analyst"])), ("bash", git_bash())] + MCP_WRITE_DENY
+    + mcp_only(["jira", "gitlab"]),
     # build without the MCP tools (smaller requests); edit and bash stay as for build (global rules of opencode.json)
     "dev": [("task", only(["test-writer", "debugger", "architect"]))] + mcp_only([]),
 }
-
 
 TOOL_KEYS = {"edit", "bash", "webfetch", "websearch", "question", "task"}
 
@@ -161,15 +200,16 @@ def q(key):
     return '"' + key.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def flow(rules):
+def check_dupes(rules):
     keys = [k for k, _ in rules]
     dupes = {k for k in keys if keys.count(k) > 1}
     if dupes:
         sys.exit(f"duplicate keys: {sorted(dupes)}")
-    parts = []
-    for key, value in rules:
-        parts.append(f"{q(key)}: {flow(value) if isinstance(value, list) else value}")
-    return "{ " + ", ".join(parts) + " }"
+
+
+def flow(rules):
+    check_dupes(rules)
+    return "{ " + ", ".join(f"{q(k)}: {flow(v) if isinstance(v, list) else v}" for k, v in rules) + " }"
 
 
 for name, rules in AGENTS.items():
@@ -185,10 +225,7 @@ for name, rules in AGENTS.items():
 # ---------- opencode.snippet.json (merged by hand into ~/.config/opencode/opencode.json) ----------
 
 def as_dict(rules):
-    keys = [k for k, _ in rules]
-    dupes = {k for k in keys if keys.count(k) > 1}
-    if dupes:
-        sys.exit(f"duplicate keys: {sorted(dupes)}")
+    check_dupes(rules)
     return {k: as_dict(v) if isinstance(v, list) else v for k, v in rules}
 
 
@@ -198,27 +235,21 @@ SNIPPET = as_dict([
     ("$schema", "https://opencode.ai/config.json"),
     ("agent", [
         ("build", SAMPLING),
-        ("plan", SAMPLING + [("permission", [("bash", read_only_bash(DOTNET_INFO + [DETECT, LICENSES]))])]),
+        ("general", SAMPLING),
+        ("explore", SAMPLING),
+        ("plan", SAMPLING + [("permission", [("bash", read_only_bash())])]),
     ]),
-    # Every agent, built-in ones included (build, plan, general, explore): no secrets read through the shell,
-    # destructive git asks first, and MCP write tools are hidden (read-only on Jira, Confluence, GitLab, Sonar, Fortify;
-    # release-writer re-allows its Confluence page with its own rules, which come after these ones).
+    # Every agent, built-in ones included (build, plan, general, explore): no secret read through the shell or the
+    # read tool, destructive git asks first, and MCP write tools are hidden (read-only on Jira, Confluence, GitLab,
+    # Sonar, Fortify; release-writer re-allows its Confluence page with its own rules, which come after these ones).
     ("permission", [
         ("question", "allow"),
         ("skill", [("*", "allow")]),
-        # NOTE: `export`, `declare`, `readonly`, `typeset`, `local` parse as tree-sitter `declaration_command`,
-        # which OpenCode's bash scanner does NOT match, so the `export -p*` / `declare -*` denies below never fire
-        # (verified against tree-sitter-bash 0.25). They are kept as belt-and-suspenders in case the parser changes;
-        # the real defense against an environment dump is the AGENTS.md "Speed" rule. `env`, `printenv`, `set`,
-        # `compgen` are ordinary commands and ARE blocked here.
-        ("bash", [("env", "deny"), ("env *", "deny"), ("printenv*", "deny"), ("set", "deny"), ("*zshenv*", "deny"),
-                  ("*zshrc*", "deny"), ("git push*", "ask"), ("git reset*", "ask"), ("git rebase*", "ask"),
-                  ("rm -rf*", "ask"), ("export -p*", "deny"), ("declare -p*", "deny"), ("declare -x*", "deny"),
-                  ("compgen*", "deny"), ("*echo *$*", "deny"), ("*printf *$*", "deny"), ("*artifactory_*", "deny"),
-                  ("*/.ssh/*", "deny"), ("*/.aws/*", "deny"), ("*.npmrc*", "deny"), ("*appsec-ci.env*", "deny")]
-                 + [(p, "deny") for p in SECRET_PROBES]),
-        # the read tool too: the user NuGet configuration holds the Artifactory credentials
-        ("read", [("*/.nuget/*", "deny")]),
+        ("bash", ask(["git push*", "git reset*", "git rebase*", "rm -rf*"]) + deny(SECRETS)),
+        # the read tool sees paths relative to the repository root (../../.nuget/NuGet/NuGet.Config)
+        ("read", deny(["*/.nuget/NuGet/*", "*?u?et.?onfig", "*appsec-ci.env", "*opencode.json",
+                       "*opencode/auth.json", "*/.ssh/*", "*/.aws/*", "*/.z*", "*zshrc*", "*.netrc",
+                       "*.git-credentials", "*.npmrc"])),
     ] + MCP_WRITE_DENY),
 ])
 with open("opencode.snippet.json", "w") as out:

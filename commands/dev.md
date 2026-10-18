@@ -4,13 +4,13 @@ agent: dev
 ---
 Arguments: "$ARGUMENTS"
 Workflow state (one fetch, then the state of the branch and its ticket sheet):
-!`sh ~/.config/opencode/scripts/workflow-state.sh --sheet`
+[[run workflow-state.sh --sheet]]
 Project detection:
-!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+[[run detect-project-type.sh]]
 
 Implement ONE step of the ticket plan, with its tests. Never commit or push: that is /ship.
 
-Tools over shell: read files with the `read` tool, search with `grep` and `glob`, change files with `edit`/`write`. Use the shell only for the build, the tests, git reads and the `~/.config/opencode/scripts` commands. Never inspect the environment or the NuGet configuration (`cat`/`grep` on `nuget.config`, `~/.nuget`, `.env`, `~/.zshenv`, `env`, `export`, `printenv`): a failed `dotnet restore` (401/403/NU1301) or a missing `dotnet` is an environment problem I fix outside OpenCode — say so in one line and stop, never work around it.
+Tools over shell: read files with the `read` tool, search with `grep` and `glob`, change files with `edit`/`write`. Use the shell only for the build, the tests, git reads and the `~/.config/opencode/scripts` commands. Never inspect the environment or the NuGet configuration (`cat`/`grep` on `nuget.config`, `~/.nuget`, `.env`, `~/.zshenv`, `env`, `export`, `printenv`): a failed `dotnet restore` (401/403/NU1301), a missing `dotnet` or an "ENVIRONMENT PROBLEM" line of a script is an environment problem I fix outside OpenCode: say so in one line and stop, never work around it.
 
 ## Step 0 - Before starting
 - If the "Branch vs its remote copy" line above says "behind", commits were pushed from another computer (for example from Rider on my Mac): say "Lance /sync d'abord" and stop, unless I answer that I want to continue.
@@ -49,7 +49,7 @@ A step written "(test d'abord)" fixes a bug: before changing the code, invoke th
 Only this step. Smallest change that does it, mirroring the existing code and the reference examples. Code comments and log messages in English. No unrelated refactoring, renaming or reformatting.
 
 ## Step 6 - Build
-Run the build command (AGENTS.md "Build & test", otherwise the detection above), quietly: `dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60` for .NET. Fix compilation errors with the rules of the skill `build-fix`, at most 3 rounds. A legacy .NET Framework project that cannot build on this machine (.NET Framework needs Windows): say so and continue. For a step after the first one of this run, send `date "+%Y-%m-%d %H:%M"` together with the build (date of step 8).
+Run the build command (AGENTS.md "Build & test", otherwise the detection above), quietly: `sh ~/.config/opencode/scripts/build-test.sh --build-only [<solution or project>]` for .NET (errors only, then "BUILD: OK" or "BUILD: FAILED"). Fix compilation errors with the rules of the skill `build-fix`, at most 3 rounds. A legacy .NET Framework project that cannot build on this machine (.NET Framework needs Windows): say so and continue. For a step after the first one of this run, send `date "+%Y-%m-%d %H:%M"` together with the build (date of step 8).
 
 ## Step 7 - Tests of this step
 Unless the step has no testable behavior (pure configuration, documentation) or my directives say otherwise, invoke the `test-writer` subagent with the task tool and this prompt (fill the placeholders):

@@ -6,10 +6,10 @@ subtask: false
 Merge request to review: "$1" (target branch given: "$2")
 
 Project detection (this repository):
-!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+[[run detect-project-type.sh]]
 
 Merge request, fetched without touching my working tree:
-!`sh ~/.config/opencode/scripts/review-target.sh '$1' '$2'`
+[[run review-target.sh '$1' '$2']]
 
 Review this merge request of a teammate. It is someone else's code: write nothing anywhere (no file, no ticket sheet, nothing in GitLab or Jira). This answer format replaces your usual output format.
 

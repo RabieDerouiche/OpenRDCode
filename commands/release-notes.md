@@ -4,13 +4,13 @@ agent: release-writer
 subtask: false
 ---
 Arguments: "$ARGUMENTS"
-Current repository: !`git rev-parse --show-toplevel`
-Current master (after fetch): !`git fetch -q origin master 2>/dev/null; git log -1 --format='%H %cs %s' origin/master`
+Current repository and its production branch (after fetch):
+[[run release-commits.sh . --head]]
 
 ## Step 0 - Mode
 Use the section "Release groups" of AGENTS.md (already in your instructions: do not read the file).
 - If the first argument is the name of a group there: GROUP MODE with that group (the optional second argument is a date `YYYY-MM-DD`).
-- Otherwise, if there are no arguments and the current repository path above is listed in a group: ask me with the question tool: "Release note du groupe <group>" (recommandé) / "Seulement ce dépôt". 
+- Otherwise, if there are no arguments and the "Repository path" above is listed in a group: ask me with the question tool: "Release note du groupe <group>" (recommandé) / "Seulement ce dépôt". 
 - Otherwise: SINGLE REPOSITORY MODE with the arguments as given.
 Say the mode in one line before anything else.
 

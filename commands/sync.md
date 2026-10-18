@@ -3,6 +3,6 @@ description: "Bring the current branch up to date: commit local work locally (no
 agent: git
 ---
 Workflow state (one fetch, then the state of the branch):
-!`sh ~/.config/opencode/scripts/workflow-state.sh`
+[[run workflow-state.sh]]
 
 Load the skill `sync-procedure` and follow it exactly, using the values above as its inputs.

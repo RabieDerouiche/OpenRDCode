@@ -1,6 +1,8 @@
 #!/bin/sh
 # Lists what changed on the production branch of one repository between two points (read-only).
 # Usage: release-commits.sh <repository path> [from: commit hash or YYYY-MM-DD] [to: commit or ref, default origin/master]
+#        release-commits.sh <repository path> --head   only the repository root and the production branch head (after
+#                                                      a fetch): the starting point of /release-notes
 # Output: repository name, resolved range, merged merge requests, commits, Jira keys, version changes.
 
 repo="$1"
@@ -22,6 +24,14 @@ name=$(basename "$(git rev-parse --show-toplevel)")
 prod="master"
 git fetch -q origin master >/dev/null 2>&1 || { prod="main"; git fetch -q origin main >/dev/null 2>&1; }
 [ -z "$to" ] && to="origin/$prod"
+
+if [ "$from" = "--head" ]; then
+  echo "Repository: $name"
+  echo "Repository path: $(git rev-parse --show-toplevel)"
+  echo "Production branch: origin/$prod"
+  echo "Production head (after fetch): $(git log -1 --format='%H %cs %s' "origin/$prod" 2>/dev/null || echo 'none')"
+  exit 0
+fi
 
 if ! to_hash=$(git rev-parse --verify --quiet "$to^{commit}"); then
   echo "Repository: $name"

@@ -3,9 +3,9 @@ description: "Handle the review comments on the merge request of this branch: re
 agent: build
 ---
 Workflow state (one fetch, then the state of the branch and its ticket sheet):
-!`sh ~/.config/opencode/scripts/workflow-state.sh --sheet`
+[[run workflow-state.sh --sheet]]
 Project detection:
-!`sh ~/.config/opencode/scripts/detect-project-type.sh`
+[[run detect-project-type.sh]]
 
 Handle the review comments on my merge request. Read-only on GitLab and every other system: never post a reply, resolve a discussion, approve or change anything there; I paste the replies myself. Never commit or push: /ship does. The ticket sheet is printed above: do not read it again.
 

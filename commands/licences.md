@@ -4,7 +4,7 @@ agent: architect
 subtask: false
 ---
 Result of `package-licenses.sh $ARGUMENTS`:
-!`sh ~/.config/opencode/scripts/package-licenses.sh '$ARGUMENTS'`
+[[run package-licenses.sh '$ARGUMENTS']]
 
 Answer in French from this result only, without any tool call:
 - One table: package, version, fichier, verdict (payant, frais de maintenance, AGPL, ou version gratuite à ne pas monter), à partir de quelle version, option gratuite. Paid packages first, then the transitive ones (with the `dotnet nuget why <solution or project> <package>` command to find which reference brings them), then the free versions not to upgrade.
