@@ -224,13 +224,28 @@
       "*SECRET*": "deny",
       "*CREDENTIAL*": "deny",
       "*API_KEY*": "deny",
-      "*APIKEY*": "deny"
+      "*APIKEY*": "deny",
+      "* /tmp/*": "deny",
+      "*=/tmp/*": "deny",
+      "*\"/tmp/*": "deny",
+      "*'/tmp/*": "deny",
+      "dotnet new console*": "deny",
+      "dotnet fsi*": "deny",
+      "dotnet script*": "deny",
+      "ilspycmd*": "deny",
+      "ildasm*": "deny",
+      "dotnet ildasm*": "deny",
+      "dotnet-ildasm*": "deny",
+      "monodis*": "deny",
+      "strings *": "deny"
     },
     "external_directory": {
-      "~/.nuget/packages/*": "allow"
+      "~/.nuget/packages/*": "allow",
+      "~/.config/opencode/skills/*": "allow"
     },
     "edit": {
-      "*/.nuget/*": "deny"
+      "../*": "deny",
+      "*/.config/opencode/skills/pattern-*": "allow"
     },
     "read": {
       "*/.nuget/NuGet/*": "deny",

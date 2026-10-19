@@ -234,3 +234,22 @@ add(["reviewer"], ["dotnet format", "dotnet format --include src/Foo.cs", "npx e
 add(["analyst", "architect", "release-writer"], ["npx eslint src/app"], "deny")
 add(["build", "dev"], ["dotnet format --include src/Foo.cs", "npx eslint --fix src/app/foo.ts", "npx prettier --write src/app/foo.ts"], "allow")
 add(["git"], ["git switch -c feature/ABC-5-fix-login origin/develop", "git commit -m \"fix: handle the --fix flag (ABC-5)\""], "allow")
+
+// ---------- /extract-pattern and /apply-pattern: no tool to look inside an assembly, writes stay in the repository ----------
+add(["build", "dev"], ["mkdir -p /tmp/apidump", "cd /tmp/apidump && dotnet new console", "dotnet new console -o apidump",
+  "dotnet run --project /tmp/apidump", "strings ~/.nuget/packages/inhouse.crypto/2.1.0/lib/net8.0/Inhouse.Crypto.dll",
+  "ilspycmd Inhouse.Crypto.dll", "dotnet fsi", "monodis Inhouse.Crypto.dll"], "deny")
+add(["build", "dev"], ["dotnet new classlib -o src/App.Archives", "dotnet package search Inhouse.Crypto --exact-match",
+  S + "pattern-skills.sh s3-archive", "git -C /home/dev/repos/source-api log --oneline -20 -- src/Archives"], "allow")
+add(RO, [S + "pattern-skills.sh"], "allow")
+editCase(["build", "dev"], "~/.config/opencode/skills/pattern-s3-archive-back/SKILL.md", "allow")
+editCase(["build", "dev"], "~/.config/opencode/skills/build-fix/SKILL.md", "deny")
+editCase(["build", "dev"], "/home/dev/repos/source-api/src/Archives/ArchiveService.cs", "deny")
+editCase(["build", "dev"], "/tmp/apidump/Program.cs", "deny")
+editCase(["build", "dev"], "src/Archives/ArchiveService.cs", "allow")
+editCase(["build", "dev"], ".git/opencode-tickets/ABC-1.md", "allow")
+readCase(ALL, "~/.config/opencode/skills/pattern-s3-archive-back/SKILL.md", "allow")
+readCase(["build", "dev"], "/home/dev/repos/source-api/src/Archives/ArchiveService.cs", "ask")
+editCase(["test-writer"], "~/.config/opencode/skills/pattern-s3-archive-back/SKILL.md", "deny")
+add(ALL, ["git diff -- src/tmp/x.cs", "git log --oneline -- wwwroot/tmp/"], "allow")
+add(["build", "dev"], ["dotnet new console -o \"/tmp/apidump\"", "dotnet publish -o=/tmp/out"], "deny")

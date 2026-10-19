@@ -8,6 +8,12 @@
 repo="$1"
 from="$2"
 to="$3"
+# A leading ~ typed by the user arrives quoted: expand it here
+# shellcheck disable=SC2088 # a literal ~/ is matched on purpose
+case "$repo" in
+  "~") repo=$HOME ;;
+  "~/"*) repo="$HOME/${repo#"~/"}" ;;
+esac
 
 if [ -z "$repo" ] || ! cd "$repo" 2>/dev/null; then
   echo "ERROR: repository folder not found: $repo"

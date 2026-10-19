@@ -4,7 +4,7 @@ Toutes les commandes que le pack te demande de lancer toi-même, à copier-colle
 
 ## Redémarrer OpenCode
 
-Après une modification d'`opencode.json`, du plugin, d'un agent, d'une commande ou d'un skill. Inutile après une modification de `~/.zshenv` : il est relu à chaque commande d'un agent.
+Après une modification d'`opencode.json`, du plugin, d'un agent, d'une commande ou d'un skill, et après un `/extract-pattern` pour que `/ticket` et `/dev` voient le nouveau skill. Inutile après une modification de `~/.zshenv` : il est relu à chaque commande d'un agent.
 ```sh
 opencode-web.sh stop && opencode-web.sh start
 ```

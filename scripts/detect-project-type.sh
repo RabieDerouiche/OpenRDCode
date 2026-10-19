@@ -15,7 +15,13 @@ for arg in "$@"; do
   esac
 done
 
-# Optional argument: path of the repository to analyze (default: current directory).
+# Optional argument: path of the repository to analyze (default: current directory). A leading ~ typed by the user is
+# expanded here: it arrives quoted, so the shell does not expand it.
+# shellcheck disable=SC2088 # a literal ~/ is matched on purpose
+case "$repo" in
+  "~") repo=$HOME ;;
+  "~/"*) repo="$HOME/${repo#"~/"}" ;;
+esac
 if [ -n "$repo" ]; then
   if ! cd "$repo" 2>/dev/null; then
     echo "Project type (auto-detected): unknown (folder not found: $repo)"

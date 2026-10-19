@@ -75,6 +75,10 @@ ENV_DUMP = ["env", "env *", "printenv*", "set", "compgen*", "*echo *$*", "*print
 # names and paths (reset-password, credentials/) stay usable.
 SECRET_NAMES = ["*PASSWORD*", "*PASSWD*", "*TOKEN*", "*SECRET*", "*CREDENTIAL*", "*API_KEY*", "*APIKEY*"]
 SECRETS = SECRET_FILES + ENV_DUMP + SECRET_NAMES
+# build and dev: never build a tool to look inside an assembly (reflection program in /tmp or a console project,
+# decompilers, `strings`): the API of a package comes from the existing calls and its XML documentation (AGENTS.md)
+DECOMPILE = ["* /tmp/*", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*", "dotnet new console*", "dotnet fsi*", "dotnet script*", "ilspycmd*", "ildasm*",
+             "dotnet ildasm*", "dotnet-ildasm*", "monodis*", "strings *"]
 
 # The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS)
 SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
@@ -247,11 +251,13 @@ SNIPPET = as_dict([
     ("permission", [
         ("question", "allow"),
         ("skill", [("*", "allow")]),
-        ("bash", ask(["git push*", "git reset*", "git rebase*", "rm -rf*"]) + deny(SECRETS)),
-        # the read tool sees paths relative to the repository root (../../.nuget/NuGet/NuGet.Config)
-        # the NuGet package cache: readable without asking (XML documentation of in-house packages), never written
-        ("external_directory", allow(["~/.nuget/packages/*"])),
-        ("edit", deny(["*/.nuget/*"])),
+        ("bash", ask(["git push*", "git reset*", "git rebase*", "rm -rf*"]) + deny(SECRETS + DECOMPILE)),
+        # Readable without asking: the NuGet package cache (XML documentation of in-house packages) and the skills
+        ("external_directory", allow(["~/.nuget/packages/*", "~/.config/opencode/skills/*"])),
+        # No agent writes outside the repository of its session (the edit tools see paths relative to the repository:
+        # ../ means outside), except /extract-pattern into a pattern skill
+        ("edit", deny(["../*"]) + allow(["*/.config/opencode/skills/pattern-*"])),
+        # the read tool sees paths relative to the repository root too (../../.nuget/NuGet/NuGet.Config)
         ("read", deny(["*/.nuget/NuGet/*", "*?u?et.?onfig", "*appsec-ci.env", "*opencode.json",
                        "*opencode/auth.json", "*/.ssh/*", "*/.aws/*", "*/.z*", "*zshrc*", "*.netrc",
                        "*.git-credentials", "*.npmrc"])),
