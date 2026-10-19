@@ -249,6 +249,9 @@ SNIPPET = as_dict([
         ("skill", [("*", "allow")]),
         ("bash", ask(["git push*", "git reset*", "git rebase*", "rm -rf*"]) + deny(SECRETS)),
         # the read tool sees paths relative to the repository root (../../.nuget/NuGet/NuGet.Config)
+        # the NuGet package cache: readable without asking (XML documentation of in-house packages), never written
+        ("external_directory", allow(["~/.nuget/packages/*"])),
+        ("edit", deny(["*/.nuget/*"])),
         ("read", deny(["*/.nuget/NuGet/*", "*?u?et.?onfig", "*appsec-ci.env", "*opencode.json",
                        "*opencode/auth.json", "*/.ssh/*", "*/.aws/*", "*/.z*", "*zshrc*", "*.netrc",
                        "*.git-credentials", "*.npmrc"])),

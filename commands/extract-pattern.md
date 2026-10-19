@@ -44,7 +44,7 @@ Skill structure:
    ## Recommended approach
    Which approach to use by default, and why.
    ## Prerequisites
-   Packages with the exact versions found in each source, target framework or framework version constraints. Mark in-house packages (from the company feed, e.g. Artifactory) as "interne" and keep their exact names: they are reused as is, never re-implemented.
+   Packages with the exact versions found in each source, target framework or framework version constraints. Mark in-house packages (from the company feed, e.g. Artifactory) as "interne" and keep their exact names: they are reused as is, never re-implemented. For each in-house package, list the types and members the source code uses, with their namespace and their signature as called (constructor and method parameters, return types), taken from the source code: /apply-pattern must never have to discover them.
    ## Files to create or modify
    One line per file, with its role.
    ## Code

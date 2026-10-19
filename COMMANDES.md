@@ -96,6 +96,23 @@ Le chargement du plugin (rien = pas d'erreur) :
 grep -i plugin ~/.local/share/opencode/log/opencode.log | grep -iE 'error|fail' | tail -10
 ```
 
+## Après un agent qui a dérapé
+
+Ce qu'il a laissé dans le dépôt (fichiers modifiés ou créés) :
+```sh
+git status --short
+```
+
+Ce qu'il a créé dans `/tmp` depuis 2 heures (à relire avant d'effacer quoi que ce soit) :
+```sh
+find /tmp -maxdepth 1 -newermt '-2 hours' -user "$USER" 2>/dev/null
+```
+
+Puis, pour chaque dossier de cette liste qui vient de lui (par exemple `/tmp/apidump`) :
+```sh
+rm -rf /tmp/apidump
+```
+
 ## Dans OpenCode (à taper dans une nouvelle session)
 
 L'environnement de build des agents :

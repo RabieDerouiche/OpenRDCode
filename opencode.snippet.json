@@ -226,6 +226,12 @@
       "*API_KEY*": "deny",
       "*APIKEY*": "deny"
     },
+    "external_directory": {
+      "~/.nuget/packages/*": "allow"
+    },
+    "edit": {
+      "*/.nuget/*": "deny"
+    },
     "read": {
       "*/.nuget/NuGet/*": "deny",
       "*?u?et.?onfig": "deny",
