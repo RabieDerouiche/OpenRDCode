@@ -5,6 +5,9 @@ agent: git
 Workflow state (one fetch, then the state of the branch, its ticket sheet and the other tickets):
 [[run workflow-state.sh --sheet --tickets]]
 
+My todo list, reminders (items overdue or due today):
+[[run todo.sh due]]
+
 Tell me where I am and get me to the next step as fast as possible. No review, no build, no full scan: read only what decides the next step. Everything about the tickets is printed above: never read a ticket sheet.
 
 The workflow: /daily → /ticket → /dev (one plan step at a time, with its tests) → /test → /check → /ship → /scans → fixes (/fortify-fix, /sonar-fix) → back to /check; when reviewers comment on the merge request: /mr → /check → /ship. /sync brings develop, or what I pushed from my Mac, into the branch.
@@ -36,7 +39,7 @@ The workflow: /daily → /ticket → /dev (one plan step at a time, with its tes
 13. Otherwise: next = "/daily".
 
 ## Step 3 - Answer and act
-Write at most 8 lines, in French; the branch state is part of "Où tu en es", no separate block. First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name. Then "Où tu en es" (branch, ticket link, plan <checked>/<total>, tests, last /check, push, pipeline, MR: only what exists; every pipeline and merge request is a markdown link with a short text, `[#<pipeline id>](<web_url>)`, `[!<iid>](<web_url>)`, never a bare URL or a bare id), the changes made outside OpenCode if any, one line "Autres tickets en cours : [<KEY>](<its Jira link>) - <title> (<branch>), ..." if any, and the AGENTS.md drift line if any: "AGENTS.md probablement à mettre à jour (<sections>) : /agents-md quand le ticket est livré".
+Write at most 8 lines, in French; the branch state is part of "Où tu en es", no separate block. First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name. Then "Où tu en es" (branch, ticket link, plan <checked>/<total>, tests, last /check, push, pipeline, MR: only what exists; every pipeline and merge request is a markdown link with a short text, `[#<pipeline id>](<web_url>)`, `[!<iid>](<web_url>)`, never a bare URL or a bare id), the changes made outside OpenCode if any, one line "Autres tickets en cours : [<KEY>](<its Jira link>) - <title> (<branch>), ..." if any, one line "Rappels : <the reminders as given>" if my todo list has some, and the AGENTS.md drift line if any: "AGENTS.md probablement à mettre à jour (<sections>) : /agents-md quand le ticket est livré".
 Then:
 - If the next step is an ACTION or a command, ask me with the question tool (header "Suite"): the next step first "(recommandé)", then up to 2 alternatives that make sense now (for example "/check" before "Livrer", "Cocher l'étape 2" and "/dev 3", or "Basculer sur <other KEY>"), and "Rien pour l'instant". A command option has the command itself as label, with its arguments (`/dev 3`, `/dev corrections`, `/check`, `/scans`, `/mr`, `/ticket ABC-123`) and what it will do as description. An option about a ticket always names it with its title, for example "Reprendre ABC-123 - Export PDF des contrats", and its description says in one line what the ticket is about (first sentence of its "Résumé") and where it stands (for example "étape 3/5, pas encore livré"). Then run the chosen ACTION right away:
   - "Synchroniser": load the skill `sync-procedure` and follow it.

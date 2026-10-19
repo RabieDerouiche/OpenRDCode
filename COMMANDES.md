@@ -59,7 +59,7 @@ opencode debug config > /tmp/opencode-config.json && grep -n '"shell"' /tmp/open
 
 Les agents du pack se chargent sans erreur (un fichier d'agent invalide affiche son erreur) :
 ```sh
-for a in analyst architect debugger dev doc-writer git release-writer reviewer test-writer; do opencode debug agent "$a" > /dev/null && echo "$a OK"; done
+for a in analyst architect debugger dev doc-writer git release-writer reviewer test-writer todo; do opencode debug agent "$a" > /dev/null && echo "$a OK"; done
 ```
 
 Le shell que les agents utilisent vraiment (après le redémarrage et une première commande d'agent) :
@@ -156,6 +156,20 @@ ls ~/.config/opencode/skills/
 rm -r ~/.config/opencode/skills/pattern-nom-back
 ```
 
+## Une commande qui met longtemps à démarrer
+
+Le `git fetch` que font les commandes au démarrage, dans le dépôt, avec son temps : `0` = OK, `124` = GitLab n'a pas répondu en 30 s (VPN, réseau), un autre code = refus ou identifiants à régler :
+```sh
+time sh ~/.config/opencode/scripts/fetch.sh -q --no-tags origin; echo "code $?"
+```
+
+## Todo list
+
+Ta todo, telle qu'elle est enregistrée (tu peux aussi la modifier avec un éditeur : une ligne par tâche) :
+```sh
+cat ~/.config/opencode/todo.md
+```
+
 ## Fiche ticket
 
 Le plan de la fiche de la branche courante, avec les étapes cochées. À taper dans le dépôt :
@@ -227,6 +241,23 @@ Corriger les points du dernier `/check` sans nouvelle review (tous, ou seulement
 Refaire une review complète même après un premier `/check` :
 ```text
 /check complet
+```
+
+Ta todo : la voir, ajouter une tâche (l'échéance est lue dans le texte), la marquer faite, en supprimer une, voir seulement les rappels du jour :
+```text
+/todo
+```
+```text
+/todo Relancer Paul pour la MEP vendredi
+```
+```text
+/todo fait 3
+```
+```text
+/todo suppr 3
+```
+```text
+/todo rappels
 ```
 
 Écrire ou mettre à jour la documentation du dépôt dans `docs/` (tout, ou un sujet : `architecture`, `api`, `configuration`, `integrations`, `donnees`, `exploitation`) :

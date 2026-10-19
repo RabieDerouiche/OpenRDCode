@@ -6,6 +6,9 @@ subtask: false
 Scope given: "$ARGUMENTS"
 Today: !`date +%Y-%m-%d`
 
+My personal todo list (/todo, kept outside Jira):
+[[run todo.sh list]]
+
 Build my morning brief with the Jira and GitLab MCP tools. "Me" is the authenticated user.
 Completeness matters more than brevity for this command: list every item returned by the queries, never cut a list to a few rows, and give the total count in each section heading.
 
@@ -57,6 +60,9 @@ Match merge requests to tickets with that key.
 # Daily - <date> - <scope>
 One line: `Sprint <name> : J-<working days left> (fin le <dd/mm>) - mes tickets : <done>/<total> terminés`, plus remaining story points if the tickets have them.
 
+## Ma todo (<n>)
+Only when my todo list above has items: its items as they are (number, due date, text), overdue first, as a short list. Then go on with section 1.
+
 ## 1. Mon sprint (<n>)
 Groups in this order: "En cours", "En revue / test" (statuses after development and before Done), "À faire". Inside a group, keep the sprint rank order.
 Table: Ticket (link), Type, Titre, Statut, Prio, MR (link + pipeline: ✅ success, ❌ failed, ⏳ running or pending, - none), Signal.
@@ -76,6 +82,7 @@ Table: Ticket (link), Type, Titre, Statut, Prio, Dernière MAJ, Signal. If there
 
 ## 6. Plan du jour
 3 to 5 numbered actions, one line each, with the link and the command to use when one applies. Order:
+0. The items of my todo list that are overdue or due today (`/todo fait <n>` once done).
 1. My merge requests with a failed pipeline (`/scans` on that branch tells which job failed) or conflicts with develop (`/sync`).
 2. Reviews waiting for me: they block teammates (`/review !<iid>` in a session on that project).
 3. Unresolved discussions on my merge requests (`/mr` on that branch).

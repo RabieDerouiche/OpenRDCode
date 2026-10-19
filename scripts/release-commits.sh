@@ -5,6 +5,7 @@
 #                                                      a fetch): the starting point of /release-notes
 # Output: repository name, resolved range, merged merge requests, commits, Jira keys, version changes.
 
+here=$(cd "$(dirname "$0")" && pwd)
 repo="$1"
 from="$2"
 to="$3"
@@ -26,16 +27,31 @@ fi
 
 name=$(basename "$(git rev-parse --show-toplevel)")
 
-# Production branch: origin/master, otherwise origin/main
+# Production branch: origin/master, otherwise origin/main. The fetch never asks for credentials and gives up after
+# 30 s (fetch.sh): the head is then the one of the last fetch, and the output says so.
 prod="master"
-git fetch -q origin master >/dev/null 2>&1 || { prod="main"; git fetch -q origin main >/dev/null 2>&1; }
+if ! git rev-parse -q --verify refs/remotes/origin/master >/dev/null && git rev-parse -q --verify refs/remotes/origin/main >/dev/null; then
+  prod="main"
+fi
+fetched="after fetch"
+sh "$here/fetch.sh" -q origin "$prod" 2>/dev/null
+status=$?
+if [ "$status" = 124 ]; then
+  fetched="as of the last fetch: GitLab did not answer within 30 s"
+elif [ "$status" != 0 ]; then
+  if [ "$prod" = master ] && sh "$here/fetch.sh" -q origin main 2>/dev/null; then
+    prod="main"
+  else
+    fetched="as of the last fetch: the fetch failed"
+  fi
+fi
 [ -z "$to" ] && to="origin/$prod"
 
 if [ "$from" = "--head" ]; then
   echo "Repository: $name"
   echo "Repository path: $(git rev-parse --show-toplevel)"
   echo "Production branch: origin/$prod"
-  echo "Production head (after fetch): $(git log -1 --format='%H %cs %s' "origin/$prod" 2>/dev/null || echo 'none')"
+  echo "Production head ($fetched): $(git log -1 --format='%H %cs %s' "origin/$prod" 2>/dev/null || echo 'none')"
   exit 0
 fi
 

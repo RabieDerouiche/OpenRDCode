@@ -329,3 +329,15 @@ tool("doc-writer", "jira_get_issue", "allow")
 tool("doc-writer", "jira_create_issue", "deny")
 tool("doc-writer", "gitlab_get_merge_request", "deny")
 taskCase("doc-writer", "general", "deny")
+
+// ---------- /todo: the plugin runs todo.sh; any agent may add an item when I ask in plain words; the todo agent has no tool ----------
+add(ALL, [S + "todo.sh add \"Relancer Paul pour la MEP vendredi\"", S + "todo.sh", S + "todo.sh due",
+  S + "todo.sh add \"Point avec l'équipe après-demain\""], "allow")
+add(["todo"], ["ls", "git status", S + "todo.sh", "cat src/Foo.cs"], "deny")
+readCase(["todo"], "src/Foo.cs", "deny")
+editCase(["todo"], "src/Foo.cs", "deny")
+taskCase("todo", "general", "deny")
+tool("todo", "jira_get_issue", "deny")
+tool("todo", "jira_create_issue", "deny")
+// every script fetch goes through fetch.sh (bounded, never asks for credentials)
+add(ALL, [S + "workflow-state.sh --sheet", S + "fetch.sh -q --no-tags origin"], "allow")

@@ -66,11 +66,17 @@ find_base() {
 }
 find_base
 
+# The fetch never asks for credentials and gives up after 30 s (fetch.sh): the remote-tracking branches are then those
+# of the last fetch, and the line below says so
 fetch_failed() {
-  echo "Fetch: FAILED (offline, or GitLab credentials to fix in the Mac Terminal)"
+  if [ "$1" = 124 ]; then
+    echo "Fetch: TIMEOUT (GitLab did not answer within 30 s: VPN or network); remote branches as of the last fetch"
+  else
+    echo "Fetch: FAILED (offline, or GitLab credentials to fix in the Mac Terminal); remote branches as of the last fetch"
+  fi
 }
 if [ "$fetch" = all ] || { [ "$fetch" = branch ] && [ -z "$base" ]; }; then
-  git fetch -q --no-tags origin 2>/dev/null || fetch_failed
+  sh "$here/fetch.sh" -q --no-tags origin 2>/dev/null || fetch_failed $?
   find_base
 elif [ "$fetch" = branch ]; then
   # The base branch, and the remote copy of the current branch if it exists: a pattern that matches nothing is not
@@ -79,7 +85,7 @@ elif [ "$fetch" = branch ]; then
   case "$upstream" in origin/*) remote_name=${upstream#origin/} ;; esac
   set -- "+refs/heads/${base#origin/}:refs/remotes/$base"
   [ -n "$remote_name" ] && set -- "$@" "+refs/heads/$remote_name*:refs/remotes/origin/$remote_name*"
-  git fetch -q --no-tags origin "$@" 2>/dev/null || fetch_failed
+  sh "$here/fetch.sh" -q --no-tags origin "$@" 2>/dev/null || fetch_failed $?
 fi
 
 key=$(printf '%s' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -1)

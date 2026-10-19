@@ -17,6 +17,7 @@ GIT_CONFIG_KEY_0=core.quotePath
 GIT_CONFIG_VALUE_0=false
 export GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 
+here=$(cd "$(dirname "$0")" && pwd)
 arg=$1
 target=${2#origin/}
 if [ -z "$arg" ]; then
@@ -55,12 +56,15 @@ find_base() {
   done
 }
 
-# Fetches one refspec; on failure, says why without printing the remote URL (it may hold credentials)
+# Fetches one refspec (never asks for credentials, gives up after 30 s: fetch.sh); on failure, says why without
+# printing the remote URL (it may hold credentials)
 fetch() {
-  if ! err=$(git fetch -q --no-tags origin "$1" 2>&1); then
+  if ! err=$(sh "$here/fetch.sh" -q --no-tags origin "$1" 2>&1); then
     case "$err" in
       *"couldn't find remote ref"*|*"not our ref"*|*"no such ref"*)
         echo "No revision: $2 not found on origin (wrong number or name, or another repository)." ;;
+      *"no answer from the remote"*)
+        echo "No revision: GitLab did not answer within 30 s (VPN or network): try again." ;;
       *)
         echo "No revision: the fetch failed (offline, or GitLab credentials to fix in the Mac Terminal)." ;;
     esac

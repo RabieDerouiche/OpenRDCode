@@ -217,6 +217,8 @@ AGENTS = {
     + mcp_only(["jira", "gitlab"]),
     # build without the MCP tools (smaller requests); edit and bash stay as for build (global rules of opencode.json)
     "dev": [("task", only(["test-writer", "debugger", "architect"]))] + mcp_only([]),
+    # /todo: the plugin runs the script and shows its result; the agent only answers, with no tool at all
+    "todo": [("*", "deny")],
 }
 
 TOOL_KEYS = {"edit", "read", "bash", "webfetch", "websearch", "question", "task"}
