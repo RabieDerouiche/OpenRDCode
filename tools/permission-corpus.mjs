@@ -253,3 +253,32 @@ readCase(["build", "dev"], "/home/dev/repos/source-api/src/Archives/ArchiveServi
 editCase(["test-writer"], "~/.config/opencode/skills/pattern-s3-archive-back/SKILL.md", "deny")
 add(ALL, ["git diff -- src/tmp/x.cs", "git log --oneline -- wwwroot/tmp/"], "allow")
 add(["build", "dev"], ["dotnet new console -o \"/tmp/apidump\"", "dotnet publish -o=/tmp/out"], "deny")
+
+// ---------- package facts come from package-refs.sh: nothing under ~/.nuget/packages, no .dll or .nupkg (build, dev) ----------
+add(["build", "dev"], ["ls ~/.nuget/packages/inhouse.crypto/2.1.0/lib/net8.0", "ls -la /home/dev/.nuget/packages/inhouse.crypto",
+  "find ~/.nuget/packages -name \"*.dll\"", "find / -name Inhouse.Crypto.dll 2>/dev/null", "ls bin/Debug/net8.0/*.dll",
+  "unzip -l ~/.nuget/packages/inhouse.crypto/2.1.0/inhouse.crypto.2.1.0.nupkg",
+  "cat ~/.nuget/packages/inhouse.crypto/2.1.0/inhouse.crypto.nuspec", "grep -a EncryptAsync src/bin/Debug/net8.0/Inhouse.Crypto.dll",
+  "ls /tmp", "mktemp -d", "dotnet tool run ilspycmd Inhouse.Crypto.dll", "dotnet tool install -g ilspycmd",
+  "dotnet ilspy Inhouse.Crypto.dll", "rm -rf ~/.nuget/packages", "rm -rf ~/.nuget/packages/",
+  "dotnet nuget push bin/Release/App.1.0.0.nupkg"], "deny")
+add(["build", "dev"], ["rm -rf /home/dev/.nuget/packages/inhouse.lib/1.2.0", "rm -r ~/.nuget/packages/inhouse.lib/1.2.0",
+  "dotnet run --project src/Api", "dotnet run", "dotnet tool install dotnet-ef", "dotnet tool update -g dotnet-ef",
+  "cd /tmp"], "ask")
+add(["build", "dev"], [S + "package-refs.sh", S + "package-refs.sh /home/dev/repos/source-api",
+  S + "pattern-source.sh /home/dev/repos/source-api 'DNA-1234 back'", "dotnet tool restore",
+  "dotnet tool restore && dotnet ef migrations add AddArchives --project src/Infra --startup-project src/Api",
+  "dotnet restore --force --no-cache", "dotnet new xunit -o tests/App.Archives.Tests",
+  "dotnet add src/Infra/Infra.csproj package Inhouse.Crypto --version 2.1.0",
+  "git log --branches --remotes -E -i --grep='DNA-1234' --format=%H"], "allow")
+add(RO, [S + "package-refs.sh", S + "pattern-source.sh . ''"], "allow")
+readCase(ALL, "~/.nuget/packages/inhouse.crypto/2.1.0/lib/net8.0/Inhouse.Crypto.xml", "allow")
+editCase(["build", "dev"], "~/.nuget/packages/inhouse.crypto/2.1.0/lib/net8.0/Inhouse.Crypto.xml", "deny")
+// read-only agents: no browsing of the package cache either (package-refs.sh gives what they need); the debugger may
+// still check the assemblies of bin/ (FileLoadException)
+add(["reviewer", "test-writer", "analyst", "architect", "release-writer"], ["ls ~/.nuget/packages/inhouse.crypto",
+  "find ~/.nuget/packages -name \"*.xml\"", "cat ~/.nuget/packages/inhouse.crypto/2.1.0/inhouse.crypto.nuspec",
+  "find . -name \"*.dll\"", "ls src/bin/Debug/net8.0/*.dll"], "deny")
+add(["debugger"], ["find . -name \"Inhouse.Crypto.dll\"", "ls src/bin/Debug/net8.0/*.dll"], "allow")
+add(["plan"], ["ls ~/.nuget/packages", "find ~/.nuget/packages -name \"*.dll\""], "deny")
+add(["plan"], ["git log --oneline -5", S + "package-refs.sh"], "allow")

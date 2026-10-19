@@ -171,7 +171,10 @@
           "*SECRET*": "deny",
           "*CREDENTIAL*": "deny",
           "*API_KEY*": "deny",
-          "*APIKEY*": "deny"
+          "*APIKEY*": "deny",
+          "*.nuget/packages*": "deny",
+          "*.dll*": "deny",
+          "*.nupkg*": "deny"
         }
       }
     }
@@ -186,6 +189,9 @@
       "git reset*": "ask",
       "git rebase*": "ask",
       "rm -rf*": "ask",
+      "dotnet run*": "ask",
+      "dotnet tool install*": "ask",
+      "dotnet tool update*": "ask",
       "*?u?et.?onfig*": "deny",
       "*.nuget/NuGet*": "deny",
       "*/.z*": "deny",
@@ -226,18 +232,23 @@
       "*API_KEY*": "deny",
       "*APIKEY*": "deny",
       "* /tmp/*": "deny",
+      "* /tmp": "deny",
       "*=/tmp/*": "deny",
       "*\"/tmp/*": "deny",
       "*'/tmp/*": "deny",
+      "mktemp*": "deny",
+      "*.nuget/packages*": "deny",
+      "*.dll*": "deny",
+      "*.nupkg*": "deny",
       "dotnet new console*": "deny",
       "dotnet fsi*": "deny",
       "dotnet script*": "deny",
-      "ilspycmd*": "deny",
-      "ildasm*": "deny",
-      "dotnet ildasm*": "deny",
-      "dotnet-ildasm*": "deny",
+      "*ilspy*": "deny",
+      "*ildasm*": "deny",
       "monodis*": "deny",
-      "strings *": "deny"
+      "strings *": "deny",
+      "rm -rf *.nuget/packages/?*": "ask",
+      "rm -r *.nuget/packages/?*": "ask"
     },
     "external_directory": {
       "~/.nuget/packages/*": "allow",

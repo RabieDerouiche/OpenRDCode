@@ -75,10 +75,17 @@ ENV_DUMP = ["env", "env *", "printenv*", "set", "compgen*", "*echo *$*", "*print
 # names and paths (reset-password, credentials/) stay usable.
 SECRET_NAMES = ["*PASSWORD*", "*PASSWD*", "*TOKEN*", "*SECRET*", "*CREDENTIAL*", "*API_KEY*", "*APIKEY*"]
 SECRETS = SECRET_FILES + ENV_DUMP + SECRET_NAMES
-# build and dev: never build a tool to look inside an assembly (reflection program in /tmp or a console project,
-# decompilers, `strings`): the API of a package comes from the existing calls and its XML documentation (AGENTS.md)
-DECOMPILE = ["* /tmp/*", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*", "dotnet new console*", "dotnet fsi*", "dotnet script*", "ilspycmd*", "ildasm*",
-             "dotnet ildasm*", "dotnet-ildasm*", "monodis*", "strings *"]
+# build and dev: never look inside a package or build a tool to look inside an assembly (reflection program in /tmp
+# or a console project, decompilers, `strings`). What the agents need about packages is printed by package-refs.sh
+# (in-house or not, frameworks, XML documentation path), the API comes from the existing calls (AGENTS.md).
+DECOMPILE = ["* /tmp/*", "* /tmp", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*", "mktemp*", "*.nuget/packages*", "*.dll*",
+             "*.nupkg*", "dotnet new console*", "dotnet fsi*", "dotnet script*", "*ilspy*", "*ildasm*", "monodis*",
+             "strings *"]
+# ...except deleting one package version from the cache, which build-fix may ask for (a package republished with the
+# same version): asked each time, the whole cache stays refused
+CACHE_CLEAN = ["rm -rf *.nuget/packages/?*", "rm -r *.nuget/packages/?*"]
+# build and dev: running a program or installing a tool asks first (a reflection program is run with dotnet run)
+RUN_ASK = ["dotnet run*", "dotnet tool install*", "dotnet tool update*"]
 
 # The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS)
 SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
@@ -127,11 +134,16 @@ def mcp_only(keep):
     return [(p, "deny") for server, patterns in MCP_SERVERS.items() if server not in keep for p in patterns]
 
 
-def read_only_bash(extra_allows=(), after_secrets=()):
+# Read-only agents never browse the package cache or look at assemblies either (their read allows would let them):
+# package-refs.sh gives what they need. Not for the debugger, which may check the assemblies of bin/ (FileLoadException).
+PACKAGE_GUARD = ["*.nuget/packages*", "*.dll*", "*.nupkg*"]
+
+
+def read_only_bash(extra_allows=(), after_secrets=(), package_guard=True):
     rules = [("*", "deny")]
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + list(extra_allows))
     rules += REDIRECT
-    rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS)
+    rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS + (PACKAGE_GUARD if package_guard else []))
     rules += allow(after_secrets)
     return rules
 
@@ -182,7 +194,7 @@ NO_EDIT = [("edit", "deny")]
 AGENTS = {
     "analyst": SHEET + BASE + NO_TASK + [("bash", read_only_bash(after_secrets=[SSC_NAME]))] + MCP_WRITE_DENY,
     "architect": NO_EDIT + BASE + NO_TASK + [("bash", read_only_bash())] + mcp_only([]),
-    "debugger": NO_EDIT + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD))]
+    "debugger": NO_EDIT + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD, package_guard=False))]
     + MCP_WRITE_DENY + mcp_only(["kibana"]),
     "reviewer": SHEET + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS))]
     + MCP_WRITE_DENY + mcp_only(["jira"]),
@@ -251,7 +263,8 @@ SNIPPET = as_dict([
     ("permission", [
         ("question", "allow"),
         ("skill", [("*", "allow")]),
-        ("bash", ask(["git push*", "git reset*", "git rebase*", "rm -rf*"]) + deny(SECRETS + DECOMPILE)),
+        ("bash", ask(["git push*", "git reset*", "git rebase*", "rm -rf*"] + RUN_ASK) + deny(SECRETS + DECOMPILE)
+         + ask(CACHE_CLEAN)),
         # Readable without asking: the NuGet package cache (XML documentation of in-house packages) and the skills
         ("external_directory", allow(["~/.nuget/packages/*", "~/.config/opencode/skills/*"])),
         # No agent writes outside the repository of its session (the edit tools see paths relative to the repository:

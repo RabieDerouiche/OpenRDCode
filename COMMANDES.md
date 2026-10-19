@@ -67,6 +67,16 @@ Le shell que les agents utilisent vraiment (après le redémarrage et une premi�
 grep 'shell tool using shell' ~/.local/share/opencode/log/opencode.log | tail -1
 ```
 
+Ce que `/extract-pattern` et `/apply-pattern` savent des packages d'un dépôt : internes ou nuget.org, versions, framework de chaque projet, frameworks livrés et documentation XML des packages internes. Remplace le chemin par celui du dépôt :
+```sh
+sh ~/.config/opencode/scripts/package-refs.sh /chemin/du/depot
+```
+
+Ce que `/extract-pattern` voit du dépôt source pour un ticket : branche extraite comparée à develop, commits et fichiers de la MR. Remplace le chemin et la clé :
+```sh
+sh ~/.config/opencode/scripts/pattern-source.sh /chemin/du/depot/source ABC-123
+```
+
 ## Logs d'OpenCode
 
 Le fichier est `~/.local/share/opencode/log/opencode.log` (s'il n'existe pas : `opencode debug paths`, ligne `log`).
@@ -89,6 +99,11 @@ grep 'message=evaluated' ~/.local/share/opencode/log/opencode.log | grep 'action
 Les commandes qui t'ont demandé une validation :
 ```sh
 grep 'message=evaluated' ~/.local/share/opencode/log/opencode.log | grep 'action.action=ask' | tail -20
+```
+
+Les 40 dernières commandes shell des agents, une par ligne (la commande suit `pattern=`, la décision suit `action.action=`). C'est ce qu'il faut m'envoyer quand un agent tourne en rond :
+```sh
+grep 'message=evaluated' ~/.local/share/opencode/log/opencode.log | grep 'permission=bash' | tail -40
 ```
 
 Le chargement du plugin (rien = pas d'erreur) :
@@ -120,6 +135,21 @@ ls -la -- './~'
 S'il existe, récupère d'abord le skill qu'il contient (`./~/.config/opencode/skills/pattern-…/SKILL.md`), puis supprime ce dossier, toujours avec `./` et les guillemets :
 ```sh
 rm -r -- './~'
+```
+
+Un skill `pattern-…` raté, créé par un `/extract-pattern` qui a dérapé : à supprimer avant de relancer, sinon le prochain `/extract-pattern` du même nom l'enrichit au lieu de repartir de zéro. La liste des skills, puis la suppression (remplace le nom) :
+```sh
+ls ~/.config/opencode/skills/
+```
+```sh
+rm -r ~/.config/opencode/skills/pattern-nom-back
+```
+
+## Avant un /extract-pattern
+
+L'agent lit les fichiers de la branche extraite du dépôt source, sans fetch : s'il te signale que le développement n'y est pas, ou que la branche est en retard sur develop, mets le dépôt source sur develop à jour (git refuse de changer de branche si une modification non commitée est en conflit, et `--ff-only` refuse si la branche a divergé), puis relance `/extract-pattern`. Remplace le chemin :
+```sh
+git -C /chemin/du/depot/source switch develop && git -C /chemin/du/depot/source pull --ff-only
 ```
 
 ## Dans OpenCode (à taper dans une nouvelle session)
