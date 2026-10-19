@@ -113,6 +113,15 @@ Puis, pour chaque dossier de cette liste qui vient de lui (par exemple `/tmp/api
 rm -rf /tmp/apidump
 ```
 
+Un dossier nommé `~` créé DANS le dépôt (un ancien `/extract-pattern` y écrivait le skill, les outils d'OpenCode ne comprenant pas `~`). À taper depuis la racine du dépôt, guillemets et `./` compris : sans eux, `~` désigne ton dossier personnel.
+```sh
+ls -la -- './~'
+```
+S'il existe, récupère d'abord le skill qu'il contient (`./~/.config/opencode/skills/pattern-…/SKILL.md`), puis supprime ce dossier, toujours avec `./` et les guillemets :
+```sh
+rm -r -- './~'
+```
+
 ## Dans OpenCode (à taper dans une nouvelle session)
 
 L'environnement de build des agents :
