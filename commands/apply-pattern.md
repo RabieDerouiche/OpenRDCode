@@ -40,5 +40,5 @@ Steps:
    - add their tests to "Tests attendus" with the status "à écrire";
    - add my answers of step 6 and the questions before it to "## Décisions" (created before "## Suivi" if missing): `- <topic> : <choice> (pattern $1)`;
    - append to "## Suivi": `- <date> /apply-pattern $1 - <n> étapes ajoutées au plan` (date: the "Now" line of the workflow state).
-   Then stop with one last line: "Prochaine étape : /dev (étape <first added step>)".
+   Then stop with two last lines: "Aucun code modifié : /dev implémente ces étapes une par une, avec leurs tests." and "Prochaine étape : /dev (étape <first added step>)".
 9. Without a ticket sheet, or for the second answer: implement ONLY step 1 of the plan, following the conventions of this repository (naming, folders, logging, DI style), not those of the source projects. Then run the build and tests in one call and report. .NET: `sh ~/.config/opencode/scripts/build-test.sh`, with the solution or project of AGENTS.md "Build & test" as first argument if it names one, and the options of its full test suite; front-end: the commands of AGENTS.md "Build & test", otherwise those of the detection above. Then stop: I will ask for the next step.

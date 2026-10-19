@@ -282,3 +282,8 @@ add(["reviewer", "test-writer", "analyst", "architect", "release-writer"], ["ls 
 add(["debugger"], ["find . -name \"Inhouse.Crypto.dll\"", "ls src/bin/Debug/net8.0/*.dll"], "allow")
 add(["plan"], ["ls ~/.nuget/packages", "find ~/.nuget/packages -name \"*.dll\""], "deny")
 add(["plan"], ["git log --oneline -5", S + "package-refs.sh"], "allow")
+// the ticket sheet is updated by ticket-sheet.sh (tick, decision, suivi): one shell call, whatever the agent
+add(["build", "dev"], [S + "ticket-sheet.sh tick 2 \"/dev étape 2 - 3 fichiers - build ok - tests 4/4\" && " + S +
+  "ticket-sheet.sh decision \"Gestion d'erreur : Result (étape 2)\"", S + "ticket-sheet.sh tick 2 \"étape 2 faite à la main\""], "allow")
+add(["git"], [S + "ticket-sheet.sh tick 2 \"/next - étape 2 faite à la main\"", S + "ticket-sheet.sh plan"], "allow")
+add(RO, [S + "ticket-sheet.sh plan", S + "ticket-sheet.sh suivi \"/check - 0 bloquant\""], "allow")

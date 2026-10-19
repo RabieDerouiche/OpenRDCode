@@ -32,6 +32,7 @@ Read only what the step needs, and send these reads and skill loads together in 
 - Skills, only those this step needs: every `pattern-` skill named in the step or in my directives (a pattern skill the skill tool does not know was created after OpenCode opened this project: `sh ~/.config/opencode/scripts/pattern-skills.sh` gives its file, read it); `dotnet-cqrs-conventions` for a cqrs-api; `integrations-guardrails` if the step touches SharePoint/CSOM, DocuSign, S3, Piano Analytics or authentication; `best-practices` only when a decision of step 4 is about error handling (Result pattern), a feature flag or performance.
 - A directive "comme dans <repository>" without a matching skill: read ONLY the files of that implementation in the other repository, read-only, then for each library or mechanism it uses that this repository does not, ask me "Garder l'existant (<current>)" (recommandé) / "Introduire <item> comme dans <source>", in the same question tool call as the questions of step 4.
 - The existing code the step changes, and the closest existing example of what the step creates.
+- A pattern skill is self-sufficient: never read the source repository it was extracted from (its "Sources" line is history, and reading another repository asks me for a permission). Something the skill does not say is a question for me, in step 4.
 - A step that uses an in-house package (a pattern skill's "In-house API used", or a package of the company feed): also run `sh ~/.config/opencode/scripts/package-refs.sh` in this turn (in-house packages of this repository, versions, frameworks, XML documentation path). Write the skill's calls as they are; a compilation error on them is fixed from the compiler message, then from that XML documentation (grep tool on the member name), at most 2 rounds, then ask me with the question tool quoting the error ("Je colle la signature depuis Rider" first). Never look inside the package.
 
 ## Step 4 - Doubts: ask, do not guess
@@ -50,7 +51,7 @@ A step written "(test d'abord)" fixes a bug: before changing the code, invoke th
 Only this step. Smallest change that does it, mirroring the existing code and the reference examples. Code comments and log messages in English. No unrelated refactoring, renaming or reformatting.
 
 ## Step 6 - Build
-Run the build command (AGENTS.md "Build & test", otherwise the detection above), quietly: `sh ~/.config/opencode/scripts/build-test.sh --build-only [<solution or project>]` for .NET (errors only, then "BUILD: OK" or "BUILD: FAILED"). Fix compilation errors with the rules of the skill `build-fix`, at most 3 rounds. A legacy .NET Framework project that cannot build on this machine (.NET Framework needs Windows): say so and continue. For a step after the first one of this run, send `date "+%Y-%m-%d %H:%M"` together with the build (date of step 8).
+Run the build command (AGENTS.md "Build & test", otherwise the detection above), quietly: `sh ~/.config/opencode/scripts/build-test.sh --build-only [<solution or project>]` for .NET (errors only, then "BUILD: OK" or "BUILD: FAILED"). Fix compilation errors with the rules of the skill `build-fix`, at most 3 rounds. A legacy .NET Framework project that cannot build on this machine (.NET Framework needs Windows): say so and continue.
 
 ## Step 7 - Tests of this step
 Unless the step has no testable behavior (pure configuration, documentation) or my directives say otherwise, invoke the `test-writer` subagent with the task tool and this prompt (fill the placeholders):
@@ -60,16 +61,15 @@ For a step written "(test d'abord)", the reproducing test was written in step 5:
 
 ## Step 8 - Ticket sheet
 If AGENTS.md says the CI checks formatting, first format the files changed in this step, code and tests, with its formatter (`dotnet format --include <files>`, `npx prettier --write <files>`, `npx eslint --fix <files>`).
-Then, with the edit tool, in `.git/opencode-tickets/<KEY>.md`, in one turn (exact lines from the sheet printed above, updated with your own changes of this run):
-- tick the step (`- [x]`);
-- for a step written "(test d'abord)" whose test now passes: replace `⏳ <TestName> (rouge avant correction)` with `✅ <TestName>`;
-- add each answer I gave in step 1 or 4 to a "## Décisions" section (create it before "## Suivi" if missing): `- <topic> : <choice> (étape <N>)`;
-- append to "## Suivi": `- <date> /dev étape <N> - <files changed count> fichiers - build <ok|ko> - tests <passed>/<total>` (date: the "Now" line of the workflow state for the first step of this run, otherwise the one fetched in step 6).
+Then record the step with ONE shell call, never with the edit tool (the script writes the exact lines and the date, whatever changed in the sheet since you read it): the tick and its "## Suivi" line, then one `decision` per answer I gave in step 1 or 4, chained with `&&`. Texts between double quotes, without `"`, `$` or backticks inside:
+`sh ~/.config/opencode/scripts/ticket-sheet.sh tick <N> "/dev étape <N> - <files changed count> fichiers - build <ok|ko> - tests <passed>/<total>" && sh ~/.config/opencode/scripts/ticket-sheet.sh decision "<topic> : <choice> (étape <N>)"`
+Its output prints the plan: step <N> must be checked there. If it says "NOT FOUND", the plan has no step <N>: say so in your answer.
+For a step written "(test d'abord)" whose test now passes: with the edit tool, replace `⏳ <TestName> (rouge avant correction)` with `✅ <TestName>` in "Tests attendus".
 
 ## Step 9 - Answer, in French, then the next step
 - First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, the branch name. Then the step: "Étape <N>/<total> : <step text>".
 - Files created or modified (one line each), build result, tests added and result, decisions taken.
-- Ask me with the question tool:
+- Only after step 8, ask me with the question tool (the steps come from the plan printed by ticket-sheet.sh):
   - "Étape suivante : <text of the next unchecked step>" (recommandé) → go back to step 1 for that step, with the same directives unless they were specific to this step;
   - "Je reprends la main dans Rider" → remind me: on this machine, tell you « j'ai fait l'étape N à la main »; from my Mac, push from Rider then `/sync`;
   - "Passer à /check" → tell me to run `/test` if some expected tests are still missing, otherwise `/check`;

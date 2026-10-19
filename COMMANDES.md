@@ -67,6 +67,12 @@ Le shell que les agents utilisent vraiment (après le redémarrage et une premi�
 grep 'shell tool using shell' ~/.local/share/opencode/log/opencode.log | tail -1
 ```
 
+Taille de contexte réelle du serveur Qwen, à mettre dans `limit.context` d'`opencode.json` (vLLM la donne dans `max_model_len`). Remplace l'adresse par la `baseURL` de ton provider (elle finit en général par `/v1`) ; si le serveur demande une clé, ajoute `-H "Authorization: Bearer <ta clé>"` :
+```sh
+curl -s https://adresse-du-serveur/v1/models | grep -oE '"max_model_len": ?[0-9]+'
+```
+Rien ne s'affiche : la réponse ne vient pas directement de vLLM (passerelle) ; demande la valeur à l'équipe qui héberge le modèle.
+
 Ce que `/extract-pattern` et `/apply-pattern` savent des packages d'un dépôt : internes ou nuget.org, versions, framework de chaque projet, frameworks livrés et documentation XML des packages internes. Remplace le chemin par celui du dépôt :
 ```sh
 sh ~/.config/opencode/scripts/package-refs.sh /chemin/du/depot
@@ -99,6 +105,11 @@ grep 'message=evaluated' ~/.local/share/opencode/log/opencode.log | grep 'action
 Les commandes qui t'ont demandé une validation :
 ```sh
 grep 'message=evaluated' ~/.local/share/opencode/log/opencode.log | grep 'action.action=ask' | tail -20
+```
+
+Le détail des erreurs « Service Unavailable » ou de contexte du modèle (si le texte parle de « maximum context length », la session a dépassé la taille acceptée par le serveur : voir `limit.context`) :
+```sh
+grep -iE 'service unavailable|context length|maximum context|too long' ~/.local/share/opencode/log/opencode.log | tail -5
 ```
 
 Les 40 dernières commandes shell des agents, une par ligne (la commande suit `pattern=`, la décision suit `action.action=`). C'est ce qu'il faut m'envoyer quand un agent tourne en rond :
@@ -145,6 +156,18 @@ ls ~/.config/opencode/skills/
 rm -r ~/.config/opencode/skills/pattern-nom-back
 ```
 
+## Fiche ticket
+
+Le plan de la fiche de la branche courante, avec les étapes cochées. À taper dans le dépôt :
+```sh
+sh ~/.config/opencode/scripts/ticket-sheet.sh plan
+```
+
+Cocher une étape à la main (ici la 2), avec une ligne datée dans `## Suivi` :
+```sh
+sh ~/.config/opencode/scripts/ticket-sheet.sh tick 2 "cochée à la main"
+```
+
 ## Avant un /extract-pattern
 
 L'agent lit les fichiers de la branche extraite du dépôt source, sans fetch : s'il te signale que le développement n'y est pas, ou que la branche est en retard sur develop, mets le dépôt source sur develop à jour (git refuse de changer de branche si une modification non commitée est en conflit, et `--ff-only` refuse si la branche a divergé), puis relance `/extract-pattern`. Remplace le chemin :
@@ -152,10 +175,15 @@ L'agent lit les fichiers de la branche extraite du dépôt source, sans fetch : 
 git -C /chemin/du/depot/source switch develop && git -C /chemin/du/depot/source pull --ff-only
 ```
 
-## Dans OpenCode (à taper dans une nouvelle session)
+## Dans OpenCode
 
-L'environnement de build des agents :
+L'environnement de build des agents, dans une nouvelle session :
 ```text
 lance `sh ~/.config/opencode/scripts/build-test.sh --build-only`
 ```
 `BUILD: OK` ou une erreur de compilation : l'environnement est bon. Une ligne `ENVIRONMENT PROBLEM` dit quoi corriger.
+
+Une session devenue longue, ou qui répond « Service Unavailable » à chaque message : résume-la et continue dans la même session, au lieu d'en ouvrir une nouvelle :
+```text
+/compact
+```

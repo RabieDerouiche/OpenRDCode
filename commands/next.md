@@ -41,7 +41,7 @@ Then:
   - "Livrer": load the skill `ship-procedure` and follow it.
   - "Terminer le merge": `git commit --no-edit`, then the branch state.
   - "Reprendre <KEY>" or "Basculer sur <KEY>": if the working tree is not empty, ask me first: "Annuler, je commite d'abord" (recommandé) / "Mettre de côté (stash) et basculer" (`git stash push -u -m "next <current branch>"`); then, in one call, `git switch <branch of that sheet> && sh ~/.config/opencode/scripts/workflow-state.sh --sheet`, and go back to step 1 for that ticket with this new state, starting your answer with its header line and the first sentence of its "Résumé".
-  - "Cocher l'étape <n>": with the edit tool, in one turn, tick the step in the sheet and append at the end of "## Suivi" `- <date> /next - étape <n> faite à la main` (exact lines from the sheet printed above; date: the "Now" line of the workflow state); then say that /test will write the missing tests for it.
+  - "Cocher l'étape <n>": one shell call, never the edit tool: `sh ~/.config/opencode/scripts/ticket-sheet.sh tick <n> "/next - étape <n> faite à la main"` (it adds the date and prints the plan); then say that /test will write the missing tests for it.
   A chosen command (/dev, /test, /check, /scans, /mr, /ticket, /agents-md) cannot be launched from here: answer with one line "Tape `<command>`".
 - Otherwise do not ask: end with exactly two lines, "**Prochaine étape : <ONE step only, the next one of step 2>**" then "Ensuite : <the step after it>". Never write "puis" in the first line and never name the same step on both lines. Example for a running pipeline:
   **Prochaine étape : attends la fin du pipeline [#9449687](https://gitlab.example.com/group/project/-/pipelines/9449687)**

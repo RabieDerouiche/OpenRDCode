@@ -7,12 +7,13 @@
 //    telemetry, no npm notices, file names printed by git as they are (no octal escapes), and git never waiting for
 //    a password or an editor (a command that waits ends only at the 2-minute timeout). Other variables already set
 //    in the environment are kept.
-// 3. Shows only "/<command> <arguments>" in the conversation; the expanded prompt (workflow state, ticket sheet,
+// 3. Shows only "/<command> <arguments> — <repository folder> · branche <branch>" in the conversation (the web
+//    interface does not show the current branch in a session); the expanded prompt (workflow state, ticket sheet,
 //    diffs) is still sent to the model, as a "synthetic" part that the web interface does not display.
 // Any error leaves the command as it is: a "[[run ...]]" line left in the prompt is then run by the model itself.
 import { execFile } from "node:child_process"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 
 const SCRIPTS = join(homedir(), ".config", "opencode", "scripts")
 const RUN = /\[\[run ([a-z][a-z0-9-]*\.sh)((?: [^\]\n]*)?)\]\]/g
@@ -60,6 +61,21 @@ function run(script, args, cwd) {
   })
 }
 
+// "<repository folder> · branche <branch>" of the session's project, or "" outside a git repository
+function where(cwd) {
+  const git = (args) =>
+    new Promise((resolve) => {
+      execFile("git", args, { cwd, timeout: 5000 }, (error, stdout) => resolve(error ? "" : String(stdout).trim()))
+    })
+  return Promise.all([git(["rev-parse", "--show-toplevel"]), git(["symbolic-ref", "--short", "-q", "HEAD"])]).then(
+    async ([root, branch]) => {
+      if (!root) return ""
+      const name = branch ? "branche " + branch : "HEAD détachée " + (await git(["rev-parse", "--short", "HEAD"]))
+      return basename(root) + " · " + name
+    },
+  )
+}
+
 async function resolveRuns(text, cwd) {
   const found = [...text.matchAll(RUN)]
   if (found.length === 0) return text
@@ -90,7 +106,8 @@ export const CompactCommands = async (input) => {
         if (!prompt) return
         prompt.synthetic = true
         const label = ("/" + command.command + " " + (command.arguments || "")).trim()
-        parts.unshift({ type: "text", text: label })
+        const place = await where(directory).catch(() => "")
+        parts.unshift({ type: "text", text: place ? label + " — " + place : label })
       } catch {
         // keep the command as it is
       }
