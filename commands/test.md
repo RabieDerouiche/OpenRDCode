@@ -16,7 +16,7 @@ Workflow state (one fetch, then the state of the branch and its ticket sheet):
 Speed: the ticket sheet is printed above, do not read it again; send independent calls together in one turn (the reads of the files of step 1 and of their existing tests; later, the test files you write).
 
 ## Step 0 - Changes pushed from another computer
-If the "Branch vs its remote copy" line above says "behind", commits were pushed from another computer (for example from Rider on my Mac) and are not here yet. Stop and say: "<n> commit(s) poussé(s) depuis un autre poste ne sont pas ici : lance /sync d'abord". Continue only if I ask.
+If the "Branch vs its remote copy" line above says "behind", commits were pushed from another computer (for example from Rider on my Mac) and are not here yet: say "<n> commit(s) poussé(s) depuis un autre poste ne sont pas ici" and ask me with the question tool (header "Suite"): "/sync (recommandé)" (description: « récupère ces commits d'abord ») / "Continuer quand même"; for /sync, the pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance <command>. » and stop.
 
 ## Step 1 - Scope
 - If a reference is given ("comme ..."), apply step 5 of your rules with it (pattern skill or other repository) before writing any test.
@@ -50,4 +50,6 @@ Never write any other file outside the test folders.
 
 ## Answer, in French
 First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, both from Jira; without a Jira key, the branch name.
-The table of step 3 with the final status, the tests added (name + one line each), the test command result, the suspected bugs, then one line: "Prochaine étape : /check" (or "corrige le bug avec l'agent build, puis /test" if a bug was found).
+The table of step 3 with the final status, the tests added (name + one line each), the test command result, the suspected bugs. Then:
+- a suspected bug: one line "Corrige le bug avec l'agent build (« corrige le bug de <test> »), puis relance /test.";
+- otherwise the next step with the question tool (header "Suite"): "/check (recommandé)" and "Rien pour l'instant"; the pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance <command>. ».

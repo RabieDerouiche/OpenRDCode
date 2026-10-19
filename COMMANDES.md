@@ -59,7 +59,7 @@ opencode debug config > /tmp/opencode-config.json && grep -n '"shell"' /tmp/open
 
 Les agents du pack se chargent sans erreur (un fichier d'agent invalide affiche son erreur) :
 ```sh
-for a in analyst architect debugger dev git release-writer reviewer test-writer; do opencode debug agent "$a" > /dev/null && echo "$a OK"; done
+for a in analyst architect debugger dev doc-writer git release-writer reviewer test-writer; do opencode debug agent "$a" > /dev/null && echo "$a OK"; done
 ```
 
 Le shell que les agents utilisent vraiment (après le redémarrage et une première commande d'agent) :
@@ -168,6 +168,31 @@ Cocher une étape à la main (ici la 2), avec une ligne datée dans `## Suivi` :
 sh ~/.config/opencode/scripts/ticket-sheet.sh tick 2 "cochée à la main"
 ```
 
+Cocher à la main des points du dernier `/check` (ici le 1 et le 3), si tu les as corrigés dans Rider :
+```sh
+sh ~/.config/opencode/scripts/ticket-sheet.sh fixed 1,3 "corrigés à la main"
+```
+
+Ce que le prochain `/check` va revoir : instantané du code, points ouverts du dernier `/check` et diff depuis (sans rien modifier). À taper dans le dépôt :
+```sh
+sh ~/.config/opencode/scripts/review-delta.sh
+```
+
+## Documentation (/doc)
+
+Ce que `/doc` reçoit, à taper dans le dépôt (lecture seule, aucune valeur de configuration affichée). L'inventaire du dépôt :
+```sh
+sh ~/.config/opencode/scripts/doc-inventory.sh
+```
+Les endpoints calculés depuis le code (ajoute un dossier, par exemple `src/Api`, pour un gros dépôt) :
+```sh
+sh ~/.config/opencode/scripts/api-routes.sh
+```
+Les clés de configuration, sans leurs valeurs :
+```sh
+sh ~/.config/opencode/scripts/config-keys.sh
+```
+
 ## Avant un /extract-pattern
 
 L'agent lit les fichiers de la branche extraite du dépôt source, sans fetch : s'il te signale que le développement n'y est pas, ou que la branche est en retard sur develop, mets le dépôt source sur develop à jour (git refuse de changer de branche si une modification non commitée est en conflit, et `--ff-only` refuse si la branche a divergé), puis relance `/extract-pattern`. Remplace le chemin :
@@ -186,4 +211,33 @@ lance `sh ~/.config/opencode/scripts/build-test.sh --build-only`
 Une session devenue longue, ou qui répond « Service Unavailable » à chaque message : résume-la et continue dans la même session, au lieu d'en ouvrir une nouvelle :
 ```text
 /compact
+```
+
+Corriger les points du dernier `/check` sans nouvelle review (tous, ou seulement certains numéros), puis ne revoir que ces corrections :
+```text
+/dev corrections
+```
+```text
+/dev corrections 1,3
+```
+```text
+/check
+```
+
+Refaire une review complète même après un premier `/check` :
+```text
+/check complet
+```
+
+Écrire ou mettre à jour la documentation du dépôt dans `docs/` (tout, ou un sujet : `architecture`, `api`, `configuration`, `integrations`, `donnees`, `exploitation`) :
+```text
+/doc
+```
+```text
+/doc api
+```
+
+La publier sur Confluence, sous une page parente (chaque page demande ta validation) :
+```text
+/doc confluence ESPACE Page parente
 ```

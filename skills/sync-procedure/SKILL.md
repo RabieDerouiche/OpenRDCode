@@ -35,4 +35,4 @@ Steps:
    - "Annuler la synchro": run `git merge --abort` and stop. Do not push.
    Never edit the conflicting files yourself.
 8. If a stash was made in step 2, run `git stash pop` (asks for approval); if it conflicts, list the files and stop.
-9. If something was merged, say that the build and tests must be run again: "Prochaine étape : /check" (if the build breaks: ask the build agent « corrige le build », it uses the skill `build-fix`). End with the branch state.
+9. End with the branch state. If something was merged, the build and tests must run again: ask me the next step with the question tool (header "Suite"): "/check (recommandé)" and "Rien pour l'instant" (if the build breaks: the build agent « corrige le build », with the skill `build-fix`); the pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance <command>. ».

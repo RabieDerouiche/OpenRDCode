@@ -134,6 +134,14 @@ def mcp_only(keep):
     return [(p, "deny") for server, patterns in MCP_SERVERS.items() if server not in keep for p in patterns]
 
 
+# /doc: configuration values never reach the documentation. config-keys.sh prints every key without its value; the
+# configuration files themselves stay closed to doc-writer, through the read tool and through the shell.
+CONFIG_FILES_READ = ["*appsettings*.json", "*launchSettings.json", "*?eb.config", "*?eb.*.config", "*?pp.config",
+                     "*?pp.*.config", "*.env", "*.env.*", "*/environments/environment*.ts"]
+CONFIG_FILES_BASH = ["*appsettings*", "*launchSettings*", "*eb.config*", "*eb.*.config*", "*pp.config*",
+                     "*pp.*.config*", "*environments/environment*"]
+
+
 # Read-only agents never browse the package cache or look at assemblies either (their read allows would let them):
 # package-refs.sh gives what they need. Not for the debugger, which may check the assemblies of bin/ (FileLoadException).
 PACKAGE_GUARD = ["*.nuget/packages*", "*.dll*", "*.nupkg*"]
@@ -202,13 +210,16 @@ AGENTS = {
     + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST))] + MCP_WRITE_DENY + mcp_only(["jira"]),
     "release-writer": NO_EDIT + BASE + NO_TASK + [("bash", read_only_bash())] + MCP_RELEASE
     + mcp_only(["jira", "confluence"]),
+    # /doc: writes docs/ and the root README.md only; Confluence pages with my approval, like release-writer
+    "doc-writer": [("edit", only(["docs/**", "README.md"])), ("read", deny(CONFIG_FILES_READ))] + BASE + NO_TASK
+    + [("bash", read_only_bash() + deny(CONFIG_FILES_BASH))] + MCP_RELEASE + mcp_only(["jira", "confluence"]),
     "git": SHEET + BASE + [("task", only(["reviewer", "analyst"])), ("bash", git_bash())] + MCP_WRITE_DENY
     + mcp_only(["jira", "gitlab"]),
     # build without the MCP tools (smaller requests); edit and bash stay as for build (global rules of opencode.json)
     "dev": [("task", only(["test-writer", "debugger", "architect"]))] + mcp_only([]),
 }
 
-TOOL_KEYS = {"edit", "bash", "webfetch", "websearch", "question", "task"}
+TOOL_KEYS = {"edit", "read", "bash", "webfetch", "websearch", "question", "task"}
 
 
 def q(key):
@@ -252,7 +263,8 @@ SAMPLING = [("temperature", 0.6), ("top_p", 0.95)]
 SNIPPET = as_dict([
     ("$schema", "https://opencode.ai/config.json"),
     ("agent", [
-        ("build", SAMPLING),
+        # build never calls the reviewer by itself: a review is /check (fixes of its points: /dev corrections)
+        ("build", SAMPLING + [("permission", [("task", [("*", "allow"), ("reviewer", "deny")])])]),
         ("general", SAMPLING),
         ("explore", SAMPLING),
         ("plan", SAMPLING + [("permission", [("bash", read_only_bash())])]),

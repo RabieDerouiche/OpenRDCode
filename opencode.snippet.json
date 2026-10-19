@@ -3,7 +3,13 @@
   "agent": {
     "build": {
       "temperature": 0.6,
-      "top_p": 0.95
+      "top_p": 0.95,
+      "permission": {
+        "task": {
+          "*": "allow",
+          "reviewer": "deny"
+        }
+      }
     },
     "general": {
       "temperature": 0.6,

@@ -7,6 +7,7 @@
 ## Asking me
 - When a decision is mine (which option, which version, which base branch, keep or change a library, fix or skip), do not stop and do not guess: ask me with the question tool, as multiple-choice questions with 2 to 4 short options each, the recommended one first and marked "(recommandé)". I can always type another answer.
 - Ask only when the answer changes what you do; never ask for things you can find in the code, the git history or AGENTS.md. Put all the questions you already need into ONE question tool call (one question per decision, up to 4): I answer them in a row. Ask separately only a question that depends on a previous answer.
+- The next step is never just written ("Prochaine étape : /x", "Tape /x"): when it is a command I can run now, ask it with the question tool (header "Suite"), one option per command that makes sense, its label being the command itself with its arguments (`/dev 3`, `/dev corrections`, `/check`, `/ticket ABC-123`), the recommended one first with "(recommandé)", what it will do as description, plus "Rien pour l'instant". The pack plugin starts the command I choose by itself, in this session, as soon as your turn ends: answer only « Je lance <command>. » and end your turn, never do its work yourself. A label that does not start with "/" is never started.
 
 ## Working style
 - Read existing code before writing new code, and mirror its conventions.
@@ -45,13 +46,13 @@
 - Merge requests target `develop`. Production is deployed from `master` as is; there are no release tags.
 
 ## Workflow
-- My day: /daily → /ticket <KEY> → /dev (one plan step at a time, with its tests; or I code myself) → /test → /check → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. When reviewers comment on my merge request: /mr → /check → /ship. /review !<iid> reviews a teammate's merge request. /abandon undoes a ticket started by mistake. /sync brings develop or my Mac pushes into the branch. /next tells me where I am and resumes a ticket. /agents-md keeps the repository AGENTS.md up to date. One OpenCode session per ticket: to resume, new session then /next.
+- My day: /daily → /ticket <KEY> → /dev (one plan step at a time, with its tests; or I code myself) → /test → /check → /dev corrections if /check found points → /check again (only what changed) → /ship → /scans (after the CI) → /fortify-fix or /sonar-fix → /check again. Each command ends by offering the next one, which starts when I choose it. When reviewers comment on my merge request: /mr → /check → /ship. /review !<iid> reviews a teammate's merge request. /abandon undoes a ticket started by mistake. /sync brings develop or my Mac pushes into the branch. /next tells me where I am and resumes a ticket. /agents-md keeps the repository AGENTS.md up to date. /doc writes or updates the documentation of the repository in docs/ (and on Confluence when I ask). One OpenCode session per ticket: to resume, new session then /next.
 - Sonar and Fortify run in the CI on every pushed commit: their results exist only after /ship, never before.
 - You may run on a remote machine while I sometimes code in Rider on my Mac: then we do NOT share the same files. My Mac changes reach you only through git (I push from Rider, then /sync), and your changes reach my Mac only after /ship or /sync pushed them (then I pull in Rider). The ticket sheet exists only on your side.
 - Ticket sheet: on a branch whose name contains a Jira key (pattern `[A-Z][A-Z0-9_]+-[0-9]+`), the file `.git/opencode-tickets/<KEY>.md` holds the analysis of the ticket: acceptance criteria, expected tests, plan, and a "## Suivi" log. Read it before working on the ticket, unless the command already printed it in the workflow state. When you finish a step of its "Plan", tick it with one shell call, never with the edit tool: `sh ~/.config/opencode/scripts/ticket-sheet.sh tick <N> "<what was done>"` (it also dates a "## Suivi" line and prints the plan); `... ticket-sheet.sh decision "<topic> : <choice> (étape <N>)"` records one of my answers in "## Décisions". Never commit the sheet (it lives inside `.git`).
 - When I ask "implémente l'étape N de la fiche" without /dev, follow the same rules as /dev: only that step, questions when the approach is unclear, build, tests, tick the step, record my answers in the sheet's "## Décisions", then stop.
 
-## Routing (when I ask in plain words instead of a command)
+## Routing (when I ask in plain words instead of a command; "offer" = the question tool with the command as option, which then starts by itself)
 - "pourquoi ça plante", a stack trace, a failing test → invoke the `debugger` subagent with the task tool.
 - "fais-moi un plan", "comment tu ferais" for a feature or refactoring → invoke the `architect` subagent.
 - "explique", "comment marche" → load the skill `explain-code` and follow it.
@@ -62,17 +63,19 @@
   3. For each library or mechanism the source uses and this repository does not (Moq vs NSubstitute, FluentAssertions, AutoFixture, xUnit fixtures, Testcontainers, a mediator, FluentValidation…), ask me with the question tool, one question per item, all in one call: "Garder l'existant (<current>)" (recommandé) / "Introduire <thing> comme dans <source>". Wait for the answers.
   4. Adapt to this repository's conventions (naming, folders, DI, logging), never copy configuration values, URLs, hosts or secrets from the other repository, then plan and implement step by step with a build after each step.
   5. At the end, if no skill existed, suggest `/extract-pattern <name> <source repo path> [<Jira key or class names>]` so the approach is reusable next time.
-- "j'ai poussé depuis mon Mac", "j'ai commité dans Rider" → tell me to run `/sync` first (it retrieves the branch's remote changes), then continue.
-- "j'ai fait l'étape N à la main", "j'ai modifié X dans Rider" → if the branch is behind its remote copy, tell me to run `/sync` first; then re-read the files from disk (never trust an older version you read earlier), read `git diff` for them, check the change against the step and the acceptance criteria of the ticket sheet, report what is missing or wrong in a few lines, tick the step if it is complete (`sh ~/.config/opencode/scripts/ticket-sheet.sh tick <N> "étape <N> faite à la main"`). Do not rewrite my code unless I ask.
-- "où j'en suis", "on en est où", "et maintenant" → tell me to run `/next`.
-- "y a-t-il une meilleure approche", "bonnes pratiques", "il manque quoi" → load the skill `best-practices`; for the whole repository, tell me to run `/audit`.
-- "écris les tests", "teste ce fichier", "fais les tests comme dans <repo>" → tell me to run `/test`, `/test <file>` or `/test comme <repo or pattern>`.
+- "j'ai poussé depuis mon Mac", "j'ai commité dans Rider" → offer `/sync` first (it retrieves the branch's remote changes), then continue.
+- "j'ai fait l'étape N à la main", "j'ai modifié X dans Rider" → if the branch is behind its remote copy, offer `/sync` first; then re-read the files from disk (never trust an older version you read earlier), read `git diff` for them, check the change against the step and the acceptance criteria of the ticket sheet, report what is missing or wrong in a few lines, tick the step if it is complete (`sh ~/.config/opencode/scripts/ticket-sheet.sh tick <N> "étape <N> faite à la main"`). Do not rewrite my code unless I ask.
+- "où j'en suis", "on en est où", "et maintenant" → offer `/next`.
+- "y a-t-il une meilleure approche", "bonnes pratiques", "il manque quoi" → load the skill `best-practices`; for the whole repository, offer `/audit`.
+- "écris les tests", "teste ce fichier", "fais les tests comme dans <repo>" → offer `/test`, `/test <file>` or `/test comme <repo or pattern>`.
 - "vérifie les licences", "ce package est-il payant" → run `sh ~/.config/opencode/scripts/package-licenses.sh` (whole repository), `... branche` (packages changed on the branch) or `... <PackageId> [<version>]`, and summarize its result; this is what /licences does.
-- "review", "vérifie avant de pousser" → tell me to run `/check`.
-- "réponds aux commentaires de la MR", "retours de review" → tell me to run `/mr`.
-- "relis la MR de …", "review la MR !42" → tell me to run `/review !<iid>` (or `/review <branch>`) in a session opened on that repository.
-- "ticket lancé par erreur", "mauvais dépôt", "annule ce ticket" → tell me to run `/abandon` (in a session on the repository where the ticket was started).
-- commit, push, branch, merge, sync → tell me to run `/ship`, `/sync` or `/ticket`: you never run git writes yourself.
+- "review", "vérifie avant de pousser" → offer `/check` (question tool, as above).
+- "corrige les retours du /check", "applique les corrections" → offer `/dev corrections`: it fixes the points that /check wrote in the ticket sheet, without reviewing again; never invoke the reviewer for it.
+- "réponds aux commentaires de la MR", "retours de review" → offer `/mr`.
+- "documente le projet", "génère la doc", "mets à jour la doc", "publie la doc sur Confluence" → offer `/doc` (`/doc <topic>` for one topic: architecture, api, configuration, integrations, donnees, exploitation; `/doc confluence <SPACE KEY> [<parent page>]` to publish).
+- "relis la MR de …", "review la MR !42" → `/review !<iid>` (or `/review <branch>`), to run in a session opened on that repository: offer it if this session is on it, otherwise tell me.
+- "ticket lancé par erreur", "mauvais dépôt", "annule ce ticket" → `/abandon`, in a session on the repository where the ticket was started: offer it if this session is on it, otherwise tell me.
+- commit, push, branch, merge, sync → offer `/ship`, `/sync` or `/ticket`: you never run git writes yourself.
 - Do not invoke subagents for anything else unless I ask.
 
 ## Daily

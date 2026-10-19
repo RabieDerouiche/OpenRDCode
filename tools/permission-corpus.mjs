@@ -287,3 +287,45 @@ add(["build", "dev"], [S + "ticket-sheet.sh tick 2 \"/dev étape 2 - 3 fichiers 
   "ticket-sheet.sh decision \"Gestion d'erreur : Result (étape 2)\"", S + "ticket-sheet.sh tick 2 \"étape 2 faite à la main\""], "allow")
 add(["git"], [S + "ticket-sheet.sh tick 2 \"/next - étape 2 faite à la main\"", S + "ticket-sheet.sh plan"], "allow")
 add(RO, [S + "ticket-sheet.sh plan", S + "ticket-sheet.sh suivi \"/check - 0 bloquant\""], "allow")
+// build never reviews by itself: the review is /check, its fixes /dev corrections; /ship (git) keeps its reviewer
+taskCase("build", "reviewer", "deny")
+taskCase("build", "test-writer", "allow")
+taskCase("build", "debugger", "allow")
+taskCase("git", "reviewer", "allow")
+// /check: snapshot and delta of the review, its Suivi line through the script; /dev corrections ticks its points
+add(["reviewer"], [S + "review-delta.sh", S + "ticket-sheet.sh suivi \"/check - CHANGES REQUESTED - 2 points - build ok - tests 42/42 - empreinte 3f2a9c1b7d4e - arbre 52f6a5c013bd\"",
+  "git diff 52f6a5c013bd -- src/Api/Foo.cs"], "allow")
+add(["build", "dev"], [S + "ticket-sheet.sh fixed 1,2 \"/dev corrections - 2 points - build ok - tests 12/12\" && " + S +
+  "ticket-sheet.sh decision \"Point 3 du check : contesté, la valeur est validée en amont (corrections)\""], "allow")
+add(["analyst"], [S + "ticket-sheet.sh suivi \"/scans - abc1234 - pipeline success - 2 points à corriger sur la branche : /fortify-fix 123, /sonar-fix AX-1\""], "allow")
+editCase(["reviewer"], ".git/opencode-tickets/ABC-1.md", "allow")
+
+// ---------- doc-writer (/doc): writes docs/ and the root README.md only; configuration files stay closed ----------
+editCase(["doc-writer"], "docs/api.md", "allow")
+editCase(["doc-writer"], "docs/README.md", "allow")
+editCase(["doc-writer"], "README.md", "allow")
+for (const p of ["src/Api/Program.cs", "src/Api/README.md", ".git/opencode-tickets/ABC-1.md", ".gitlab-ci.yml",
+  "src/Api/appsettings.json"]) editCase(["doc-writer"], p, "deny")
+readCase(["doc-writer"], "src/Api/Program.cs", "allow")
+readCase(["doc-writer"], "docs/architecture.md", "allow")
+readCase(["doc-writer"], "src/Api/Options/StorageOptions.cs", "allow")
+for (const p of ["appsettings.json", "src/Api/appsettings.json", "src/Api/appsettings.Development.json",
+  "src/Api/Properties/launchSettings.json", "src/Legacy/Web.config", "src/Legacy/web.Release.config", "src/Worker/App.config",
+  ".env", ".env.example", "src/Api/.env.local", "front/src/environments/environment.prod.ts", "~/.nuget/NuGet/NuGet.Config"])
+  readCase(["doc-writer"], p, "deny")
+add(["doc-writer"], [S + "doc-inventory.sh", S + "api-routes.sh", S + "api-routes.sh src/Orders", S + "config-keys.sh",
+  S + "detect-project-type.sh --files", S + "package-refs.sh", "git log --oneline -5", "ls docs",
+  "git diff --stat 0d2e0e2 -- . ':(exclude)docs'", "grep -rn \"AddHttpClient\" src", "git log --oneline -- docs/"], "allow")
+add(["doc-writer"], ["cat src/Api/appsettings.json", "grep -rn Bucket src/Api/appsettings.Production.json",
+  "git show HEAD:src/Api/appsettings.json", "git diff -- src/Api/appsettings.Development.json",
+  "cat src/Api/Properties/launchSettings.json", "cat src/Legacy/Web.config", "head src/Worker/App.config",
+  "cat front/src/environments/environment.prod.ts", "cat .env", "git commit -m \"docs: x\"", "rm docs/api.md",
+  "dotnet build", "git add docs", "cat ~/.nuget/NuGet/NuGet.Config"], "deny")
+tool("doc-writer", "confluence_create_page", "ask")
+tool("doc-writer", "confluence_update_page", "ask")
+tool("doc-writer", "confluence_get_page", "allow")
+tool("doc-writer", "confluence_delete_page", "deny")
+tool("doc-writer", "jira_get_issue", "allow")
+tool("doc-writer", "jira_create_issue", "deny")
+tool("doc-writer", "gitlab_get_merge_request", "deny")
+taskCase("doc-writer", "general", "deny")

@@ -1,5 +1,5 @@
 ---
-description: "Implement the next step of the ticket sheet (or step N) following my directives, write the unit tests of that step, build and run them, tick the step, then offer the next one. Asks multiple-choice questions whenever the approach is unclear. Usage: /dev [N] [directives, e.g. « comme dans ~/dev/autre-api », « avec un Result », « sans nouvelle lib », « tests avec fixtures xUnit »]"
+description: "Implement the next step of the ticket sheet (or step N) following my directives, write the unit tests of that step, build and run them, tick the step, then offer the next one. `/dev corrections` fixes the points of the last /check instead. Asks multiple-choice questions whenever the approach is unclear. Usage: /dev [N | corrections [points]] [directives, e.g. « comme dans ~/dev/autre-api », « avec un Result », « sans nouvelle lib », « tests avec fixtures xUnit »]"
 agent: dev
 ---
 Arguments: "$ARGUMENTS"
@@ -10,11 +10,20 @@ Project detection:
 
 Implement ONE step of the ticket plan, with its tests. Never commit or push: that is /ship.
 
+Corrections mode, when the first argument is `corrections` (optionally followed by point numbers, `corrections 1,3`, then directives): the work is the unchecked points of the last block of "## Retours /check" in the sheet printed above (only the given numbers if any), all of them in this run, instead of a plan step. Steps 0 and 3 to 9 apply with these changes:
+- No open point: say "Aucun point ouvert du dernier /check" and ask the next step of step 9.
+- Step 3: read the files of the points (their file:line) and what they call; the points describe the problem and the fix: do not review the code again, and never invoke the reviewer.
+- Step 4: a point that you think is wrong, or whose fix has two reasonable options: ask me, one question per point, in one call: "Corriger : <fix>" (recommandé) / "Contester : <reason>" / "Passer". A contested or skipped point stays unchecked.
+- Step 5: each point with the smallest change that fixes it, nothing else.
+- Step 7: a point that changes a behavior or fixes a bug gets its test (test-writer, with the list of these points and their files); then run only the tests of the test projects concerned. /check reruns the whole suite.
+- Step 8: `sh ~/.config/opencode/scripts/ticket-sheet.sh fixed <numbers of the fixed points, comma-separated> "/dev corrections - <n> points - build <ok|ko> - tests <passed>/<total>"`, chained with `&&` to the `decision` calls of my answers.
+- Step 9: header line, then one line per point (number, file, change), the contested or skipped ones, build and tests; then the question of step 9 with "/check (recommandé)" (description: « revoit seulement ces corrections et vérifie les points ») and "Rien pour l'instant".
+
 Tools over shell: read files with the `read` tool, search with `grep` and `glob`, change files with `edit`/`write`. Use the shell only for the build, the tests, git reads and the `~/.config/opencode/scripts` commands. Never inspect the environment or the NuGet configuration (`cat`/`grep` on `nuget.config`, `~/.nuget`, `.env`, `~/.zshenv`, `env`, `export`, `printenv`): a failed `dotnet restore` (401/403/NU1301), a missing `dotnet` or an "ENVIRONMENT PROBLEM" line of a script is an environment problem I fix outside OpenCode: say so in one line and stop, never work around it.
 
 ## Step 0 - Before starting
-- If the "Branch vs its remote copy" line above says "behind", commits were pushed from another computer (for example from Rider on my Mac): say "Lance /sync d'abord" and stop, unless I answer that I want to continue.
-- On `develop`, `master` or `main`: stop and tell me to run `/ticket <KEY>`.
+- If the "Branch vs its remote copy" line above says "behind", commits were pushed from another computer (for example from Rider on my Mac): ask me with the question tool (header "Suite"): "/sync (recommandé)" (description: « récupère d'abord les commits poussés depuis l'autre poste ») / "Continuer quand même"; for /sync, the pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance <command>. » and stop.
+- On `develop`, `master` or `main`: ask me with the question tool (header "Suite"): "/ticket (recommandé)" (description: « choisir le ticket et créer sa branche ») / "Rien pour l'instant"; for /ticket, the pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance <command>. » and stop.
 
 ## Step 1 - Arguments
 - A leading number is the step to implement. Without it, take the first unchecked step of the plan.
@@ -23,8 +32,8 @@ Tools over shell: read files with the `read` tool, search with `grep` and `glob`
 
 ## Step 2 - Ticket sheet
 Use the ticket sheet printed in the workflow state (do not read it again): the step, the acceptance criteria it serves, the expected tests, and the "## Décisions" section (choices already made for this ticket: never ask them again).
-- No sheet: ask me with the question tool: "Lancer /ticket <KEY> d'abord" (recommandé) / "Travailler sans fiche" (then I describe the task in a free answer, and steps 7 and 8 skip the sheet).
-- Every step already checked: say "Toutes les étapes du plan sont faites : /test puis /check" and stop.
+- No sheet: ask me with the question tool (header "Suite"): "/ticket <KEY of the branch name> (recommandé)" ("/ticket (recommandé)" when the branch name has no key; description: « analyse le ticket et crée sa fiche ») / "Travailler sans fiche" (then I describe the task in a free answer, and steps 7 and 8 skip the sheet); for /ticket, the pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance <command>. » and stop.
+- Every step already checked: say "Toutes les étapes du plan sont faites" and ask me with the question tool (header "Suite"): "/test (recommandé)" (description: « complète les tests attendus du ticket ») / "/check" (description: « vérifie le code avant de livrer ») / "Rien pour l'instant"; the pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance <command>. » and stop.
 
 ## Step 3 - Context
 Read only what the step needs, and send these reads and skill loads together in one turn:
@@ -69,9 +78,9 @@ For a step written "(test d'abord)" whose test now passes: with the edit tool, r
 ## Step 9 - Answer, in French, then the next step
 - First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticket title line" of the workflow state (`# <KEY> - <title>`) and the link from its "Ticket Jira line"; without a ticket sheet, the branch name. Then the step: "Étape <N>/<total> : <step text>".
 - Files created or modified (one line each), build result, tests added and result, decisions taken.
-- Only after step 8, ask me with the question tool (the steps come from the plan printed by ticket-sheet.sh):
-  - "Étape suivante : <text of the next unchecked step>" (recommandé) → go back to step 1 for that step, with the same directives unless they were specific to this step;
+- Only after step 8, ask me with the question tool, header "Suite" (the steps come from the plan printed by ticket-sheet.sh):
+  - unchecked steps remain: "Étape suivante : <text of the next unchecked step>" (recommandé) → go back to step 1 for that step in this same turn, with the same directives unless they were specific to this step;
+  - "/test" if some rows of "Tests attendus" are still "à écrire" or "❌", otherwise "/check": a command, which the pack plugin starts by itself when your turn ends (then answer only « Je lance <command>. »);
   - "Je reprends la main dans Rider" → remind me: on this machine, tell you « j'ai fait l'étape N à la main »; from my Mac, push from Rider then `/sync`;
-  - "Passer à /check" → tell me to run `/test` if some expected tests are still missing, otherwise `/check`;
-  - "Stop".
-- When the last step is done: "Plan terminé : /test (vérification de la couverture des critères) puis /check."
+  - "Rien pour l'instant".
+- When the last step is done, the options are "/test (recommandé)" (or "/check (recommandé)" when every row of "Tests attendus" is ✅), "Je reprends la main dans Rider" and "Rien pour l'instant".

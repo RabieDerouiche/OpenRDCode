@@ -38,4 +38,4 @@ Steps:
    - security hotspot: `fix(security): <summary> (<rule key>)`
    - code smell: `refactor(sonar): <summary> (<rule key>)`
 9. If the workflow state printed a ticket sheet, append at the end of its "## Suivi" section (`.git/opencode-tickets/<KEY>.md`, exact lines from the sheet printed above): `- <date> /sonar-fix $1 - <corrigé | non pertinent | passé>` (date: the "Now" line of the workflow state), followed for a fix by `- build <ok|ko> - tests <passed>/<total> - empreinte <the "Code fingerprint of this run" line of step 7, or ->`: /check then reuses that build and test run while the code does not change.
-10. Last line: "Prochaine étape : /check puis /ship (avec ce message de commit), puis /scans pour vérifier que l'issue a disparu."
+10. Then one line "Ensuite : /check, /ship (avec ce message de commit), puis /scans pour vérifier que l'issue a disparu.", and the next step with the question tool (header "Suite"): "/check (recommandé)" and "Rien pour l'instant"; the pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance <command>. ».

@@ -15,7 +15,7 @@ Sonar and Fortify both run in the CI on every pushed commit. Never read appsec-c
 Speed: send the independent MCP calls together. First turn: the pipeline of the pushed commit (step 2), the versions of the SSC application (step 3) and the search of the Sonar project (step 4). Second turn: the Fortify issues of the selected version, the Sonar issues and security hotspots of the branch, and the skill `fortify-remediation`. If step 2 stops, ignore the other results.
 
 ## Step 1 - Pushed or not
-- If the workflow state says "Upstream: none", the branch was never pushed: say "Branche jamais poussée : lance /ship" and stop.
+- If the workflow state says "Upstream: none", the branch was never pushed: say "Branche jamais poussée" and ask me with the question tool (header "Suite"): "/ship (recommandé)" (description: « commit et push : la CI lance Sonar et Fortify ») / "Rien pour l'instant"; the pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance <command>. » and stop.
 - If there are local commits not pushed, say in one line that the scans will not include them (suggest /ship), and continue with the pushed commit.
 
 ## Step 2 - Pipeline of the pushed commit
@@ -53,8 +53,9 @@ First line: "**[<KEY>](<Jira link>) - <title>**", with the title from the "Ticke
 - "Faux positifs probables": issue ids with a one-line reason (e.g. the value never comes from user input).
 - "À corriger en premier": the 5 findings to fix first, each with its command: `/fortify-fix <id>` for Fortify, `/sonar-fix <issue key>` for Sonar, `/fortify-fix` for a finding reported by both.
 - If nothing is open on the files of this branch: "Rien à corriger sur cette branche : la MR est prête côté qualité."
+- Then, after the ticket sheet line below, the next step with the question tool (header "Suite"): the fix commands of "À corriger en premier" as options, their label being the command itself (`/fortify-fix <id>`, `/sonar-fix <issue key>`), the first one "(recommandé)", up to 3, the finding as description, and "Rien pour l'instant". The pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance <command>. ». Nothing to fix: no question.
 
 ## Ticket sheet
-If the workflow state lists a current ticket sheet, append a line at the end of its "## Suivi" section, which ends the file, with the edit tool: insert it after the last Suivi line given by the "Ticket sheets summary" of the workflow state (read the sheet only if that edit fails). Date: the "Now" line of the workflow state.
-`- <date> /scans - <short sha> - pipeline <success|failed|running> - <n> points à corriger sur la branche`
+If the workflow state lists a current ticket sheet, record this run with one shell call (never the edit tool: the script dates the line and appends it to "## Suivi"); text between double quotes, without `"`, `$` or backticks:
+`sh ~/.config/opencode/scripts/ticket-sheet.sh suivi "/scans - <short sha> - pipeline <success|failed|running> - <n> points à corriger sur la branche"`, the text followed, when there are points, by ` : ` and the fix commands of "À corriger en premier", comma-separated (`/fortify-fix 123, /sonar-fix AX-1`), so that /next can offer them.
 Write nothing else.

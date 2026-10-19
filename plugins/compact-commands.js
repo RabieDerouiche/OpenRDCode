@@ -10,6 +10,9 @@
 // 3. Shows only "/<command> <arguments> — <repository folder> · branche <branch>" in the conversation (the web
 //    interface does not show the current branch in a session); the expanded prompt (workflow state, ticket sheet,
 //    diffs) is still sent to the model, as a "synthetic" part that the web interface does not display.
+// 4. Starts the command I choose in a multiple-choice question: an option whose label is a command of the pack
+//    ("/dev 3", "/check (recommandé)") runs by itself in the same session as soon as the agent's turn ends, unless
+//    that turn ended with an error or was stopped, and never in a subagent's session. Agents cannot run a command.
 // Any error leaves the command as it is: a "[[run ...]]" line left in the prompt is then run by the model itself.
 import { execFile } from "node:child_process"
 import { homedir } from "node:os"
@@ -18,6 +21,26 @@ import { basename, join } from "node:path"
 const SCRIPTS = join(homedir(), ".config", "opencode", "scripts")
 const RUN = /\[\[run ([a-z][a-z0-9-]*\.sh)((?: [^\]\n]*)?)\]\]/g
 const TIMEOUT_MS = 180000
+// Commands of the pack that a multiple-choice answer may start (built-in OpenCode commands are never started)
+const CHAINABLE = new Set([
+  "daily", "ticket", "dev", "test", "check", "ship", "scans", "fortify-fix", "sonar-fix", "mr", "review", "sync",
+  "next", "abandon", "agents-md", "audit", "licences", "release-notes", "cqrs", "extract-pattern", "apply-pattern", "doc",
+])
+const CHOICE = /^\/([a-z][a-z0-9-]*)((?:\s+\S.*?)?)\s*(?:\((?:recommandé|recommended)\))?\s*$/i
+
+// The first answer that is a command of the pack, as { command, arguments }
+function chosenCommand(answers) {
+  if (!Array.isArray(answers)) return undefined
+  for (const list of answers) {
+    for (const label of Array.isArray(list) ? list : []) {
+      const match = CHOICE.exec(String(label).trim())
+      if (match && CHAINABLE.has(match[1].toLowerCase())) {
+        return { command: match[1].toLowerCase(), arguments: match[2].trim() }
+      }
+    }
+  }
+  return undefined
+}
 
 // Splits the arguments like a shell does for simple quoting ('...' and "..."), without any expansion: the
 // arguments typed after a command can never run anything.
@@ -86,7 +109,50 @@ async function resolveRuns(text, cwd) {
 
 export const CompactCommands = async (input) => {
   const directory = (input && (input.directory || input.worktree)) || process.cwd()
+  const client = input && input.client
+  // session id -> the command chosen in its last multiple-choice question, started when the session becomes idle
+  const chosen = new Map()
+
+  async function startChosen(sessionID) {
+    const next = chosen.get(sessionID)
+    if (!next || !client) return
+    chosen.delete(sessionID)
+    const session = await client.session.get({ path: { id: sessionID } })
+    if (!session || !session.data || session.data.parentID) return
+    // the turn that asked must have ended normally: no error, not stopped
+    const recent = await client.session.messages({ path: { id: sessionID }, query: { limit: 4 } })
+    const last = (Array.isArray(recent && recent.data) ? recent.data : [])
+      .map((message) => message && message.info)
+      .filter((info) => info && info.role === "assistant")
+      .sort((a, b) => ((a.time && a.time.created) || 0) - ((b.time && b.time.created) || 0))
+      .pop()
+    if (!last || last.error) return
+    client.session
+      .command({ path: { id: sessionID }, body: { command: next.command, arguments: next.arguments } })
+      .catch(() => {})
+  }
+
   return {
+    "tool.execute.after": async (call, result) => {
+      try {
+        if (!call || call.tool !== "question" || !client) return
+        const next = chosenCommand(result && result.metadata && result.metadata.answers)
+        if (next) chosen.set(call.sessionID, next)
+      } catch {
+        // no command to start
+      }
+    },
+    event: async ({ event }) => {
+      try {
+        if (!event || !event.properties) return
+        const sessionID = event.properties.sessionID
+        if (!sessionID || !chosen.has(sessionID)) return
+        if (event.type === "session.error") chosen.delete(sessionID)
+        else if (event.type === "session.idle") await startChosen(sessionID)
+      } catch {
+        // never start a command after a failure
+      }
+    },
     "command.execute.before": async (command, output) => {
       const parts = output && output.parts
       if (!Array.isArray(parts)) return

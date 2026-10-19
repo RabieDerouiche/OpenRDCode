@@ -84,6 +84,6 @@ Table: Ticket (link), Type, Titre, Statut, Prio, Dernière MAJ, Signal. If there
 6. If nothing is in progress: start the first ticket of section 4 or the first To Do of section 1 with `/ticket <KEY>`.
 
 ## Then
-Ask me with the question tool "Sur quoi tu bosses ?": as options, the 3 tickets that come first in the plan of the day (`<KEY> - <summary>`, the first one "(recommandé)"). I can type another answer. Then answer with one line: "Ouvre une nouvelle session et lance `/ticket <KEY>`" (it resumes the ticket sheet if the ticket is already started).
+Ask me with the question tool "Sur quoi tu bosses ?" (header "Ticket"): as options, the 3 tickets that come first in the plan of the day, each with the label `/ticket <KEY>` and the description `<summary>`, the first one "(recommandé)", plus "Rien pour l'instant". I can type another answer. The pack plugin starts the /ticket I choose by itself in this session as soon as your turn ends (it resumes the ticket sheet if the ticket is already started): then answer only « Je lance /ticket <KEY>. ».
 
 Rules: read-only, no comment, assignment or status change anywhere. If a system is unreachable, say so in one line and build the rest.

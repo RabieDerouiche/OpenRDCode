@@ -8,6 +8,9 @@
 #                                                "- <date> <suivi line>" at the end of "## Suivi"
 #   ticket-sheet.sh decision "<decision>"        append "- <decision>" to "## Décisions" (created before "## Suivi")
 #   ticket-sheet.sh suivi "<line>"               append "- <date> <line>" at the end of "## Suivi"
+#   ticket-sheet.sh fixed <N>[,<N>...] ["<suivi line>"]
+#                                                check the points N of the last block of "## Retours /check" (the
+#                                                points of the last /check), then append the "## Suivi" line
 #   ticket-sheet.sh plan                         print the steps of "## Plan"
 # Every write ends by printing the steps of "## Plan", so that the agent sees what is checked.
 
@@ -42,6 +45,12 @@ trap 'exit 1' INT TERM
 print_plan() {
   echo "Plan of $key:"
   awk '/^## / { inplan = ($0 ~ /^## Plan[[:space:]]*$/); next } inplan && /^[[:space:]]*- \[[ xX]\]/ { print }' "$sheet"
+  awk '
+    /^## / { inret = ($0 ~ /^## Retours \/check[[:space:]]*$/); next }
+    inret && /^### / { for (k in item) delete item[k]; n = 0; head = $0; next }
+    inret && /^[[:space:]]*- \[[ xX]\]/ { item[++n] = $0 }
+    END { if (head != "") { print "Points of the last /check (" substr(head, 5) "):"; for (i = 1; i <= n; i++) print item[i] } }
+  ' "$sheet"
 }
 
 # Appends a line at the end of a section (before the blank lines and the next "## " heading); a missing section is
@@ -102,6 +111,46 @@ case "$action" in
     [ -n "$suivi" ] && append "Suivi" "- $now $suivi" && printf 'Suivi: - %s %s\n' "$now" "$suivi"
     print_plan
     ;;
+  fixed)
+    list=$1
+    suivi=$2
+    case "$list" in
+      ''|*[!0-9,]*) echo "Usage: ticket-sheet.sh fixed <N>[,<N>...] [\"<suivi line>\"]"; exit 0 ;;
+    esac
+    STATUS="$tmp.status" LIST=$list awk '
+      BEGIN { n = split(ENVIRON["LIST"], L, ","); for (i = 1; i <= n; i++) if (L[i] != "") want[L[i] + 0] = 1 }
+      { text[++count] = $0 }
+      END {
+        inret = 0; lastblock = 0
+        for (i = 1; i <= count; i++) {
+          if (text[i] ~ /^## /) inret = (text[i] ~ /^## Retours \/check[[:space:]]*$/)
+          else if (inret && text[i] ~ /^### /) lastblock = i
+        }
+        done = ""; missing = ""
+        if (lastblock > 0) {
+          for (i = lastblock + 1; i <= count && text[i] !~ /^##/; i++) {
+            if (match(text[i], /^[[:space:]]*- \[[ xX]\] [0-9]+[.)]/)) {
+              num = text[i]; sub(/^[[:space:]]*- \[[ xX]\] /, "", num); sub(/[.)].*$/, "", num); num += 0
+              if (num in want) {
+                if (text[i] ~ /^[[:space:]]*- \[ \]/) sub(/\[ \]/, "[x]", text[i])
+                found[num] = 1
+              }
+            }
+          }
+        }
+        for (k in want) if (!(k in found)) missing = missing (missing == "" ? "" : ",") k
+        for (i = 1; i <= count; i++) print text[i]
+        print (lastblock == 0 ? "noblock" : (missing == "" ? "ok" : "missing " missing)) > (ENVIRON["STATUS"])
+      }' "$sheet" > "$tmp"
+    status=$(cat "$tmp.status" 2>/dev/null)
+    case "$status" in
+      ok) mv "$tmp" "$sheet"; echo "Points $list of the last /check of $key: checked." ;;
+      noblock) rm -f "$tmp"; echo "No \"## Retours /check\" block in the sheet of $key (nothing changed)."; print_plan; exit 0 ;;
+      *) rm -f "$tmp"; echo "Points not found in the last /check block: ${status#missing } (nothing changed)."; print_plan; exit 0 ;;
+    esac
+    [ -n "$suivi" ] && append "Suivi" "- $now $suivi" && printf 'Suivi: - %s %s\n' "$now" "$suivi"
+    print_plan
+    ;;
   decision)
     [ -n "$1" ] || { echo "Usage: ticket-sheet.sh decision \"<topic> : <choice> (<origin>)\""; exit 0; }
     append "Décisions" "- $1" && printf 'Décision added: - %s\n' "$1"
@@ -116,7 +165,7 @@ case "$action" in
     print_plan
     ;;
   *)
-    echo "Usage: ticket-sheet.sh tick <N> [\"<suivi line>\"] | decision \"<decision>\" | suivi \"<line>\" | plan"
+    echo "Usage: ticket-sheet.sh tick <N> [\"<suivi line>\"] | fixed <N>[,<N>...] [\"<suivi line>\"] | decision \"<decision>\" | suivi \"<line>\" | plan"
     ;;
 esac
 exit 0

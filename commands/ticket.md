@@ -82,4 +82,5 @@ If the analyst's answer does not end with "Fiche écrite", write the sheet yours
 - First line: "**[<KEY>](<Jira link>) - <summary>**".
 - The branch state (see your general rules).
 - The sections "Résumé", "Critères d'acceptation", "Questions ouvertes" and "Plan" returned by the analyst, unchanged.
-- One last line: "Prochaine étape : /dev (étape 1, tu peux ajouter des directives : /dev comme dans <repo>, /dev avec un Result…), puis /test, /check et /ship. En cas de doute : /next. Astuce : une session OpenCode par ticket ; pour reprendre plus tard, nouvelle session puis /next."
+- One line: "Ensuite : /dev étape par étape, puis /test, /check et /ship. Pour reprendre plus tard : nouvelle session puis /next."
+- Then the next step with the question tool (header "Suite"): "/dev 1 (recommandé)" (description: « Étape 1 : <its text> ; pour ajouter des directives, tape-la en réponse libre : /dev 1 avec un Result… ») and "Rien pour l'instant"; the pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance <command>. ».
