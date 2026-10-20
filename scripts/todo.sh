@@ -150,12 +150,15 @@ function due_of(str,   t, s, y, m, d, n, i, k, names) {
   }
   return ""
 }
-function short(s,   n, w, wd) {
+# Today, tomorrow, "ven. 23/10", or "mer. 13/10/2027" in another year (French labels)
+function datelabel(s,   n, wd, out) {
   n = num(s)
   split("lun. mar. mer. jeu. ven. sam. dim.", wd, " ")
   if (n == TN) return "aujourd\047hui"
   if (n == TN + 1) return "demain"
-  return wd[weekday(n)] " " substr(s, 9, 2) "/" substr(s, 6, 2)
+  out = wd[weekday(n)] " " substr(s, 9, 2) "/" substr(s, 6, 2)
+  if (substr(s, 1, 4) != substr(TODAY, 1, 4)) out = out "/" substr(s, 1, 4)
+  return out
 }
 
 # ---------- the file ----------
@@ -177,30 +180,54 @@ function parse(line,   rest, i) {
 function render(i) {
   return "- [" (isdone[i] ? "x" : " ") "] #" id[i] (due[i] != "" ? " " due[i] : "") " " text[i] (meta[i] != "" ? " " meta[i] : "")
 }
-function label(i,   n, s) {
-  if (due[i] == "") return "#" id[i] " — " text[i]
-  n = num(due[i])
-  if (n < TN) s = "⚠ en retard (" substr(due[i], 9, 2) "/" substr(due[i], 6, 2) ")"
-  else s = short(due[i])
-  return "#" id[i] " " s " — " text[i]
+# One open item under its group: its number first (for /todo fait <n>), then the text and its date
+function line_of(i, with_date) {
+  return "  #" id[i] "  " text[i] (with_date && due[i] != "" ? " · " datelabel(due[i]) : "")
 }
-function show_list(   i, j, k, order, cnt, recent) {
+function group_of(i) {
+  if (due[i] == "") return "none"
+  if (num(due[i]) < TN) return "late"
+  if (num(due[i]) == TN) return "today"
+  if (num(due[i]) <= TN + 7) return "week"
+  return "later"
+}
+# The open items, overdue first, grouped by urgency; hint: the commands, when I typed /todo alone
+function show_list(hint,   i, j, k, order, cnt, recent, g, grp) {
   cnt = 0
   for (i = 1; i <= n_items; i++) if (!isdone[i] && id[i] > 0 && text[i] != "") { cnt++; order[cnt] = i; key[i] = (due[i] != "" ? due[i] : "9999-99-99") sprintf("%08d", id[i]) }
   # insertion sort: few items
   for (j = 2; j <= cnt; j++) { k = order[j]; i = j - 1; while (i >= 1 && key[order[i]] > key[k]) { order[i + 1] = order[i]; i-- } order[i + 1] = k }
-  if (cnt == 0) print "Ta todo est vide."
+  if (cnt == 0) print "📋 Ma todo · rien à faire 🎉"
   else {
-    print "À faire (" cnt ") :"
-    for (j = 1; j <= cnt; j++) print "- " label(order[j])
+    print "📋 Ma todo · " cnt " à faire"
+    g = ""
+    for (j = 1; j <= cnt; j++) {
+      i = order[j]
+      grp = group_of(i)
+      if (grp != g) {
+        print ""
+        if (grp == "late") print "⚠️ En retard"
+        else if (grp == "today") print "🔔 Aujourd\047hui"
+        else if (grp == "week") print "📅 Dans les 7 jours"
+        else if (grp == "later") print "🗓️ Plus tard"
+        else print "🗒️ Sans échéance"
+        g = grp
+      }
+      print line_of(i, grp != "today")
+    }
   }
   recent = 0
   for (i = 1; i <= n_items; i++) if (isdone[i] && match(meta[i], /faite le [0-9-]+/) && num(substr(meta[i], RSTART + 9, 10)) >= TN - 7) recent++
-  if (recent > 0) print "Faites ces 7 derniers jours : " recent
+  if (recent > 0) { print ""; print "✅ " recent (recent > 1 ? " faites" : " faite") " ces 7 derniers jours" }
+  if (hint) { print ""; print "✏️ /todo <texte> pour ajouter · ✅ /todo fait <n> · 🗑️ /todo suppr <n>" }
 }
+# One line: the items overdue or due today (/next, /todo rappels)
 function reminders(   i, n, out) {
   n = 0; out = ""
-  for (i = 1; i <= n_items; i++) if (!isdone[i] && id[i] > 0 && due[i] != "" && num(due[i]) <= TN) { n++; out = out (out == "" ? "" : " ; ") label(i) }
+  for (i = 1; i <= n_items; i++) if (!isdone[i] && id[i] > 0 && due[i] != "" && num(due[i]) <= TN) {
+    n++
+    out = out (out == "" ? "" : " ; ") "#" id[i] " " text[i] (num(due[i]) < TN ? " (en retard : " datelabel(due[i]) ")" : " (aujourd\047hui)")
+  }
   reminder_count = n
   return out
 }
@@ -218,6 +245,7 @@ BEGIN { TODAY = ENVIRON["TODAY"]; TN = num(TODAY); op = ENVIRON["OP"]; arg = ENV
 { other[++n_other] = $0 }
 END {
   sub(/^[ \t]+/, "", arg); sub(/[ \t]+$/, "", arg)
+  raw = (op == "raw")
   if (op == "raw") {
     first = tolower(arg); sub(/[ \t].*$/, "", first)
     rest = arg; if (index(rest, " ")) { sub(/^[^ \t]+[ \t]+/, "", rest) } else rest = ""
@@ -234,37 +262,37 @@ END {
   # lines written by hand without a number get one
   for (i = 1; i <= n_items; i++) if (id[i] == 0) { id[i] = ++maxid; changed = 1 }
   if (op == "add") {
-    if (arg == "") { print "Rien à ajouter : /todo <texte>, avec une échéance si tu veux (demain, vendredi, 24/10)." ; exit }
+    if (arg == "") { print "✏️ Rien à ajouter : /todo <texte>, avec une échéance si tu veux (demain, vendredi, 24/10)." ; exit }
     n_items++
     id[n_items] = ++maxid; isdone[n_items] = 0; text[n_items] = arg; due[n_items] = due_of(arg); meta[n_items] = "(ajoutée le " TODAY ")"
-    print "Ajoutée : " label(n_items) (due[n_items] == "" ? " (sans échéance)" : "")
+    print "➕ Ajoutée · #" id[n_items] " " arg (due[n_items] == "" ? " · sans échéance" : (num(due[n_items]) < TN ? " · ⚠️ " datelabel(due[n_items]) ", date passée" : " · 📅 " datelabel(due[n_items])))
     changed = 1
   } else if (op == "done" || op == "remove") {
     c = ids_of(arg, list)
-    if (c == 0) { print "Quel numéro ? /todo " (op == "done" ? "fait" : "suppr") " <n> (les numéros sont dans /todo)"; exit }
+    if (c == 0) { print "❓ Quel numéro ? /todo " (op == "done" ? "fait" : "suppr") " <n> (les numéros sont dans /todo)"; exit }
     for (j = 1; j <= c; j++) {
       i = find(list[j])
-      if (!i) { print "#" list[j] " : introuvable"; continue }
+      if (!i) { print "❓ #" list[j] " introuvable"; continue }
       if (op == "done") {
-        if (isdone[i]) { print "#" list[j] " : déjà faite"; continue }
+        if (isdone[i]) { print "☑️ #" list[j] " déjà faite"; continue }
         isdone[i] = 1; meta[i] = "(faite le " TODAY ")"
-        print "Faite : #" id[i] " — " text[i]
+        print "✅ Faite · #" id[i] " " text[i]
       } else {
-        print "Supprimée : #" id[i] " — " text[i]
+        print "🗑️ Supprimée · #" id[i] " " text[i]
         id[i] = -1
       }
       changed = 1
     }
   } else if (op == "due") {
     s = reminders()
-    print (reminder_count == 0 ? "Aucun rappel" : "Rappels (" reminder_count ") : " s)
+    print (reminder_count == 0 ? "🔔 Aucun rappel" : "🔔 Rappels (" reminder_count ") : " s)
     exit
   } else if (op == "count") {
     reminders()
     print reminder_count
     exit
   }
-  if (op != "count" && op != "due") { if (op != "list") print ""; show_list() }
+  if (op != "count" && op != "due") { if (op != "list") print ""; show_list(raw && op == "list") }
   if (changed) {
     out = ENVIRON["OUT"]
     print "# Ma todo (/todo dans OpenCode, modifiable à la main)" > out

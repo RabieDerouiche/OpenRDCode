@@ -54,9 +54,17 @@ dotnet build ${target:+"$target"} -nologo -v q -clp:ErrorsOnly > "$out" 2>&1
 status=$?
 tail -n 60 "$out"
 if [ "$status" -ne 0 ]; then
-  if [ "$build_only" -eq 1 ]; then echo "BUILD: FAILED (exit $status)"; else echo "BUILD: FAILED (exit $status) - tests not run"; fi
+  # Distinct errors: MSBuild may print the same error once per project that builds the file
+  errors=$(grep -E ': error [A-Z]+[0-9]+' "$out" | sed -E 's/ \[[^]]*\]$//' | sort -u | wc -l | tr -d ' ')
+  if [ "$build_only" -eq 1 ]; then
+    echo "BUILD: FAILED (exit $status, $errors distinct errors)"
+  else
+    echo "BUILD: FAILED (exit $status, $errors distinct errors) - tests not run"
+  fi
   if grep -q -E 'NU1301|Response status code does not indicate success: 40[13]|\((Unauthorized|Forbidden)\)' "$out"; then
-    echo "ENVIRONMENT PROBLEM: the package feed (Artifactory) refused access or cannot be reached (NU1301, 401 or 403). Stop and tell the user in one line. Never read nuget.config, NuGet.Config or environment variables, and never retry with other options."
+    echo "ENVIRONMENT PROBLEM: the package feed (Artifactory) refused access or cannot be reached (NU1301, 401 or 403). Stop and tell the user in one line. Never read nuget.config, NuGet.Config or environment variables, never set them in a command, and never retry with other options."
+  elif [ "$errors" -gt 0 ]; then
+    echo "NOTE: this is the complete list for the projects that were compiled. A project that references a project with errors is not compiled at all (its own errors, test projects included, appear only once these are fixed). Fix these errors, then build again: the same build without a change gives the same output."
   fi
   exit "$status"
 fi

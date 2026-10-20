@@ -26,6 +26,11 @@
 //    the model server, OpenCode retries), and "rien reçu depuis <n> s" when the model has sent nothing for 30 s.
 //    The title comes back as it was when the turn ends. Never in a subagent's session; in a new session, only once
 //    OpenCode has written its title (or after 90 s), so that its title generation is not disturbed.
+// 6. Refuses an agent's shell command that sets PATH or DOTNET_ROOT, or that writes a credential (an assignment or an
+//    export of a password, token, secret or Artifactory variable, a password in a URL, in curl -u or in a NuGet source):
+//    the environment of the agents comes from ~/.zshenv, and a credential written in a command stays in the session
+//    history. OpenCode's permission rules cannot see these forms (assignments and export are not commands to its
+//    parser). The agent is told to stop and report an environment problem instead.
 // Any error leaves the command as it is: a "[[run ...]]" line left in the prompt is then run by the model itself.
 import { execFile, spawn } from "node:child_process"
 import { readFileSync } from "node:fs"
@@ -50,6 +55,26 @@ const DEFAULT_TITLE = /^(New session - |Child session - )\d{4}-\d{2}-\d{2}T\d{2}
 const TICK_MS = 5000
 const SILENCE_MS = 30000
 const DEFAULT_WAIT_MS = 90000
+// Shell commands that set the environment or write a credential (point 6). An assignment starts a command (start of
+// the text, after ; & | ( ` or a new line), possibly after export/declare/typeset/readonly/local/env and other
+// assignments; quoted text is left out first, so that "token=null" in a commit message or "password=|secret=" in a
+// search pattern is not one.
+const ASSIGN = String.raw`(?:^|[;&|(\x60\n])\s*(?:(?:export|declare|typeset|readonly|local)\s+(?:-\w+\s+)*|env\s+(?:-\S+\s+)*)?(?:\w+=\S*\s+)*`
+const SETS_ENVIRONMENT = new RegExp(ASSIGN + String.raw`(?:PATH|DOTNET_ROOT\w*)=`)
+const SETS_SECRET = new RegExp(ASSIGN + String.raw`(?:\w*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_?KEY|CREDENTIALS?)\w*|ARTIFACTORY\w*)=`, "i")
+const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
+// A user and a password in a URL (https://user:token@host), in curl/wget -u, or in a NuGet source
+const SECRET_IN_URL = /\b(?:https?|ssh|git|ftp):\/\/[\w.%-]+:[^\s/@*]+@/i
+const SECRET_IN_OPTION = /\b(?:curl|wget)\b[^\n]*\s(?:-u|--user)\s*[\w.%-]+:\S|\bdotnet\s+nuget\s+(?:add|update)\s+source\b[^\n]*(?:\s-p\s|--password)/i
+
+// Why a shell command of an agent is refused (point 6), or ""
+function refusal(command) {
+  const text = String(command || "")
+  const unquoted = text.replace(QUOTED, "''")
+  if (SETS_ENVIRONMENT.test(unquoted)) return "it sets PATH or DOTNET_ROOT"
+  if (SETS_SECRET.test(unquoted) || SECRET_IN_URL.test(text) || SECRET_IN_OPTION.test(text)) return "it writes a credential"
+  return ""
+}
 
 // The first answer that is a command of the pack, as { command, arguments }
 function chosenCommand(answers) {
@@ -415,6 +440,18 @@ export const CompactCommands = async (input) => {
   }
 
   return {
+    "tool.execute.before": async (call, output) => {
+      if (!call || call.tool !== "bash" || !output || !output.args) return
+      const why = refusal(output.args.command)
+      if (why) {
+        throw new Error(
+          "Refused by the pack: " + why + ". A command never sets PATH, DOTNET_ROOT or a credential: the environment of " +
+            "the agents comes from ~/.zshenv, and a credential written in a command stays in the session history. If " +
+            "dotnet is missing or Artifactory refuses access, it is an ENVIRONMENT PROBLEM: tell the user in one line " +
+            "and stop. Never try another form of this command.",
+        )
+      }
+    },
     "tool.execute.after": async (call, result) => {
       try {
         if (!call || call.tool !== "question" || !client) return
