@@ -8,7 +8,8 @@
 #                                                         only some tests (the test project and what it references)
 #   build-test.sh --build-only [<solution or project>]    the build only, to fix compilation errors
 # Output: the build errors (each once) and the build summary, then the end of the test output (failures and totals),
-# preceded by the summary line of the test assemblies that scrolled out of it. After a run of the whole solution
+# preceded by the summary line of the test assemblies that scrolled out of it; after a test failure, a line
+# "FAILED TESTS (<n>): <names>" with every failed test of the run. After a run of the whole solution
 # (no target, or a .sln/.slnx, and no test option), a last line gives the code fingerprint that was built and tested
 # (state-fingerprint.sh): /check does not run the build and tests again while the code keeps this fingerprint.
 # An environment problem (dotnet missing from the PATH, the package feed refusing access, no .NET runtime for the
@@ -85,6 +86,16 @@ if [ "$total" -gt 80 ]; then
 fi
 tail -n 80 "$out"
 if [ "$status" -ne 0 ]; then
+  # The names of the failed tests, from the whole output (VSTest: "Failed <name> [12 ms]"; Microsoft.Testing.Platform:
+  # "failed <name> (12ms)"): /go compares them with the tests that already failed on develop before the ticket
+  failed=$(sed -n \
+    -e 's/^[[:space:]]*Failed[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}\[[^]]*\][[:space:]]*$/\1/p' \
+    -e 's/^[[:space:]]*failed[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}([0-9][^)]*)[[:space:]]*$/\1/p' "$out" |
+    sort -u)
+  if [ -n "$failed" ]; then
+    count=$(printf '%s\n' "$failed" | grep -c .)
+    echo "FAILED TESTS ($count): $(printf '%s\n' "$failed" | head -n 25 | awk 'NR > 1 { printf ", " } { printf "%s", $0 } END { print "" }')$([ "$count" -gt 25 ] && echo " (+$((count - 25)) more)")"
+  fi
   echo "TESTS: FAILED (exit $status)"
   if grep -q -E 'You must install (or update )?\.NET to run this application' "$out"; then
     echo "ENVIRONMENT PROBLEM: the test host does not find the .NET runtime (DOTNET_ROOT is missing). Stop and tell the user in one line: add DOTNET_ROOT to ~/.zshenv (see the README of the pack), then restart OpenCode."

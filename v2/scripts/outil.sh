@@ -30,6 +30,7 @@ case "$name" in
   setup|agents-md|agents) name=setup ;;
   abandon|abandonner) name=abandon ;;
   todo) ;;
+  stats|statistiques|stat) name=stats ;;
   *)
     [ -n "$name" ] && echo "Outil inconnu : $name"
     cat <<'EOF'
@@ -38,18 +39,26 @@ Outils disponibles (/outil <nom> [arguments]) :
 - audit [domaine] : audit des bonnes pratiques du dépôt, avec preuves et la plus petite façon d'ajouter ce qui manque
 - licences [branche | <package> [version]] : packages NuGet devenus payants ou copyleft, avec l'option gratuite
 - release-notes [<groupe>] : note de version d'une mise en production depuis master (plusieurs dépôts avec un groupe)
-- pattern extract <nom> <dépôt source> [où : clé Jira, classes] · pattern apply <nom> [back|front] [consignes] : réutiliser une bonne implémentation d'un autre dépôt
+- pattern <nom> <dépôt source> [où : clé Jira, classes] : capture une bonne implémentation d'un autre dépôt en skill d'équipe ; ensuite /go s'en sert tout seul (ou /go <CLÉ> comme le pattern <nom>)
 - cqrs <command|query> <Nom> <Feature> : command ou query, handler, validator et tests (projets CQRS)
 - setup [page Confluence] : crée ou met à jour l'AGENTS.md du dépôt (à faire une fois par dépôt)
 - abandon : annule un ticket lancé par erreur (branche et fiche supprimées, avec ta validation)
 - todo [texte | fait <n> | suppr <n> | rappels] : ta todo list personnelle, hors Jira
+- stats [<dépôt>...] : ce que /go et /fix ont fait sur tes tickets (étapes, interventions, décisions, arrêts, temps jusqu'à la MR)
 EOF
     exit 0 ;;
 esac
 
-# todo: the list is shown to me at once, above the line that the pack plugin turns into my message
+# todo and stats: the result is shown to me at once, above the line that the pack plugin turns into my message
 if [ "$name" = todo ]; then
   sh "$here/todo.sh" --raw "$rest"
+  echo "[[visible]]"
+fi
+if [ "$name" = stats ]; then
+  set -f
+  # shellcheck disable=SC2086 # the repositories given, one per word
+  sh "$here/ticket-stats.sh" $rest
+  set +f
   echo "[[visible]]"
 fi
 echo "Outil : $name"
@@ -77,32 +86,31 @@ case "$name" in
     echo "Commits de master depuis la dernière mise en production de ce dépôt :"
     sh "$here/release-commits.sh" . --head ;;
   pattern)
-    sub=$1
-    case "$sub" in
-      extract|extraire)
-        echo "Action : extract (nom : ${2:-manquant}, dépôt source : ${3:-manquant})"
-        if [ -n "${3:-}" ]; then
-          where=$(printf '%s' "$rest" | awk '{ $1 = ""; $2 = ""; $3 = ""; sub(/^ +/, ""); print }')
+    # "pattern <name> <source repository> [where]"; the older "pattern extract ..." still works
+    case "$1" in
+      extract|extraire) shift ;;
+    esac
+    case "$1" in
+      apply|appliquer)
+        echo "Action : apply n'existe plus. /go applique les patterns tout seul : /go <CLÉ> comme le pattern ${2:-<nom>}" ;;
+      "")
+        echo "Action : manquante (/outil pattern <nom> <dépôt source> [où : clé Jira, classes])" ;;
+      *)
+        echo "Action : extract (nom : $1, dépôt source : ${2:-manquant})"
+        if [ -n "${2:-}" ]; then
+          name_arg=$1
+          source_arg=$2
+          shift 2
+          where="$*"
           echo "Dépôt source (détection, racine absolue, fichiers de projet) :"
-          sh "$here/detect-project-type.sh" --files "$3"
-          sh "$here/pattern-source.sh" "$3" "$where"
+          sh "$here/detect-project-type.sh" --files "$source_arg"
+          sh "$here/pattern-source.sh" "$source_arg" "$where"
           echo "Packages du dépôt source :"
-          sh "$here/package-refs.sh" "$3"
+          sh "$here/package-refs.sh" "$source_arg"
+          set -- "$name_arg"
         fi
         echo "Skills de pattern de cette machine :"
-        sh "$here/pattern-skills.sh" "${2:-}" ;;
-      apply|appliquer)
-        echo "Action : apply (nom : ${2:-manquant})"
-        echo "État git et fiche ticket :"
-        sh "$here/workflow-state.sh" --no-fetch --sheet
-        echo "Détection du projet :"
-        sh "$here/detect-project-type.sh"
-        echo "Packages de ce dépôt :"
-        sh "$here/package-refs.sh"
-        echo "Skills de pattern de cette machine :"
-        sh "$here/pattern-skills.sh" "${2:-}" ;;
-      *)
-        echo "Action : manquante (pattern extract <nom> <dépôt source> [où] ou pattern apply <nom> [back|front] [consignes])" ;;
+        sh "$here/pattern-skills.sh" "${1:-}" ;;
     esac ;;
   cqrs)
     echo "Détection du projet :"
@@ -113,7 +121,7 @@ case "$name" in
   abandon)
     echo "État git (une récupération, puis l'état de la branche et de sa fiche) :"
     sh "$here/workflow-state.sh" ;;
-  todo)
+  todo|stats)
     echo "Résultat : déjà affiché au-dessus, tel quel" ;;
 esac
 exit 0

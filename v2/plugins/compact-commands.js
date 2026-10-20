@@ -31,13 +31,35 @@
 //    the environment of the agents comes from ~/.zshenv, and a credential written in a command stays in the session
 //    history. OpenCode's permission rules cannot see these forms (assignments and export are not commands to its
 //    parser). The agent is told to stop and report an environment problem instead.
+// 7. Keeps the agents of the pack inside the repository of the session: a shell command of any agent that names a path
+//    outside it (`~`, `$HOME`, `/home/…`, `../..`, a bare `cd`), even inside quotes, `sh -c '…'` or after a
+//    redirection, is refused, and so is a read, search, edit or write of an agent of the pack (pilot, analyst, coder,
+//    checker, debugger, doc-writer) outside it. Allowed outside: the pack's scripts and skills, the outputs OpenCode
+//    saves, the NuGet package cache for the file tools, the folders configured as "references" in opencode.json and
+//    the folders I name myself (in the arguments of a command or in a message I type): the conversation agents and the
+//    read-only agents may use them in the shell, every agent of the pack with the file tools. Secrets (~/.zshenv, the
+//    git credentials, ~/.nuget/NuGet) are outside every repository: no `grep -r <word> ~` can print them. The
+//    arguments of the pack's scripts are not checked: a commit message may contain any text.
+//    OpenCode's own rules cannot do this (tree-sitter does not look inside quotes, and `export -p` is not a command to
+//    it); an approval answered "always" cannot lift it either. Also refused for every agent: an environment dump
+//    (`export`, `declare -p`, `set` alone) and a recursive rm, whatever the order of its options.
+// 8. Gives the long commands the time they need: a build or test command 20 minutes (OpenCode stops any command after
+//    2 minutes unless the agent asks for more, and a stopped full test suite is run again from the start), ship.sh
+//    and branch.sh 5 minutes.
+// 9. Starts only one /go or /fix at a time per repository: two pilots in one working tree would commit each other's
+//    changes. The second one is replaced by a one-line answer that names the session that runs (no tool runs).
+// 10. Leaves the outcome of a /go or /fix in the session title once it ends: "✅ " (merge request created or updated,
+//    nothing left to do) or "⛔ " (stopped: its answer holds ⛔, or the run ended with an error). With several
+//    /go running in several repositories, the list of sessions says which one needs me. The mark goes away when the
+//    next turn of the session starts.
 // Any error leaves the command as it is: a "[[run ...]]" line left in the prompt is then run by the model itself.
 import { execFile, spawn } from "node:child_process"
-import { readFileSync } from "node:fs"
-import { homedir } from "node:os"
-import { basename, join } from "node:path"
+import { existsSync, readFileSync, statSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
+import { basename, isAbsolute, join, resolve, sep } from "node:path"
 
-const SCRIPTS = join(homedir(), ".config", "opencode", "scripts")
+const HOME = homedir()
+const SCRIPTS = join(HOME, ".config", "opencode", "scripts")
 const RUN = /\[\[run ([a-z][a-z0-9-]*\.sh)((?: [^\n]*?)?)\]\]/g
 const VISIBLE = /\n?\[\[visible\]\]\n?/
 const TIMEOUT_MS = 180000
@@ -47,6 +69,8 @@ const CHAINABLE = new Set(["go", "fix", "daily", "review", "compare", "outil"])
 const CHOICE = /^\/([a-z][a-z0-9-]*)((?:\s+\S.*?)?)\s*(?:\((?:recommandé|recommended)\))?\s*$/i
 // Progress in the title
 const PROGRESS = /^(?:⏳|❓) [^—]*— /
+// Outcome of the last /go or /fix of a session (10)
+const OUTCOME = /^(?:✅|⛔) /
 const DEFAULT_TITLE = /^(New session - |Child session - )\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 const TICK_MS = 5000
 const SILENCE_MS = 30000
@@ -59,17 +83,152 @@ const ASSIGN = String.raw`(?:^|[;&|(\x60\n])\s*(?:(?:export|declare|typeset|read
 const SETS_ENVIRONMENT = new RegExp(ASSIGN + String.raw`(?:PATH|DOTNET_ROOT\w*)=`)
 const SETS_SECRET = new RegExp(ASSIGN + String.raw`(?:\w*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_?KEY|CREDENTIALS?)\w*|ARTIFACTORY\w*)=`, "i")
 const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
+// Commands that take minutes (8): a build or tests, a restore, the front-end tooling; the pack's git scripts
+const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|dotnet\s+(?:build|test|restore|format|ef|clean)|npm\s+(?:test|ci|install|i|run\s+(?:test|build|lint))|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint))|yarn\s+(?:test|install|build|lint)|pnpm\s+(?:test|install|build|lint))(?=\s|$|[;&|)])/
+const GIT_SCRIPT = /(?:^|[\s;&|(])\S*(?:ship|branch)\.sh(?=\s|$)/
 // A user and a password in a URL (https://user:token@host), in curl/wget -u, or in a NuGet source
 const SECRET_IN_URL = /\b(?:https?|ssh|git|ftp):\/\/[\w.%-]+:[^\s/@*]+@/i
 const SECRET_IN_OPTION = /\b(?:curl|wget)\b[^\n]*\s(?:-u|--user)\s*[\w.%-]+:\S|\bdotnet\s+nuget\s+(?:add|update)\s+source\b[^\n]*(?:\s-p\s|--password)/i
 
-// Why a shell command of an agent is refused (point 6), or ""
+// An environment dump: export, declare, typeset or readonly without a name, or set alone (point 7)
+const DUMPS_ENVIRONMENT = /(?:^|[;&|(\x60\n])\s*(?:(?:export|declare|typeset|readonly)(?:\s+-[A-Za-z]+)*|set)\s*(?=$|[;&|)\x60\n])/
+// rm with a recursive option, before or after its operands, also through xargs (point 7)
+const RECURSIVE_RM = /(?:^|[;&|(\x60\n]|\bxargs\b[^;&|\n]*?)\s*rm\b[^;&|\n]*?\s(?:-[A-Za-z]*[rR][A-Za-z]*|--recursive)(?=\s|$|[;&|)])/
+
+// Why a shell command of an agent is refused (points 6 and 7), or ""
 function refusal(command) {
   const text = String(command || "")
   const unquoted = text.replace(QUOTED, "''")
   if (SETS_ENVIRONMENT.test(unquoted)) return "it sets PATH or DOTNET_ROOT"
   if (SETS_SECRET.test(unquoted) || SECRET_IN_URL.test(text) || SECRET_IN_OPTION.test(text)) return "it writes a credential"
+  if (DUMPS_ENVIRONMENT.test(unquoted)) return "it prints the environment"
+  if (RECURSIVE_RM.test(unquoted)) return "it deletes a folder (recursive rm)"
   return ""
+}
+
+// ---------- 7. the repository of the session, and the folders allowed outside it ----------
+const PACK_AGENTS = new Set(["pilot", "analyst", "coder", "checker", "debugger", "doc-writer"])
+// agents that may read a reference or a folder I named through the shell (git log of another repository); the pilot,
+// the coder and doc-writer read them with the file tools only
+const SHELL_READERS = new Set(["analyst", "checker", "debugger", "build", "plan", "general", "explore"])
+const PACK_DIRS = [SCRIPTS, join(HOME, ".config", "opencode", "skills")]
+const SAVED_OUTPUTS = [
+  join(process.env.XDG_DATA_HOME || join(HOME, ".local", "share"), "opencode", "tool-output"),
+  join(tmpdir(), "opencode"),
+]
+const PACKAGE_CACHE = join(HOME, ".nuget", "packages")
+const DEVICES = new Set(["/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr"])
+// commands that only print a path: `realpath ~` gives the home folder to the file tools, which do not expand ~
+const PRINTS_PATH = new Set(["realpath", "echo", "printf", "basename", "dirname"])
+const FILE_TOOLS = { read: "filePath", write: "filePath", edit: "filePath", grep: "path", glob: "path" }
+
+const within = (target, dir) => target === dir || target.startsWith(dir.endsWith(sep) ? dir : dir + sep)
+
+// The words of a shell command, per simple command (split on ; & | ( ) ` < > and new lines outside quotes), with the
+// quotes removed as the shell does; a quoted word keeps its spaces (it is checked again as a command: sh -c '...')
+function commandWords(text) {
+  const out = []
+  let words = []
+  let word = ""
+  let started = false
+  let quote = ""
+  const push = () => {
+    if (started) words.push(word)
+    word = ""
+    started = false
+  }
+  const end = () => {
+    push()
+    if (words.length) out.push(words)
+    words = []
+  }
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (quote) {
+      if (ch === quote) quote = ""
+      else if (ch === "\\" && quote === '"' && i + 1 < text.length) word += text[++i]
+      else word += ch
+    } else if (ch === "'" || ch === '"') {
+      quote = ch
+      started = true
+    } else if (ch === "\\" && i + 1 < text.length) {
+      word += text[++i]
+      started = true
+    } else if (/[;&|()\n`<>]/.test(ch)) end()
+    else if (/\s/.test(ch)) push()
+    else {
+      word += ch
+      started = true
+    }
+  }
+  end()
+  return out
+}
+
+// The path a word of a shell command points to, when it is one: ~, $HOME, an absolute path whose first folder exists
+// (so that a route like /api/orders in a search is not one), or a path that goes up with ..
+function pathOf(word, cwd) {
+  if (!word) return undefined
+  if (word === "~" || word.startsWith("~/")) return resolve(HOME, word.slice(2))
+  if (/^~[A-Za-z0-9_.-]/.test(word)) return "/"
+  const home = /^\$(?:\{HOME\}|HOME)(?=\/|$)(.*)$/.exec(word)
+  if (home) return resolve(HOME + home[1])
+  if (word.startsWith("/")) {
+    const first = word.split("/")[1]
+    return !first || existsSync("/" + first) ? resolve(word) : undefined
+  }
+  if (/(^|\/)\.\.(\/|$)/.test(word)) return resolve(cwd, word)
+  return undefined
+}
+
+// The first word of a shell command that points outside the allowed folders, or ""
+function shellOutside(command, cwd, allowed, depth = 0) {
+  for (const words of commandWords(String(command || ""))) {
+    // the pack's scripts check their own arguments, which may be free text (a commit message, a decision)
+    if (/^(?:ba|da|z)?sh$/.test(words[0]) && words[1]) {
+      const script = pathOf(words[1], cwd) || resolve(cwd, words[1])
+      if (within(script, SCRIPTS)) continue
+    }
+    if (words.length === 1 && /^(?:cd|pushd)$/.test(words[0])) return "~"
+    for (const word of words) {
+      if (/\s/.test(word)) {
+        if (depth < 3) {
+          const inner = shellOutside(word, cwd, allowed, depth + 1)
+          if (inner) return inner
+        }
+        continue
+      }
+      for (const piece of word.split("=")) {
+        const target = pathOf(piece, cwd)
+        if (!target || DEVICES.has(target) || allowed.some((dir) => within(target, dir))) continue
+        if (target === HOME && PRINTS_PATH.has(words[0])) continue
+        return piece
+      }
+    }
+  }
+  return ""
+}
+
+// The folders named in a text I typed (command arguments, a message): existing folders or files outside the repository
+function namedFolders(text, root) {
+  const out = []
+  for (const words of commandWords(String(text || ""))) {
+    for (const word of words) {
+      for (const raw of word.split(/\s+/)) {
+        // a path at the end of a sentence: "~/repos/old-api," or "(~/repos/old-api)"
+        const piece = raw.replace(/^[(«"']+/, "").replace(/[),.;:!?»"']+$/, "")
+        const target = pathOf(piece, root) || (isAbsolute(piece) ? resolve(piece) : undefined)
+        if (!target || target === "/" || target === HOME || within(target, root)) continue
+        try {
+          const info = statSync(target)
+          out.push(info.isDirectory() ? target : resolve(target, ".."))
+        } catch {
+          // not a folder or a file of this machine
+        }
+      }
+    }
+  }
+  return out
 }
 
 // The first answer that is a command of the pack, as { command, arguments }
@@ -252,6 +411,19 @@ function toolText(part) {
 export const CompactCommands = async (input) => {
   const directory = (input && (input.directory || input.worktree)) || process.cwd()
   const client = input && input.client
+  // the repository of this instance: its git root (OpenCode gives "/" as the worktree of a folder outside git)
+  const root = resolve(input && input.worktree && input.worktree !== "/" ? input.worktree : directory)
+  // session id -> name of the agent of its last request to the model (7)
+  const agents = new Map()
+  // session id -> parent session id, "" for a top-level session (7)
+  const parents = new Map()
+  // session id -> folders outside the repository that I named in that session (7)
+  const named = new Map()
+  // session id -> the /go or /fix that runs in it (9, 10)
+  const pilots = new Map()
+  // sessions whose /go or /fix was refused: no tool runs in their turn (9)
+  const refused = new Set()
+  let references
   // session id -> the command chosen in its last multiple-choice question, started when the session becomes idle
   const chosen = new Map()
   // session id -> progress of its current turn (5)
@@ -276,6 +448,104 @@ export const CompactCommands = async (input) => {
     client.session
       .command({ path: { id: sessionID }, body: { command: next.command, arguments: next.arguments } })
       .catch(() => {})
+  }
+
+  // ---------- 7. folders allowed outside the repository ----------
+  async function parentOf(sessionID) {
+    if (parents.has(sessionID)) return parents.get(sessionID)
+    let parent = ""
+    try {
+      const info = client && (await client.session.get({ path: { id: sessionID } })).data
+      parent = (info && info.parentID) || ""
+    } catch {
+      // unknown: treated as a top-level session
+    }
+    parents.set(sessionID, parent)
+    return parent
+  }
+
+  // the folders configured as "references" in opencode.json (local paths; OpenCode lets every agent read them)
+  async function referenceFolders() {
+    if (references) return references
+    references = []
+    try {
+      const config = client ? (await client.config.get()).data || {} : {}
+      for (const entry of Object.values(config.references || config.reference || {})) {
+        // a git reference ({ repository }, or "owner/repo") has no local path to allow: only the folders that exist
+        const where = typeof entry === "string" ? entry : entry && entry.path
+        if (!where) continue
+        const expanded = where === "~" || where.startsWith("~/") ? join(HOME, where.slice(2)) : where
+        for (const base of isAbsolute(expanded) ? [""] : [root, join(HOME, ".config", "opencode")]) {
+          const target = resolve(base, expanded)
+          if (existsSync(target)) references.push(target)
+        }
+      }
+    } catch {
+      // no reference
+    }
+    return references
+  }
+
+  async function namedIn(sessionID) {
+    const own = named.get(sessionID) || []
+    const parent = await parentOf(sessionID)
+    return parent ? [...own, ...(named.get(parent) || [])] : own
+  }
+
+  function addNamed(sessionID, text) {
+    const found = namedFolders(text, root)
+    if (found.length) named.set(sessionID, [...new Set([...(named.get(sessionID) || []), ...found])])
+  }
+
+  // Why a tool call goes outside the folders allowed to its agent (7), or ""
+  async function escape(tool, sessionID, args) {
+    const agent = agents.get(sessionID) || ""
+    const cwd = args && typeof args.workdir === "string" && args.workdir ? resolve(directory, args.workdir) : directory
+    const base = [root, ...PACK_DIRS, ...SAVED_OUTPUTS]
+    if (tool === "bash") {
+      const extra = SHELL_READERS.has(agent) || !PACK_AGENTS.has(agent) ? [...(await referenceFolders()), ...(await namedIn(sessionID))] : []
+      const allowed = [...base, ...extra]
+      if (!allowed.some((dir) => within(cwd, dir))) return args.workdir
+      return shellOutside(args && args.command, cwd, allowed)
+    }
+    const key = FILE_TOOLS[tool]
+    if (!key || !PACK_AGENTS.has(agent)) return ""
+    const value = args && args[key]
+    if (typeof value !== "string" || !value) return ""
+    const target = value === "~" || value.startsWith("~/") ? join(HOME, value.slice(2)) : resolve(directory, value)
+    const allowed = [...base, PACKAGE_CACHE, ...(await referenceFolders()), ...(await namedIn(sessionID))]
+    return DEVICES.has(target) || allowed.some((dir) => within(target, dir)) ? "" : value
+  }
+
+  // ---------- 9 and 10. one /go or /fix at a time, and its outcome in the title ----------
+  async function markOutcome(sessionID, failed) {
+    if (!pilots.has(sessionID) || !client) return
+    pilots.delete(sessionID)
+    try {
+      let mark = failed ? "⛔ " : ""
+      if (!mark) {
+        const recent = await client.session.messages({ path: { id: sessionID }, query: { limit: 6 } })
+        const last = (Array.isArray(recent && recent.data) ? recent.data : [])
+          .filter((message) => message && message.info && message.info.role === "assistant")
+          .sort((a, b) => ((a.info.time && a.info.time.created) || 0) - ((b.info.time && b.info.time.created) || 0))
+          .pop()
+        if (!last) return
+        if (last.info.error) mark = "⛔ "
+        else {
+          const text = (last.parts || []).filter((part) => part && part.type === "text").map((part) => part.text).join("\n")
+          // a stop wins over everything else of the answer (a table of done steps may hold ✅ before it)
+          if (text.includes("⛔")) mark = "⛔ "
+          else if (/🚀|🔁|✅/u.test(text)) mark = "✅ "
+        }
+      }
+      if (!mark) return
+      const info = (await client.session.get({ path: { id: sessionID } })).data
+      if (!info || info.parentID) return
+      const title = (info.title || "").replace(PROGRESS, "").replace(OUTCOME, "")
+      await client.session.update({ path: { id: sessionID }, body: { title: mark + title } })
+    } catch {
+      // the title stays as it is
+    }
   }
 
   // ---------- 5. progress in the session title ----------
@@ -315,7 +585,7 @@ export const CompactCommands = async (input) => {
       }
       const current = info.title || ""
       // a title written by someone else (OpenCode's title generation, a rename) becomes the one to come back to
-      if (current !== state.written) state.original = current.replace(PROGRESS, "")
+      if (current !== state.written) state.original = current.replace(PROGRESS, "").replace(OUTCOME, "")
       const now = Date.now()
       if (DEFAULT_TITLE.test(state.original) && state.phase !== "preparing" && now - state.start < DEFAULT_WAIT_MS) return
       const title = progressLabel(state, now) + " — " + state.original
@@ -363,13 +633,19 @@ export const CompactCommands = async (input) => {
             state.attempt = props.status.attempt || state.attempt + 1
             state.last = Date.now()
           }
-        } else if (type === "idle") void finish(props.sessionID)
+        } else if (type === "idle") {
+          refused.delete(props.sessionID)
+          void finish(props.sessionID).then(() => markOutcome(props.sessionID, false))
+        }
         return
       }
       case "session.idle":
-      case "session.error":
-        void finish(props.sessionID)
+      case "session.error": {
+        refused.delete(props.sessionID)
+        const failed = event.type === "session.error"
+        void finish(props.sessionID).then(() => markOutcome(props.sessionID, failed))
         return
+      }
       case "message.part.updated": {
         const part = props.part
         const state = part && runs.get(part.sessionID)
@@ -436,16 +712,61 @@ export const CompactCommands = async (input) => {
   }
 
   return {
+    "chat.params": async (request) => {
+      try {
+        if (request && request.sessionID && request.agent) agents.set(request.sessionID, request.agent)
+      } catch {
+        // nothing to remember
+      }
+    },
+    "chat.message": async (message, output) => {
+      try {
+        // folders I name in a message I type in a top-level session (never the prompt that an agent writes to a
+        // subagent, never the expanded text of a command)
+        if (!message || !message.sessionID || !output || !Array.isArray(output.parts)) return
+        if (await parentOf(message.sessionID)) return
+        for (const part of output.parts) {
+          if (part && part.type === "text" && !part.synthetic && typeof part.text === "string") addNamed(message.sessionID, part.text)
+        }
+      } catch {
+        // nothing named
+      }
+    },
     "tool.execute.before": async (call, output) => {
-      if (!call || call.tool !== "bash" || !output || !output.args) return
-      const why = refusal(output.args.command)
-      if (why) {
+      if (!call || !output || !output.args) return
+      if (refused.has(call.sessionID)) {
+        throw new Error("Refused by the pack: this /go or /fix was refused (another one runs in this repository). Answer with the sentence of the request only.")
+      }
+      if (call.tool === "bash") {
+        const why = refusal(output.args.command)
+        if (why) {
+          throw new Error(
+            "Refused by the pack: " + why + ". A command never sets PATH, DOTNET_ROOT or a credential, never prints the " +
+              "environment and never deletes a folder: the environment of the agents comes from ~/.zshenv, and a " +
+              "credential written in a command stays in the session history. If dotnet is missing or Artifactory " +
+              "refuses access, it is an ENVIRONMENT PROBLEM: tell the user in one line and stop. Never try another " +
+              "form of this command.",
+          )
+        }
+      }
+      let outside = ""
+      try {
+        outside = await escape(call.tool, call.sessionID, output.args)
+      } catch {
+        outside = ""
+      }
+      if (outside) {
         throw new Error(
-          "Refused by the pack: " + why + ". A command never sets PATH, DOTNET_ROOT or a credential: the environment of " +
-            "the agents comes from ~/.zshenv, and a credential written in a command stays in the session history. If " +
-            "dotnet is missing or Artifactory refuses access, it is an ENVIRONMENT PROBLEM: tell the user in one line " +
-            "and stop. Never try another form of this command.",
+          "Refused by the pack: " + outside + " is outside the repository of this session (" + root + "). The agents " +
+            "stay in the repository: secrets live outside it. Work with the files of the repository; a folder outside " +
+            "it is readable only when the developer names it in the command or in a message, or configures it as a " +
+            "reference. Never try another form of this path.",
         )
+      }
+      if (call.tool === "bash" && typeof output.args.command === "string") {
+        // 8. long commands get the time they need (OpenCode stops a command after 2 minutes by default)
+        const need = LONG_COMMAND.test(output.args.command) ? 20 * 60000 : GIT_SCRIPT.test(output.args.command) ? 5 * 60000 : 0
+        if (need && !(Number(output.args.timeout) >= need)) output.args.timeout = need
       }
     },
     "tool.execute.after": async (call, result) => {
@@ -473,6 +794,42 @@ export const CompactCommands = async (input) => {
       const parts = output && output.parts
       if (!Array.isArray(parts)) return
       const sessionID = command && command.sessionID
+      // 9. one /go or /fix at a time in this repository. A hook that throws would only show "Unexpected server error":
+      // the command is replaced by a request to say why it is refused, and every tool of that turn is refused.
+      if (command && (command.command === "go" || command.command === "fix") && sessionID) {
+        let other
+        for (const [id, run] of pilots) if (id !== sessionID && Date.now() - run.start < 8 * 3600000) other = run
+        if (other) {
+          const notice =
+            "⛔ /" + command.command + " refusé : /" + other.command + " tourne déjà sur ce dépôt dans la session « " +
+            other.title + " ». Un seul /go ou /fix à la fois par dépôt : deux pilotes dans le même dossier " +
+            "mélangeraient leurs commits. Relance-le quand l'autre aura fini (titre ✅ ou ⛔), ou arrête l'autre."
+          refused.add(sessionID)
+          parts.length = 0
+          parts.push({ type: "text", text: ("/" + command.command + " " + (command.arguments || "")).trim() })
+          parts.push({
+            type: "text",
+            synthetic: true,
+            text: "The pack refused this command before it started: another /go or /fix runs in this repository. " +
+              "Answer with exactly the sentence below, as it is, and nothing else; call no tool.\n\n" + notice,
+          })
+          return
+        }
+        let title = sessionID
+        try {
+          const info = client && (await client.session.get({ path: { id: sessionID } })).data
+          if (info && info.title) title = info.title.replace(PROGRESS, "").replace(OUTCOME, "")
+        } catch {
+          // the id names it
+        }
+        pilots.set(sessionID, { command: command.command, start: Date.now(), title })
+      }
+      try {
+        // 7. a folder outside the repository named in the arguments of a command may be read in this session
+        if (sessionID && command && command.arguments) addNamed(sessionID, command.arguments)
+      } catch {
+        // nothing named
+      }
       let state
       try {
         state = track(sessionID, "preparing")

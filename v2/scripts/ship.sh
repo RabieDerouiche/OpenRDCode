@@ -3,12 +3,14 @@
 # 1. commits everything of the working tree (git add -A) on the branch of the ticket;
 # 2. integrates the commits pushed meanwhile on its remote copy (for example from Rider on another computer);
 # 3. with --base, merges the new commits of the base branch (origin/develop, otherwise origin/main or origin/master);
-# 4. pushes, and sets the upstream on the first push.
+# 4. checks the changes of the branch (diff-guard.sh: a secret, a conflict marker or a paid package stops everything),
+#    then pushes, and sets the upstream on the first push.
 # With --no-push: step 1 only (a local commit at the end of a plan step: the work is saved, the CI is not started).
 # Always by merge, never a rebase, never a force-push, never on develop, master or main. A merge conflict is aborted
 # (nothing is lost, the conflicting files are listed): the agents never pick a side. git never waits for a password:
 # missing GitLab credentials end with "STOP: AUTH FAILED".
-# Output: one line per stage (COMMIT, REMOTE, BASE, PUSH, MR LINK), then "RESULT: OK" (exit 0), or a "STOP: <reason>"
+# Output: one line per stage (COMMIT, REMOTE, BASE, GUARD with its WARNING and PACKAGES lines, PUSH, MR LINK), then
+# "RESULT: OK" (exit 0), or a "STOP: <reason>"
 # line where the script stopped (exit 1, so that a command chained with && does not run).
 # Usage: ship.sh [--base] "<commit summary>" ["<body line>"...]
 #        ship.sh --no-push "<commit summary>" ["<body line>"...]
@@ -166,6 +168,13 @@ if git rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null &&
   echo "PUSH: nothing to push, origin/$branch is up to date"
   echo "RESULT: OK"
   exit 0
+fi
+
+# The last gate before GitLab, without the model: no secret, no conflict marker, no paid package (diff-guard.sh)
+if [ -n "$base" ]; then
+  if ! sh "$here/diff-guard.sh" "origin/$base"; then
+    stop "the pre-push check refused the push (GUARD lines above): nothing was pushed, what is committed stays committed"
+  fi
 fi
 
 kill_tree() {

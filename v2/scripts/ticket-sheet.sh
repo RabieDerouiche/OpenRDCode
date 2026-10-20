@@ -12,6 +12,8 @@
 #                                                check the points N of the last block of "## Retours /check" (the
 #                                                points of the last /check), then append the "## Suivi" line
 #   ticket-sheet.sh plan                         print the steps of "## Plan"
+#   ticket-sheet.sh check                        check the structure /go relies on (sections, numbered steps with
+#                                                their files and tests, each criterion covered by an expected test)
 # Every write ends by printing the steps of "## Plan", so that the agent sees what is checked.
 
 LC_ALL=C
@@ -164,8 +166,59 @@ case "$action" in
   plan)
     print_plan
     ;;
+  check)
+    # The structure /go relies on, checked once the analyst has written the sheet: the sections, a plan of numbered
+    # steps with their files and tests, every acceptance criterion covered by an expected test
+    KEY=$key awk '
+      function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+      NR == 1 { title = $0 }
+      /^## / { section = trim(substr($0, 4)); seen[section] = 1; next }
+      section == "Plan" && /^[[:space:]]*- \[[ xX]\] / {
+        n = $0; sub(/^[[:space:]]*- \[[ xX]\] /, "", n)
+        if (n !~ /^[0-9]+[.)]/) { problems[++np] = "a step of \"## Plan\" has no number: " trim($0); next }
+        num = n; sub(/[.)].*$/, "", num); num += 0
+        steps++
+        if (num != steps) problems[++np] = "step " num " of \"## Plan\" comes where step " steps " was expected (steps are numbered 1, 2, 3...)"
+        if ($0 !~ /fichiers *:/) warnings[++nw] = "step " num " names no file (— fichiers : ...)"
+        if ($0 !~ /tests *:/) warnings[++nw] = "step " num " names no test (— tests : ...)"
+        next
+      }
+      section ~ /^Crit/ {
+        line = $0
+        while (match(line, /C[0-9]+/)) {
+          id = substr(line, RSTART, RLENGTH)
+          before = (RSTART > 1) ? substr(line, RSTART - 1, 1) : " "
+          if (before !~ /[A-Za-z0-9]/ && !(id in criteria)) { criteria[id] = 1; order[++nc] = id }
+          line = substr(line, RSTART + RLENGTH)
+        }
+        next
+      }
+      section ~ /^Tests attendus/ && /^\|/ && $0 !~ /^\|[-: |]+\|?[[:space:]]*$/ {
+        if ($0 ~ /\| *# *\|/ || tolower($0) ~ /\| *crit/) next
+        rows++
+        line = $0
+        while (match(line, /C[0-9]+/)) { covered[substr(line, RSTART, RLENGTH)] = 1; line = substr(line, RSTART + RLENGTH) }
+        next
+      }
+      END {
+        if (title !~ ("^# " ENVIRON["KEY"] "( |$)")) problems[++np] = "the first line is not \"# " ENVIRON["KEY"] " - <summary>\""
+        split("Résumé|Critères d'\''acceptation|Questions bloquantes|Zones de code concernées|Tests attendus|Plan|Décisions|Suivi", need, "|")
+        for (i = 1; i <= 8; i++) if (!(need[i] in seen)) problems[++np] = "missing section: ## " need[i]
+        if (steps == 0) problems[++np] = "no step in \"## Plan\" (- [ ] 1. <step> — fichiers : ... — tests : ...)"
+        else if (steps > 7) warnings[++nw] = steps " steps: more than 7, each step should be bigger"
+        if (nc == 0) problems[++np] = "no acceptance criterion (C1, C2...) in \"## Critères d'\''acceptation\""
+        for (i = 1; i <= nc; i++) if (!(order[i] in covered)) problems[++np] = "criterion " order[i] " is covered by no row of \"## Tests attendus\""
+        if (np == 0) print "Sheet check of " ENVIRON["KEY"] ": OK (" steps " steps, " nc " criteria, " rows + 0 " expected tests)"
+        else {
+          print "Sheet check of " ENVIRON["KEY"] ": " np " problem(s)"
+          for (i = 1; i <= np; i++) print "- " problems[i]
+        }
+        for (i = 1; i <= nw; i++) print "- warning: " warnings[i]
+      }
+    ' "$sheet"
+    ;;
   *)
-    echo "Usage: ticket-sheet.sh tick <N> [\"<suivi line>\"] | fixed <N>[,<N>...] [\"<suivi line>\"] | decision \"<decision>\" | suivi \"<line>\" | plan"
+    echo "Usage: ticket-sheet.sh tick <N> [\"<suivi line>\"] | fixed <N>[,<N>...] [\"<suivi line>\"] | decision \"<decision>\" | suivi \"<line>\" | plan | check"
     ;;
 esac
 exit 0

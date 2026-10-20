@@ -16,16 +16,34 @@ cd ~/OpenRDCode && cp -r v2/agents v2/commands v2/scripts v2/plugins ~/.config/o
 ```
    La dernière ligne doit lister exactement : `compare.md daily.md fix.md go.md outil.md review.md`.
 3. `~/.config/opencode/AGENTS.md` : remplace son contenu par `v2/AGENTS.global.md`, puis recopie tes valeurs des sections « Daily » et « Release groups » depuis `~/opencode-v1/AGENTS.md`.
-4. `~/.config/opencode/opencode.json` : remplace ses sections `agent` et `permission` par celles de `v2/opencode.snippet.json` ; garde `provider`, `model`, `shell` et le reste.
+4. `~/.config/opencode/opencode.json` : remplace ses sections `agent` et `permission` par celles de `v2/opencode.snippet.json`, et ajoute ses sections `experimental` et `compaction` ; garde `provider`, `model`, `shell` et le reste. Remplace bien la section `permission` entière : une règle `"ask"` de la v1 qui resterait rouvrirait la fuite du « Toujours » (section « Vérifier qu'aucune règle ne demande »).
 5. Redémarre OpenCode (section suivante), puis dans une nouvelle session, sur un dépôt : `/outil` doit afficher la liste des outils.
 6. Une fois par dépôt, pour que `/go` connaisse ses commandes de build et ses conventions : `/outil setup` (relis le diff d'`AGENTS.md`).
 
 Le push et la MR de `/go` demandent des identifiants GitLab que git trouve seul : section « Identifiants GitLab » plus bas, à vérifier avant le premier `/go`.
 
+## Mettre à jour une v2 déjà installée
+
+Depuis ton clone du pack à jour (`git pull`), en une commande : agents, commandes, scripts, plugin et skills du pack sont remplacés ; tes skills `pattern-…`, ta todo et tes fiches ticket ne sont pas touchés.
+```sh
+cd ~/OpenRDCode && cp -r v2/agents v2/commands v2/scripts v2/plugins ~/.config/opencode/ && cp -r v2/skills/. ~/.config/opencode/skills/ && ls ~/.config/opencode/scripts/diff-guard.sh ~/.config/opencode/scripts/ticket-stats.sh ~/.config/opencode/skills/outil-stats
+```
+Puis :
+1. `~/.config/opencode/opencode.json` : remplace les sections `agent` et `permission` par celles de `v2/opencode.snippet.json`, et ajoute ses deux nouvelles sections, `experimental` et `compaction`.
+2. `~/.config/opencode/AGENTS.md` : reprends `v2/AGENTS.global.md` en gardant tes sections « Daily » et « Release groups ».
+3. Section « Vérifier qu'aucune règle ne demande », puis redémarre OpenCode.
+
+## Vérifier qu'aucune règle ne demande
+
+Un clic sur « Toujours » à une demande d'autorisation vaut pour tous les agents jusqu'au redémarrage d'OpenCode, et ouvre bien plus large que la commande demandée (`rm *` pour un `rm -rf`, `dotnet *` pour un `dotnet run`, toute lecture pour un fichier `.env`). La v2 n'a donc plus aucune règle « ask » : seules restent les 6 lignes de publication Confluence (`*confluence*create*`, `update`, `upload`, en deux casses), dont l'outil n'est visible que de l'agent build. Cette commande doit afficher exactement ces 6 lignes :
+```sh
+grep -n '"ask"' ~/.config/opencode/opencode.json
+```
+
 ## Revenir à la v1
 
 ```sh
-cd ~/.config/opencode && rm -r agents commands scripts plugins && for s in best-practices build-fix dotnet-cqrs-conventions explain-code fortify-remediation integrations-guardrails outil-todo outil-licences outil-audit outil-cqrs outil-abandon outil-setup outil-doc outil-release-notes outil-pattern; do rm -rf "skills/$s"; done && cp -r ~/opencode-v1/agents ~/opencode-v1/commands ~/opencode-v1/scripts ~/opencode-v1/plugins . && cp -r ~/opencode-v1/skills/. skills/ && cp ~/opencode-v1/AGENTS.md ~/opencode-v1/opencode.json .
+cd ~/.config/opencode && rm -r agents commands scripts plugins && for s in best-practices build-fix dotnet-cqrs-conventions explain-code fortify-remediation integrations-guardrails outil-todo outil-licences outil-audit outil-cqrs outil-abandon outil-setup outil-doc outil-release-notes outil-pattern outil-stats; do rm -rf "skills/$s"; done && cp -r ~/opencode-v1/agents ~/opencode-v1/commands ~/opencode-v1/scripts ~/opencode-v1/plugins . && cp -r ~/opencode-v1/skills/. skills/ && cp ~/opencode-v1/AGENTS.md ~/opencode-v1/opencode.json .
 ```
 Puis redémarre OpenCode.
 
@@ -38,7 +56,7 @@ grep 'message=evaluated' ~/.local/share/opencode/log/opencode.log | grep -i 'mer
 
 ## Redémarrer OpenCode
 
-Après une modification d'`opencode.json`, du plugin, d'un agent, d'une commande ou d'un skill, et après un `/outil pattern extract` pour que `/go` voie le nouveau skill. Inutile après une modification de `~/.zshenv` : il est relu à chaque commande d'un agent.
+Après une modification d'`opencode.json`, du plugin, d'un agent, d'une commande ou d'un skill. Inutile après un `/outil pattern` (`/go` lit les fichiers des patterns lui-même) et après une modification de `~/.zshenv` (relu à chaque commande d'un agent).
 ```sh
 opencode-web.sh stop && opencode-web.sh start
 ```
@@ -113,7 +131,7 @@ Ce que `/outil pattern` et le coder savent des packages d'un dépôt : internes 
 sh ~/.config/opencode/scripts/package-refs.sh /chemin/du/depot
 ```
 
-Ce que `/outil pattern extract` voit du dépôt source pour un ticket : branche extraite comparée à develop, commits et fichiers de la MR. Remplace le chemin et la clé :
+Ce que `/outil pattern` voit du dépôt source pour un ticket : branche extraite comparée à develop, commits et fichiers de la MR. Remplace le chemin et la clé :
 ```sh
 sh ~/.config/opencode/scripts/pattern-source.sh /chemin/du/depot/source ABC-123
 ```
@@ -183,7 +201,7 @@ S'il existe, récupère d'abord le skill qu'il contient (`./~/.config/opencode/s
 rm -r -- './~'
 ```
 
-Un skill `pattern-…` raté, créé par un `/outil pattern extract` qui a dérapé : à supprimer avant de relancer, sinon le prochain du même nom l'enrichit au lieu de repartir de zéro. La liste des skills, puis la suppression (remplace le nom) :
+Un skill `pattern-…` raté, créé par un `/outil pattern` qui a dérapé : à supprimer avant de relancer, sinon le prochain du même nom l'enrichit au lieu de repartir de zéro. La liste des skills, puis la suppression (remplace le nom) :
 ```sh
 ls ~/.config/opencode/skills/
 ```
@@ -299,6 +317,49 @@ Cocher une étape à la main (ici la 2), avec une ligne datée dans `## Suivi` :
 sh ~/.config/opencode/scripts/ticket-sheet.sh tick 2 "cochée à la main"
 ```
 
+Vérifier la fiche après l'avoir corrigée à la main (sections, étapes numérotées avec leurs fichiers et leurs tests, chaque critère couvert par un test attendu) ; `/go` fait la même vérification après l'analyse :
+```sh
+sh ~/.config/opencode/scripts/ticket-sheet.sh check
+```
+
+Ce que `/go` et `/fix` ont fait sur les tickets du dépôt (le même tableau que `/outil stats`) :
+```sh
+sh ~/.config/opencode/scripts/ticket-stats.sh
+```
+
+## Contrôle avant push
+
+Avant chaque push de `/go` et `/fix`, un script, sans le modèle, relit tout ce qui va partir : chaque commit pas encore poussé (même un secret retiré par un commit suivant part avec l'historique) et l'état de la branche. Il arrête tout, rien n'est poussé, sur : une clé privée, un token GitLab, GitHub, AWS ou Slack, un utilisateur et un mot de passe dans une URL, un mot de passe dans une chaîne de connexion, une valeur secrète dans un fichier de configuration, un fichier de clé ou `.env` ajouté, un marqueur de conflit, une version payante d'un package. Dans un fichier de test, c'est un avertissement (valeurs factices). La valeur n'est jamais affichée : seulement le type et l'endroit.
+
+Le même contrôle à la main, dans le dépôt :
+```sh
+sh ~/.config/opencode/scripts/diff-guard.sh
+```
+
+- Faux positif : ajoute le commentaire `gitleaks:allow` en fin de la ligne signalée (dans Rider), puis relance `/go` (ou `/fix`).
+- Marqueur de conflit ou package payant : corrige dans Rider (le package : son option gratuite, `/outil licences <package>`), puis relance.
+- Vrai secret : il n'est que dans tes commits locaux. Réécris-les sans lui : les commits locaux redeviennent des modifications non commitées, tu remplaces le secret (variable d'environnement, coffre de secrets, valeur factice), puis `/go` fait un seul commit propre et pousse. Branche déjà poussée une fois :
+```sh
+git reset --soft "@{u}"
+```
+  Branche jamais poussée :
+```sh
+git reset --soft "$(git merge-base HEAD origin/develop)"
+```
+  Si c'est un vrai secret, fais-le révoquer aussi : il a existé en clair sur cette machine.
+
+## Lire un autre dépôt (« comme dans… »)
+
+`/go ABC-123 comme dans ~/repos/ancienne-api (ExportService)` : l'analyste lit l'implémentation de l'autre dépôt et la décrit dans la fiche (section « Référence »), le coder la reproduit. Au début du `/go`, OpenCode te demande l'accès en lecture à ce dossier : réponds « Toujours » (une fois pour toute la session OpenCode, pour ce dossier seulement). Personne n'écrit dans l'autre dépôt.
+
+Pour un dépôt que tu cites souvent, sans plus aucune demande : déclare-le comme référence dans `~/.config/opencode/opencode.json` (au premier niveau ; le nom, sans espace ni `/`, sert aussi dans `/go … comme dans ancienne-api`), puis redémarre OpenCode :
+```json
+"references": {
+  "ancienne-api": { "path": "~/repos/ancienne-api", "description": "Ancienne API d'export : implémentation de référence de l'export SharePoint vers S3" }
+}
+```
+Pour réutiliser la même implémentation sur plusieurs tickets ou la partager à l'équipe, capture-la plutôt en pattern (section suivante) : `/go` s'en sert ensuite tout seul.
+
 ## Documentation (/outil doc)
 
 Ce que `/outil doc` reçoit, à taper dans le dépôt (lecture seule, aucune valeur de configuration affichée). L'inventaire du dépôt :
@@ -314,9 +375,11 @@ Les clés de configuration, sans leurs valeurs :
 sh ~/.config/opencode/scripts/config-keys.sh
 ```
 
-## Avant un /outil pattern extract
+## Avant un /outil pattern
 
-L'agent lit les fichiers de la branche extraite du dépôt source, sans fetch : s'il te signale que le développement n'y est pas, ou que la branche est en retard sur develop, mets le dépôt source sur develop à jour (git refuse de changer de branche si une modification non commitée est en conflit, et `--ff-only` refuse si la branche a divergé), puis relance `/outil pattern extract`. Remplace le chemin :
+`/outil pattern <nom> <chemin du dépôt source> [où : clé Jira, classes]` capture une bonne implémentation en skill `pattern-<nom>-back` (ou `-front`), avec les appels des packages internes tels que le code source les écrit. Ensuite, `/go` s'en sert tout seul quand un ticket s'y prête, ou sur consigne : `/go ABC-123 comme le pattern <nom>`.
+
+L'agent lit les fichiers de la branche extraite du dépôt source, sans fetch : s'il te signale que le développement n'y est pas, ou que la branche est en retard sur develop, mets le dépôt source sur develop à jour (git refuse de changer de branche si une modification non commitée est en conflit, et `--ff-only` refuse si la branche a divergé), puis relance `/outil pattern`. Remplace le chemin :
 ```sh
 git -C /chemin/du/depot/source switch develop && git -C /chemin/du/depot/source pull --ff-only
 ```
@@ -354,12 +417,26 @@ Une session devenue longue, ou qui répond « Service Unavailable » à chaque m
 /compact
 ```
 
-Un ticket, du début à la MR en Draft (tes consignes après la clé, facultatives ; `pas à pas` pour un arrêt après chaque étape). Relancé, il reprend où il s'était arrêté :
+Un ticket, du début à la MR en Draft (tes consignes après la clé, facultatives). Relancé, il reprend où il s'était arrêté. Le titre de la session dit l'issue : ✅ MR créée ou rien à faire, ⛔ arrêté (la raison est dans la réponse), ❓ une question t'attend :
 ```text
 /go ABC-123
 ```
 ```text
 /go ABC-123 avec un Result, sans nouvelle lib
+```
+Comme une implémentation existante : un pattern de l'équipe, ou un autre dépôt (section « Lire un autre dépôt ») :
+```text
+/go ABC-123 comme le pattern export-csv
+```
+```text
+/go ABC-123 comme dans ~/repos/ancienne-api (ExportService)
+```
+Un gros ticket : l'analyse et le plan seulement, pour les relire avant le code (le `/go` suivant code) ; ou un arrêt après chaque étape :
+```text
+/go ABC-123 analyse seule
+```
+```text
+/go ABC-123 pas à pas
 ```
 
 Après la CI ou la review (jobs en échec, Sonar, Fortify, discussions de la MR), ou pour pousser ce que tu as modifié toi-même sur cette machine :
@@ -398,7 +475,17 @@ Ta todo : la voir, ajouter une tâche (l'échéance est lue dans le texte), la m
 /outil doc confluence ESPACE Page parente
 ```
 
-Les autres outils (audit, licences, release notes, patterns, cqrs, AGENTS.md du dépôt, abandon d'un ticket) :
+Capturer une implémentation d'un autre dépôt en pattern d'équipe (section « Avant un /outil pattern ») :
+```text
+/outil pattern export-csv /chemin/du/depot/source ExportService
+```
+
+Ce que `/go` et `/fix` ont fait sur tes tickets de ce dépôt : étapes, lancements, réponses aux questions, décisions de l'agent, arrêts, temps de l'analyse à la MR (plusieurs dépôts : leurs chemins après `stats`) :
+```text
+/outil stats
+```
+
+Les autres outils (audit, licences, release notes, cqrs, AGENTS.md du dépôt, abandon d'un ticket) :
 ```text
 /outil
 ```

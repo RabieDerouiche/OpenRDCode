@@ -27,7 +27,7 @@
 - Long outputs through `| tail -60`; `git diff --stat` before a full diff.
 - A tool answer that says it was truncated and saved to a file (often one long line of JSON, from an MCP tool) is not worth searching: call the same tool again with a smaller page (20 results or fewer) or stricter filters. Never run several searches on that file.
 - Use the shell only for the build, the tests, git reads and the `~/.config/opencode/scripts` commands. For everything else the tools: `read`, `grep`, `glob`, `edit`, `write`. Shell commands already run in the project folder: never `cd <project>` or `git -C <project>`. The read, grep, glob, edit and write tools do not expand `~`: absolute paths (`realpath ~` gives the home folder).
-- Refused shell forms (never try them, never look for another form that would pass): anything that prints or reads the environment or credentials (`env`, `printenv`, `export`, `set`, `echo $…`, `git config`, `git remote -v`, nuget.config, `.env` files, `~/.nuget/NuGet`, `~/.z*` files); anything that looks inside packages or assemblies (`~/.nuget/packages`, `.dll`, `.nupkg`, `/tmp`, `mktemp`, `dotnet new console`, `dotnet fsi`, ilspy, ildasm, `strings`); for the agents that only read: a redirection to a file, `$(...)` and backticks.
+- Refused shell forms (never try them, never look for another form that would pass): a path outside the repository (`~`, `$HOME`, `/home/…`, `../..`, a bare `cd`), unless I named that folder in my message or in the command; anything that prints or reads the environment or credentials (`env`, `printenv`, `export`, `set`, `echo $…`, `git config`, `git remote -v`, nuget.config, `.env` files, `~/.nuget/NuGet`, `~/.z*` files); anything that looks inside packages or assemblies (`~/.nuget/packages`, `.dll`, `.nupkg`, `/tmp`, `mktemp`, `dotnet new console`, `dotnet fsi`, ilspy, ildasm, `strings`); a recursive `rm`; `git commit`, `push`, `merge`, `pull`, `rebase`, `reset` (only /go and /fix write the history); for the agents that only read: a redirection to a file, `$(...)` and backticks.
 - Independent tool calls go together in ONE turn: they run in parallel. AGENTS.md files are already in your instructions: never read them again, except to edit one.
 
 ## Project types
@@ -38,13 +38,13 @@
 - Integrations: SharePoint (CSOM), DocuSign, AWS S3, Piano Analytics: load the skill `integrations-guardrails` before touching them. Never modify authentication or credentials handling without asking.
 
 ## Workflow
-- My day: /daily → /go <KEY> (ticket to Draft merge request, in one run) → the CI runs → /fix (CI, Sonar, Fortify and review feedback, in one run) → review and merge. /review !<iid> reviews a teammate's merge request. /compare finds the cause of a regression against another repository. /outil gives the other tools: doc, audit, licences, release-notes, pattern, cqrs, setup (AGENTS.md of the repository), abandon, todo.
+- My day: /daily → /go <KEY> (ticket to Draft merge request, in one run) → the CI runs → /fix (CI, Sonar, Fortify and review feedback, in one run) → review and merge. /review !<iid> reviews a teammate's merge request. /compare finds the cause of a regression against another repository. /outil gives the other tools: doc, audit, licences, release-notes, pattern (a team pattern from another repository, that /go then uses), cqrs, setup (AGENTS.md of the repository), abandon, todo, stats (what /go and /fix did on my tickets).
 - Merge requests target `develop`. Production is deployed from `master` as is; there are no release tags. Sonar and Fortify run in the CI on every push.
 - You may run on a remote machine while I sometimes code in Rider on my Mac: we do NOT share files. My Mac changes reach you only through git (I push from Rider; /go and /fix merge them first), and yours reach my Mac only after /go or /fix pushed them.
 - Ticket sheet: `.git/opencode-tickets/<KEY>.md` (never committed) holds the analysis, the plan, the decisions and the log of the ticket of the current branch. Updated with `sh ~/.config/opencode/scripts/ticket-sheet.sh tick|decision|suivi …`, never by hand.
 
 ## Git
-- Git writes go through /go and /fix (their scripts commit, merge the remote copy and develop, and push the ticket branch). Never commit, push, merge, rebase, reset or delete branches yourself in a conversation: offer /fix (it commits and pushes the local changes of the ticket branch). Never force-push; never anything on develop, master or main. The team keeps branches up to date with develop by MERGE, never by rebase.
+- Git writes go through /go and /fix (their scripts commit, merge the remote copy and develop, check the changes, and push the ticket branch). Commit, push, merge, pull, rebase and reset are refused to every agent in a conversation: offer /fix (it commits and pushes the local changes of the ticket branch). Never force-push; never anything on develop, master or main. The team keeps branches up to date with develop by MERGE, never by rebase.
 
 ## Routing (when I ask in plain words; "offer" = the question tool with the command as option, which then starts by itself)
 - "prends le ticket ABC-123", "fais le ticket", "continue le ticket" → offer `/go <KEY>` (with my words as directives).
@@ -54,8 +54,8 @@
 - "corrige le build", compilation errors → load the skill `build-fix` and follow it.
 - "corrige le point Fortify <id>" or "Sonar <key>", one finding → load `fortify-remediation`, fix it with its test, build and test; /fix then commits it.
 - "compare avec l'ancien dépôt", "ça marchait dans l'ancienne API" → offer `/compare <path of the repository where it works> <class, method or route> <symptom>` (ask me for the path or the identifier if missing). Never compare two repositories by reading them freely.
-- "fais comme dans <repo>", "inspire-toi de <repo>" → offer `/outil pattern extract <name> <repo path>`, then `/outil pattern apply <name>` on the ticket branch.
-- "documente le projet", "audit", "vérifie les licences", "release note", "génère l'AGENTS.md", "annule ce ticket" → offer `/outil doc`, `/outil audit`, `/outil licences`, `/outil release-notes`, `/outil setup`, `/outil abandon`.
+- "fais comme dans <repo>", "inspire-toi de <repo>" → offer `/go <KEY> comme dans <repo path>` (it reads that repository for this ticket), and, when the same implementation will serve several tickets or teammates, `/outil pattern <name> <repo path>` first (a team pattern that /go then uses by itself).
+- "documente le projet", "audit", "vérifie les licences", "release note", "génère l'AGENTS.md", "annule ce ticket", "mes stats", "combien de tickets" → offer `/outil doc`, `/outil audit`, `/outil licences`, `/outil release-notes`, `/outil setup`, `/outil abandon`, `/outil stats`.
 - "rappelle-moi de …", "ajoute à ma todo …" → run `sh ~/.config/opencode/scripts/todo.sh add "<the item as I said it, with its due date in plain words>"` and show its output; "ma todo", "mes rappels" → `sh ~/.config/opencode/scripts/todo.sh` (or `… todo.sh due`). Never in Jira.
 - "relis la MR de …", "review la MR !42" → `/review !<iid>`, in a session opened on that repository.
 - Do not invoke subagents for anything else unless I ask.

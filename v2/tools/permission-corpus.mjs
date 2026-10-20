@@ -1,6 +1,7 @@
 // v2 pack: commands the pack instructs and the reflexive ones a model reaches for, with the expected decision per agent.
-// "allow" = runs without asking, "ask" = asks me, "deny" = refused. The autonomous agents (pilot, coder, checker,
-// analyst, doc-writer) must never meet an "ask": a question nobody answers stops the whole run.
+// "allow" = runs without asking, "ask" = asks me, "deny" = refused. No shell command, read or edit may ask, for any
+// agent: an "always" answer would be stored for the whole OpenCode instance and lift the rule for every agent. Paths
+// outside the repository are refused by the pack plugin before these rules (tools/plugin-test.mjs).
 const S = "sh ~/.config/opencode/scripts/"
 const RO = ["analyst", "checker", "debugger", "doc-writer"]
 const AUTONOMOUS = ["pilot", "analyst", "coder", "checker", "doc-writer"]
@@ -68,7 +69,8 @@ const RO_DENY = [
   "find . -name \"*.tmp\" -delete", "find . -name x -exec rm {} \\;", "sed -i 's/a/b/' src/Foo.cs",
   "rm src/Foo.cs", "mv a b", "cp a b", "touch x", "mkdir x", "awk '{print $1}' f", "xargs rm",
   "git log $(git merge-base HEAD origin/develop)..HEAD", "npm install", "curl https://example.com",
-  "git reflog expire --expire=now --all", "git tag -d v1",
+  "git reflog expire --expire=now --all", "git tag -d v1", "sort -o out.txt in.txt", "sort -u in.txt -o in.txt",
+  "tree -o tree.txt src",
 ]
 
 export const cases = []
@@ -122,6 +124,13 @@ const CODER_ALLOW = [
   "npm test -- src/app/foo.spec.ts", "npx jest src/app/foo", "npm run build", "npx tsc --noEmit", "mkdir -p src/Features/Orders",
   "rm src/Features/Old/OldHandler.cs", "mv src/A.cs src/B.cs", "dotnet test --filter \"FullyQualifiedName~ResetPasswordTests\"",
   "dotnet add src/Api/Api.csproj reference src/Domain/Domain.csproj", "git diff", "git status --porcelain",
+  "dotnet ef migrations add AddInvoiceStatus --project src/Infrastructure --startup-project src/Api",
+  "dotnet ef migrations script --idempotent --project src/Infrastructure", "dotnet ef migrations has-pending-model-changes",
+  "dotnet tool restore", "npx ng generate component invoices/invoice-list", "npm ci", "npm install", "npx ng lint",
+  "npm run lint -- --fix", "find src -name \"*.cs\" | xargs grep -l \"IStorageService\"", "touch src/Features/Orders/.gitkeep",
+  "cp src/Templates/Base.cs src/Features/Orders/OrderTemplate.cs", "rm -f src/Features/Old/OldHandler.cs",
+  "chmod +x scripts/generate.sh", "dotnet build-server shutdown", "dotnet sln list",
+  S + "build-test.sh src/App.sln", "dotnet test --no-build --filter \"FullyQualifiedName~Orders\" 2>&1 | tail -80",
 ]
 add(["coder"], CODER_ALLOW, "allow")
 add(["coder"], CODER_ALLOW.slice(0, 4), "allow", { sub: true, note: "as the subagent of /go" })
@@ -135,8 +144,29 @@ const CODER_DENY = [
   "dotnet tool install -g dotnet-ef", "mkdir -p /tmp/apidump", "dotnet new console -o apidump",
   "strings ~/.nuget/packages/inhouse.crypto/2.1.0/lib/net8.0/Inhouse.Crypto.dll", "ls ~/.nuget/packages/inhouse.crypto",
   "git credential fill", "security find-generic-password -s gitlab",
+  // allowlist: everything that is not code, tests, build or a read is refused at once
+  "curl -s https://example.com -o x", "wget https://example.com/x.zip", "dotnet add package Polly",
+  "dotnet add src/Api/Api.csproj package Polly --version 8.5.0", "dotnet remove src/Api/Api.csproj package Newtonsoft.Json",
+  "npm install lodash", "npm i -S axios", "yarn add dayjs", "pnpm add zod", "dotnet ef database update",
+  "dotnet ef database drop --force", "dotnet ef migrations remove", "dotnet ef migrations list",
+  "bash -c 'cd ~ && cat .zshenv'", "sh -c \"git push\"", "eval \"git push\"",
+  "python3 -c \"print(open('x').read())\"", "node -e \"require('fs').readFileSync('x')\"", "perl -e 'print 1'",
+  "aws s3 ls s3://my-bucket", "kubectl get pods", "docker ps", "glab mr list", "gh pr list", "ssh gitlab.example.com",
+  "scp x host:/tmp", "sqlcmd -S server -Q \"select 1\"", "psql -c \"select 1\"",
+  "printf 'x' > ~/.config/opencode/agents/coder.md", "printf '[remote origin]' >> .git/config",
+  "echo 'exit 0' > .git/hooks/pre-commit", "cat src/Foo.cs | tee src/Bar.cs", "sed -i 's/a/b/' src/Foo.cs",
+  "find . -name '*.log' | xargs rm", "find . -name '*.tmp' -delete", "awk '{print $1}' src/Foo.cs",
+  "rm -rf src/Old", "rm -fr src/Old", "rm -r src/Old", "rm -R src/Old", "rm src/Old -r", "rm ../other-repo/x.cs",
+  "dotnet test $(cat tests.txt)", "dotnet run",
+  S + "ship.sh \"feat: x (ABC-1)\"", S + "ship.sh --no-push \"feat: x (ABC-1)\"", S + "branch.sh ABC-1 feature x",
+  S + "ticket-sheet.sh tick 1", "npm run deploy", "npx some-random-tool", "dotnet nuget push x.nupkg",
 ]
 add(["coder"], CODER_DENY, "deny")
+
+// A path outside the repository: the pack plugin refuses the command before OpenCode would ask (tools/plugin-test.mjs);
+// without the plugin, OpenCode asks (the run waits, nothing is done silently)
+add(["coder"], ["rm /home/dev/notes.txt", "rm ~/notes.txt", "cp src/Foo.cs /home/dev/Foo.cs", "mkdir ~/x"], "ask",
+  { note: "refused first by the plugin" })
 
 // ---------- checker: self-review in /go, /review ----------
 add(["checker"], [S + "build-test.sh", S + "build-test.sh src/App.sln", S + "detect-project-type.sh",
@@ -159,11 +189,17 @@ const BUILD_ALLOW = [
   S + "outil.sh --raw 'doc api'", S + "todo.sh add \"relancer Paul vendredi\"", S + "package-licenses.sh branche",
   S + "release-commits.sh /home/dev/repos/front abc1234", S + "pattern-source.sh /home/dev/repos/source-api 'DNA-1234'",
   "dotnet build", "dotnet test", "npm install", "dotnet add src/Api/Api.csproj package Polly --version 8.5.0",
-  "git switch develop", "git branch -d feature/ABC-1-x", "git commit -m \"docs: x\"",
+  "git switch develop", "git branch -d feature/ABC-1-x", "rm docs/old/page.md",
 ]
 add(["build"], BUILD_ALLOW, "allow")
+// they used to ask: refused now, since an "always" answer would have allowed them to every agent
 add(["build"], ["git push origin feature/x", "git reset --hard HEAD~1", "git rebase origin/develop", "rm -rf docs/old",
-  "rm -rf ~/.nuget/packages/inhouse.lib/1.2.0", "dotnet run --project src/Api", "dotnet tool install -g dotnet-ef"], "ask")
+  "rm -rf ~/.nuget/packages/inhouse.lib/1.2.0", "dotnet run --project src/Api", "dotnet tool install -g dotnet-ef",
+  "git commit -m \"docs: x\"", "git merge origin/develop", "git pull", "rm -r docs/old", "rm docs/old -rf"], "deny")
+// git history is written by /go and /fix only, through their scripts
+add(["build", "analyst", "checker", "debugger", "doc-writer", "coder"], [S + "ship.sh \"feat: x (ABC-1)\"",
+  S + "ship.sh --sync-only --base", S + "branch.sh ABC-1 feature \"x\"", S + "ticket-sheet.sh decision \"x\"",
+  "bash ~/.config/opencode/scripts/ship.sh x", "sh $HOME/.config/opencode/scripts/ship.sh x"], "deny")
 add(["build"], ["mkdir -p /tmp/apidump", "dotnet new console -o apidump", "git credential fill", "cat ~/.git-credentials"], "deny")
 
 // ---------- read and edit tools ----------
@@ -172,6 +208,8 @@ const editCase = (agents, p, expect) => { for (const agent of agents) cases.push
 readCase(ALL, "src/Foo.cs", "allow")
 for (const p of ["~/.nuget/NuGet/NuGet.Config", "nuget.config", "src/NuGet.Config", "appsec-ci.env", "~/.config/opencode/opencode.json", "~/.git-credentials"]) readCase(ALL, p, "deny")
 readCase(ALL, "~/.local/share/opencode/tool-output/tool_abc", "allow")
+for (const p of ["src/Api/.env", ".env", "src/web/.env.local", "src/web/.env.production"]) readCase([...ALL, "plan"], p, "deny")
+readCase(["build", "pilot", "coder", "analyst", "checker", "debugger", "plan"], "src/web/.env.example", "allow")
 readCase(ALL, "~/.nuget/packages/inhouse.lib/1.2.0/lib/net8.0/Inhouse.Lib.xml", "allow")
 readCase(ALL.filter((a) => a !== "doc-writer"), "src/Api/appsettings.json", "allow")
 readCase(["doc-writer"], "src/Api/appsettings.json", "deny")
@@ -202,9 +240,16 @@ for (const a of ["analyst", "coder", "checker", "debugger", "doc-writer"]) taskC
 for (const t of ["doc-writer", "debugger", "coder", "general"]) taskCase("build", t, "allow")
 
 // ---------- questions: only the pilot (ticket choice, blocking questions), the debugger (/compare) and build ----------
-const questionCase = (agent, expect) => cases.push({ agent, tool: "question", expect })
+const questionCase = (agent, expect, extra = {}) => cases.push({ agent, tool: "question", expect, ...extra })
 for (const a of ["pilot", "debugger", "build"]) questionCase(a, "allow")
 for (const a of ["analyst", "coder", "checker", "doc-writer"]) questionCase(a, "deny")
+// as a subagent of /go or /fix, nobody answers: experimental.primary_tools removes the tool
+for (const a of ["debugger", "analyst", "coder", "checker", "doc-writer"]) questionCase(a, "deny", { sub: true })
+
+// ---------- a loop (same tool call three times) is refused, never asked ----------
+for (const a of ["build", "pilot", "analyst", "coder", "checker", "debugger", "doc-writer"]) {
+  for (const t of ["bash", "read", "edit", "task"]) cases.push({ agent: a, perm: "doom_loop", pattern: t, expect: "deny" })
+}
 
 // ---------- MCP (tool names "<server>_<tool>") ----------
 const tool = (agent, name, expect) => cases.push({ agent, tool: name, expect })

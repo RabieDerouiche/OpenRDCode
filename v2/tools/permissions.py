@@ -14,6 +14,14 @@ How OpenCode 1.19 decides (verified in its source):
   (a path, a branch name or a commit message that contains "password" or "config", a C# generic inside a search).
 - `export`, `declare`, `readonly`, `typeset`, `local` and `[ ... ]` are never checked (tree-sitter does not parse
   them as commands): the defense against an environment dump of these forms is the prompt (AGENTS.md "Speed").
+- An approval answered "always" is stored for the whole OpenCode instance, for EVERY agent and session, and comes after
+  every rule (permission/index.ts: evaluate(..., ruleset, approved)). Its pattern is wide: "rm *" for any rm, "dotnet *"
+  for any dotnet command (arity.ts), "*" for the read and edit tools. One "always" on an ask would lift the refusals of
+  every agent until OpenCode restarts. Hence: NO "ask" rule on bash, read or edit, anywhere; what used to ask is refused.
+  Only external_directory still asks (its approval covers one folder), and only the build agent meets it: the pack
+  plugin refuses a path outside the repository for the agents of the pack before OpenCode would ask.
+- A shell command whose text names a path outside the repository is refused by the pack plugin (compact-commands.js),
+  which sees through quotes, `sh -c` and redirections: tree-sitter rules cannot.
 Duplicate keys are forbidden: OpenCode's YAML parser (gray-matter) rejects them.
 """
 import json
@@ -57,9 +65,10 @@ REDIRECT = [("* >*", "deny"), ("*2>*", "deny"), ("*&>*", "deny"),
             ("*2>&1*", "allow"), ("*>/dev/null*", "allow"), ("*> /dev/null*", "allow"),
             ("* >*2>&1*", "deny"), ("*2>&1 >*", "deny"), ("* >>*", "deny"),
             ("*>/dev/null 2>&1*", "allow"), ("*> /dev/null 2>&1*", "allow")]
-# find and sed forms that write or run commands
+# find, sed, sort and tree forms that write a file or run commands
 OTHER_DENY = ["find *-exec*", "find *-execdir*", "find *-delete*", "find *-ok*", "find *-fprint*", "find *-fls*",
-              "sed *-i*", "sed *--in-place*", "*--fix*", "*--write*"]
+              "sed *-i*", "sed *--in-place*", "sort -o *", "sort * -o *", "sort *--output*", "tree -o *",
+              "tree * -o *", "*--fix*", "*--write*"]
 SUBST = ["*$(*", "*${*", "*`*"]
 
 # ---------- secrets: refused for every agent, build and dev included ----------
@@ -67,7 +76,7 @@ SUBST = ["*$(*", "*${*", "*`*"]
 SECRET_FILES = ["*?u?et.?onfig*", "*.nuget/NuGet*", "*/.z*", "*zshrc*", "*/.bash*", "*/.profile*", "*/.ssh/*",
                 "*/.aws/*", "*/.docker/*", "*.npmrc*", "*.netrc*", "*.pypirc*", "*.git-credentials*",
                 "*/proc/*environ*", "*appsec-ci.env*", "* .env*", "*/.env*", "*opencode.json*",
-                "*opencode/auth.json*"]
+                "*opencode/auth.json*", "*/git/credential*", "*git-credential*"]
 # Environment dumps and credential-bearing git output (a remote URL or the git config can hold a token)
 ENV_DUMP = ["env", "env *", "printenv*", "set", "compgen*", "*echo *$*", "*printf *$*", "*artifactory_*",
             "dotnet user-secrets*", "git config*", "git remote -v*", "git remote get-url*", "git remote show*"]
@@ -79,19 +88,27 @@ SECRETS = SECRET_FILES + ENV_DUMP + SECRET_NAMES
 # print them, from any helper (cache, store, keychain, manager), and so would the socket of the cache helper or the
 # keychain tools (macOS `security`, which may also hold the Artifactory token; Linux `secret-tool`). Global rules
 # only, for build and dev: the agents with their own bash rules never allow these commands.
-CREDENTIAL_STORES = ["git credential*", "*git-credential*", "*/git/credential*", "security", "security *",
-                     "secret-tool*"]
+# (their files, ~/.git-credentials and ~/.config/git/credentials, are in SECRET_FILES)
+CREDENTIAL_STORES = ["git credential*", "security", "security *", "secret-tool*"]
 # build and dev: never look inside a package or build a tool to look inside an assembly (reflection program in /tmp
 # or a console project, decompilers, `strings`). What the agents need about packages is printed by package-refs.sh
 # (in-house or not, frameworks, XML documentation path), the API comes from the existing calls (AGENTS.md).
 DECOMPILE = ["* /tmp/*", "* /tmp", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*", "mktemp*", "*.nuget/packages*", "*.dll*",
              "*.nupkg*", "dotnet new console*", "dotnet fsi*", "dotnet script*", "*ilspy*", "*ildasm*", "monodis*",
              "strings *"]
-# ...except deleting one package version from the cache, which build-fix may ask for (a package republished with the
-# same version): asked each time, the whole cache stays refused
-CACHE_CLEAN = ["rm -rf *.nuget/packages/?*", "rm -r *.nuget/packages/?*"]
-# build and dev: running a program or installing a tool asks first (a reflection program is run with dotnet run)
-RUN_ASK = ["dotnet run*", "dotnet tool install*", "dotnet tool update*"]
+# Running a program or installing a tool (a reflection program is run with dotnet run): refused for every agent. They
+# used to ask, but an "always" answer would have allowed "dotnet *" to every agent.
+RUN_DENY = ["dotnet run*", "dotnet tool install*", "dotnet tool update*"]
+# History-changing git commands and recursive deletions: refused for the conversation agents too (they used to ask, and
+# "always" would have allowed "git push *" or "rm *" to every agent). Git history is written by /go and /fix only.
+HISTORY_DENY = ["git push*", "git reset*", "git rebase*", "git commit*", "git merge", "git merge *", "git pull*",
+                "git cherry-pick*", "git revert*", "git am*"]
+# (the pack plugin refuses every recursive rm whatever the order of its options; these rules are the second layer)
+RM_RECURSIVE = ["rm -r*", "rm -R*", "rm -fr*", "rm -fR*", "rm -f -r*", "rm -f -R*", "rm *--recursive*", "rm * -r*",
+                "rm * -R*", "rm * -fr*", "rm * -fR*"]
+# The pack's scripts that write: git (branch.sh, ship.sh) and the ticket sheet (ticket-sheet.sh). Only the pilot runs
+# them: with SCRIPTS allowed, a read-only agent could otherwise commit and push through ship.sh.
+WRITE_SCRIPTS = ["*ship.sh*", "*branch.sh*", "*ticket-sheet.sh*"]
 
 # The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS)
 SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
@@ -122,10 +139,6 @@ def allow(patterns):
     return [(p, "allow") for p in patterns]
 
 
-def ask(patterns):
-    return [(p, "ask") for p in patterns]
-
-
 def deny(patterns):
     return [(p, "deny") for p in patterns]
 
@@ -151,7 +164,8 @@ def read_only_bash(extra_allows=(), after_secrets=(), package_guard=True):
     rules = [("*", "deny")]
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + list(extra_allows))
     rules += REDIRECT
-    rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS + (PACKAGE_GUARD if package_guard else []))
+    rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS + WRITE_SCRIPTS
+                  + (PACKAGE_GUARD if package_guard else []))
     rules += allow(after_secrets)
     return rules
 
@@ -163,6 +177,8 @@ def only(paths):
 BASE = [("webfetch", "deny"), ("websearch", "deny"), ("question", "allow")]
 # The agents that work while nobody watches never ask anything: a question would stop the whole run
 SILENT = [("webfetch", "deny"), ("websearch", "deny"), ("question", "deny")]
+# The same tool call repeated three times in a row (doom_loop) is refused for every agent (global rule below): a
+# subagent of /go then ends with an error that the pilot handles, instead of waiting for an approval nobody gives
 NO_TASK = [("task", "deny")]
 SHEET = [("edit", only([TICKET_SHEETS]))]
 NO_EDIT = [("edit", "deny")]
@@ -188,44 +204,64 @@ def pilot_bash():
     return rules
 
 
-# The coder works alone: what the global rules ask (push, reset, rebase, rm -rf, dotnet run, a tool install, a
-# package removed from the cache) is refused for it instead, and so is every git write: the pilot commits its work.
-CODER_GIT_DENY = ["git push*", "git commit*", "git merge", "git merge *", "git pull*", "git rebase*", "git reset*",
-                  "git stash*", "git checkout*", "git switch*", "git restore*", "git clean*", "git cherry-pick*",
-                  "git revert*", "git am*", "git apply*", "git tag *", "git remote add*", "git remote set-url*",
-                  "git remote remove*", "git remote rm*", "git remote rename*", "git worktree add*",
-                  "git worktree remove*", "git worktree move*", "git worktree prune*", "git rm*", "git mv*",
-                  "git update-ref*", "git filter-branch*", "git gc*", "git -c*", "git -C*"] + GIT_READ_GUARD
-# ...but the read forms of the same commands stay usable
-CODER_GIT_READ = ["git stash list*", "git stash show*", "git tag", "git tag -l*", "git tag --list*"]
+# The coder works alone, so it gets an allowlist like the pilot (it used to have "*": allow minus refusals, which let
+# through curl, `dotnet add package`, `dotnet ef database update`, `bash -c`, a redirection into .git/config or into
+# ~/.config/opencode, and ship.sh): reads, git reads, the build and its tools, the front-end tooling, file moves inside
+# the repository. Everything else is refused at once, without asking. Files are written with the edit and write tools.
+CODER_BUILD = ["dotnet clean*", "dotnet format*", "dotnet build-server shutdown*", "dotnet tool restore*",
+               # EF Core migrations that never touch a database (`database update`, `migrations remove` and a plain
+               # `migrations list` connect to one)
+               "dotnet ef migrations add *", "dotnet ef migrations script*", "dotnet ef migrations list --no-connect*",
+               "dotnet ef migrations has-pending-model-changes*", "dotnet ef --version",
+               # project references between projects of the repository (a PACKAGE reference is never added here)
+               "dotnet add * reference *", "dotnet add reference *", "dotnet remove * reference *",
+               "dotnet remove reference *", "dotnet sln list*", "dotnet sln * list*"]
+CODER_FRONT = ["npm run lint*", "npm run format*", "npx eslint *", "npx prettier *", "npx ng lint*", "npx ng generate *",
+               "npx ng g *", "npm ci*", "npm install", "npm i", "yarn install --frozen-lockfile*",
+               "yarn install --immutable*", "pnpm install --frozen-lockfile*"]
+CODER_FILES = ["mkdir *", "touch *", "cp *", "mv *", "rm *", "chmod +x *",
+               "xargs grep *", "xargs -0 grep *", "xargs -r grep *", "xargs -0r grep *", "xargs -r0 grep *",
+               "xargs wc *", "xargs -0 wc *", "xargs ls *"]
+# One file removed at a time, never a folder (the plugin refuses a path outside the repository)
+CODER_RM_GUARD = RM_RECURSIVE + ["rm *..*"]
+# find and sed forms that write or run commands; the fixing forms of the linters stay allowed for the coder
+CODER_OTHER_DENY = [p for p in OTHER_DENY if p not in ("*--fix*", "*--write*")]
 
 
 def coder_bash():
-    # Its own "*": allow comes after the global rules, so the global refusals are repeated after it (last match wins)
-    return [("*", "allow")] + deny(CODER_GIT_DENY) + allow(CODER_GIT_READ) \
-        + deny(["rm -rf*", "rm -fr*", "rm -r *"] + RUN_ASK + CACHE_CLEAN + SECRETS + CREDENTIAL_STORES + DECOMPILE)
+    rules = [("*", "deny")]
+    rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + DOTNET_RUN + CODER_BUILD + FRONT_TEST + FRONT_BUILD
+                   + CODER_FRONT + CODER_FILES)
+    rules += REDIRECT
+    # (the commands of CREDENTIAL_STORES and DECOMPILE are not in the allowlist; their paths are outside the repository)
+    rules += deny(GIT_READ_GUARD + CODER_OTHER_DENY + CODER_RM_GUARD + SECRETS + WRITE_SCRIPTS + PACKAGE_GUARD
+                  + ["* /tmp/*", "* /tmp", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*"] + SUBST)
+    return rules
 
 
 AGENTS = {
     # /go, /fix, /daily: every MCP server, read-only, except the creation of the merge request of the branch
     "pilot": SHEET + BASE + [("task", only(["analyst", "coder", "checker", "debugger"]))]
-    + [("bash", pilot_bash())] + MCP_WRITE_DENY + [("*create_merge_request", "allow")] + mcp_only(["jira", "confluence", "gitlab", "sonar", "fortify"]),
+    + [("bash", pilot_bash())] + MCP_WRITE_DENY + [("*create_merge_request", "allow")]
+    + mcp_only(["jira", "confluence", "gitlab", "sonar", "fortify"]),
     "analyst": SHEET + SILENT + NO_TASK + [("bash", read_only_bash())] + MCP_WRITE_DENY
     + mcp_only(["jira", "confluence", "gitlab"]),
     # code and tests anywhere in the repository except .git (the ticket sheet is the pilot's), no MCP
-    "coder": [("edit", [("*", "allow"), ("../*", "deny"), (".git/**", "deny"), ("*/.git/**", "deny")])] + SILENT + NO_TASK
-    + [("bash", coder_bash())] + mcp_only([]),
-    "checker": NO_EDIT + SILENT + NO_TASK + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS))]
-    + MCP_WRITE_DENY + mcp_only(["jira"]),
-    # /compare asks me which check I make when the cause is not confirmed
-    "debugger": NO_EDIT + BASE + NO_TASK + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD, package_guard=False))]
+    "coder": [("edit", [("*", "allow"), ("../*", "deny"), (".git/**", "deny"), ("*/.git/**", "deny")])] + SILENT
+    + NO_TASK + [("bash", coder_bash())] + mcp_only([]),
+    "checker": NO_EDIT + SILENT + NO_TASK
+    + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    # /compare asks me which check I make when the cause is not confirmed (as the agent of the command); as a subagent
+    # of /go or /fix it cannot ask (experimental.primary_tools in opencode.json)
+    "debugger": NO_EDIT + BASE + NO_TASK
+    + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD, package_guard=False))]
     + MCP_WRITE_DENY + mcp_only(["kibana"]),
     # /outil doc: writes docs/ and the root README.md only, never opens a configuration file, never publishes
-    "doc-writer": [("edit", only(["docs/**", "README.md"])), ("read", deny(CONFIG_FILES_READ))] + SILENT + NO_TASK
-    + [("bash", read_only_bash() + deny(CONFIG_FILES_BASH))] + MCP_WRITE_DENY + mcp_only([]),
+    "doc-writer": [("edit", only(["docs/**", "README.md"])), ("read", deny(CONFIG_FILES_READ))] + SILENT
+    + NO_TASK + [("bash", read_only_bash() + deny(CONFIG_FILES_BASH))] + MCP_WRITE_DENY + mcp_only([]),
 }
 
-TOOL_KEYS = {"edit", "read", "bash", "webfetch", "websearch", "question", "task"}
+TOOL_KEYS = {"edit", "read", "bash", "webfetch", "websearch", "question", "task", "doom_loop"}
 
 
 def q(key):
@@ -261,40 +297,52 @@ for name, rules in AGENTS.items():
 
 def as_dict(rules):
     check_dupes(rules)
-    return {k: as_dict(v) if isinstance(v, list) else v for k, v in rules}
+    return {k: as_dict(v) if isinstance(v, list) and v and isinstance(v[0], tuple) else v for k, v in rules}
 
 
 # Qwen 3.6 recommended sampling for thinking mode and precise coding
 SAMPLING = [("temperature", 0.6), ("top_p", 0.95)]
+# The conversation agents (build, general, explore) run any command but these. They are not global rules: the agents
+# of the pack have complete shell rules of their own (starting with "*": deny), and OpenCode repeats every rule that
+# applies to an agent in the message of each refusal (5 KB more per refusal for nothing).
+CONVERSATION_BASH = deny(HISTORY_DENY + RM_RECURSIVE + RUN_DENY + WRITE_SCRIPTS + SECRETS + CREDENTIAL_STORES + DECOMPILE)
 SNIPPET = as_dict([
     ("$schema", "https://opencode.ai/config.json"),
     ("agent", [
         # build runs /outil and the free conversation: it may publish a Confluence page of /outil doc or
         # /outil release-notes, each write asked first; never in Jira
-        ("build", SAMPLING + [("permission", [("task", [("*", "allow")])] + CONFLUENCE_WRITE)]),
-        ("general", SAMPLING),
-        ("explore", SAMPLING),
+        ("build", SAMPLING + [("permission", [("task", [("*", "allow")]), ("bash", CONVERSATION_BASH)]
+                                         + CONFLUENCE_WRITE)]),
+        ("general", SAMPLING + [("permission", [("bash", CONVERSATION_BASH)])]),
+        ("explore", SAMPLING + [("permission", [("bash", CONVERSATION_BASH)])]),
         ("plan", SAMPLING + [("permission", [("bash", read_only_bash())])]),
     ]),
     # Every agent, built-in ones included (build, plan, general, explore): no secret read through the shell or the
-    # read tool, destructive git asks first, and MCP write tools are hidden (read-only on Jira, Confluence, GitLab,
-    # Sonar, Fortify; the pilot re-allows the creation of its merge request, build its Confluence pages with
-    # approval, with their own rules, which come after these ones).
+    # read tool, no git history written outside /go and /fix, nothing that asks (an "always" answer would apply to every
+    # agent), and MCP write tools hidden (read-only on Jira, Confluence, GitLab, Sonar, Fortify; the pilot re-allows the
+    # creation of its merge request, build its Confluence pages with approval, with their own rules, which come after).
     ("permission", [
         ("question", "allow"),
         ("skill", [("*", "allow")]),
-        ("bash", ask(["git push*", "git reset*", "git rebase*", "rm -rf*"] + RUN_ASK)
-         + deny(SECRETS + CREDENTIAL_STORES + DECOMPILE) + ask(CACHE_CLEAN)),
+        ("doom_loop", "deny"),
         # Readable without asking: the NuGet package cache (XML documentation of in-house packages) and the skills
         ("external_directory", allow(["~/.nuget/packages/*", "~/.config/opencode/skills/*"])),
         # No agent writes outside the repository of its session (the edit tools see paths relative to the repository:
         # ../ means outside), except /outil pattern into a pattern skill
         ("edit", deny(["../*"]) + allow(["*/.config/opencode/skills/pattern-*"])),
-        # the read tool sees paths relative to the repository root too (../../.nuget/NuGet/NuGet.Config)
+        # the read tool sees paths relative to the repository root too (../../.nuget/NuGet/NuGet.Config). The .env
+        # files are refused instead of asked: "always" on that question would allow every read of every agent.
         ("read", deny(["*/.nuget/NuGet/*", "*?u?et.?onfig", "*appsec-ci.env", "*opencode.json",
                        "*opencode/auth.json", "*/.ssh/*", "*/.aws/*", "*/.z*", "*zshrc*", "*.netrc",
-                       "*.git-credentials", "*.npmrc"])),
+                       "*.git-credentials", "*.npmrc", "*.env", "*.env.*"])
+         + allow(["*.env.example", "*.env.sample", "*.env.template"])),
     ] + MCP_WRITE_DENY),
+    # A subagent never gets the question tool: nobody answers during /go or /fix (the debugger keeps it as the agent of
+    # /compare, a primary session)
+    ("experimental", [("primary_tools", ["question"])]),
+    # Outputs of tools from the older turns of a long session (/daily, then /go, then /fix) are erased from the
+    # context; the last two turns stay whole
+    ("compaction", [("prune", True)]),
 ])
 with open("opencode.snippet.json", "w") as out:
     json.dump(SNIPPET, out, indent=2, ensure_ascii=False)

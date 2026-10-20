@@ -16,4 +16,4 @@ Steps:
 Answer, in French:
 - First line: « Type de projet : <type> ».
 - Table: pratique, statut, preuve (file:line), priorité (haute / moyenne / basse: security and production failures first).
-- « À faire en premier » : up to 10 improvements, most useful first, each with its smallest change and how to do it: `/outil pattern apply <name>`, or a Jira ticket to create, written ready to paste (summary and description; never create it), that `/go <KEY>` will then implement.
+- « À faire en premier » : up to 10 improvements, most useful first, each with its smallest change and how to do it: a Jira ticket to create, written ready to paste (summary and description; never create it), that `/go <KEY>` will then implement, with « comme le pattern <name> » when a pattern skill of this machine does it.

@@ -69,12 +69,14 @@ for (const file of fs.readdirSync(path.join(pack, "agents"))) {
   agents[name] = [...defaults, ...user, ...fromConfig(data.permission)]
 }
 for (const name of Object.keys(agents)) agents[name].push({ permission: "external_directory", pattern: TRUNC, action: "allow" })
-// A subagent spawned by the task tool gets session rules that come after its own (last match wins)
+// A subagent spawned by the task tool gets session rules that come after its own (last match wins): todowrite and task
+// refused unless it has rules for them, and the tools of experimental.primary_tools (tool/task.ts, childToolDenies)
 function subSession(name) {
   const own = agents[name]
   const out = []
   if (!own.some((r) => r.permission === "todowrite")) out.push({ permission: "todowrite", pattern: "*", action: "deny" })
   if (!own.some((r) => r.permission === "task")) out.push({ permission: "task", pattern: "*", action: "deny" })
+  for (const tool of snippet.experimental?.primary_tools ?? []) out.push({ permission: tool, pattern: "*", action: "deny" })
   return out
 }
 
@@ -161,6 +163,10 @@ function check(c) {
     const rel = path.relative(PROJECT, target)
     const r = evaluate(perm, rel, rules)
     bump(r.action, `${perm} ${rel} -> ${r.action} (rule ${JSON.stringify(r.pattern)})`)
+  } else if (c.perm) {
+    // a permission checked with a pattern (doom_loop: the name of the repeated tool)
+    const r = evaluate(c.perm, c.pattern, rules)
+    bump(r.action, `${c.perm} ${c.pattern} -> ${r.action}`)
   } else if (c.task) {
     const r = evaluate("task", c.task, rules)
     bump(r.action, `task ${c.task} -> ${r.action}`)
@@ -182,13 +188,41 @@ for (const c of cases) {
   const ok = result === c.expect
   if (!ok) failed++
   if (!ok || verbose) {
-    const what = c.cmd ?? c.read ?? c.edit ?? c.task ?? c.tool
+    const what = c.cmd ?? c.read ?? c.edit ?? c.task ?? c.tool ?? (c.perm && c.perm + " " + c.pattern)
     console.log(`${ok ? "ok  " : "FAIL"} [${c.agent}${c.sub ? " (sub)" : ""}] expect ${c.expect}, got ${result}: ${what}${c.note ? "   # " + c.note : ""}`)
     if (!ok) for (const w of why) console.log("       " + w)
   }
 }
+// No "ask" in the pack's own rules (global and agents) for the shell, the file tools and loops: an "always" answer to such
+// a question would be stored for the whole OpenCode instance and lift the rule for every agent (permission/index.ts).
+// Only external_directory (one folder per approval) and the Confluence writes of build (tools hidden from the others)
+// may ask.
+let broken = 0
+const ASK_ALLOWED = (r) => r.permission === "external_directory" || /onfluence/.test(r.permission)
+const userRules = [["global", user], ...Object.entries(snippet.agent ?? {}).map(([n, v]) => [n, fromConfig(v.permission)])]
+for (const file of fs.readdirSync(path.join(pack, "agents"))) {
+  userRules.push([file, fromConfig(matter(fs.readFileSync(path.join(pack, "agents", file), "utf8")).data.permission)])
+}
+for (const [where, rules] of userRules) {
+  for (const r of rules) {
+    if (r.action === "ask" && !ASK_ALLOWED(r)) {
+      broken++
+      console.log(`FAIL ask rule in ${where}: ${r.permission} ${JSON.stringify(r.pattern)}`)
+    }
+  }
+}
+// The defaults of OpenCode that ask (read of .env files, doom_loop) are overridden for every agent
+for (const name of Object.keys(agents)) {
+  for (const [perm, pattern] of [["read", "src/Api/.env"], ["read", "src/Api/.env.local"], ["doom_loop", "bash"], ["doom_loop", "edit"]]) {
+    const r = evaluate(perm, pattern, agents[name])
+    if (r.action === "ask") {
+      broken++
+      console.log(`FAIL [${name}] ${perm} ${pattern} still asks`)
+    }
+  }
+}
 // size of the rules dumped into the model context by a bash denial (DeniedError lists every rule whose permission matches "bash")
 const dump = Object.fromEntries(Object.entries(agents).map(([n, r]) => [n, JSON.stringify(r.filter((x) => match("bash", x.permission))).length]))
-console.log(`\n${cases.length - failed}/${cases.length} cases as expected`)
+console.log(`\n${cases.length - failed}/${cases.length} cases as expected${broken ? `, ${broken} invariant violations` : ", no ask rule"}`)
 console.log("bash rules dumped on a denial (characters):", JSON.stringify(dump))
-process.exit(failed ? 1 : 0)
+process.exit(failed || broken ? 1 : 0)
