@@ -1,5 +1,7 @@
 # Pack OpenCode — dev senior .NET
 
+> **v2 disponible dans [`v2/`](v2/README.md)** : un ticket entre, une MR sort (`/go`, `/fix`), avec deux interventions du dev au lieu d'une douzaine. Ce fichier décrit la v1, conservée telle quelle.
+
 Agents, commandes et skills pour OpenCode (1.19, interface web) avec Qwen. Ils couvrent les API .NET 10 (CQRS ou non, ABP), Blazor, le legacy .NET Framework, les librairies et le front, avec GitLab, Jira, Confluence, SonarQube, Fortify SSC et Artifactory.
 
 Les commandes à taper toi-même (chemins, vérifications de l'environnement, logs d'OpenCode) sont toutes dans [`COMMANDES.md`](COMMANDES.md).
