@@ -15,6 +15,7 @@ Base branch for the merge request: the "Base branch" line of the workflow state.
 Calls: push, merge, pull and stash ask for my approval, so each of them runs alone in its call. The other git commands that must run in order go in one call, chained with `&&`, as written below.
 
 Steps:
+0. If the "Fetch:" line of the workflow state says AUTH FAILED, stop now, before the review and the commit: the push would fail after them. Answer as your rule on GitLab credentials says.
 1. If the current branch is `develop`, `master` or `main`, never commit there: ask me with the question tool (header "Suite"): "/ticket (recommandé)" (description: « choisir le ticket et créer sa branche ; les modifications en cours peuvent la suivre ») / "Annuler", and stop. The pack plugin starts the command I choose by itself as soon as your turn ends: then answer only « Je lance /ticket. ».
 2. If the working tree is empty:
    - No commit to push (the "Branch vs its remote copy" line says "up to date", or "none" while there is no commit since the base branch): say "Rien à livrer" and stop.

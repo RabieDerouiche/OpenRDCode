@@ -341,3 +341,19 @@ tool("todo", "jira_get_issue", "deny")
 tool("todo", "jira_create_issue", "deny")
 // every script fetch goes through fetch.sh (bounded, never asks for credentials)
 add(ALL, [S + "workflow-state.sh --sheet", S + "fetch.sh -q --no-tags origin"], "allow")
+// ---------- GitLab credentials that git finds by itself (COMMANDES.md "Identifiants GitLab"): no agent can print them ----------
+// the git credential protocol, whatever the helper (cache, store, keychain, manager), and the cache daemon's socket
+add([...ALL, "general", "explore", "doc-writer", "todo"], [
+  "git credential fill", "printf 'protocol=https\\nhost=gitlab.example.com\\n\\n' | git credential fill",
+  "git credential-cache exit", "git credential-osxkeychain get", "git-credential-store get",
+  "nc -U ~/.cache/git/credential/socket",
+], "deny")
+// build and dev have the whole shell: the keychain tools and the cache folder are refused by the global rules (the
+// agents with their own bash rules never allow them: listing that folder shows nothing secret)
+add(["build", "dev", "general", "explore"], [
+  "ls ~/.cache/git/credential/", "security find-internet-password -s gitlab.example.com -w",
+  "security find-generic-password -s artifactory-token -w", "secret-tool lookup service gitlab",
+], "deny")
+// ...while searches in the code about credentials stay allowed
+add(ALL, ["grep -rn \"Credential\" src", "git grep -n \"ICredentialProvider\" -- '*.cs'",
+  "grep -rn \"security\" src"], "allow")

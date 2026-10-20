@@ -69,11 +69,14 @@ find_base
 # The fetch never asks for credentials and gives up after 30 s (fetch.sh): the remote-tracking branches are then those
 # of the last fetch, and the line below says so
 fetch_failed() {
-  if [ "$1" = 124 ]; then
-    echo "Fetch: TIMEOUT (GitLab did not answer within 30 s: VPN or network); remote branches as of the last fetch"
-  else
-    echo "Fetch: FAILED (offline, or GitLab credentials to fix in the Mac Terminal); remote branches as of the last fetch"
-  fi
+  case "$1" in
+    124)
+      echo "Fetch: TIMEOUT (GitLab did not answer within 30 s: VPN or network); remote branches as of the last fetch" ;;
+    77)
+      echo "Fetch: AUTH FAILED (GitLab refused the credentials of the machine that hosts OpenCode, or got none; an agent cannot type them: I fix them myself, COMMANDES.md section \"Identifiants GitLab\"); no fetch, pull or push can work until then; remote branches as of the last fetch" ;;
+    *)
+      echo "Fetch: FAILED (offline, or GitLab credentials to fix on the machine that hosts OpenCode); remote branches as of the last fetch" ;;
+  esac
 }
 if [ "$fetch" = all ] || { [ "$fetch" = branch ] && [ -z "$base" ]; }; then
   sh "$here/fetch.sh" -q --no-tags origin 2>/dev/null || fetch_failed $?

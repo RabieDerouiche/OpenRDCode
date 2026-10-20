@@ -38,6 +38,8 @@ sh "$here/fetch.sh" -q origin "$prod" 2>/dev/null
 status=$?
 if [ "$status" = 124 ]; then
   fetched="as of the last fetch: GitLab did not answer within 30 s"
+elif [ "$status" = 77 ]; then
+  fetched="as of the last fetch: GitLab refused the credentials of the machine that hosts OpenCode, or got none"
 elif [ "$status" != 0 ]; then
   if [ "$prod" = master ] && sh "$here/fetch.sh" -q origin main 2>/dev/null; then
     prod="main"

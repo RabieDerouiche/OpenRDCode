@@ -59,17 +59,20 @@ find_base() {
 # Fetches one refspec (never asks for credentials, gives up after 30 s: fetch.sh); on failure, says why without
 # printing the remote URL (it may hold credentials)
 fetch() {
-  if ! err=$(sh "$here/fetch.sh" -q --no-tags origin "$1" 2>&1); then
-    case "$err" in
-      *"couldn't find remote ref"*|*"not our ref"*|*"no such ref"*)
-        echo "No revision: $2 not found on origin (wrong number or name, or another repository)." ;;
-      *"no answer from the remote"*)
-        echo "No revision: GitLab did not answer within 30 s (VPN or network): try again." ;;
-      *)
-        echo "No revision: the fetch failed (offline, or GitLab credentials to fix in the Mac Terminal)." ;;
-    esac
-    exit 0
-  fi
+  err=$(sh "$here/fetch.sh" -q --no-tags origin "$1" 2>&1)
+  fetch_status=$?
+  [ "$fetch_status" = 0 ] && return
+  case "$fetch_status:$err" in
+    77:*)
+      echo "No revision: GitLab refused the credentials of the machine that hosts OpenCode, or got none (I fix them myself: COMMANDES.md, section \"Identifiants GitLab\")." ;;
+    124:*)
+      echo "No revision: GitLab did not answer within 30 s (VPN or network): try again." ;;
+    *"couldn't find remote ref"*|*"not our ref"*|*"no such ref"*)
+      echo "No revision: $2 not found on origin (wrong number or name, or another repository)." ;;
+    *)
+      echo "No revision: the fetch failed (offline, or GitLab credentials to fix on the machine that hosts OpenCode)." ;;
+  esac
+  exit 0
 }
 
 find_base

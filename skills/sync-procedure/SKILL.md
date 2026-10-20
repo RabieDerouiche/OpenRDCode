@@ -13,6 +13,7 @@ Bring the current branch up to date. Order: secure local work, retrieve remote c
 Calls: push, merge, pull and stash ask for my approval, so each of them runs alone in its call. The other git commands that must run in order go in one call, chained with `&&`, as written below.
 
 Steps:
+0. If the "Fetch:" line of the workflow state says AUTH FAILED, stop now, before any commit or stash: nothing can be retrieved from GitLab or pushed until then. Answer as your rule on GitLab credentials says.
 1. If the current branch is `develop`, `master` or `main`: run `git fetch -q origin && git merge --ff-only origin/<branch>` in one call and stop.
 2. Local work. If the workflow state shows uncommitted or untracked files, ask me with the question tool:
    - "Commit local de tout, sans push" (recommandé): then, in one call, `git add -A && git diff --staged --stat && git diff --staged`.

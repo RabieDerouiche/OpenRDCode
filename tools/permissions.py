@@ -75,6 +75,12 @@ ENV_DUMP = ["env", "env *", "printenv*", "set", "compgen*", "*echo *$*", "*print
 # names and paths (reset-password, credentials/) stay usable.
 SECRET_NAMES = ["*PASSWORD*", "*PASSWD*", "*TOKEN*", "*SECRET*", "*CREDENTIAL*", "*API_KEY*", "*APIKEY*"]
 SECRETS = SECRET_FILES + ENV_DUMP + SECRET_NAMES
+# The GitLab credentials that git finds by itself (COMMANDES.md, "Identifiants GitLab"): `git credential fill` would
+# print them, from any helper (cache, store, keychain, manager), and so would the socket of the cache helper or the
+# keychain tools (macOS `security`, which may also hold the Artifactory token; Linux `secret-tool`). Global rules
+# only, for build and dev: the agents with their own bash rules never allow these commands.
+CREDENTIAL_STORES = ["git credential*", "*git-credential*", "*/git/credential*", "security", "security *",
+                     "secret-tool*"]
 # build and dev: never look inside a package or build a tool to look inside an assembly (reflection program in /tmp
 # or a console project, decompilers, `strings`). What the agents need about packages is printed by package-refs.sh
 # (in-house or not, frameworks, XML documentation path), the API comes from the existing calls (AGENTS.md).
@@ -277,8 +283,8 @@ SNIPPET = as_dict([
     ("permission", [
         ("question", "allow"),
         ("skill", [("*", "allow")]),
-        ("bash", ask(["git push*", "git reset*", "git rebase*", "rm -rf*"] + RUN_ASK) + deny(SECRETS + DECOMPILE)
-         + ask(CACHE_CLEAN)),
+        ("bash", ask(["git push*", "git reset*", "git rebase*", "rm -rf*"] + RUN_ASK)
+         + deny(SECRETS + CREDENTIAL_STORES + DECOMPILE) + ask(CACHE_CLEAN)),
         # Readable without asking: the NuGet package cache (XML documentation of in-house packages) and the skills
         ("external_directory", allow(["~/.nuget/packages/*", "~/.config/opencode/skills/*"])),
         # No agent writes outside the repository of its session (the edit tools see paths relative to the repository:

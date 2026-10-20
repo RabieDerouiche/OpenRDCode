@@ -24,6 +24,7 @@ If `<KEY>.md` is in the list of existing ticket sheets above, ask me with the qu
 - "Refaire l'analyse": continue; step 4 rewrites the sheet and keeps its "## Décisions" and "## Suivi" sections.
 
 ## Step 3 - Branch
+- If the "Fetch:" line of the workflow state says AUTH FAILED and the branch must be created or switched: stop before it, as your rule on GitLab credentials says (develop could not be brought up to date).
 - If the current branch name already contains the key, keep it and say "Branche déjà en place".
 - Otherwise:
   1. In one turn: read the ticket type and summary with the Jira MCP tools, and list the branches of this key with `git branch -a --list "*<KEY>*"`.

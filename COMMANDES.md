@@ -158,10 +158,45 @@ rm -r ~/.config/opencode/skills/pattern-nom-back
 
 ## Une commande qui met longtemps à démarrer
 
-Le `git fetch` que font les commandes au démarrage, dans le dépôt, avec son temps : `0` = OK, `124` = GitLab n'a pas répondu en 30 s (VPN, réseau), un autre code = refus ou identifiants à régler :
+Le `git fetch` que font les commandes au démarrage, dans le dépôt, avec son temps : `0` = OK, `124` = GitLab n'a pas répondu en 30 s (VPN, réseau), `77` = identifiants GitLab refusés ou absents (section suivante), un autre code = dépôt ou branche introuvable, réseau :
 ```sh
 time sh ~/.config/opencode/scripts/fetch.sh -q --no-tags origin; echo "code $?"
 ```
+
+## Identifiants GitLab
+
+Pour « could not read Username… terminal prompts disabled », « Authentication failed » ou « Fetch: AUTH FAILED ». Un agent ne peut jamais taper un identifiant : git doit trouver tout seul tes identifiants GitLab sur la machine qui héberge OpenCode. À taper dans un terminal de cette machine (le terminal de l'interface web d'OpenCode convient), dans un de tes dépôts. Aucune de ces commandes n'affiche de mot de passe ni de token.
+
+1. Le test, dans les mêmes conditions qu'un agent : `identifiants OK`, sinon l'erreur de l'agent :
+```sh
+GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -o BatchMode=yes' git ls-remote --heads origin > /dev/null && echo "identifiants OK"
+```
+2. Ce qui est réglé : le gestionnaire d'identifiants de git (une ligne par gestionnaire, rien si aucun), puis l'adresse du dépôt (`https://…` ou `git@…` pour ssh), sans ce qu'elle contiendrait d'identifiant :
+```sh
+git config --show-origin --get-all credential.helper
+git remote get-url origin | sed -E 's#://[^@/]*@#://***@#'
+```
+3. Adresse en `https://`, et la commande 2 affiche un gestionnaire (`osxkeychain`, `manager`, `store`, `cache`…) : il a perdu ou refusé tes identifiants (mot de passe changé, token expiré). Redonne-les une fois : git demande le nom d'utilisateur, puis le mot de passe ou le token GitLab, et le gestionnaire les garde :
+```sh
+git ls-remote --heads origin > /dev/null
+```
+4. Adresse en `https://`, et aucun gestionnaire : un cache en mémoire, rien d'écrit sur le disque, gardé 10 h même si tu fermes ce terminal (chaque matin, ou après un redémarrage de la machine, refais la commande du point 3) :
+```sh
+git config --global credential.helper 'cache --timeout=36000'
+```
+```sh
+git config --global credentialCache.ignoreSIGHUP true
+```
+```sh
+git ls-remote --heads origin > /dev/null
+```
+5. Refais le test 1, puis dans OpenCode, dans la même session : « relance ».
+
+- Avec une connexion d'entreprise (SSO), le mot de passe GitLab est un token d'accès personnel : GitLab → Préférences → Jetons d'accès, droits `read_repository` et `write_repository`, avec une date d'expiration.
+- Jamais de token dans l'adresse du dépôt (`https://nom:token@…`) : il serait écrit en clair dans `.git/config` et affiché par `git remote -v`.
+- Adresse en `git@…` (ssh) : la clé doit être chargée dans un agent ssh (`ssh-add`) avant le démarrage du serveur OpenCode, puis redémarre-le depuis ce terminal.
+- Test 1 OK mais l'agent échoue encore : le serveur OpenCode ne voit pas ces identifiants (démarré avant eux, par un autre utilisateur, ou trousseau verrouillé) : redémarre-le depuis ce terminal (section « Redémarrer OpenCode »).
+- Les agents ne peuvent pas lire ces identifiants : `git credential`, le dossier du cache, `security` et `secret-tool` leur sont refusés.
 
 ## Todo list
 
