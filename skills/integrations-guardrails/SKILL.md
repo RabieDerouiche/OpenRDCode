@@ -17,6 +17,7 @@ compatibility: opencode
 - CSOM batches requests: nothing is sent before `ExecuteQueryAsync()`. Count round trips; avoid one `ExecuteQueryAsync` per item in loops.
 - `Load(...)` only the properties you need.
 - Large files: use the chunked upload (StartUpload / ContinueUpload / FinishUpload). Keep the upload id and offsets consistent; a failure in the middle must cancel or clean up the upload session.
+- A file's name is `File.Name` (`FileLeafRef` on its list item, `ListItem.Name`), always with its extension. `DisplayName` is that name without its extension by default, and `Title` is a separate metadata column (empty, typed by someone, filled by a flow or promoted from the properties of an Office document): neither is a file name. A wrapper or a migration that maps a "title" or a display name where the old code read `Name` loses the extension.
 - Resolving files or folders by URL can be non-recursive: a lookup that works for files at the root can fail for files in subfolders. Check how the path is resolved before blaming the upload logic.
 - Server-relative URLs: build them from validated segments, encode special characters, reject `..`.
 - Shared NuGet packages wrapping CSOM may contain the bug: confirm whether the faulty code is in the repository or in the package before patching. After a version change of such a package, compare its query building (CAML, `Load` / `Include`) between the two versions first.

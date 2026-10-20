@@ -272,6 +272,9 @@ add(["build", "dev"], [S + "package-refs.sh", S + "package-refs.sh /home/dev/rep
   "dotnet add src/Infra/Infra.csproj package Inhouse.Crypto --version 2.1.0",
   "git log --branches --remotes -E -i --grep='DNA-1234' --format=%H"], "allow")
 add(RO, [S + "package-refs.sh", S + "pattern-source.sh . ''"], "allow")
+// /compare: the comparison report, also when the model runs it itself
+add(["debugger", "build", "dev"], [S + "compare-repos.sh /home/dev/repos/legacy-api ExportService",
+  S + "compare-repos.sh --raw '/home/dev/repos/legacy-api ExportService le titre perd son extension'"], "allow")
 readCase(ALL, "~/.nuget/packages/inhouse.crypto/2.1.0/lib/net8.0/Inhouse.Crypto.xml", "allow")
 editCase(["build", "dev"], "~/.nuget/packages/inhouse.crypto/2.1.0/lib/net8.0/Inhouse.Crypto.xml", "deny")
 // read-only agents: no browsing of the package cache either (package-refs.sh gives what they need); the debugger may

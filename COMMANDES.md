@@ -297,6 +297,26 @@ L'agent lit les fichiers de la branche extraite du dépôt source, sans fetch : 
 git -C /chemin/du/depot/source switch develop && git -C /chemin/du/depot/source pull --ff-only
 ```
 
+## Avant un /compare
+
+Le dépôt de référence (celui où ça marche) doit être cloné sur la machine qui héberge OpenCode, sur la version qui tourne (en général master). Une seule fois, s'il n'y est pas encore (remplace l'URL et le chemin) :
+```sh
+git clone <url du dépôt> /chemin/du/depot/reference
+```
+Puis, avant chaque comparaison :
+```sh
+git -C /chemin/du/depot/reference switch master && git -C /chemin/du/depot/reference pull --ff-only
+```
+Pour comparer aussi les versions transitives des packages (celles que tirent les packages internes, par exemple la librairie SharePoint sous un package maison), restaure-le une fois après chaque pull (`dotnet restore <fichier>.sln` s'il y a plusieurs solutions) :
+```sh
+cd /chemin/du/depot/reference && dotnet restore
+```
+Ensuite, dans une nouvelle session ouverte sur le dépôt où ça ne marche plus (le chemin sans espace, puis une classe, une méthode ou une route, puis le symptôme) :
+```text
+/compare /chemin/du/depot/reference ExportService le fichier envoyé sur S3 n'a plus l'extension .csv
+```
+À sa première lecture dans le dépôt de référence, OpenCode demande l'autorisation : réponds « toujours », elle couvre tout ce dépôt.
+
 ## Dans OpenCode
 
 L'environnement de build des agents, dans une nouvelle session :

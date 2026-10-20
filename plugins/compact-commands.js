@@ -46,7 +46,7 @@ const MAX_OUTPUT = 32 * 1024 * 1024
 const CHAINABLE = new Set([
   "daily", "ticket", "dev", "test", "check", "ship", "scans", "fortify-fix", "sonar-fix", "mr", "review", "sync",
   "next", "abandon", "agents-md", "audit", "licences", "release-notes", "cqrs", "extract-pattern", "apply-pattern", "doc",
-  "todo",
+  "todo", "compare",
 ])
 const CHOICE = /^\/([a-z][a-z0-9-]*)((?:\s+\S.*?)?)\s*(?:\((?:recommandé|recommended)\))?\s*$/i
 // Progress in the title
