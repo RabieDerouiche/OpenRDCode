@@ -6,9 +6,14 @@
 #   (origin/develop, otherwise origin/main or origin/master), without tracking it (the first push sets the upstream).
 # Uncommitted changes never travel silently: they go to a NEW branch only when they were made on the base branch
 # itself (work started on develop before /go); in every other case the script stops and lists them.
-# Output: "BRANCH: <name> (<how>)", sometimes followed by "CARRIED: ..." or "WARNING: ..." (exit 0), or one
-# "STOP: <reason>" line (exit 1).
-# Usage: branch.sh <JIRA-KEY> <feature|bugfix|hotfix> "<ticket summary>"
+# - A change without a Jira ticket: the key LOCAL becomes the next free local key, LOCAL-<n> (branches here and on
+#   origin, ticket sheets), printed on a "KEY:" line.
+# - In an OpenCode workspace (a git worktree that OpenCode starts on its own branch, opencode/<name>), that branch is
+#   deleted once the ticket branch is checked out, when it has no commit of its own; a ticket branch already open in
+#   another worktree stops the script (one ticket per worktree).
+# Output: "BRANCH: <name> (<how>)", sometimes followed by "KEY: ...", "CARRIED: ...", "CLEANED: ..." or "WARNING: ..."
+# (exit 0), or one "STOP: <reason>" line (exit 1).
+# Usage: branch.sh <JIRA-KEY | LOCAL> <feature|bugfix|hotfix> "<ticket summary>"
 
 LC_ALL=C
 export LC_ALL
@@ -20,8 +25,8 @@ type=${2:-feature}
 summary=$3
 here=$(dirname "$0")
 
-if ! printf '%s' "$key" | grep -qE '^[A-Z][A-Z0-9_]+-[0-9]+$'; then
-  echo "STOP: \"$key\" is not a Jira key (ABC-123)"
+if [ "$key" != LOCAL ] && ! printf '%s' "$key" | grep -qE '^[A-Z][A-Z0-9_]+-[0-9]+$'; then
+  echo "STOP: \"$key\" is not a Jira key (ABC-123), nor LOCAL for a change without a ticket"
   exit 1
 fi
 case "$type" in
@@ -36,10 +41,21 @@ cd "$(git rev-parse --show-toplevel)" || exit 0
 
 current=$(git branch --show-current)
 regex="(^|[^A-Za-z0-9])$key([^0-9]|$)"
-if printf '%s' "$current" | grep -qE "$regex"; then
+if [ "$key" != LOCAL ] && printf '%s' "$current" | grep -qE "$regex"; then
   echo "BRANCH: $current (already checked out)"
   exit 0
 fi
+
+# The branch an OpenCode workspace started on, opencode/<name>, has no use once the ticket branch is checked out:
+# deleted when its last commit is also on another branch, here or on origin (nothing is lost)
+cleanup_workspace_branch() {
+  case "$current" in opencode/*) ;; *) return 0 ;; esac
+  tip=$(git rev-parse -q --verify "refs/heads/$current") || return 0
+  if git for-each-ref --contains "$tip" --format='%(refname)' refs/heads refs/remotes | grep -v "^refs/heads/$current\$" | grep -q .; then
+    git branch -q -D "$current" 2>/dev/null && echo "CLEANED: the workspace branch $current (no commit of its own)"
+  fi
+  return 0
+}
 
 # Uncommitted changes, tracked or not (ignored files excluded)
 dirty=$(git status --porcelain 2>/dev/null | head -n 20 | cut -c4- | awk 'NR > 1 { printf ", " } { printf "%s", $0 } END { if (NR) print "" }')
@@ -63,6 +79,16 @@ for candidate in develop main master; do
   fi
 done
 
+# A change without a ticket: the next free local key
+if [ "$key" = LOCAL ]; then
+  common=$(git rev-parse --git-common-dir 2>/dev/null) && common=$(cd "$common" && pwd)
+  last=$( { git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin; ls "${common:-.git}/opencode-tickets" 2>/dev/null; } |
+    grep -oE '(^|[^A-Za-z0-9])LOCAL-[0-9]+' | grep -oE '[0-9]+$' | sort -n | tail -n 1)
+  key="LOCAL-$(( ${last:-0} + 1 ))"
+  regex="(^|[^A-Za-z0-9])$key([^0-9]|$)"
+  echo "KEY: $key"
+fi
+
 local_branch=$(git for-each-ref --format='%(refname:short)' refs/heads | grep -E "$regex" | head -n 1)
 remote_branch=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin | grep -v '/HEAD$' | grep -E "$regex" | head -n 1)
 
@@ -72,8 +98,14 @@ if [ -n "$local_branch" ] || [ -n "$remote_branch" ]; then
     exit 1
   fi
   if [ -n "$local_branch" ]; then
+    elsewhere=$(git worktree list --porcelain 2>/dev/null | awk -v b="branch refs/heads/$local_branch" '/^worktree / { w = substr($0, 10) } $0 == b { print w }' | head -n 1)
+    if [ -n "$elsewhere" ]; then
+      echo "STOP: the branch $local_branch is open in another worktree ($elsewhere): continue the ticket there (one ticket per worktree)"
+      exit 1
+    fi
     if git switch -q "$local_branch" 2>/dev/null; then
       echo "BRANCH: $local_branch (switched, existing local branch)"
+      cleanup_workspace_branch
     else
       echo "STOP: git could not switch to $local_branch"
       exit 1
@@ -82,6 +114,7 @@ if [ -n "$local_branch" ] || [ -n "$remote_branch" ]; then
     name=${remote_branch#origin/}
     if git switch -q -c "$name" --track "$remote_branch" 2>/dev/null; then
       echo "BRANCH: $name (switched, from $remote_branch pushed from another computer)"
+      cleanup_workspace_branch
     else
       echo "STOP: git could not create $name from $remote_branch"
       exit 1
@@ -124,4 +157,5 @@ if ! git switch -q --no-track -c "$name" "origin/$base" 2>/dev/null; then
 fi
 echo "BRANCH: $name (created from origin/$base, $(git log -1 --format='%h, %cs' "origin/$base"))"
 [ -n "$dirty" ] && echo "CARRIED: the uncommitted changes made on $base came along: $dirty"
+cleanup_workspace_branch
 exit 0

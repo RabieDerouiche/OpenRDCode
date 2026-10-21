@@ -28,7 +28,10 @@ import json
 import re
 import sys
 
+# The ticket sheets: .git/opencode-tickets in the main checkout; from a worktree (an OpenCode workspace), the same
+# folder of the main checkout, outside the worktree (a path that starts with ../ for the edit tools)
 TICKET_SHEETS = ".git/opencode-tickets/**"
+TICKET_SHEETS_OUTSIDE = "*/.git/opencode-tickets/*"
 
 # The pack's scripts, whatever the way the model writes their path (~, $HOME or absolute). `sh -c ...` never matches:
 # the script path must follow `sh ` directly.
@@ -180,7 +183,7 @@ SILENT = [("webfetch", "deny"), ("websearch", "deny"), ("question", "deny")]
 # The same tool call repeated three times in a row (doom_loop) is refused for every agent (global rule below): a
 # subagent of /go then ends with an error that the pilot handles, instead of waiting for an approval nobody gives
 NO_TASK = [("task", "deny")]
-SHEET = [("edit", only([TICKET_SHEETS]))]
+SHEET = [("edit", only([TICKET_SHEETS, TICKET_SHEETS_OUTSIDE]))]
 NO_EDIT = [("edit", "deny")]
 
 # The pack scripts that receive free text (a commit message, a decision, a line of the ticket sheet): re-allowed after
@@ -329,7 +332,7 @@ SNIPPET = as_dict([
         # pack's scripts (an approval is kept only until OpenCode restarts, and per project). Never written: the edit
         # rules below, and the pack plugin for the shell (these folders are read-only to every agent)
         ("external_directory", allow(["~/.nuget/packages/*", "~/.config/opencode/skills/*",
-                                      "~/.config/opencode/scripts/*"])),
+                                      "~/.config/opencode/scripts/*", TICKET_SHEETS_OUTSIDE])),
         # No agent writes outside the repository of its session (the edit tools see paths relative to the repository:
         # ../ means outside), except /outil pattern into a pattern skill
         ("edit", deny(["../*"]) + allow(["*/.config/opencode/skills/pattern-*"])),

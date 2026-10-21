@@ -1,5 +1,6 @@
 #!/bin/sh
-# Updates the ticket sheet of the current branch (.git/opencode-tickets/<KEY>.md) in one call. An agent that ticks a
+# Updates the ticket sheet of the current branch (<git folder>/opencode-tickets/<KEY>.md: .git/opencode-tickets in the
+# main checkout, the same folder from every worktree) in one call. An agent that ticks a
 # step with the edit tool must rebuild the exact lines of the sheet: a line that changed in between (a subagent
 # updated "Tests attendus", I edited the sheet) makes the edit fail and the step stays unchecked. The date of the
 # "## Suivi" lines is added here. The texts are taken as they are (no escape is interpreted).
@@ -12,6 +13,8 @@
 #                                                check the points N of the last block of "## Retours /check" (the
 #                                                points of the last /check), then append the "## Suivi" line
 #   ticket-sheet.sh plan                         print the steps of "## Plan"
+#   ticket-sheet.sh delete                       delete the sheet (/outil abandon), also from a worktree, where the
+#                                                sheet is outside the folder of the session
 #   ticket-sheet.sh check                        check the structure /go relies on (sections, numbered steps with
 #                                                their files and tests, each criterion covered by an expected test)
 # Every write ends by printing the steps of "## Plan", so that the agent sees what is checked.
@@ -33,9 +36,13 @@ if [ -z "$key" ]; then
   echo "Ticket sheet: none (branch ${branch:-detached HEAD} has no Jira key)"
   exit 0
 fi
-sheet="$root/.git/opencode-tickets/$key.md"
+# The ticket sheets live in the git folder that every worktree of the repository shares (.git/opencode-tickets in
+# the main checkout): a worktree sees the sheets of the others, and a sheet is never committed
+common=$(git rev-parse --git-common-dir 2>/dev/null) && common=$(cd "$common" && pwd)
+sheets="${common:-$root/.git}/opencode-tickets"
+sheet="$sheets/$key.md"
 if [ ! -f "$sheet" ]; then
-  echo "Ticket sheet: none for $key ($sheet does not exist; /ticket $key creates it)"
+  echo "Ticket sheet: none for $key ($sheet does not exist; /go $key creates it)"
   exit 0
 fi
 
@@ -89,6 +96,9 @@ append() {
 }
 
 case "$action" in
+  delete)
+    rm -f "$sheet" && echo "Ticket sheet deleted: $sheet"
+    exit 0 ;;
   tick)
     step=$1
     suivi=$2

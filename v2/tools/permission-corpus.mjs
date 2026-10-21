@@ -219,6 +219,11 @@ readCase(["build", "pilot", "coder", "debugger"], "/home/dev/repos/legacy-api/sr
 // and after every restart), never written (the edit rules, and the plugin for the shell)
 readCase([...ALL, "plan"], "~/.config/opencode/scripts/build-test.sh", "allow")
 editCase(["coder", "build"], "~/.config/opencode/scripts/diff-guard.sh", "deny")
+// from a worktree (an OpenCode workspace), the ticket sheets are in the git folder of the main checkout, outside it
+const SHEET_OUTSIDE = "/home/dev/repos/main-api/.git/opencode-tickets/ABC-1.md"
+readCase(["pilot", "analyst", "checker", "coder", "debugger"], SHEET_OUTSIDE, "allow")
+editCase(["pilot", "analyst"], SHEET_OUTSIDE, "allow")
+editCase(["coder", "checker", "debugger", "doc-writer", "build"], SHEET_OUTSIDE, "deny")
 add(ALL, ["cat ~/.config/opencode/scripts/build-test.sh", "cd ~/.config/opencode/scripts && ls"], "allow")
 editCase(["coder", "build"], "src/Foo.cs", "allow")
 editCase(["coder"], "tests/App.Tests/FooTests.cs", "allow")

@@ -1,6 +1,6 @@
 #!/bin/sh
 # For /outil stats: what /go and /fix did on the tickets of this repository (or of the repositories given), read from
-# their ticket sheets (.git/opencode-tickets/<KEY>.md, never committed): plan steps, launches of /go, runs of /fix,
+# their ticket sheets (<git folder>/opencode-tickets/<KEY>.md, shared by every worktree, never committed): plan steps, launches of /go, runs of /fix,
 # answers given by the developer, decisions taken by the agent, stops, and the time from the analysis to the merge
 # request. Read-only. The output is shown as it is to the developer (/outil stats), so it is in French.
 # Usage: ticket-stats.sh [<repository path>...]      default: the current repository
@@ -20,7 +20,8 @@ for repo in "$@"; do
     "~/"*) repo="$HOME/${repo#"~/"}" ;;
   esac
   dir=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || { echo "Statistiques des tickets : $repo n'est pas un dépôt git"; continue; }
-  sheets="$dir/.git/opencode-tickets"
+  common=$(git -C "$dir" rev-parse --git-common-dir 2>/dev/null) && common=$(cd "$dir" && cd "$common" && pwd)
+  sheets="${common:-$dir/.git}/opencode-tickets"
   set --
   for file in "$sheets"/*.md; do
     [ -f "$file" ] && set -- "$@" "$file"
@@ -29,7 +30,10 @@ for repo in "$@"; do
     echo "Statistiques des tickets de $(basename "$dir") : aucune fiche pour l'instant (/go en crée une par ticket)"
     continue
   fi
-  awk -v repo="$(basename "$dir")" '
+  # the name of the repository, also from a worktree (an OpenCode workspace has a generated folder name)
+  name=$(basename "$dir")
+  case "$common" in */.git) name=$(basename "${common%/.git}") ;; esac
+  awk -v repo="$name" '
     # minutes since 1970-01-01 of "YYYY-MM-DD HH:MM" (days from civil, valid for any Gregorian date)
     function minutes(stamp,   y, m, d, h, mi, era, yoe, doy, doe) {
       if (stamp !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]/) return -1

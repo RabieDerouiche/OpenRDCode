@@ -483,7 +483,8 @@
     "external_directory": {
       "~/.nuget/packages/*": "allow",
       "~/.config/opencode/skills/*": "allow",
-      "~/.config/opencode/scripts/*": "allow"
+      "~/.config/opencode/scripts/*": "allow",
+      "*/.git/opencode-tickets/*": "allow"
     },
     "edit": {
       "../*": "deny",

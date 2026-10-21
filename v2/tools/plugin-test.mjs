@@ -311,5 +311,63 @@ answer("chat-1", "🚀 voilà")
 await idle("chat-1")
 await check("a conversation is never marked", () => assert.equal(sessions.get("chat-1").title, "Session chat-1"))
 
+// ---------- 7. a worktree (an OpenCode workspace): the ticket sheets are in the git folder of the main checkout ----------
+const mainRepo = join(home, "repos", "main-api")
+const workspace = join(home, ".local", "share", "opencode", "worktree", "p1", "brave-fox")
+mkdirSync(join(mainRepo, "src"), { recursive: true })
+writeFileSync(join(mainRepo, "src", "A.cs"), "class A {}\n")
+const gitIn = (cwd, args) => execFileSync("git", args, { cwd, stdio: "ignore", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@x", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@x" } })
+gitIn(home, ["init", "-q", mainRepo])
+gitIn(mainRepo, ["add", "-A"])
+gitIn(mainRepo, ["commit", "-q", "-m", "init"])
+gitIn(mainRepo, ["worktree", "add", "-q", "-b", "opencode/brave-fox", workspace])
+mkdirSync(join(mainRepo, ".git", "opencode-tickets"), { recursive: true })
+const hooksWt = await CompactCommands({ client, directory: workspace, worktree: workspace })
+const sheetOut = join(mainRepo, ".git", "opencode-tickets", "ABC-9.md")
+for (const [id, name] of [["wt-analyst", "analyst"], ["wt-coder", "coder"], ["wt-checker", "checker"], ["wt-pilot", "pilot"]]) {
+  session(id)
+  await hooksWt["chat.params"]({ sessionID: id, agent: name }, {})
+}
+const toolWt = async (sessionID, name, args) => {
+  const output = { args: { ...args } }
+  await hooksWt["tool.execute.before"]({ tool: name, sessionID, callID: "w" + count }, output)
+  return output.args
+}
+await check("[worktree analyst] writes the sheet in the main .git", () => toolWt("wt-analyst", "write", { filePath: sheetOut, content: "# ABC-9" }))
+await check("[worktree pilot] edits the sheet", () => toolWt("wt-pilot", "edit", { filePath: sheetOut, oldString: "a", newString: "b" }))
+await check("[worktree checker] reads the sheet", () => toolWt("wt-checker", "read", { filePath: sheetOut }))
+await check("[worktree coder] cat of the sheet", () => toolWt("wt-coder", "bash", { command: "cat " + sheetOut }))
+await check("[worktree coder] never writes the sheet", () => assert.rejects(() => toolWt("wt-coder", "write", { filePath: sheetOut, content: "x" }), /never change it/))
+await check("[worktree coder] never removes the sheet", () => assert.rejects(() => toolWt("wt-coder", "bash", { command: "rm " + sheetOut }), /never change it/))
+await check("[worktree coder] the main checkout is outside", () => assert.rejects(() => toolWt("wt-coder", "write", { filePath: join(mainRepo, "src", "A.cs"), content: "x" }), /outside the repository/))
+await check("[worktree coder] the rest of the main .git is outside", () => assert.rejects(() => toolWt("wt-coder", "bash", { command: "cat " + join(mainRepo, ".git", "config") }), /outside the repository/))
+await check("[worktree coder] its own files", () => toolWt("wt-coder", "write", { filePath: join(workspace, "src", "B.cs"), content: "x" }))
+
+// ---------- 5. what a subagent waits for, in the title of its parent ----------
+session("go-p")
+session("chk-1", { parentID: "go-p" })
+const emit = (type, properties) => hooks.event({ event: { type, properties } })
+const tick = () => new Promise((r) => setTimeout(r, 5600))
+const task = (status) => ({ part: { id: "t1", sessionID: "go-p", type: "tool", tool: "task",
+  state: { status, title: "Auto-review", input: { description: "Auto-review" }, metadata: { sessionId: "chk-1" } } } })
+await emit("session.status", { sessionID: "go-p", status: { type: "busy" } })
+await emit("message.part.updated", task("running"))
+await emit("session.status", { sessionID: "chk-1", status: { type: "busy" } })
+await emit("session.status", { sessionID: "chk-1", status: { type: "retry", attempt: 3, message: "Gateway Time-out" } })
+await tick()
+await check("a retry of the subagent shows in the parent title", () =>
+  assert.match(sessions.get("go-p").title, /^⏳ \d+:\d\d outil · Auto-review · nouvel essai 3 \(serveur du modèle\) — Session go-p$/))
+await emit("permission.asked", { sessionID: "chk-1", id: "per1", permission: "external_directory" })
+await tick()
+await check("an approval the subagent waits for shows in the parent title", () =>
+  assert.match(sessions.get("go-p").title, /^❓ \d+:\d\d Auto-review · autorisation attendue — Session go-p$/))
+await emit("permission.replied", { sessionID: "chk-1", requestID: "per1", reply: "once" })
+await emit("message.part.updated", task("completed"))
+await emit("session.idle", { sessionID: "chk-1" })
+await check("the subagent title is never touched", () => assert.equal(sessions.get("chk-1").title, "Session chk-1"))
+await emit("session.idle", { sessionID: "go-p" })
+await new Promise((r) => setTimeout(r, 200))
+await check("the parent gets its title back", () => assert.equal(sessions.get("go-p").title, "Session go-p"))
+
 console.log(`\n${count - failures}/${count} plugin checks as expected`)
 process.exit(failures ? 1 : 0)

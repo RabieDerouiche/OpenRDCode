@@ -244,6 +244,25 @@ Le `git fetch` que font les commandes au démarrage, dans le dépôt, avec son t
 time sh ~/.config/opencode/scripts/fetch.sh -q --no-tags origin; echo "code $?"
 ```
 
+## Un sous-agent qui semble bloqué
+
+Le titre de la session du `/go` dit ce que le sous-agent attend : « · nouvel essai 3 (serveur du modèle) » (le serveur ne répond pas : OpenCode attend jusqu'à 5 minutes par essai, et réessaie 5 fois), « · rien reçu depuis 4 min » (le serveur prépare une grosse requête, ou il est saturé), « ❓ … · autorisation attendue » (une autorisation t'attend dans la conversation). Ce que le serveur a renvoyé, et les nouveaux essais :
+```sh
+grep -E 'Gateway|timed out|retry' ~/.local/share/opencode/log/opencode.log | tail -20 | cut -c1-220
+```
+Le pilote reprend une fois un checker en échec, puis livre sans auto-review en le disant dans la MR : un `/go` ne reste plus bloqué sur lui. Si les « nouvel essai » reviennent souvent : section « Qwen 3.8 », la partie « Gateway Time-out ».
+
+## Plusieurs tickets d'un même dépôt (espaces de travail)
+
+Dans OpenCode web : clic droit sur le projet → « Activer les espaces de travail », puis « Nouvel espace de travail » ; dans la session de l'espace, `/go <CLÉ>`. Les espaces de travail du dépôt, avec leur branche (dans le dépôt principal) :
+```sh
+git worktree list
+```
+Avant de supprimer un espace (OpenCode supprime aussi sa branche locale) : sa branche est-elle poussée ? Dans le dossier de l'espace, `ahead N` veut dire N commits pas encore poussés : `/fix` les livre d'abord.
+```sh
+git status -sb | head -1
+```
+
 ## Identifiants GitLab
 
 Pour « could not read Username… terminal prompts disabled », « Authentication failed » ou « Fetch: AUTH FAILED ». Un agent ne peut jamais taper un identifiant : git doit trouver tout seul tes identifiants GitLab sur la machine qui héberge OpenCode. À taper dans un terminal de cette machine (le terminal de l'interface web d'OpenCode convient), dans un de tes dépôts. Aucune de ces commandes n'affiche de mot de passe ni de token.
@@ -466,6 +485,11 @@ Un gros ticket : l'analyse et le plan seulement, pour les relire avant le code (
 ```text
 /go ABC-123 pas à pas
 ```
+Un changement sans ticket Jira (clé locale `LOCAL-<n>` pour la branche et la fiche ; ni dans les commits ni dans le titre de la MR) :
+```text
+/go sans ticket : l'export CSV perd le séparateur décimal quand la culture est fr-FR
+```
+Vérifier un problème sans rien changer : une simple question dans une session (« vérifie pourquoi… ») ; s'il faut corriger, `/go sans ticket : …` dans la même session reprend l'enquête.
 
 Après la CI ou la review (jobs en échec, Sonar, Fortify, discussions de la MR), ou pour pousser ce que tu as modifié toi-même sur cette machine :
 ```text

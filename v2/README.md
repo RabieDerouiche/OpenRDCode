@@ -24,12 +24,26 @@ La v2 inverse le contrat :
 |---|---|---|
 | Matin | `/daily` | Sprint, MR, reviews qui t'attendent, plan du jour. Le ticket que tu choisis lance `/go`. |
 | Un ticket | `/go ABC-123` | Analyse (et mesure de develop en parallèle), plan, code et tests étape par étape, build complet, auto-review, corrections, contrôle avant push, commit, push, MR en Draft avec son rapport. |
+| Un changement sans ticket Jira | `/go sans ticket : <ce qu'il faut faire>` | Le même déroulé ; la description remplace le ticket. Clé locale `LOCAL-<n>` pour la branche et la fiche, jamais dans les commits ni le titre de la MR, qui dit « Sans ticket Jira ». |
+| Vérifier un problème, sans rien changer | une question dans une session (« vérifie pourquoi… ») | Il enquête, sans branche ni commit. S'il faut corriger, `/go sans ticket` dans la même session reprend son enquête. |
 | Après la CI ou la review | `/fix` | Jobs en échec, Sonar et Fortify sur les fichiers de la branche, discussions ouvertes de la MR : il corrige, teste, pousse, et rédige les réponses à coller. |
 | MR d'un collègue | `/review !42` | Commentaires prêts à coller, en lecture seule. |
 | Régression entre deux dépôts | `/compare <dépôt où ça marche> <classe> <symptôme>` | Cause de la régression : code, package, configuration, données ou correctif non reporté. |
 | Le reste | `/outil <nom>` | Doc, audit, licences, release notes, patterns d'équipe, scaffolding CQRS, AGENTS.md du dépôt, abandon d'un ticket, todo, statistiques. |
 
-Plusieurs `/go` en même temps, chacun dans son dépôt et sa session : le titre de chaque session dit son issue (✅ MR créée, ⛔ arrêté, ❓ une question t'attend). Un seul `/go` ou `/fix` à la fois par dépôt : le second est refusé.
+Plusieurs `/go` en même temps, chacun dans son dossier et sa session : le titre de chaque session dit son issue (✅ MR créée, ⛔ arrêté, ❓ une question t'attend) et, pendant le travail, ce qu'attend le sous-agent en cours (« nouvel essai 3 (serveur du modèle) », « rien reçu depuis 4 min »). Un seul `/go` ou `/fix` à la fois par dossier : le second est refusé. Plusieurs tickets du même dépôt en même temps : un espace de travail OpenCode par ticket (section suivante).
+
+### Plusieurs tickets du même dépôt : les espaces de travail (worktrees)
+
+OpenCode 1.19 web les a déjà : clic droit sur le projet → « Activer les espaces de travail », puis « Nouvel espace de travail » ouvre une session dans un nouveau dossier, une copie de travail git (worktree) du même dépôt. `/go ABC-124` y travaille comme ailleurs : il bascule l'espace sur la branche du ticket (et supprime la branche `opencode/<nom>` qu'OpenCode y avait créée), les fiches ticket restent dans le `.git` du dépôt principal, visibles de tous les espaces et de `/outil stats`.
+
+Ce que ça coûte, à connaître avant d'en ouvrir trois :
+- Chaque espace est une copie complète des fichiers (l'historique git, lui, est partagé) avec ses propres `bin/obj` (et `node_modules` en front) : de l'espace disque, et un premier build qui repart de zéro (les packages NuGet viennent du cache commun, rien n'est retéléchargé ; la compilation, si).
+- Le serveur du modèle est partagé : trois `/go` en parallèle se partagent sa capacité, chacun va moins vite, et les « Gateway Time-out » deviennent plus probables tant que la passerelle n'est pas réglée.
+- Les tests qui utilisent une ressource locale fixe (une base locale, un port fixe) peuvent se gêner quand deux suites tournent en même temps.
+- Un ticket ne s'ouvre que dans un espace à la fois : git le refuse, `/go` s'arrête en disant où il est ouvert.
+- Supprimer un espace dans OpenCode supprime sa branche locale (`git branch -D`) : sans risque après le push (la copie reste sur GitLab), mais avant le push, les commits locaux seraient perdus. Supprime un espace après ✅, ou après `/outil abandon`.
+- OpenCode classe encore cette fonction en expérimentale (son API est sous `/experimental/worktree`).
 
 ## Tes deux interventions
 
@@ -61,7 +75,7 @@ flowchart LR
 
 ### La fiche ticket : le ticket interne de l'agent
 
-`.git/opencode-tickets/<CLÉ>.md`, jamais commitée (elle est dans `.git`), écrite par l'analyste puis tenue à jour par un script :
+`.git/opencode-tickets/<CLÉ>.md` du dépôt principal (le même dossier depuis chaque espace de travail), jamais commitée (elle est dans `.git`), écrite par l'analyste puis tenue à jour par un script :
 
 | Section | Contenu |
 |---|---|
@@ -128,7 +142,7 @@ En v1, tu validais chaque push et chaque demande d'autorisation. En v2, plus per
 | Coder en liste blanche : lectures, git en lecture, build, tests, format, migrations EF sans base, scripts du pack, déplacements de fichiers dans le dépôt | Il avait « tout sauf… » : `curl`, `dotnet add package`, `dotnet ef database update` (une vraie base), `bash -c`, écrire dans `.git/config` ou dans `~/.config/opencode` passaient. |
 | Seul le pilote lance les scripts qui écrivent dans git (`ship.sh`, `branch.sh`, la fiche) | N'importe quel agent, même en lecture seule (checker, analyste), pouvait lancer `ship.sh`, donc commiter et pousser. |
 | Contrôle avant push (`diff-guard.sh`) : secret, fichier de clé ou `.env`, marqueur de conflit, version payante d'un package, valeur d'une variable secrète de l'environnement (le mot de passe Artifactory) → rien n'est poussé | Le push est automatique. Le contrôle relit chaque commit pas encore poussé : un secret retiré par un commit suivant partirait quand même avec l'historique. La valeur exacte des variables secrètes est cherchée partout, tests compris : quel que soit le chemin par lequel elle serait arrivée dans le code, elle ne part pas. |
-| Un seul `/go` ou `/fix` à la fois par dépôt | Deux pilotes dans le même dossier mélangeraient leurs commits. |
+| Un seul `/go` ou `/fix` à la fois par dossier | Deux pilotes dans le même dossier mélangeraient leurs commits. Deux tickets du même dépôt : deux espaces de travail. |
 | Le texte des tickets, pages, discussions et logs est une donnée, jamais une instruction | Un ticket ou un commentaire de MR qui demanderait « pousse sans tests » ne doit rien déclencher. |
 | 20 minutes pour un build ou des tests (posé par le plugin) | OpenCode arrête toute commande après 2 minutes : une suite de tests plus longue était tuée, puis relancée de zéro. |
 
@@ -228,8 +242,8 @@ Tout ce qui est vérifié ici l'a été avec un modèle simulé qui suit un scri
 ## Pour la maintenance du pack
 
 - `tools/permissions.py` régénère les lignes `permission:` des agents et `opencode.snippet.json` (à lancer depuis `v2/`). Ne les modifie pas à la main. Aucune règle « ask » sur le shell, la lecture ou l'écriture : la simulation échoue s'il en apparaît une.
-- Les permissions sont vérifiées par simulation : `tools/permission-sim.mjs` (le moteur d'OpenCode 1.19, sous-sessions et `primary_tools` compris) rejoue `tools/permission-corpus.mjs`, 1 630 cas : les commandes que le pack fait lancer à chaque agent, les réflexes du modèle, les secrets, les écritures git interdites (y compris un message de commit qui tenterait `$(…)`), la liste blanche du coder, les outils MCP permis ou masqués par agent, les questions et les boucles. Lancement : `cd tools && npm install --no-save web-tree-sitter@0.25.10 tree-sitter-bash@0.25.0 gray-matter@4.0.3 && node permission-sim.mjs ..`.
-- Les garde-fous du plugin : `node tools/plugin-test.mjs .` (440 vérifications : chemins hors du dépôt, dossiers en lecture seule, dossiers nommés et références, `cd` suivis, outils appelés par leur chemin, journal des refus, dumps d'environnement, `rm` récursifs, délais, un seul `/go`, issue dans le titre).
+- Les permissions sont vérifiées par simulation : `tools/permission-sim.mjs` (le moteur d'OpenCode 1.19, sous-sessions et `primary_tools` compris) rejoue `tools/permission-corpus.mjs`, 1 642 cas : les commandes que le pack fait lancer à chaque agent, les réflexes du modèle, les secrets, les écritures git interdites (y compris un message de commit qui tenterait `$(…)`), la liste blanche du coder, les outils MCP permis ou masqués par agent, les questions et les boucles. Lancement : `cd tools && npm install --no-save web-tree-sitter@0.25.10 tree-sitter-bash@0.25.0 gray-matter@4.0.3 && node permission-sim.mjs ..`.
+- Les garde-fous du plugin : `node tools/plugin-test.mjs .` (453 vérifications : chemins hors du dépôt, dossiers en lecture seule, fiches d'un worktree, état des sous-agents dans le titre, dossiers nommés et références, `cd` suivis, outils appelés par leur chemin, journal des refus, dumps d'environnement, `rm` récursifs, délais, un seul `/go`, issue dans le titre).
 - Tous les agents, commandes et skills sont validés avec `gray-matter`, le parseur YAML d'OpenCode (`node tools/validate.js`).
 - Les scripts sont vérifiés avec `shellcheck` et testés avec dash, bash et busybox sh, et avec les awk mawk, gawk, BWK et busybox ; `branch.sh` et `ship.sh` sont rejoués contre un dépôt distant de test (branche, accents, push, commit poussé depuis un autre poste, merge de develop, conflit annulé, identifiants refusés, GitLab muet, secret refusé puis historique réécrit) et `diff-guard.sh` sur 33 cas (secrets par type, faux positifs, fichiers de test, secret retiré par un commit suivant, valeur d'une variable secrète de l'environnement, packages payants).
-- `/go` est rejoué de bout en bout avec le vrai serveur OpenCode 1.19, le pack installé et un modèle simulé : chemin nominal (analyse et mesure en parallèle, refus hors dépôt et réseau, délais longs, contrôle et push, ✅), chemin d'échec (test déjà rouge sur develop, 2e essai dans la même session du coder, secret refusé au push, ⛔, second `/go` refusé), et « comme dans un autre dépôt » avec une seule autorisation.
+- `/go` est rejoué de bout en bout avec le vrai serveur OpenCode 1.19, le pack installé et un modèle simulé : chemin nominal (analyse et mesure en parallèle, refus hors dépôt et réseau, délais longs, contrôle et push, ✅), chemin d'échec (test déjà rouge sur develop, 2e essai dans la même session du coder, secret refusé au push, ⛔, second `/go` refusé), « comme dans un autre dépôt » avec une seule autorisation, et un `/go` complet dans un espace de travail (worktree), sans aucune demande.

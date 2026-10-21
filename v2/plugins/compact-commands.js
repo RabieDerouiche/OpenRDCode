@@ -19,7 +19,9 @@
 //    ("/go ABC-123", "/fix (recommandé)") runs by itself in the same session as soon as the agent's turn ends, unless
 //    that turn ended with an error or was stopped, and never in a subagent's session. Agents cannot run a command.
 // 5. Shows the progress of the agent in the session title while it works, for example
-//    "⏳ 1:42 réflexion 2,3k tokens — <title>": the web interface only shows a small "Réflexion" that keeps moving
+//    "⏳ 1:42 réflexion 2,3k tokens — <title>", and while a subagent works, what it waits for ("⏳ 31:02 outil ·
+//    Auto-review · nouvel essai 3 (serveur du modèle)", "… · rien reçu depuis 4 min", "❓ … · autorisation
+//    attendue"): the web interface only shows a small "Réflexion" that keeps moving
 //    even when nothing comes from the model, and that is out of sight when the conversation is scrolled up. Phases:
 //    préparation (the scripts of the command), attente du modèle, réflexion, rédaction, outil (with its
 //    description), réponse or autorisation attendue (a question or an approval waits for me), nouvel essai (error of
@@ -403,17 +405,29 @@ function run(script, args, cwd) {
   })
 }
 
-// "<repository folder> · branche <branch>" of the session's project, or "" outside a git repository
+// The git folder that every worktree of the repository shares (.git of the main checkout), absolute, or ""
+function gitCommonDir(cwd) {
+  return new Promise((done) => {
+    execFile("git", ["rev-parse", "--git-common-dir"], { cwd, timeout: 5000 }, (error, stdout) => {
+      const out = error ? "" : String(stdout).trim()
+      done(out ? resolve(cwd, out) : "")
+    })
+  })
+}
+
+// "<repository folder> · branche <branch>" of the session's project, or "" outside a git repository. In a worktree
+// (an OpenCode workspace, whose folder has a generated name), the folder of the main checkout names the repository.
 function where(cwd) {
   const git = (args) =>
     new Promise((resolve) => {
       execFile("git", args, { cwd, timeout: 5000 }, (error, stdout) => resolve(error ? "" : String(stdout).trim()))
     })
-  return Promise.all([git(["rev-parse", "--show-toplevel"]), git(["symbolic-ref", "--short", "-q", "HEAD"])]).then(
-    async ([root, branch]) => {
+  return Promise.all([git(["rev-parse", "--show-toplevel"]), git(["symbolic-ref", "--short", "-q", "HEAD"]), gitCommonDir(cwd)]).then(
+    async ([root, branch, common]) => {
       if (!root) return ""
       const name = branch ? "branche " + branch : "HEAD détachée " + (await git(["rev-parse", "--short", "HEAD"]))
-      return basename(root) + " · " + name
+      const repository = basename(common) === ".git" && resolve(common, "..") !== root ? basename(resolve(common, "..")) + " (worktree)" : basename(root)
+      return repository + " · " + name
     },
   )
 }
@@ -452,13 +466,25 @@ const tokens = (chars) => {
   return t >= 1000 ? (t / 1000).toFixed(1).replace(".", ",") + "k" : String(t)
 }
 
-// "⏳ 1:42 réflexion 2,3k tokens" for a run of a session
-function progressLabel(state, now) {
+// "4 min" or "45 s"
+const since = (ms) => (ms >= 120000 ? Math.floor(ms / 60000) + " min" : Math.round(ms / 1000) + " s")
+
+// "⏳ 1:42 réflexion 2,3k tokens" for a run of a session; while a subagent works, what it waits for
+function progressLabel(state, now, child) {
   const elapsed = clock(now - state.start)
   if (state.phase === "question") return "❓ " + elapsed + " réponse attendue"
   if (state.phase === "permission") return "❓ " + elapsed + " autorisation attendue"
   if (state.phase === "preparing") return "⏳ " + elapsed + " préparation"
-  if (state.phase === "tool") return "⏳ " + elapsed + " outil · " + state.tool
+  if (state.phase === "tool") {
+    const base = "⏳ " + elapsed + " outil · " + state.tool
+    if (!child) return base
+    if (child.phase === "question") return "❓ " + elapsed + " " + state.tool + " · réponse attendue"
+    if (child.phase === "permission") return "❓ " + elapsed + " " + state.tool + " · autorisation attendue"
+    if (child.phase === "retry") return base + " · nouvel essai " + child.attempt + " (serveur du modèle)"
+    const quiet = now - child.last
+    if (child.phase !== "tool" && quiet > SILENCE_MS) return base + " · rien reçu depuis " + since(quiet)
+    return base
+  }
   if (state.phase === "retry") return "⏳ " + elapsed + " nouvel essai " + state.attempt + " (serveur du modèle)"
   const quiet = now - state.last
   if (quiet > SILENCE_MS) return "⏳ " + elapsed + " rien reçu depuis " + Math.round(quiet / 1000) + " s"
@@ -486,6 +512,11 @@ export const CompactCommands = async (input) => {
   const client = input && input.client
   // the repository of this instance: its git root (OpenCode gives "/" as the worktree of a folder outside git)
   const root = resolve(input && input.worktree && input.worktree !== "/" ? input.worktree : directory)
+  // the ticket sheets: <git folder>/opencode-tickets, shared by the worktrees of the repository; outside the folder of
+  // the session when it runs in a worktree (an OpenCode workspace)
+  const common = await gitCommonDir(root)
+  const SHEETS = common ? join(common, "opencode-tickets") : ""
+  const SHEET_WRITERS = new Set(["pilot", "analyst"])
   // session id -> name of the agent of its last request to the model (7)
   const agents = new Map()
   // session id -> parent session id, "" for a top-level session (7)
@@ -502,6 +533,8 @@ export const CompactCommands = async (input) => {
   // session id -> progress of its current turn (5)
   const runs = new Map()
   const children = new Set()
+  // subagent session → { phase, attempt, last }, while its task runs
+  const subagents = new Map()
   let ticker
 
   async function startChosen(sessionID) {
@@ -574,7 +607,7 @@ export const CompactCommands = async (input) => {
   async function escape(tool, sessionID, args) {
     const agent = agents.get(sessionID) || ""
     const cwd = args && typeof args.workdir === "string" && args.workdir ? resolve(directory, args.workdir) : directory
-    const shared = [...PACK_DIRS, ...SAVED_OUTPUTS]
+    const shared = [...PACK_DIRS, ...SAVED_OUTPUTS, ...(SHEETS ? [SHEETS] : [])]
     if (tool === "bash") {
       const extra = SHELL_READERS.has(agent) || !PACK_AGENTS.has(agent) ? [...(await referenceFolders()), ...(await namedIn(sessionID))] : []
       const readable = [...shared, ...extra]
@@ -589,8 +622,11 @@ export const CompactCommands = async (input) => {
     if (DEVICES.has(target) || within(target, root)) return null
     const readable = [...shared, PACKAGE_CACHE, ...(await referenceFolders()), ...(await namedIn(sessionID))]
     const inReadable = readable.some((dir) => within(target, dir))
-    // the agents of the pack write only in the repository
-    if (tool === "write" || tool === "edit") return { piece: value, readOnly: inReadable }
+    // the agents of the pack write only in the repository, and the pilot and the analyst in the ticket sheets
+    if (tool === "write" || tool === "edit") {
+      if (SHEETS && within(target, SHEETS) && SHEET_WRITERS.has(agent)) return null
+      return { piece: value, readOnly: inReadable }
+    }
     return inReadable ? null : { piece: value }
   }
 
@@ -678,7 +714,7 @@ export const CompactCommands = async (input) => {
       if (current !== state.written) state.original = current.replace(PROGRESS, "").replace(OUTCOME, "")
       const now = Date.now()
       if (DEFAULT_TITLE.test(state.original) && state.phase !== "preparing" && now - state.start < DEFAULT_WAIT_MS) return
-      const title = progressLabel(state, now) + " — " + state.original
+      const title = progressLabel(state, now, state.child && subagents.get(state.child)) + " — " + state.original
       if (title === current) return
       await client.session.update({ path: { id: sessionID }, body: { title } })
       state.written = title
@@ -711,8 +747,58 @@ export const CompactCommands = async (input) => {
     await restore(sessionID, state)
   }
 
+  // What a subagent does while its task runs (a retry of the model server, a silence, a question or an approval
+  // that waits), shown in the title of its parent: the subagent's own session has no progress title
+  function subagentEvent(event) {
+    const props = event.properties || {}
+    const part = props.part
+    const sessionID = props.sessionID || (part && part.sessionID)
+    const child = sessionID && subagents.get(sessionID)
+    if (!child) return false
+    const now = Date.now()
+    switch (event.type) {
+      case "session.status": {
+        const type = props.status && props.status.type
+        if (type === "retry") {
+          child.phase = "retry"
+          child.attempt = props.status.attempt || child.attempt + 1
+        } else if (type === "idle") subagents.delete(sessionID)
+        else if (child.phase === "retry") child.phase = "waiting"
+        child.last = now
+        return true
+      }
+      case "session.idle":
+      case "session.error":
+        subagents.delete(sessionID)
+        return true
+      case "message.part.updated":
+        child.last = now
+        if (part.type === "tool" && part.tool !== "question") {
+          const status = part.state && part.state.status
+          child.phase = status === "running" || status === "pending" ? "tool" : "waiting"
+        } else if (part.type === "reasoning" || part.type === "text") child.phase = "work"
+        return true
+      case "message.part.delta":
+        child.last = now
+        if (child.phase !== "tool") child.phase = "work"
+        return true
+      case "question.asked":
+      case "permission.asked":
+        child.phase = event.type === "question.asked" ? "question" : "permission"
+        return true
+      case "question.replied":
+      case "question.rejected":
+      case "permission.replied":
+        child.phase = "waiting"
+        child.last = now
+        return true
+    }
+    return true
+  }
+
   function progressEvent(event) {
     const props = event.properties || {}
+    if (subagentEvent(event)) return
     switch (event.type) {
       case "session.status": {
         const type = props.status && props.status.type
@@ -750,7 +836,19 @@ export const CompactCommands = async (input) => {
           if (status === "running" || status === "pending") {
             state.phase = "tool"
             state.tool = toolText(part)
-          } else if (state.phase === "tool") state.phase = "waiting"
+            // the session of the subagent that a task runs
+            const childID = part.tool === "task" && part.state.metadata && part.state.metadata.sessionId
+            if (childID && state.child !== childID) {
+              state.child = childID
+              if (!subagents.has(childID)) subagents.set(childID, { phase: "waiting", attempt: 0, last: Date.now() })
+            }
+          } else {
+            if (state.phase === "tool") state.phase = "waiting"
+            if (part.tool === "task" && state.child) {
+              subagents.delete(state.child)
+              state.child = undefined
+            }
+          }
         }
         return
       }

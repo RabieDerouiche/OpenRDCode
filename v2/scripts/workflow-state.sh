@@ -92,11 +92,14 @@ elif [ "$fetch" = branch ]; then
 fi
 
 key=$(printf '%s' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -1)
-sheets="$root/.git/opencode-tickets"
+# The ticket sheets live in the git folder that every worktree of the repository shares (.git/opencode-tickets in
+# the main checkout): a worktree sees the sheets of the others, and a sheet is never committed
+common=$(git rev-parse --git-common-dir 2>/dev/null) && common=$(cd "$common" && pwd)
+sheets="${common:-$root/.git}/opencode-tickets"
 # Older versions of the pack kept the sheets in .git/opencode/tickets, but OpenCode 1.19 caches its project id in a
 # FILE named .git/opencode: move them once, then free that path for OpenCode
-if [ -d "$root/.git/opencode/tickets" ] && [ ! -e "$sheets" ]; then
-  mv "$root/.git/opencode/tickets" "$sheets" && rmdir "$root/.git/opencode" 2>/dev/null
+if [ -n "$common" ] && [ -d "$common/opencode/tickets" ] && [ ! -e "$sheets" ]; then
+  mv "$common/opencode/tickets" "$sheets" && rmdir "$common/opencode" 2>/dev/null
 fi
 remote_url=$(git remote get-url origin 2>/dev/null | sed -E 's#://[^@/]+@#://#')
 
@@ -108,6 +111,11 @@ fi
 
 echo "Now: $(date '+%Y-%m-%d %H:%M')"
 echo "Repository root: $root"
+if [ -n "$common" ] && [ "$common" != "$root/.git" ]; then
+  echo "Worktree: yes, an OpenCode workspace (main checkout: ${common%/.git})"
+else
+  echo "Worktree: no (main checkout)"
+fi
 echo "Remote URL (credentials masked): ${remote_url:-none}"
 echo "Current branch: ${branch:-(detached HEAD)}"
 echo "Jira key from branch: ${key:-none}"
@@ -210,7 +218,7 @@ if [ -n "$key" ] && [ -f "$sheets/$key.md" ]; then
     echo "=== End of the ticket sheet"
   fi
 elif [ -n "$key" ]; then
-  echo "Current ticket sheet: none for $key"
+  echo "Current ticket sheet: none for $key (to be written at $sheets/$key.md)"
 fi
 
 if [ "$diff" -eq 1 ] && [ -n "$base" ]; then
