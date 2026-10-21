@@ -32,7 +32,7 @@ L'étape 5 te fait vérifier tout ça avant la bascule.
 
 | | OpenCode 1.19 (pack `v2/`) | OpenCode v2 (pack `opencode-v2/`) |
 |---|---|---|
-| Lancer le serveur | `opencode web …` | `opencode serve --hostname 0.0.0.0 --port <port>` avec `OPENCODE_SERVER_PASSWORD` ; le navigateur demande l'utilisateur `opencode` et ce mot de passe |
+| Lancer le serveur | `opencode web …` | la commande de l'étape 6, `opencode2 serve …` avec ses dossiers et `OPENCODE_SERVER_PASSWORD` ; le navigateur demande l'utilisateur `opencode` et ce mot de passe |
 | Plugin | `plugins/compact-commands.js` | `plugins/openrd-pack.js` ; l'ancien ne doit plus être dans le dossier (v2 ne le charge pas et ne le signale que dans son journal) |
 | Un seul `/go`, `/fix` ou `/fortify` par dossier | refusé par le plugin | refusé par le plugin (porté) |
 | Plusieurs tickets d'un dépôt | `workspace.sh` et l'adresse à coller | le sélecteur sous la zone de saisie d'une nouvelle session (à vérifier à l'étape 5) ; sinon `workspace.sh`, qui marche toujours |
@@ -46,11 +46,17 @@ L'étape 5 te fait vérifier tout ça avant la bascule.
 
 ## 2. Avant de commencer
 
-1. Sauvegarde de ta configuration et de tes sessions, à garder jusqu'à la fin de l'étape 6 :
+**Ce que tu dois chercher ailleurs : rien.** Tout est dans ce dépôt et dans ce guide. La seule chose téléchargée est le paquet npm `@opencode/cli@2.1.2`, par la commande de l'étape 3, depuis le registre npm que ta machine utilise déjà (celui qui t'a servi pour installer la 1.19 ; si npm passe par Artifactory chez vous, rien à changer). N'utilise ni le script d'installation du site d'OpenCode (`curl … | bash`), ni brew : ils téléchargent et lancent un script, ce que ton environnement interdit. Pas besoin du site d'OpenCode : ce guide remplace sa documentation pour tout ce que le pack utilise.
+
+1. Note ta version actuelle, pour pouvoir la réinstaller à l'identique :
+```sh
+opencode --version | tee ~/opencode-version-1.19.txt
+```
+2. Sauvegarde de ta configuration et de tes sessions (une assurance, gardée jusqu'à la fin de l'étape 6) :
 ```sh
 cp -r ~/.config/opencode ~/opencode-config-1.19 && cp -r ~/.local/share/opencode ~/opencode-data-1.19
 ```
-2. Le pack à jour :
+3. Le pack à jour :
 ```sh
 cd ~/OpenRDCode && git pull && ls opencode-v2/plugins
 ```
@@ -105,30 +111,29 @@ L'adresse est `http://<machine>:4097`, avec l'utilisateur `opencode` et ton mot 
 
 Si un point échoue : arrête là, garde la 1.19, et envoie-moi la ligne du journal en cause (sans secret).
 
-## 6. Bascule définitive
+## 6. Bascule : garder les deux versions côte à côte (recommandé)
 
-Quand l'étape 5 passe :
-1. Arrête le serveur de l'essai et celui de la 1.19. Puis la configuration de l'essai devient la tienne, sans l'ancien plugin :
-```sh
-cp -r ~/oc2/config/opencode/. ~/.config/opencode/ && rm -f ~/.config/opencode/plugins/compact-commands.js && ls ~/.config/opencode/plugins
-```
-La dernière ligne affiche `openrd-pack.js` seul.
-2. v2 pour tout le système, à la place de la 1.19. La version est fixée : chaque mise à jour se teste d'abord avec l'étape 3.
-```sh
-npm uninstall -g opencode-ai && npm install -g @opencode/cli@2.1.2 && opencode --version
-```
-3. Ta commande de démarrage devient (sans les variables `XDG_…`) :
-```sh
-OPENCODE_SERVER_PASSWORD='<mot de passe>' opencode serve --hostname 0.0.0.0 --port <ton port>
-```
-4. Tes sessions de la 1.19 : le code de v2 contient une migration des données de la 1.19 (lue, pas essayée). Garde `~/opencode-data-1.19` tant que tu n'as pas revu tes anciennes sessions dans v2.
+La v2 garde ses propres dossiers (`~/oc2/config`, `~/oc2/data`), et la 1.19 garde les siens. Passer à la v2, c'est seulement lancer la commande de la v2 au lieu de celle de la 1.19. Rien n'est désinstallé, rien n'est recopié, et revenir à la 1.19 prend une commande.
 
-## 7. Retour arrière
-
+1. Arrête le serveur de la 1.19 (le même terminal, Ctrl+C, ou comme tu l'arrêtes d'habitude).
+2. Démarre la v2 sur ton port habituel. C'est désormais ta commande de démarrage :
 ```sh
-npm uninstall -g @opencode/cli && npm install -g opencode-ai@<ta version 1.19> && rm -rf ~/.config/opencode ~/.local/share/opencode && cp -r ~/opencode-config-1.19 ~/.config/opencode && cp -r ~/opencode-data-1.19 ~/.local/share/opencode
+XDG_CONFIG_HOME=~/oc2/config XDG_DATA_HOME=~/oc2/data OPENCODE_SERVER_PASSWORD='<mot de passe>' ~/oc2/cli/node_modules/.bin/opencode2 serve --hostname 0.0.0.0 --port <ton port> --print-logs 2> ~/oc2/serve.log
 ```
-Puis ta commande `opencode web` habituelle. Les fiches ticket sont dans le `.git` de chaque dépôt : elles servent aux deux versions.
+3. Tes sessions de la 1.19 restent dans la 1.19. Pour en relire une, relance la 1.19 (étape 7). Tes fiches ticket sont dans le `.git` de chaque dépôt : les deux versions les voient.
+4. Pour mettre à jour le pack plus tard : `git pull`, puis la commande de l'étape 3.2. Pour mettre à jour la v2 elle-même : refais l'étape 3.1 avec le nouveau numéro de version, d'abord sur le port d'essai.
+
+Remplacer complètement la 1.19 par la v2 (`npm uninstall -g opencode-ai`) n'apporte rien de plus et rend le retour arrière plus long : ne le fais qu'une fois la v2 utilisée plusieurs semaines sans souci.
+
+## 7. Revenir à la 1.19
+
+**Pendant l'essai, ou avec les deux versions côte à côte (étape 6)** : arrête le serveur de la v2, puis relance ta commande habituelle de la 1.19 (`opencode web …`). Ta configuration et tes sessions de la 1.19 n'ont jamais été touchées. Seul point commun : les scripts de `~/.config/opencode/scripts`, que l'étape 3.2 a remplacés par ceux de `opencode-v2/scripts`. Ce sont les mêmes que ceux de la 1.19, avec `fortify.sh` en plus : rien à faire.
+
+**Si tu as quand même remplacé la 1.19** (désinstallée, configuration écrasée) : une sauvegarde ne suffit pas, il faut aussi réinstaller la bonne version.
+```sh
+npm uninstall -g @opencode/cli && npm install -g opencode-ai@$(sed 's/[^0-9.]//g' ~/opencode-version-1.19.txt) && rm -rf ~/.config/opencode ~/.local/share/opencode && cp -r ~/opencode-config-1.19 ~/.config/opencode && cp -r ~/opencode-data-1.19 ~/.local/share/opencode && opencode --version
+```
+La dernière ligne doit afficher la version notée à l'étape 2.
 
 ## 8. Ce qui n'est pas porté, et pourquoi
 
