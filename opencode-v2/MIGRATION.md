@@ -14,7 +14,7 @@ Vérifié avec le vrai OpenCode v2.1.2 (paquet npm `@opencode/cli`) sur un dép�
 
 Tests du pack :
 - 477 vérifications du plugin ;
-- 1 751 cas de permissions ;
+- 1 753 cas de permissions ;
 - 30 fichiers d'agents, de commandes et de skills validés ;
 - `fortify.sh` rejoué avec un faux `dotnet` dans 3 shells et 4 awk ;
 - `shellcheck` sur tous les scripts.
@@ -150,7 +150,7 @@ Ce qui n'est pas porté :
 | Commande choisie dans un QCM (4) | la forme des réponses et le lancement de commande par un plugin ne sont pas documentés dans v2.1.2 : non vérifiable ici | tape la commande |
 | Avancement, ✅ / ⛔ et `[dossier]` dans les titres (5, 10, 12) | même raison pour la lecture des messages et le renommage | regarde la session |
 | Dossiers nommés dans un message (7) | v2 ne dit pas au plugin si un texte vient de toi ou d'un agent : l'ouvrir aux deux laisserait un agent rendre lisible un dossier de secrets | déclare le dossier dans `references` |
-| Simulateur de permissions sur le moteur v2 | ses 1 751 cas passent sur le moteur 1.19 ; v2 garde la même logique de règles (lue dans son code) et lit bien les règles (constaté) | l'étape 5, points 3 et 6 |
+| Simulateur de permissions sur le moteur v2 | ses 1 753 cas passent sur le moteur 1.19 ; v2 garde la même logique de règles (lue dans son code) et lit bien les règles (constaté) | l'étape 5, points 3 et 6 |
 
 ## 9. `/fortify` et l'agent `test-guardian`
 

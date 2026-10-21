@@ -26,7 +26,7 @@ Fix a batch of Fortify vulnerabilities, from the scan to a Draft merge request, 
 4. Nothing kept: « ✅ Aucune vulnérabilité Critical ou High à corriger dans <application> / <version> » and stop.
 
 ## 3. Branch and batch sheet
-1. ONE shell call: `sh ~/.config/opencode/scripts/branch.sh <Jira key of the request, or LOCAL> bugfix "Fortify <first category> lot <date>" && sh ~/.config/opencode/scripts/workflow-state.sh --no-fetch --sheet`. A "STOP:" line: stop with it. Without a Jira key, the "KEY:" line gives the key.
+1. ONE shell call: `sh ~/.config/opencode/scripts/branch.sh <Jira key of the request, or LOCAL> bugfix "Fortify <first category> lot <date>" && sh ~/.config/opencode/scripts/workflow-state.sh --no-fetch --sheet && sh ~/.config/opencode/scripts/fortify.sh batch`. A "STOP:" line: stop with it. Without a Jira key, the "KEY:" line gives the key. The "BATCH:" line is the batch folder (on resume: `fortify.sh batch` alone gives it again).
 2. Write the ticket sheet yourself, at the path of the "Current ticket sheet" line: `# Lot Fortify <application> / <version>`, the line `- Lot Fortify : <application> / <version> - <date>`, `## Plan` with one line per vulnerability `- [ ] <n>. V<n> : <category> - <file>:<line> - Fortify <issue id> - <severity>` (the number is the one `ticket-sheet.sh tick` uses), and empty `## Décisions` and `## Suivi` sections.
 
 ## 4. Analysis, one `analyst` subagent per vulnerability, one after the other

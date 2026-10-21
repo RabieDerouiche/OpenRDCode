@@ -13,6 +13,7 @@
 #   red <test project> <filter>    the vulnerability tests must FAIL on the current code (and compile)
 #   green <test project> <filter>  the same tests must PASS
 #   tests-only                     the uncommitted changes touch only test projects
+#   batch                          creates the folder of the batch of this branch and prints it ("BATCH: <path>")
 #   discard <label>                puts the uncommitted work aside (git stash, recoverable), on a batch branch only
 # The batch folder: <git folder>/opencode-tickets/<KEY>.fortify (KEY from the branch), shared by the worktrees,
 # never committed. Output lines are for the agents; exit 1 with one "STOP: <reason>" line when a check fails.
@@ -255,6 +256,13 @@ case "$1" in
     done)
     [ -z "$bad" ] || stop "changes outside the test projects: $(printf '%s' "$bad" | tr '\n' ' ')"
     echo "TESTS-ONLY: OK"
+    exit 0 ;;
+
+  batch)
+    # The folder of the batch of this branch, created: where the cards and the measures go
+    [ -n "$key" ] || stop "not on the branch of a batch (no key in the branch name)"
+    mkdir -p "$batch" || stop "cannot create $batch"
+    echo "BATCH: $batch"
     exit 0 ;;
 
   discard)

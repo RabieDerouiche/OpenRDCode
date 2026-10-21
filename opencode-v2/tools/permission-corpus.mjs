@@ -125,7 +125,8 @@ add(["test-guardian"], [S + "fortify.sh deps src/Api/Services/ExportService.cs",
   "dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60", "git status --short", "git diff --stat"], "allow")
 add(["test-guardian", "coder", ...RO], [S + "fortify.sh discard V1", S + "ship.sh --no-push \"test: x (ABC-1)\""], "deny")
 add(["test-guardian"], ["git commit -m x", "git push", "git stash", S + "workspace.sh new ABC-1", "rm -rf tests"], "deny")
-add(["pilot"], [S + "fortify.sh prereq", S + "fortify.sh discard V2", S + "fortify.sh discard V3-interrupted"], "allow")
+add(["pilot"], [S + "fortify.sh prereq", S + "fortify.sh discard V2", S + "fortify.sh discard V3-interrupted", S + "fortify.sh batch",
+  S + "branch.sh LOCAL bugfix \"Fortify Path Manipulation lot 2026-10-21\" && " + S + "workflow-state.sh --no-fetch --sheet && " + S + "fortify.sh batch"], "allow")
 // worktree folders are made and removed by the developer only (workspace.sh), never by an agent
 add(ALL, [S + "workspace.sh new ABC-124", S + "workspace.sh remove ABC-124", S + "workspace.sh list",
   "sh $HOME/.config/opencode/scripts/workspace.sh new ABC-124"], "deny")
