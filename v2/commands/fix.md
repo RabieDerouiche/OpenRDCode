@@ -17,6 +17,8 @@ Bring the branch to a green, review-ready state in this single run. The develope
 - On develop, master or main: say « ⛔ /fix travaille sur la branche d'un ticket : /go <KEY> pour en démarrer un » and stop.
 - "Fetch:" AUTH FAILED: stop (your stop conditions).
 - "Merge in progress: yes": stop with « ⛔ Une fusion est en cours sur la branche : termine-la dans Rider (ou git merge --abort), puis relance /fix. »
+- A branch without a Jira key (no ticket sheet): the same work; commit messages without a key; nothing is written to a sheet (no ticket-sheet.sh call).
+- A directive « merge <branch> » (« intègre », « fusionne avec »): `sh ~/.config/opencode/scripts/ship.sh --sync-only --base --merge <branch>` first; it fetches, merges and lists the conflicts (never look at the branches yourself); a "STOP:" line: stop with it. What it merged is then built and tested in step 5, even when nothing else needs a fix.
 - "Upstream: none": nothing was pushed, so there is no CI and no merge request yet: say « ⛔ Rien de poussé : /go <KEY> livre d'abord la branche » and stop.
 - The branch is behind its remote copy, or the base branch has new commits: `sh ~/.config/opencode/scripts/ship.sh --sync-only --base`. A conflict: stop with its line. Local changes that block the merge: go on, they are merged at the end (step 6).
 
@@ -24,8 +26,8 @@ Bring the branch to a green, review-ready state in this single run. The develope
 Speed: every call of a turn is sent together. Pages of 20 results at most, with the tools' filters on status and severity: a bigger answer is cut by OpenCode and saved to a file that you never search.
 - Turn 1: with the GitLab tools, the project from the "Remote URL" line (its path after the host, without `.git`), the open merge request of this branch, and the latest pipeline of the pushed commit ("Pushed commit" line) with its jobs; the Sonar project of this repository (search by repository name or by the SSC application name); the versions of the SSC application (the value after `=` of the "Fortify SSC application" line; never read appsec-ci.env yourself); the skill `fortify-remediation`.
 - Turn 2: the unresolved discussions of the merge request (author, text, file and line, replies); the last 50 lines of the log of every failed job; the open Sonar issues and the security hotspots of this branch (severities BLOCKER, CRITICAL and MAJOR first, then the others while there is room); the Fortify issues of the selected version with the filter set "Security Auditor View" (Critical and High first). Fortify version: the exact branch name, then with `/` replaced by `-`, then by `_`, if it has an uploaded scan; otherwise `develop`. Never invent a project, version or filter name: a name rejected → list the valid ones and retry once.
-- Scan jobs (name containing `sonar` or `fortify`) still running or pending: their results are not in yet; note « ⏳ <Sonar | Fortify> en cours » and go on with the rest. A scan whose last analysis is older than the pushed commit: its results are old, say so.
-- A system that does not answer: one line, and go on with the others.
+- Scan jobs (name containing `sonar` or `fortify`) still running or pending: their results are not in yet; note « ⏳ <Sonar | Fortify> en cours » and go on with the rest. A job in « manual » status, or « created » behind one, never runs by itself: note « ▶ <job> à lancer à la main dans GitLab » (you never start a job), and do not wait for it. A scan whose last analysis is older than the pushed commit: its results are old, say so.
+- A system that does not answer, or a tool that answers an error: never the same call again (a timeout: once more at most); one line in the answer, and go on with the others.
 
 ## 3. Sort, without asking
 Build one list, each item with its source (🧪 CI, 📊 Sonar, 🏰 Fortify, 💬 review):

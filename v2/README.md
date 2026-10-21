@@ -35,14 +35,14 @@ Plusieurs `/go` en même temps, chacun dans son dossier et sa session : le titre
 
 ### Plusieurs tickets du même dépôt : les espaces de travail (worktrees)
 
-OpenCode 1.19 web les a déjà : clic droit sur le projet → « Activer les espaces de travail », puis « Nouvel espace de travail » ouvre une session dans un nouveau dossier, une copie de travail git (worktree) du même dépôt. `/go ABC-124` y travaille comme ailleurs : il bascule l'espace sur la branche du ticket (et supprime la branche `opencode/<nom>` qu'OpenCode y avait créée), les fiches ticket restent dans le `.git` du dépôt principal, visibles de tous les espaces et de `/outil stats`.
+OpenCode 1.19 web les a déjà : clic droit sur le projet dans la barre latérale → « Activer les espaces de travail » ; ensuite, dans « Nouvelle session », le sélecteur sous la zone de saisie (« Local ») → « Nouvel espace de travail » ouvre la session dans un nouveau dossier, une copie de travail git (worktree) du même dépôt. Le pas à pas (nouveau ticket, ticket déjà en cours, reprise le lendemain, fermeture) : COMMANDES.md, « Plusieurs tickets d'un même dépôt ». `/go ABC-124` y travaille comme ailleurs : il bascule l'espace sur la branche du ticket (et supprime la branche `opencode/<nom>` qu'OpenCode y avait créée), les fiches ticket restent dans le `.git` du dépôt principal, visibles de tous les espaces et de `/outil stats`.
 
 Ce que ça coûte, à connaître avant d'en ouvrir trois :
 - Chaque espace est une copie complète des fichiers (l'historique git, lui, est partagé) avec ses propres `bin/obj` (et `node_modules` en front) : de l'espace disque, et un premier build qui repart de zéro (les packages NuGet viennent du cache commun, rien n'est retéléchargé ; la compilation, si).
 - Le serveur du modèle est partagé : trois `/go` en parallèle se partagent sa capacité, chacun va moins vite, et les « Gateway Time-out » deviennent plus probables tant que la passerelle n'est pas réglée.
 - Les tests qui utilisent une ressource locale fixe (une base locale, un port fixe) peuvent se gêner quand deux suites tournent en même temps.
 - Un ticket ne s'ouvre que dans un espace à la fois : git le refuse, `/go` s'arrête en disant où il est ouvert.
-- Supprimer un espace dans OpenCode supprime sa branche locale (`git branch -D`) : sans risque après le push (la copie reste sur GitLab), mais avant le push, les commits locaux seraient perdus. Supprime un espace après ✅, ou après `/outil abandon`.
+- Supprimer un espace dans OpenCode supprime sa branche locale (`git branch -D`), et OpenCode ne vérifie avant que les fichiers non commités, pas les commits non poussés : sans risque après le push (la copie reste sur GitLab), mais avant le push, les commits locaux seraient perdus. Supprime un espace après ✅, ou après `/outil abandon`. Et jamais « Réinitialiser » sur un espace qui porte un ticket : il le ramène sur la branche par défaut.
 - OpenCode classe encore cette fonction en expérimentale (son API est sous `/experimental/worktree`).
 
 ## Tes deux interventions

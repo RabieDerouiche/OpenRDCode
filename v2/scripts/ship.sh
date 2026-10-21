@@ -3,6 +3,7 @@
 # 1. commits everything of the working tree (git add -A) on the branch of the ticket;
 # 2. integrates the commits pushed meanwhile on its remote copy (for example from Rider on another computer);
 # 3. with --base, merges the new commits of the base branch (origin/develop, otherwise origin/main or origin/master);
+#    with --merge <branch>, merges another branch too (a hotfix, a teammate's branch), from origin when it is there;
 # 4. checks the changes of the branch (diff-guard.sh: a secret, a conflict marker or a paid package stops everything),
 #    then pushes, and sets the upstream on the first push.
 # With --no-push: step 1 only (a local commit at the end of a plan step: the work is saved, the CI is not started).
@@ -14,7 +15,8 @@
 # line where the script stopped (exit 1, so that a command chained with && does not run).
 # Usage: ship.sh [--base] "<commit summary>" ["<body line>"...]
 #        ship.sh --no-push "<commit summary>" ["<body line>"...]
-#        ship.sh --sync-only [--base]      steps 2 and 3 only: no commit, no push, local changes left as they are
+#        ship.sh --sync-only [--base] [--merge <branch>]
+#                                          steps 2 and 3 only: no commit, no push, local changes left as they are
 
 PUSH_TIMEOUT=${PUSH_TIMEOUT:-90}
 
@@ -35,11 +37,16 @@ here=$(cd "$(dirname "$0")" && pwd)
 with_base=0
 sync_only=0
 no_push=0
+merge_branch=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --base) with_base=1; shift ;;
     --sync-only) sync_only=1; shift ;;
     --no-push) no_push=1; shift ;;
+    --merge)
+      [ $# -ge 2 ] && [ -n "$2" ] || { echo "STOP: --merge needs the name of the branch to merge"; exit 1; }
+      merge_branch=${2#origin/}
+      shift 2 ;;
     --) shift; break ;;
     *) break ;;
   esac
@@ -74,6 +81,10 @@ case "$branch" in
 esac
 [ -n "$base" ] && [ "$branch" = "$base" ] && stop "$branch is the base branch: commits and pushes go on the branch of a ticket only"
 [ -f "$gitdir/MERGE_HEAD" ] && stop "a merge is in progress on $branch: finish it in Rider (or git merge --abort), then run again"
+if [ -n "$merge_branch" ]; then
+  git check-ref-format --branch "$merge_branch" >/dev/null 2>&1 || stop "\"$merge_branch\" is not a branch name"
+  [ "$merge_branch" = "$branch" ] && stop "$branch cannot be merged into itself"
+fi
 { [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]; } && stop "a rebase is in progress on $branch: finish or abort it first"
 
 # 1. Commit
@@ -103,6 +114,7 @@ fi
 # 2. Fetch the base branch and the remote copy of this branch (a pattern that matches nothing is not an error)
 set -- "+refs/heads/$branch*:refs/remotes/origin/$branch*"
 [ -n "$base" ] && set -- "+refs/heads/$base:refs/remotes/origin/$base" "$@"
+[ -n "$merge_branch" ] && set -- "$@" "+refs/heads/$merge_branch*:refs/remotes/origin/$merge_branch*"
 sh "$here/fetch.sh" -q --no-tags origin "$@" 2>/dev/null
 status=$?
 case "$status" in
@@ -153,6 +165,28 @@ if [ "$with_base" -eq 1 ] && [ -n "$base" ]; then
     echo "BASE: the $new new commits of origin/$base merged"
   else
     echo "BASE: up to date with origin/$base"
+  fi
+fi
+
+# 4b. Another branch asked by the developer (a hotfix, a teammate's branch), by merge: its copy on origin, otherwise
+# the local branch
+if [ -n "$merge_branch" ]; then
+  if git rev-parse -q --verify "refs/remotes/origin/$merge_branch" >/dev/null; then
+    ref="origin/$merge_branch"
+  elif git rev-parse -q --verify "refs/heads/$merge_branch" >/dev/null; then
+    ref=$merge_branch
+    echo "WARNING: $merge_branch is not on origin: the local branch is merged"
+  else
+    stop "no branch $merge_branch on origin nor here: check its name (git branch -a)"
+  fi
+  if git merge-base --is-ancestor "$ref" HEAD; then
+    echo "MERGED: $ref is already in $branch"
+  else
+    new=$(git rev-list --count "HEAD..$ref")
+    before=$(git rev-parse HEAD)
+    merge "$ref" "the branch $merge_branch"
+    echo "MERGED: the $new commits of $ref merged into $branch"
+    git diff --stat "$before" HEAD | tail -n 1 | sed 's/^ */MERGED FILES: /'
   fi
 fi
 

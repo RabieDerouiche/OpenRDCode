@@ -38,7 +38,8 @@ TICKET_SHEETS_OUTSIDE = "*/.git/opencode-tickets/*"
 SCRIPTS = ["sh ~/.config/opencode/scripts/*", "sh $HOME/.config/opencode/scripts/*",
            "sh /*/.config/opencode/scripts/*", "bash ~/.config/opencode/scripts/*"]
 
-READ = ["ls*", "pwd", "cd *", "cat *", "head*", "tail*", "wc*", "sort*", "uniq*", "cut *", "tr *", "find *", "grep *",
+READ = ["ls*", "pwd", "cd *", "cat *", "head*", "tail*", "wc*", "sort*", "uniq*", "comm *", "paste *", "column *",
+        "nl *", "tac *", "cut *", "tr *", "find *", "grep *",
         "egrep *", "rg *", "tree*", "file *", "stat *", "which *", "command -v *", "realpath *", "basename *",
         "dirname *", "date*", "echo *", "printf *", "sed -n*", "jq *", "diff *", "test *", "[ *", "true"]
 GIT_READ = ["git status*", "git log*", "git diff*", "git show*", "git branch*", "git fetch*", "git rev-parse*",

@@ -23,13 +23,15 @@ Take the ticket from its analysis to its Draft merge request, in this single run
   - « analyse seule »: stop after step 4 (the developer reviews the plan; the next /go codes it).
   - « pas à pas »: stop after each plan step.
   - « refais l'analyse »: step 4 again on an existing sheet (its decisions and its log are kept).
+  - « merge <branch> », « intègre <branch> », « fusionne avec <branch> » (a hotfix, a teammate's branch): in step 2, `sh ~/.config/opencode/scripts/ship.sh --sync-only --base --merge <branch>`. The script fetches, merges, and lists the conflicting files: never look at the branches, their merge base or their files yourself. A "STOP:" line: stop with it (a conflict is resolved by the developer in Rider). Then the run goes on as usual, and a delivered ticket goes to steps 6 and 7 (full verification, then delivery: the push updates the merge request).
 
 ## 2. Before any work
 - "Fetch:" says AUTH FAILED: stop (your stop conditions): nothing could be pushed at the end.
 - "Merge in progress: yes": stop with « ⛔ Une fusion est en cours sur la branche : termine-la dans Rider (ou git merge --abort), puis relance /go. »
+- A « merge <branch> » directive: the merge now (see step 1), recorded with `ticket-sheet.sh suivi "/go - merge de <branch>"`.
 
 ## 3. Resume or start
-- On the branch of the key with its ticket sheet printed above: resume, and record it first: `sh ~/.config/opencode/scripts/ticket-sheet.sh suivi "/go - reprise à l'étape <N>"` (or « reprise : vérification », « reprise : livraison »). Unchecked plan steps → step 5 from the first one. Every step checked and no « /go - livré » line in « ## Suivi » → step 6. Already delivered → answer « ✅ Déjà livré (MR <link from the sheet>) : /fix pour la CI ou la review » and stop. « refais l'analyse » → step 4.
+- On the branch of the key with its ticket sheet printed above: resume, and record it first: `sh ~/.config/opencode/scripts/ticket-sheet.sh suivi "/go - reprise à l'étape <N>"` (or « reprise : vérification », « reprise : livraison »). Unchecked plan steps → step 5 from the first one. Every step checked and no « /go - livré » line in « ## Suivi » → step 6. Already delivered, with a directive that asks for work (a merge, a change): that work, then steps 6 and 7. Already delivered otherwise → answer « ✅ Déjà livré (MR <link from the sheet>) : /fix pour la CI ou la review » and stop. « refais l'analyse » → step 4.
 - Files listed under "Uncommitted files" when you resume: an interrupted attempt left them. They go to the prompt of the next coder (step 5.1).
 - Otherwise, start: read the ticket summary and type with the Jira tools (one call); without a ticket, no Jira call: the summary is a title of 6 words at most that you write from the description, the type bugfix for a defect, otherwise feature, and the key `LOCAL`. Then in ONE shell call: `sh ~/.config/opencode/scripts/branch.sh <KEY> <feature | bugfix for a Bug | hotfix for an urgent production incident> "<ticket summary>" && sh ~/.config/opencode/scripts/workflow-state.sh --no-fetch --sheet`. A "STOP:" line: stop with it. Without a ticket, its "KEY:" line gives the key from then on. The sheet of the key exists: resume as above; otherwise step 4.
 

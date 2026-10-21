@@ -28,7 +28,8 @@ const READS = [
   "dotnet --info", "dotnet --list-sdks", "dotnet list package", "dotnet list src/Api/Api.csproj reference",
   "jq '.scripts' package.json", "sed -n '10,40p' src/Foo.cs", "test -f AGENTS.md", "[ -f AGENTS.md ] && echo yes",
   "echo \"---\"", "cat src/a.cs src/b.cs", "ls src/ 2>/dev/null", "git log --oneline -5 2>&1 | head",
-  "cd src && ls", "realpath src",
+  "cd src && ls", "realpath src", "comm -12 a.txt b.txt", "paste a.txt b.txt", "nl src/Foo.cs | head", "tac a.txt | head -5",
+  "git diff --name-only HEAD | sort | column -c 120",
   // search strings with C# generics and lambdas (">" inside quotes is not a redirection)
   "git grep -n \"List<Order>\" abc1234 -- src", "grep -rn \"x => x.Id\" src", "git grep -n \"Task<IActionResult>\" -- '*.cs'",
   "git show abc1234:src/Foo.cs | grep -n \"Dictionary<string, List<int>>\"",
@@ -92,7 +93,8 @@ const PILOT_ALLOW = [
   S + "ship.sh --base \"feat(export): add the PDF export (ABC-123)\"",
   S + "ship.sh --base \"fix(auth): read API_TOKEN and DOCUSIGN_SECRET from the environment (ABC-9)\"",
   S + "ship.sh --no-push \"chore: update nuget.config sources in the docs (ABC-3)\"",
-  S + "ship.sh --no-push \"fix(ui): handle a > b and x => y (ABC-5)\"", S + "ship.sh --sync-only --base",
+  S + "ship.sh --no-push \"fix(ui): handle a > b and x => y (ABC-5)\"", S + "ship.sh --sync-only --base", S + "ship.sh --sync-only --base --merge hotfix/fortify-cleanup",
+  S + "branch.sh LOCAL bugfix \"Corriger l'arrondi\"", S + "ticket-sheet.sh delete",
   S + "ship.sh \"feat(export): add the PDF export (ABC-123)\"", S + "outil.sh --raw 'todo fait 3'",
   S + "ticket-sheet.sh tick 2 \"/go étape 2 - 3 fichiers - build ok - tests 12/12\"",
   S + "ticket-sheet.sh decision \"Erreur métier : Result existant (étape 2) — le dépôt en a déjà un\"",
@@ -198,7 +200,7 @@ add(["build"], ["git push origin feature/x", "git reset --hard HEAD~1", "git reb
   "git commit -m \"docs: x\"", "git merge origin/develop", "git pull", "rm -r docs/old", "rm docs/old -rf"], "deny")
 // git history is written by /go and /fix only, through their scripts
 add(["build", "analyst", "checker", "debugger", "doc-writer", "coder"], [S + "ship.sh \"feat: x (ABC-1)\"",
-  S + "ship.sh --sync-only --base", S + "branch.sh ABC-1 feature \"x\"", S + "ticket-sheet.sh decision \"x\"",
+  S + "ship.sh --sync-only --base", S + "branch.sh ABC-1 feature \"x\"", S + "ticket-sheet.sh decision \"x\"", S + "ship.sh --sync-only --merge hotfix/x",
   "bash ~/.config/opencode/scripts/ship.sh x", "sh $HOME/.config/opencode/scripts/ship.sh x"], "deny")
 add(["build"], ["mkdir -p /tmp/apidump", "dotnet new console -o apidump", "git credential fill", "cat ~/.git-credentials"], "deny")
 

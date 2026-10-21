@@ -138,7 +138,8 @@ const within = (target, dir) => target === dir || target.startsWith(dir.endsWith
 // may read (the pack's scripts and skills, the outputs OpenCode saves, the references, the folders I name): anything
 // else there (cp, mv, rm, a redirection, an interpreter, a build, xargs running another command) would change the
 // pack, its guards included, or another repository.
-const READERS = new Set(["cat", "head", "tail", "less", "more", "grep", "egrep", "fgrep", "rg", "ls", "wc", "file",
+const READERS = new Set(["cat", "head", "tail", "less", "more", "grep", "egrep", "fgrep", "rg", "ls", "wc", "file", "comm",
+  "paste", "column", "nl", "tac",
   "stat", "diff", "cmp", "realpath", "readlink", "basename", "dirname", "jq", "uniq", "cut", "tr", "md5sum", "sha1sum",
   "sha256sum", "du", "echo", "printf", "test", "[", "tree", "sort", "sed", "find", "git", "cd", "pushd"])
 const GIT_READS = new Set(["log", "show", "diff", "blame", "grep", "ls-files", "ls-tree", "status", "rev-parse",

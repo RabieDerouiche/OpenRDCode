@@ -254,13 +254,29 @@ Le pilote reprend une fois un checker en échec, puis livre sans auto-review en 
 
 ## Plusieurs tickets d'un même dépôt (espaces de travail)
 
-Dans OpenCode web : clic droit sur le projet → « Activer les espaces de travail », puis « Nouvel espace de travail » ; dans la session de l'espace, `/go <CLÉ>`. Les espaces de travail du dépôt, avec leur branche (dans le dépôt principal) :
+Un espace de travail est un deuxième dossier du même dépôt (un worktree git), avec sa propre branche et ses propres sessions. L'organisation conseillée : le dépôt principal (« Dépôt local » dans OpenCode) reste sur develop, pour `/daily`, `/review`, `/compare` et tes questions ; chaque ticket a son espace.
+
+**1. Activer, une fois par dépôt.** Dans la barre latérale d'OpenCode, clic droit sur le projet (deux doigts sur le trackpad) → « Activer les espaces de travail ». Le projet affiche alors « local » (le dépôt principal) et ses espaces, chacun avec un « + » (Nouvelle session) et un « … » (Renommer, Réinitialiser, Supprimer).
+
+**2. Un nouveau ticket.** « Nouvelle session » ; sous la zone de saisie, à droite du nom du projet, le sélecteur « Local » → « Nouvel espace de travail » ; puis tape `/go ABC-124` et envoie. OpenCode crée l'espace (sur une branche `opencode/<nom>`), `/go` le bascule sur la branche du ticket et supprime `opencode/<nom>`. Le premier build de l'espace repart de zéro : quelques minutes de plus.
+
+**3. Reprendre un ticket qui a déjà son espace.** Dans la barre latérale, sous l'espace, sa session ; ou le « + » de l'espace pour une session neuve. Puis `/go` seul : la clé vient de la branche, il reprend où il s'était arrêté. Après la CI : `/fix` dans la même session.
+
+**4. Un ticket en cours dans le dépôt principal, à passer dans un espace.** Une branche ne s'ouvre que dans un dossier à la fois. Dans le dépôt principal, avec rien de non commité (`git status -s` n'affiche rien ; sinon `/fix` livre d'abord) :
 ```sh
-git worktree list
+git switch develop
 ```
-Avant de supprimer un espace (OpenCode supprime aussi sa branche locale) : sa branche est-elle poussée ? Dans le dossier de l'espace, `ahead N` veut dire N commits pas encore poussés : `/fix` les livre d'abord.
+Puis un nouvel espace (étape 2) avec `/go ABC-123` : il reprend la branche existante, sa fiche et sa MR. Un ticket poussé seulement depuis le Mac : `/go ABC-123` dans un nouvel espace récupère la branche de GitLab.
+
+**5. Fermer un espace, quand la MR est créée (✅) ou le ticket abandonné (`/outil abandon`).** OpenCode ne vérifie que les fichiers non commités, pas les commits non poussés, et supprimer l'espace supprime sa branche locale. Dans l'espace, `ahead N` veut dire N commits pas encore poussés (`/fix` les livre) :
 ```sh
 git status -sb | head -1
+```
+Rien en avance : « … » de l'espace → « Supprimer ». N'utilise pas « Réinitialiser » sur un espace qui porte un ticket : il le ramène sur la branche par défaut.
+
+Les espaces du dépôt, avec leur branche :
+```sh
+git worktree list
 ```
 
 ## Identifiants GitLab
@@ -279,6 +295,8 @@ git remote get-url origin | sed -E 's#://[^@/]*@#://***@#'
 
 ### Réglage durable (recommandé) : un token réservé à cette machine
 
+Le démarrage de ton environnement réécrit `~/.gitconfig` et y remet `cache --timeout=36000` à chaque lancement du serveur : un réglage écrit là ne tient pas. Celui-ci va dans `~/.config/git/config`, que git lit en plus de `~/.gitconfig` sans que le démarrage y touche ; git essaie alors `store` d'abord, le cache ensuite. Si ton équipe a choisi le cache exprès (aucun jeton en clair sur le disque), garde-le plutôt : après chaque démarrage, `git ls-remote --heads origin > /dev/null` dans un dépôt redemande le token, valable 10 heures.
+
 Le token est gardé par git dans `~/.git-credentials`, lisible par toi seul et refusé aux agents. Il ne donne accès qu'au code des dépôts (ni aux MR, ni aux pipelines, ni au reste de GitLab) et s'arrête à sa date d'expiration. Plus rien à faire le matin : seulement le renouveler à son expiration. Sur un Mac, le trousseau le garde chiffré : `osxkeychain` à la place de `store` à l'étape 3.
 
 1. Dans GitLab, la page des jetons d'accès : `https://<adresse de ton GitLab>/-/user_settings/personal_access_tokens` (ou ton avatar → Modifier le profil → Jetons d'accès), puis « Ajouter un nouveau jeton » :
@@ -291,23 +309,23 @@ Le token est gardé par git dans `~/.git-credentials`, lisible par toi seul et r
 ```sh
 git credential-cache exit
 ```
-3. Le gestionnaire durable, à la place du cache :
+3. Le gestionnaire durable, dans le fichier que le démarrage ne réécrit pas :
 ```sh
-git config --global --replace-all credential.helper store
-```
-```sh
-git config --global --unset credentialCache.ignoreSIGHUP
+mkdir -p ~/.config/git && git config --file ~/.config/git/config --replace-all credential.helper store
 ```
 4. Enregistre le token, une seule fois : git demande le nom d'utilisateur (ton identifiant GitLab), puis le mot de passe : colle le token.
 ```sh
 git ls-remote --heads origin > /dev/null
 ```
-5. Vérifie : le fichier n'est lisible que par toi (la ligne commence par `-rw-------`), et le test passe :
+5. Vérifie : le fichier n'est lisible que par toi (la ligne commence par `-rw-------`), et le test passe ; après le prochain redémarrage du serveur, la dernière commande doit toujours afficher `store` (puis `cache`) :
 ```sh
 ls -l ~/.git-credentials
 ```
 ```sh
 GIT_TERMINAL_PROMPT=0 git ls-remote --heads origin > /dev/null && echo "identifiants OK"
+```
+```sh
+git config --show-origin --get-all credential.helper
 ```
 6. Le rappel, dans OpenCode, une semaine avant la date d'expiration du token (il sortira dans `/daily` ce jour-là ; GitLab prévient aussi par mail) :
 ```text
