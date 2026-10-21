@@ -26,7 +26,7 @@ Le push et la MR de `/go` demandent des identifiants GitLab que git trouve seul 
 
 Depuis ton clone du pack à jour (`git pull`), en une commande : agents, commandes, scripts, plugin et skills du pack sont remplacés ; les anciens skills `outil-…` sont supprimés (ils s'appellent maintenant `pack-…`, pour que l'autocomplétion de `/outil` ne propose plus qu'eux) ; tes skills `pattern-…`, ta todo et tes fiches ticket ne sont pas touchés.
 ```sh
-cd ~/OpenRDCode && find ~/.config/opencode/skills -maxdepth 1 -name 'outil-*' -exec rm -rf {} + && cp -r v2/agents v2/commands v2/scripts v2/plugins ~/.config/opencode/ && cp -r v2/skills/. ~/.config/opencode/skills/ && ls ~/.config/opencode/scripts/diff-guard.sh ~/.config/opencode/skills/pack-stats
+cd ~/OpenRDCode && find ~/.config/opencode/skills -maxdepth 1 -name 'outil-*' -exec rm -rf {} + && cp -r v2/agents v2/commands v2/scripts v2/plugins ~/.config/opencode/ && cp -r v2/skills/. ~/.config/opencode/skills/ && ls ~/.config/opencode/scripts/workspace.sh ~/.config/opencode/skills/pack-stats
 ```
 Puis :
 1. `~/.config/opencode/opencode.json` : remplace les sections `agent` et `permission` par celles de `v2/opencode.snippet.json` ; ajoute ses sections `experimental` et `compaction` si elles n'y sont pas encore.
