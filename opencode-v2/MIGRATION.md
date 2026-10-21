@@ -1,232 +1,363 @@
-# Passer le pack d'OpenCode 1.19 à OpenCode v2 — guide complet
+# Passer d'OpenCode 1.19 à OpenCode v2, pas à pas
 
-Ce dossier `opencode-v2/` est le pack migré pour OpenCode v2.1.2. Le dossier `v2/` reste le pack pour OpenCode 1.19 : c'est ton retour arrière. Le pourquoi des changements est dans `ANALYSE.md`. Suis les étapes dans l'ordre ; chaque commande est à taper telle quelle dans un terminal de la machine qui héberge OpenCode (remplace seulement ce qui est entre `<…>`).
+Ce guide part de zéro. Chaque étape dit **pourquoi** on la fait, **quoi taper**, **ce que tu dois voir**, et **quoi faire si ce n'est pas ce que tu vois**. Ne saute aucune étape et ne passe à la suivante que si la précédente donne le résultat attendu.
 
-## 0. Ce qui est vérifié, et ce qui ne l'est pas
+Le principe : OpenCode v2 s'installe **à côté** de ta version 1.19, dans ses propres dossiers, sur un autre port. La 1.19 continue de tourner comme avant pendant tout l'essai. Revenir en arrière consiste à rouvrir l'adresse de la 1.19.
 
-Vérifié avec le vrai OpenCode v2.1.2 (paquet npm `@opencode/cli`) sur un dépôt de test, avec un modèle simulé :
-- le plugin `openrd-pack.js` se charge ;
-- `/go` remplace les lignes `[[run …]]` par l'état du bon dépôt ;
-- le plugin refuse `cat ~/.zshenv` (hors du dépôt) et `export -p` (dump de l'environnement), envoyés par le modèle ;
-- un second `/go` lancé dans le même dossier pendant le premier reçoit une phrase de refus, et le dossier se libère à la fin du premier ;
-- `/fortify` lance ses prérequis ;
-- v2 lit les 7 agents (dont le nouveau `test-guardian`) et leurs règles, les 7 commandes, la température 1.0 / top_p 0.95 et les interdictions propres à v2.
+Durée : environ 45 minutes la première fois.
 
-Tests du pack :
-- 477 vérifications du plugin ;
-- 1 753 cas de permissions ;
-- 30 fichiers d'agents, de commandes et de skills validés ;
-- `fortify.sh` rejoué avec un faux `dotnet` dans 3 shells et 4 awk ;
-- `shellcheck` sur tous les scripts.
+## Sommaire
 
-Pas vérifié ici, faute d'accès :
-- l'interface web v2 à l'écran ;
-- ta passerelle vLLM avec Qwen 3.8 ;
-- tes serveurs MCP ;
-- un vrai `dotnet test` avec coverlet ;
-- `/fortify` sur ton SSC.
-
-L'étape 5 te fait vérifier tout ça avant la bascule.
-
-## 1. Ce qui change pour toi
-
-| | OpenCode 1.19 (pack `v2/`) | OpenCode v2 (pack `opencode-v2/`) |
+| Étape | Ce que tu fais | Durée |
 |---|---|---|
-| Lancer le serveur | `opencode web …` | la commande de l'étape 6, `opencode2 serve …` avec ses dossiers et `OPENCODE_SERVER_PASSWORD` ; le navigateur demande l'utilisateur `opencode` et ce mot de passe |
-| Plugin | `plugins/compact-commands.js` | `plugins/openrd-pack.js` ; l'ancien ne doit plus être dans le dossier (v2 ne le charge pas et ne le signale que dans son journal) |
-| Un seul `/go`, `/fix` ou `/fortify` par dossier | refusé par le plugin | refusé par le plugin (porté) |
-| Plusieurs tickets d'un dépôt | `workspace.sh` et l'adresse à coller | le sélecteur sous la zone de saisie d'une nouvelle session (à vérifier à l'étape 5) ; sinon `workspace.sh`, qui marche toujours |
-| Message d'une commande | une ligne « /go ABC-123 — dépôt · branche » | le texte complet de la commande, état du dépôt compris (v2 n'a pas de partie cachée dans un message) |
-| Titre des sessions | avancement, ✅ / ⛔, `[dossier]` | celui d'OpenCode (non porté, section 8) |
-| QCM qui propose une commande | la commande choisie part seule | tape la commande (non porté, section 8) |
-| `/go … comme dans ~/repos/old-api` | un dossier que tu nommes devient lisible | seulement un dossier déclaré dans `references` d'`opencode.json` (non porté, section 8) |
-| Skills | chacun était aussi une commande `/` | plus de commande `/` par skill : `/outil` seul |
-| Sous-agents | outil `task`, reprise par `task_id` | outil `subagent`, reprise par `sessionID` (textes du pack mis à jour) |
-| Nouveau | | `/fortify` et l'agent `test-guardian` (section 9) |
+| 0 | Comprendre les mots utilisés | 3 min |
+| 1 | Ouvrir un terminal sur la machine d'OpenCode | 2 min |
+| 2 | Faire l'état des lieux de ton installation actuelle | 5 min |
+| 3 | Sauvegarder | 2 min |
+| 4 | Télécharger et installer OpenCode v2 | 5 min |
+| 5 | Préparer la configuration de la v2 | 3 min |
+| 6 | Démarrer la v2 | 2 min |
+| 7 | L'ouvrir dans ton navigateur et te connecter | 5 min |
+| 8 | Vérifier que tout marche | 15 min |
+| 9 | Vérifier le modèle (Qwen) | 5 min |
+| 10 | Utiliser la v2 au quotidien | — |
+| 11 | Revenir à la 1.19 | 1 min |
+| 12 | Dépannage | — |
 
-## 2. Avant de commencer
+Les étapes 13 à 15 sont des annexes : ce qui n'a pas changé et ce qui change, ce qui n'est pas porté, et les fichiers du pack.
 
-**Ce que tu dois chercher ailleurs : rien.** Tout est dans ce dépôt et dans ce guide. La seule chose téléchargée est le paquet npm `@opencode/cli@2.1.2`, par la commande de l'étape 3, depuis le registre npm que ta machine utilise déjà (celui qui t'a servi pour installer la 1.19 ; si npm passe par Artifactory chez vous, rien à changer). N'utilise ni le script d'installation du site d'OpenCode (`curl … | bash`), ni brew : ils téléchargent et lancent un script, ce que ton environnement interdit. Pas besoin du site d'OpenCode : ce guide remplace sa documentation pour tout ce que le pack utilise.
+## Étape 0 — Les mots utilisés
 
-1. Note ta version actuelle, pour pouvoir la réinstaller à l'identique :
+- **Machine d'OpenCode** : l'ordinateur distant où tourne OpenCode, celui dont tu ouvres l'interface web dans ton navigateur. Ce n'est pas ton Mac.
+- **Terminal** : une fenêtre où l'on tape des commandes sur cette machine. Chaque commande de ce guide se tape dans un terminal **de la machine d'OpenCode**, sauf quand il est écrit « sur ton Mac ».
+- **CLI** (« command line interface ») : un programme qu'on lance en tapant son nom dans un terminal. OpenCode est une CLI : la commande `opencode` démarre son serveur.
+- **npm** : le gestionnaire de paquets de Node.js. Il télécharge des programmes depuis un **registre npm** (un dépôt en ligne de paquets : `registry.npmjs.org`, ou le miroir Artifactory de ton entreprise).
+- **Paquet** : un programme publié sur un registre npm. OpenCode 1.19 est le paquet `opencode-ai`. OpenCode v2 est le paquet **`@opencode/cli`**, publié par l'équipe d'OpenCode (son code est sur GitHub, projet `sst/opencode`).
+- **Port** : le numéro qui suit l'adresse dans `http://machine:4096`. Deux serveurs ne peuvent pas utiliser le même port. Ici, la v2 utilise le port **4097** et ta 1.19 garde le sien.
+- **Dossier de configuration** : là où OpenCode lit ses réglages, agents, commandes et plugins. Pour la 1.19 : `~/.config/opencode`. Pour la v2 : `~/oc2/config/opencode`. Le `~` veut dire ton dossier personnel sur la machine, par exemple `/home/dev`.
+
+## Étape 1 — Ouvrir un terminal sur la machine d'OpenCode
+
+**Pourquoi.** Toutes les commandes s'exécutent sur la machine où tourne OpenCode, pas sur ton Mac.
+
+**Quoi faire.** Ouvre le terminal que tu utilises déjà pour les commandes de `COMMANDES.md`, par exemple ta connexion SSH à cette machine ou le terminal de ton environnement de travail. Puis tape :
+```sh
+whoami && hostname && echo "$HOME"
+```
+
+**Ce que tu dois voir.** Trois lignes : ton nom d'utilisateur sur la machine (par exemple `dev`), le nom de la machine, et ton dossier personnel (par exemple `/home/dev`). Note le nom de la machine : il te servira à l'étape 7.
+
+**Si tu vois autre chose.** Si c'est le nom de ton Mac, tu es dans un terminal de ton Mac : connecte-toi d'abord à la machine d'OpenCode.
+
+## Étape 2 — L'état des lieux de ton installation actuelle
+
+**Pourquoi.** Savoir comment ta 1.19 est installée et lancée, pour l'installer de la même façon et ne rien casser.
+
+Tape ces commandes une par une. Chaque bloc dit ce que tu dois noter.
+
+**2.1 La version de la 1.19.** La commande l'enregistre aussi dans un fichier, pour pouvoir la réinstaller à l'identique un jour :
 ```sh
 opencode --version | tee ~/opencode-version-1.19.txt
 ```
-2. Sauvegarde de ta configuration et de tes sessions (une assurance, gardée jusqu'à la fin de l'étape 6) :
-```sh
-cp -r ~/.config/opencode ~/opencode-config-1.19 && cp -r ~/.local/share/opencode ~/opencode-data-1.19
-```
-3. Le pack à jour :
-```sh
-cd ~/OpenRDCode && git pull && ls opencode-v2/plugins
-```
-La dernière ligne affiche `openrd-pack.js`.
+Tu dois voir un numéro du type `1.19.0`. Note-le.
 
-## 3. Essai isolé, sans toucher à la 1.19
-
-v2 lit les mêmes dossiers que la 1.19 (`~/.config/opencode`, `~/.local/share/opencode`) : l'essai utilise des dossiers à part. Les scripts restent dans `~/.config/opencode/scripts` : les commandes et les règles des agents les appellent à cet endroit, et ceux de `opencode-v2/scripts` remplacent ceux de la 1.19 sans la gêner (mêmes scripts, plus `fortify.sh`).
-
-1. v2 dans son propre dossier. Le paquet fournit aussi une commande `opencode`, qui ne doit pas prendre la place de celle de la 1.19 :
+**2.2 Comment elle est installée :**
 ```sh
-mkdir -p ~/oc2/cli ~/oc2/config/opencode/skills ~/oc2/data && npm install --prefix ~/oc2/cli @opencode/cli@2.1.2 && ~/oc2/cli/node_modules/.bin/opencode2 --version
+npm ls -g --depth=0 2>/dev/null | grep -i opencode
 ```
-La dernière ligne affiche `opencode v2.1.2`.
-2. Le pack migré :
-```sh
-cd ~/OpenRDCode && cp -r opencode-v2/agents opencode-v2/commands opencode-v2/plugins ~/oc2/config/opencode/ && cp -r opencode-v2/skills/. ~/oc2/config/opencode/skills/ && cp opencode-v2/scripts/*.sh ~/.config/opencode/scripts/ && ls ~/oc2/config/opencode/plugins ~/oc2/config/opencode/agents
-```
-Tu dois voir `openrd-pack.js` seul dans `plugins`, et 7 agents dont `test-guardian.md`.
-3. `~/oc2/config/opencode/AGENTS.md` : copie `opencode-v2/AGENTS.global.md`, puis reprends tes sections « Daily » et « Release groups » de ton `~/.config/opencode/AGENTS.md`.
-4. `~/oc2/config/opencode/opencode.json` : copie de ton `~/.config/opencode/opencode.json`, puis remplace ses sections `agent` et `permission` par celles de `opencode-v2/opencode.snippet.json`. Le reste ne change pas : `provider`, `mcp`, `model`, `references`, `experimental`, `compaction`. v2 convertit ces sections et dit ce qu'il ignore (étape 4).
-5. Démarrer, sur un autre port que la 1.19 :
-```sh
-XDG_CONFIG_HOME=~/oc2/config XDG_DATA_HOME=~/oc2/data OPENCODE_SERVER_PASSWORD='<un mot de passe>' ~/oc2/cli/node_modules/.bin/opencode2 serve --hostname 0.0.0.0 --port 4097 --print-logs 2> ~/oc2/serve.log
-```
-Ce terminal reste occupé tant que le serveur tourne ; les commandes suivantes vont dans un autre terminal. v2 lit aussi `~/.claude` et `~/.agents` s'ils existent, ainsi que `.opencode`, `.claude` et `.agents` dans chaque dépôt.
+Deux réponses possibles :
+- **Une ligne `opencode-ai@1.19.x`** : la 1.19 a été installée avec npm. C'est le cas prévu par ce guide.
+- **Rien** : elle a été installée autrement, par exemple par l'équipe qui gère ton environnement. Tu peux quand même suivre ce guide : la v2 s'installe dans ton dossier personnel et ne touche pas à la 1.19. Si ton entreprise interdit d'installer un programme soi-même, demande d'abord l'accord de cette équipe.
 
-## 4. Le modèle (Qwen 3.8 derrière la passerelle)
+**2.3 npm et le registre qu'il utilise :**
+```sh
+node --version && npm --version && npm config get registry
+```
+Tu dois voir trois lignes :
+- une version de Node.js (`v20…` ou plus) ;
+- une version de npm ;
+- l'adresse du registre, soit `https://registry.npmjs.org/`, soit une adresse Artifactory de ton entreprise.
 
-Ce que v2 a ignoré de ta configuration :
+Si `node` ou `npm` est introuvable, arrête-toi : il faut Node.js sur la machine, et c'est à l'équipe qui gère l'environnement de l'installer.
+
+**2.4 Comment la 1.19 est lancée et sur quel port :**
+```sh
+ps -eo args | grep -i '[o]pencode'
+```
+Tu dois voir la commande qui fait tourner ta 1.19, par exemple `opencode web --hostname 0.0.0.0 --port 4096`. Note :
+- **le port**, le nombre après `--port`. S'il n'y en a pas, prends le nombre après les deux-points dans l'adresse de ton navigateur (étape 2.5) ;
+- **si le port 4097 est libre** : il ne doit apparaître dans aucune ligne. S'il apparaît, choisis un autre numéro libre (par exemple `4098`) et utilise-le partout où ce guide écrit `4097`.
+
+**2.5 L'adresse de la 1.19 dans ton navigateur.** Regarde ce qui est écrit dans la barre d'adresse quand tu utilises OpenCode aujourd'hui, et retiens dans quel cas tu es :
+- **Cas A** : une adresse du type `http://<nom ou IP de la machine>:4096`. Tu ouvriras la v2 de la même façon, avec `:4097`.
+- **Cas B** : une adresse d'une plateforme (un nom de domaine de ton entreprise sans numéro de port, une page d'environnement de travail). Il faudra exposer le port 4097 avec ta plateforme, ou passer par un tunnel SSH (étape 7).
+
+## Étape 3 — Sauvegarder
+
+**Pourquoi.** Une assurance : la v2 ne touche pas à ces dossiers, mais une copie ne coûte rien.
+
+```sh
+cp -r ~/.config/opencode ~/opencode-config-1.19 && cp -r ~/.local/share/opencode ~/opencode-data-1.19 && ls -d ~/opencode-config-1.19 ~/opencode-data-1.19
+```
+
+**Ce que tu dois voir.** Les deux chemins des copies, sur deux lignes.
+
+**Si tu vois `No such file or directory`.** Ton OpenCode 1.19 range ses données ailleurs. Envoie-moi la ligne d'erreur avant de continuer.
+
+## Étape 4 — Télécharger et installer OpenCode v2
+
+**D'où vient la v2.** C'est le paquet npm **`@opencode/cli`**, version **2.1.2** (sortie le 21 octobre 2026), publié par l'équipe d'OpenCode. npm le télécharge depuis ton registre (étape 2.3) avec, automatiquement, le programme compilé pour ta machine (par exemple `@opencode/cli-linux-x64`). Tu n'as rien à chercher sur le site d'OpenCode.
+
+N'utilise ni la commande `curl … | bash` du site d'OpenCode, ni `brew` : elles téléchargent et exécutent un script, ce que ton environnement interdit.
+
+**Pourquoi un dossier à part.** Ce paquet fournit lui aussi une commande `opencode`. Installé dans `~/oc2/cli`, il ne remplace pas celle de ta 1.19. Il ne demande pas non plus de droits administrateur.
+
+**Quoi taper :**
+```sh
+mkdir -p ~/oc2/cli && npm install --prefix ~/oc2/cli @opencode/cli@2.1.2
+```
+
+**Ce que tu dois voir.** Après quelques secondes, une ligne du type `added 5 packages in 14s`.
+
+Vérifie ensuite :
+```sh
+~/oc2/cli/node_modules/.bin/opencode2 --version && opencode --version
+```
+Tu dois voir **deux** versions : `opencode v2.1.2` (la nouvelle) puis ta version 1.19 (l'ancienne, inchangée).
+
+**Si ça ne marche pas :**
+
+| Message | Cause | Ce que tu fais |
+|---|---|---|
+| `E404` ou `404 Not Found` sur `@opencode/cli` | ton registre (Artifactory) ne connaît pas ce paquet | demande à l'équipe Artifactory d'autoriser depuis registry.npmjs.org les paquets `@opencode/cli` et `@opencode/cli-linux-x64` (et ses variantes `-baseline`, `-musl`), version 2.1.2 |
+| `ETIMEDOUT`, `ECONNREFUSED`, `UNABLE_TO_GET_ISSUER_CERT` | la machine n'atteint pas le registre | même problème qu'une installation npm qui échoue chez toi d'habitude : vois avec l'équipe qui gère l'environnement |
+| `EACCES` | droits sur un dossier | vérifie que la commande contient bien `--prefix ~/oc2/cli` ; n'utilise jamais `sudo` |
+| `opencode2: not found` après l'installation | l'installation a échoué plus haut | relis le message d'erreur de `npm install` |
+
+## Étape 5 — Préparer la configuration de la v2
+
+**Pourquoi.** La v2 lit sa configuration dans `~/oc2/config/opencode`. Un script du pack la prépare pour toi à partir de ta configuration 1.19, sans la modifier :
+- il copie `opencode.json` en y mettant les règles du pack, et garde tes réglages du modèle (`provider`, `model`), de tes serveurs MCP (`mcp`) et tes références ;
+- il copie les agents, les commandes, les skills et le plugin `openrd-pack.js` ;
+- il crée `AGENTS.md` à partir de celui du pack, en reprenant tes sections « Daily » et « Release groups » ;
+- il met à jour les scripts du pack dans `~/.config/opencode/scripts` : ce sont les mêmes que ceux de la 1.19, plus `fortify.sh`.
+
+Le script n'affiche jamais le contenu de ta configuration, qui peut contenir des clés : seulement le nom des sections.
+
+**Quoi taper.** Remplace `~/OpenRDCode` par le chemin de ton clone du pack s'il est ailleurs :
+```sh
+cd ~/OpenRDCode && git pull && node opencode-v2/tools/prepare-v2.mjs
+```
+
+**Ce que tu dois voir** (tes noms de sections peuvent différer) :
+```
+CONFIG: /home/dev/oc2/config/opencode/opencode.json — agent and permission from the pack; kept from 1.19: $schema, provider, model, mcp, …
+PACK: 7 agents, 7 commands, 16 skills, plugins: openrd-pack.js
+AGENTS.md: from the pack, with your sections « Daily » and « Release groups »
+SCRIPTS: 24 scripts in /home/dev/.config/opencode/scripts (fortify.sh included)
+DONE: the configuration of OpenCode 1.19 was only read, never changed
+```
+
+Vérifie dans la ligne `CONFIG:` que `provider`, `model` et `mcp` figurent après « kept from 1.19 ». Sans eux, la v2 n'aura ni modèle, ni Jira, GitLab, Sonar et Fortify.
+
+**Si tu vois `STOP:`**, la ligne dit pourquoi :
+- `no opencode.json in …` : ta configuration 1.19 n'est pas dans `~/.config/opencode` ; envoie-moi la ligne ;
+- `run it from the clone of the pack` : la commande n'a pas été lancée depuis le clone du pack ;
+- `cannot read …` : ton `opencode.json` contient une erreur de syntaxe.
+
+Si la ligne `AGENTS.md:` dit qu'aucune section n'a été trouvée, ouvre `~/oc2/config/opencode/AGENTS.md` et remplis à la main les sections « Daily » et « Release groups ».
+
+Ce script peut être relancé sans risque : il garde chaque fois une copie de l'ancien `opencode.json` de la v2 (ligne `SAVED:`).
+
+## Étape 6 — Démarrer la v2
+
+**Pourquoi.** Lancer le serveur de la v2 sur son propre port, avec un mot de passe, sans arrêter la 1.19.
+
+**Le mot de passe.** La v2 en exige un, pour que personne d'autre ne puisse utiliser ton OpenCode. Choisis-en un nouveau : ni ton mot de passe d'entreprise, ni celui d'un autre service. Le script te le demande sans l'afficher, et il n'est jamais écrit dans une commande ni dans l'historique du terminal. Tu le retaperas dans le navigateur à l'étape 7.
+
+**Quoi taper.** Dans le cas A de l'étape 2.5 :
+```sh
+cd ~ && sh ~/OpenRDCode/opencode-v2/tools/start-v2.sh 4097
+```
+Dans le cas B, si tu passeras par un tunnel SSH (étape 7) :
+```sh
+cd ~ && sh ~/OpenRDCode/opencode-v2/tools/start-v2.sh 4097 127.0.0.1
+```
+
+**Ce que tu dois voir :**
+```
+Password of OpenCode v2 (typed, not shown):
+opencode v2.1.2 starts on port 4097; the log goes to ~/oc2/serve.log. Ctrl+C stops it.
+server listening on http://0.0.0.0:4097
+```
+Après la ligne `server listening`, **le terminal reste occupé** : c'est normal, c'est le serveur qui tourne. Laisse cette fenêtre ouverte et ouvre un **deuxième terminal** pour les commandes suivantes. Pour arrêter la v2 : `Ctrl+C` dans cette fenêtre.
+
+**Si tu vois `STOP:`** : la ligne dit quelle étape refaire (4 ou 5).
+
+**Si un message parle d'un port déjà utilisé** (`address already in use`, `EADDRINUSE`) : relance avec un autre numéro, par exemple `4098`.
+
+## Étape 7 — Ouvrir la v2 dans ton navigateur et te connecter
+
+**7.1 L'adresse :**
+- **Cas A** : la même adresse que ta 1.19, avec `4097` à la place de son port. Par exemple, `http://machine:4096` devient `http://machine:4097`.
+- **Cas B, avec le tunnel SSH** : dans un terminal **sur ton Mac**, tape la commande ci-dessous. Remplace `<utilisateur>` et `<machine>` par ce qu'affichait l'étape 1.
+```sh
+ssh -N -L 4097:127.0.0.1:4097 <utilisateur>@<machine>
+```
+Elle ne rend pas la main : c'est normal, laisse-la ouverte pendant que tu utilises la v2. Ouvre ensuite `http://localhost:4097` dans ton navigateur.
+- **Cas B, avec ta plateforme** : si ta plateforme sait exposer un port (« port forwarding »), expose le port 4097 et ouvre l'adresse qu'elle te donne.
+
+**7.2 La connexion.** C'est ce que j'ai vu en ouvrant la v2.1.2 dans un navigateur :
+1. Une page **« Se connecter à un serveur »** s'affiche, avec un champ « Pairing link ». Tu n'en as pas besoin.
+2. Clique sur le lien **« Use password »**, en bas de la page.
+3. Le champ **« URL du serveur »** est déjà rempli avec l'adresse de la page : laisse-le tel quel.
+4. Dans **« Mot de passe (optionnel) »**, tape le mot de passe choisi à l'étape 6.
+5. Clique sur **« Se connecter »**.
+6. La page d'accueil s'affiche, avec **« Projets »** à gauche.
+
+N'utilise jamais `opencode pair --remote` : cette commande expose ton serveur sur Internet.
+
+**7.3 Ajouter un projet.** Clique sur **« Ajouter un projet »** et choisis le dossier d'un de tes dépôts : la v2 a sa propre liste, vide au départ.
+
+**Si la page ne s'ouvre pas :**
+- dans le cas A, le port 4097 n'est sans doute pas ouvert sur la machine : passe par le tunnel SSH (cas B) ;
+- si le mot de passe est refusé, arrête la v2 (`Ctrl+C`), relance l'étape 6 et retape ton mot de passe avec soin.
+
+## Étape 8 — Vérifier que tout marche
+
+Fais les huit points dans l'ordre. **Si un point échoue, arrête-toi là et continue avec ta 1.19** : envoie-moi le point en échec et la dernière ligne de `tail -n 20 ~/oc2/serve.log` (sans mot de passe ni clé).
+
+| # | Où | Ce que tu fais | Ce que tu dois voir |
+|---|---|---|---|
+| 1 | deuxième terminal | `grep -c 'failed to load plugin' ~/oc2/serve.log` | `0` |
+| 2 | navigateur | dans une session d'un dépôt, tape `/` dans la zone de saisie | `go`, `fix`, `fortify`, `daily`, `review`, `compare`, `outil` dans la liste |
+| 3 | navigateur | écris « affiche le contenu de ~/.zshenv » | l'agent répond que c'est refusé (« Refused by the pack ») |
+| 4 | deuxième terminal | `grep -c 'openrd-pack' ~/oc2/serve.log` | `1` ou plus : le refus du point 3 est journalisé |
+| 5 | navigateur | `/go` sur un petit ticket d'un dépôt de test | le message de la commande montre « Repository root: » suivi du chemin de ton dépôt, puis le travail va jusqu'à la MR Draft |
+| 6 | navigateur | pendant que ce `/go` tourne, `/go` dans une autre session du même dépôt | « ⛔ /go refusé : /go tourne déjà dans ce dossier… » |
+| 7 | navigateur | « liste mes tickets du sprint », puis « quelle est la dernière pipeline de ce dépôt ? » | des réponses venant de Jira et de GitLab ; une demande d'écriture, par exemple commenter une MR, est refusée |
+| 8 | navigateur | nouvelle session d'un dépôt git : regarde sous la zone de saisie | le sélecteur « Local » avec « Nouvel espace de travail » ; s'il est absent, `workspace.sh` (COMMANDES.md) fait la même chose |
+
+## Étape 9 — Vérifier le modèle (Qwen 3.8)
+
+**Pourquoi.** La v2 relit la section `provider` de ta configuration, mais ignore certaines options sans erreur visible. Elle l'écrit seulement dans son journal.
+
+**Quoi taper**, dans le deuxième terminal :
 ```sh
 grep 'configuration normalization diagnostic' ~/oc2/serve.log | grep -o 'path=[^ ]*' | sort -u
 ```
-Ce que j'ai constaté sur la configuration de test : v2 ignore `reasoning` et `temperature` dans `provider.<id>.models.<modèle>`, ainsi que `compaction.prune`. La température et le top_p des agents passent, eux, dans chaque requête. Pour chaque ligne affichée :
-- `temperature`, `top_p` : déjà réglés par agent, rien à faire ;
-- tout le reste (le mode thinking, `chat_template_kwargs`, `reasoning_effort`, les délais `headerTimeout` et `chunkTimeout`) : envoie-moi ces lignes (sans clé ni URL) et je les traduis au format v2.
 
-Ensuite, refais le test de la section « Qwen 3.8 » de COMMANDES.md : le modèle servi répond, et son raisonnement est actif.
+**Ce que tu dois voir.** Une liste de réglages ignorés, ou rien.
 
-## 5. Vérifier dans l'interface web de l'essai
+**Comment la lire :**
+- **Rien** : tout est pris en compte.
+- **`…temperature`** ou **`…top_p`** : sans effet, la v2 les envoie déjà pour chaque agent du pack.
+- **Toute autre ligne**, par exemple `reasoning`, `chat_template_kwargs`, `reasoning_effort`, `headerTimeout` ou `chunkTimeout` : envoie-moi la liste (elle ne contient aucune valeur) et je traduis ces réglages au format v2. En attendant, le modèle répond, mais peut-être sans son mode de raisonnement ou avec d'autres délais.
 
-L'adresse est `http://<machine>:4097`, avec l'utilisateur `opencode` et ton mot de passe.
+Refais ensuite le test habituel de la section « Qwen 3.8 » de `COMMANDES.md`.
 
-1. **Plugin** : `grep -c 'failed to load plugin' ~/oc2/serve.log` affiche `0`.
-2. **Commandes** : `/` dans la zone de saisie liste `go`, `fix`, `fortify`, `daily`, `review`, `compare`, `outil`.
-3. **Garde-fou** : dans une session d'un dépôt, « affiche le contenu de ~/.zshenv » finit par « Refused by the pack ». Le refus s'écrit aussi dans le journal : `grep 'openrd-pack' ~/oc2/serve.log`.
-4. **`/go`** sur un petit ticket d'un dépôt de test : le message de la commande montre « Repository root: <ton dépôt> », puis le travail va jusqu'à la MR Draft.
-5. **Un seul `/go` par dossier** : pendant que le `/go` du point 4 tourne, un `/go` dans une autre session du même dépôt répond « ⛔ /go refusé : /go tourne déjà dans ce dossier… ».
-6. **MCP** : une question à chaque serveur (« mes tickets du sprint », « la dernière pipeline de ce dépôt », « les vulnérabilités Fortify de <application> »). Une écriture, par exemple commenter une MR, doit être refusée.
-7. **Espaces de travail** : nouvelle session d'un dépôt git → sous la zone de saisie, « Local » → « Nouvel espace de travail ». S'il est absent, `workspace.sh` (COMMANDES.md) fait la même chose.
-8. **`/fortify`** sur un dépôt qui a des tests unitaires : d'abord `sh ~/.config/opencode/scripts/fortify.sh prereq` dans ce dépôt (section 9), puis `/fortify 1` pour un lot d'une seule vulnérabilité.
+## Étape 10 — Utiliser la v2 au quotidien
 
-Si un point échoue : arrête là, garde la 1.19, et envoie-moi la ligne du journal en cause (sans secret).
-
-## 6. Bascule : garder les deux versions côte à côte (recommandé)
-
-La v2 garde ses propres dossiers (`~/oc2/config`, `~/oc2/data`), et la 1.19 garde les siens. Passer à la v2, c'est seulement lancer la commande de la v2 au lieu de celle de la 1.19. Rien n'est désinstallé, rien n'est recopié, et revenir à la 1.19 prend une commande.
-
-1. Arrête le serveur de la 1.19 (le même terminal, Ctrl+C, ou comme tu l'arrêtes d'habitude).
-2. Démarre la v2 sur ton port habituel. C'est désormais ta commande de démarrage :
+Tant que tu valides la v2, garde les deux versions côte à côte : la 1.19 sur son port, la v2 sur 4097. Pour démarrer la v2 chaque jour :
 ```sh
-XDG_CONFIG_HOME=~/oc2/config XDG_DATA_HOME=~/oc2/data OPENCODE_SERVER_PASSWORD='<mot de passe>' ~/oc2/cli/node_modules/.bin/opencode2 serve --hostname 0.0.0.0 --port <ton port> --print-logs 2> ~/oc2/serve.log
+cd ~ && sh ~/OpenRDCode/opencode-v2/tools/start-v2.sh 4097
 ```
-3. Tes sessions de la 1.19 restent dans la 1.19. Pour en relire une, relance la 1.19 (étape 7). Tes fiches ticket sont dans le `.git` de chaque dépôt : les deux versions les voient.
-4. Pour mettre à jour le pack plus tard : `git pull`, puis la commande de l'étape 3.2. Pour mettre à jour la v2 elle-même : refais l'étape 3.1 avec le nouveau numéro de version, d'abord sur le port d'essai.
+Ajoute `127.0.0.1` à la fin dans le cas B, et relance ton tunnel SSH sur ton Mac.
 
-Remplacer complètement la 1.19 par la v2 (`npm uninstall -g opencode-ai`) n'apporte rien de plus et rend le retour arrière plus long : ne le fais qu'une fois la v2 utilisée plusieurs semaines sans souci.
+**Règles de cohabitation :**
+- **Jamais de `/go`, `/fix` ou `/fortify` sur le même dépôt dans les deux versions en même temps.** Chacune protège ses dossiers, mais elles ne se voient pas l'une l'autre.
+- **Les sessions ne sont pas partagées.** Celles de la 1.19 restent dans la 1.19. Les fiches ticket, elles, sont dans le `.git` de chaque dépôt : les deux versions les voient.
+- **Mettre à jour le pack** : `cd ~/OpenRDCode && git pull && node opencode-v2/tools/prepare-v2.mjs`, puis redémarrer la v2.
+- **Passer à une version plus récente d'OpenCode v2** : n'y touche pas sans me demander. Le pack est vérifié avec la 2.1.2, et la 2.1.0 a changé le fonctionnement des plugins.
 
-## 7. Revenir à la 1.19
+Quand la v2 t'a donné satisfaction plusieurs semaines, tu peux simplement arrêter de lancer la 1.19. Rien d'autre à faire : ne la désinstalle pas, c'est ton retour arrière.
 
-**Pendant l'essai, ou avec les deux versions côte à côte (étape 6)** : arrête le serveur de la v2, puis relance ta commande habituelle de la 1.19 (`opencode web …`). Ta configuration et tes sessions de la 1.19 n'ont jamais été touchées. Seul point commun : les scripts de `~/.config/opencode/scripts`, que l'étape 3.2 a remplacés par ceux de `opencode-v2/scripts`. Ce sont les mêmes que ceux de la 1.19, avec `fortify.sh` en plus : rien à faire.
+## Étape 11 — Revenir à la 1.19
 
-**Si tu as quand même remplacé la 1.19** (désinstallée, configuration écrasée) : une sauvegarde ne suffit pas, il faut aussi réinstaller la bonne version.
+**Tant que tu n'as rien désinstallé** (c'est le cas si tu as suivi ce guide) :
+1. Arrête la v2 : `Ctrl+C` dans son terminal.
+2. Ouvre l'adresse de ta 1.19, comme avant. Si tu l'avais arrêtée, relance-la avec la commande notée à l'étape 2.4.
+
+C'est tout : sa configuration et ses sessions n'ont jamais été modifiées.
+
+**Le seul fichier partagé** : les scripts de `~/.config/opencode/scripts`, mis à jour à l'étape 5. Ce sont ceux de la 1.19, plus `fortify.sh` : la 1.19 fonctionne avec. Pour remettre exactement les anciens :
 ```sh
-npm uninstall -g @opencode/cli && npm install -g opencode-ai@$(sed 's/[^0-9.]//g' ~/opencode-version-1.19.txt) && rm -rf ~/.config/opencode ~/.local/share/opencode && cp -r ~/opencode-config-1.19 ~/.config/opencode && cp -r ~/opencode-data-1.19 ~/.local/share/opencode && opencode --version
+rm -rf ~/.config/opencode/scripts && cp -r ~/opencode-config-1.19/scripts ~/.config/opencode/scripts
 ```
-La dernière ligne doit afficher la version notée à l'étape 2.
 
-## 8. Ce qui n'est pas porté, et pourquoi
+**Si un jour tu as désinstallé la 1.19**, une copie ne suffit pas : il faut aussi réinstaller le programme. Cette commande réinstalle la version notée à l'étape 2.1 et remet la configuration et les données sauvegardées à l'étape 3 :
+```sh
+npm install -g opencode-ai@$(sed 's/[^0-9.]//g' ~/opencode-version-1.19.txt) && rm -rf ~/.config/opencode ~/.local/share/opencode && cp -r ~/opencode-config-1.19 ~/.config/opencode && cp -r ~/opencode-data-1.19 ~/.local/share/opencode && opencode --version
+```
+La dernière ligne doit afficher ta version 1.19.
 
-Le plugin v2 garde toutes les protections :
-- les refus (secrets, dumps d'environnement, `rm` récursif) ;
+## Étape 12 — Dépannage
+
+| Ce que tu vois | Pourquoi | Ce que tu fais |
+|---|---|---|
+| `opencode2: not found` | la v2 n'est pas installée dans `~/oc2/cli` | refais l'étape 4 |
+| `STOP: no configuration for OpenCode v2 yet` | l'étape 5 n'a pas été faite | refais l'étape 5 |
+| `address already in use` ou `EADDRINUSE` | le port est pris | un autre port : `start-v2.sh 4098` |
+| La page du navigateur ne répond pas | le port n'est pas joignable depuis ton poste | tunnel SSH (étape 7, cas B) |
+| « Impossible de se connecter. Vérifiez l'adresse et le mot de passe du serveur » | mot de passe différent de celui de l'étape 6 | redémarre la v2 et retape le mot de passe |
+| Point 1 de l'étape 8 > 0 | un plugin n'a pas été chargé | `ls ~/oc2/config/opencode/plugins` doit montrer `openrd-pack.js` seul ; sinon, refais l'étape 5 |
+| Aucune commande `/go` dans la liste | les commandes du pack n'ont pas été copiées | refais l'étape 5, puis redémarre la v2 |
+| Pas de réponse de Jira, GitLab, etc. | la section `mcp` n'a pas été reprise | la ligne `CONFIG:` de l'étape 5 doit contenir `mcp` |
+| L'agent ne répond pas du tout | modèle mal configuré | étape 9 |
+| `/go` reste refusé alors que rien ne tourne | le verrou attend la fin d'un tour qu'il n'a pas vue | redémarre la v2 (`Ctrl+C` puis étape 6) |
+| Un processus `opencode … serve --service` tourne en plus | une autre commande `opencode2` qu'à l'étape 6 a lancé le service d'arrière-plan de la v2 | `~/oc2/cli/node_modules/.bin/opencode2 service stop` |
+
+## Étape 13 — Ce qui ne change pas, ce qui change
+
+**Ne change pas** :
+- `/go`, `/fix`, `/daily`, `/review`, `/compare`, `/outil` ;
+- tes fiches ticket ;
+- les règles de sécurité des agents, y compris « un seul `/go`, `/fix` ou `/fortify` à la fois par dossier ».
+
+**Change :**
+
+| Avec la 1.19 | Avec la v2 |
+|---|---|
+| le message d'une commande montre une ligne courte | il montre aussi l'état du dépôt (la v2 n'a pas de partie cachée dans un message) |
+| le titre d'une session montre l'avancement et ✅ / ⛔ | le titre est celui d'OpenCode (section 14) |
+| un QCM qui propose une commande la lance tout seul | tape la commande proposée |
+| `/go … comme dans ~/repos/old-api` rend ce dossier lisible | déclare ce dossier dans `references` d'`opencode.json` |
+| chaque skill était aussi une commande `/` | seul `/outil` reste |
+| plusieurs tickets d'un dépôt : `workspace.sh` | le sélecteur « Nouvel espace de travail » (étape 8, point 8) |
+| — | **`/fortify`** : voir le document « Fortify par lot avec test-guardian », et la section « Fortify » de `COMMANDES.md` pour ses prérequis (coverlet) |
+
+## Étape 14 — Ce qui n'est pas porté, et pourquoi
+
+| Fonction | Pourquoi | En attendant |
+|---|---|---|
+| Ligne courte du message d'une commande | la v2 n'a pas de partie cachée dans un message | l'état du dépôt est visible |
+| Commande lancée par un choix de QCM | la v2.1.2 ne documente pas comment un plugin lit une réponse ou lance une commande : je n'ai pas pu le vérifier | tape la commande |
+| Avancement et ✅ / ⛔ dans les titres | même raison pour la lecture des messages et le renommage | regarde la session |
+| Dossiers nommés dans un message | la v2 ne dit pas au plugin si un texte vient de toi ou d'un agent : ouvrir aux deux laisserait un agent rendre lisible un dossier de secrets | `references` dans `opencode.json` |
+
+Tout ce qui protège est porté et vérifié dans le vrai OpenCode v2.1.2 :
+- les refus des secrets et des dumps d'environnement ;
 - les agents limités à leur dépôt ;
-- les délais longs ;
-- l'outil appelé par son chemin ;
-- l'environnement stable des commandes ;
-- les scripts des commandes lancés dans le bon dépôt ;
 - un seul pilote par dossier ;
+- les délais longs ;
+- les scripts des commandes lancés dans le bon dépôt ;
 - le refus des outils v2 qui déplacent une session ou créent un worktree.
 
-Ce qui n'est pas porté :
+Les vérifications automatiques passent :
+- plugin : 477 sur 477 ;
+- permissions : 1 753 cas sur 1 753 ;
+- 30 fichiers d'agents, de commandes et de skills validés ;
+- `shellcheck` sur tous les scripts.
 
-| Fonction (numéro dans le plugin) | Pourquoi | En attendant |
-|---|---|---|
-| Ligne compacte de la commande (3) | v2 n'a pas de partie cachée dans un message | l'état du dépôt est visible dans le message |
-| Commande choisie dans un QCM (4) | la forme des réponses et le lancement de commande par un plugin ne sont pas documentés dans v2.1.2 : non vérifiable ici | tape la commande |
-| Avancement, ✅ / ⛔ et `[dossier]` dans les titres (5, 10, 12) | même raison pour la lecture des messages et le renommage | regarde la session |
-| Dossiers nommés dans un message (7) | v2 ne dit pas au plugin si un texte vient de toi ou d'un agent : l'ouvrir aux deux laisserait un agent rendre lisible un dossier de secrets | déclare le dossier dans `references` |
-| Simulateur de permissions sur le moteur v2 | ses 1 753 cas passent sur le moteur 1.19 ; v2 garde la même logique de règles (lue dans son code) et lit bien les règles (constaté) | l'étape 5, points 3 et 6 |
+## Étape 15 — Les fichiers de `opencode-v2/`
 
-## 9. `/fortify` et l'agent `test-guardian`
-
-**Prérequis**, vérifiés au début de chaque `/fortify` par `fortify.sh prereq` :
-- `dotnet` disponible ;
-- au moins un projet de tests unitaires ;
-- `coverlet.collector` dans chaque projet de tests (ou dans un `Directory.Build.props`) ;
-- la ligne `APPSEC_PROJECT_NAME` dans `appsec-ci.env`.
-
-Pour ajouter coverlet, fais-le toi-même, dans une MR à part :
-```sh
-dotnet add <chemin du projet de tests>.csproj package coverlet.collector
-```
-
-**Déroulé.** `/fortify [nombre ≤ 5] [catégorie, fichier ou clé Jira]` dans une session du dépôt, sur develop :
-1. **Sélection** (pilote, lecture seule) : jusqu'à 5 vulnérabilités Critical puis High de ce dépôt, de préférence de la même catégorie.
-2. **Analyse séparée** : un sous-agent `analyst` par vulnérabilité, l'un après l'autre. Chacun écrit la carte `V<n>.md` de sa faille, dans le dossier du lot (`.git/opencode-tickets/<CLÉ>.fortify/`, jamais commité). La carte contient la faille, le verdict (vraie faille ou faux positif probable), la correction, le contexte (module, méthodes publiques, dépendances, ce qu'en disent AGENTS.md et la doc) et les tests à écrire. C'est par ces cartes que les agents se passent le travail.
-3. **Pour chaque vulnérabilité, l'une après l'autre** :
-   - **`test-guardian`, avant le correctif** :
-     - le module et ses dépendances sur deux niveaux (`fortify.sh deps`) ;
-     - la couverture de départ mesurée par coverlet, fichier par fichier ;
-     - des tests de contexte qui **passent** sur le code actuel, jusqu'à couvrir la méthode vulnérable, les méthodes publiques qui y mènent (cas normal et cas d'erreur) et les méthodes des dépendances sur ce chemin ;
-     - puis les tests de la faille, qui doivent **échouer** pour la bonne raison (`fortify.sh red`). Un test qui ne compile pas ou qui passe ne compte pas.
-   - **`coder`** : la correction minimale, sans toucher aux tests.
-   - **`test-guardian`, après le correctif** (sa même session) :
-     - les tests de la faille **passent** (`fortify.sh green`) ;
-     - aucun fichier du module ou de ses dépendances n'a perdu de couverture (`fortify.sh compare`) ;
-     - toutes les lignes de la méthode vulnérable sont couvertes.
-   - **Un commit par vulnérabilité**, avec sa correction et ses tests.
-4. **Livraison** comme `/go` : build et tests complets, auto-review, push, puis une MR Draft avec un tableau par vulnérabilité. Il donne :
-   - le contexte : déjà couvert, ou combien de tests ajoutés ;
-   - le test de la faille : rouge avant, vert après ;
-   - la couverture avant → après, par fichier ;
-   - le commit ;
-   - en plus, les vulnérabilités non corrigées ou non traitées, avec leur raison.
-
-**Ce qui est garanti par des scripts plutôt que par le modèle :**
-- le rouge et le vert des tests ;
-- la couverture, et l'absence de perte de couverture ;
-- le fait que le `test-guardian` n'écrit que dans les projets de tests (`fortify.sh tests-only`, et ses règles d'édition) ;
-- le fait que le travail d'une faille ratée est mis de côté sans rien perdre (`fortify.sh discard` : `git stash list` le montre, `git stash pop` le ramène).
-
-**Les cas difficiles :**
-
-| Cas | Ce qui se passe |
-|---|---|
-| coverlet manque, pas de projet de tests, pas de ligne SSC | arrêt au début, avec la commande à faire |
-| Fortify injoignable, application ou version introuvable | arrêt, rien n'est créé |
-| Faux positif probable | non traité, noté « à déclarer dans SSC par toi » |
-| Un test de contexte figeait le comportement dangereux (il échoue après le correctif) | le `test-guardian` le met à jour vers le comportement sûr et le signale dans la MR ; tout autre test qui casse est une régression, renvoyée au coder |
-| Le test de la faille passe sur le code actuel | un second essai du `test-guardian` ; sinon la faille est abandonnée : son travail est mis de côté et elle est notée « non corrigée » |
-| Une faille de configuration, qu'aucun test unitaire ne peut montrer | « non démontrable » avec la raison ; seul le test du comportement sûr est écrit |
-| Build cassé, correction qui échoue, couverture perdue | le debugger, puis un second essai ; sinon la faille est abandonnée et mise de côté, et le lot continue |
-| Coupure (timeout de la passerelle, redémarrage, arrêt) | `/fortify` relancé sur la branche reprend à la faille en cours. Les failles déjà commitées ne sont pas refaites. Le travail inachevé de la faille en cours est mis de côté (rien d'une faille n'est commité avant sa dernière phase), puis elle repart de sa première phase |
-| Second `/fortify` ou `/go` dans le même dossier | refusé par le plugin |
-| Contrôle avant push en échec (un secret, par exemple) | rien n'est poussé |
-
-**Limites à connaître :**
-- La mesure de couverture fait tourner les tests d'un projet de tests avec coverlet : plusieurs minutes par phase sur un gros projet. C'est le prix d'une preuve chiffrée.
-- Les dépendances sont trouvées par les constructeurs (classiques ou primaires) et les classes qui implémentent les interfaces reçues. Une dépendance créée avec `new` ou trouvée par réflexion n'est pas vue. Le `test-guardian` la complète à la lecture du code et la signale.
-- Le premier essai réel dira si les noms d'outils de ton serveur MCP Fortify et les conventions de tes tests demandent des ajustements.
-
-## 10. Fichiers : `opencode-v2/` par rapport à `v2/`
-
-- **Nouveaux :**
-  - `plugins/openrd-pack.js` : le cœur du plugin 1.19, inchangé, et l'adaptateur v2 à la fin. Ses points d'accroche sont `tool`, `shell`, `session` et le flux d'évènements. Il refuse aussi `session_move`, `worktree_create` et `worktree_remove`, et ne laisse tourner qu'un pilote par dossier.
-  - `commands/fortify.md`, `agents/test-guardian.md`, `scripts/fortify.sh`, ce guide et `ANALYSE.md`.
-  - `compact-commands.js` n'existe plus.
-- **Modifiés :**
-  - `commands/go.md`, `commands/fix.md`, `agents/pilot.md`, `skills/pack-doc/SKILL.md` et `AGENTS.global.md` : outil `subagent` et reprise par `sessionID` ; le pilote connaît `/fortify` et le `test-guardian` ; les demandes Fortify vont vers `/fortify`, et les espaces de travail vers l'interface v2.
-  - `tools/permissions.py` : les règles du `test-guardian` (édition dans les projets de tests seulement), l'interdiction de `fortify.sh discard` à tout autre agent que le pilote et l'interdiction des trois outils v2. `opencode.snippet.json` et les lignes `permission:` des agents sont régénérés.
-  - `tools/plugin-test.mjs` (adaptateur v2 et verrou de dossier) et `tools/permission-corpus.mjs` (cas du `test-guardian` et de `fortify.sh`).
-  - `COMMANDES.md` et `README.md` : chemins `opencode-v2/`, nom du plugin, section Fortify, renvoi vers ce guide.
-- **Identiques à `v2/`** : les autres scripts.
+- **Nouveaux par rapport à `v2/`** :
+  - `plugins/openrd-pack.js` (remplace `compact-commands.js`) ;
+  - `commands/fortify.md`, `agents/test-guardian.md`, `scripts/fortify.sh` ;
+  - `tools/prepare-v2.mjs` (étape 5) et `tools/start-v2.sh` (étape 6) ;
+  - ce guide et `ANALYSE.md`.
+- **Modifiés** :
+  - les agents (vocabulaire des sous-agents, règles régénérées), `commands/go.md`, `commands/fix.md`, `AGENTS.global.md` ;
+  - `opencode.snippet.json` et les outils de test ;
+  - `COMMANDES.md` et `README.md`.
+- **Identiques** : les autres scripts.
