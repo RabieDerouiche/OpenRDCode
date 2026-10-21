@@ -1,4 +1,4 @@
-// Tests of the guards of the pack plugin (plugins/compact-commands.js): the repository jail (7), the refusals of
+// Tests of the guards of the pack plugin (plugins/openrd-pack.js, the 1.19 guards behind the OpenCode v2 adapter): the repository jail (7), the refusals of
 // environment dumps and recursive rm, the long timeouts (8), one /go or /fix at a time (9) and the outcome in the
 // session title (10). The plugin runs against a fake OpenCode client, in a fake home folder.
 // Usage, from v2/: node tools/plugin-test.mjs
@@ -430,6 +430,48 @@ await check("[v2] [[run]] lines of a command run in the repository", async () =>
   await v2hooks["session.prompt"](event)
   assert.match(event.prompt.text, /hello from my-api/)
 })
+
+// ---------- OpenCode v2 adapter: one /go, /fix or /fortify at a time per folder (9) ----------
+const lockHooks = {}
+const onLock = (domain) => ({ hook: async (name, fn) => { lockHooks[domain + "." + name] = fn } })
+const queue = []
+let wake
+const stream = {
+  subscribe: () => ({
+    [Symbol.asyncIterator]() {
+      return { next: () => new Promise((r) => { if (queue.length) r({ value: queue.shift(), done: false }); else wake = () => r({ value: queue.shift(), done: false }) }) }
+    },
+  }),
+}
+const push = (e) => { queue.push(e); if (wake) { const w = wake; wake = undefined; w() } }
+await v2Plugin.setup({ location: { directory: repo }, tool: onLock("tool"), shell: onLock("shell"), session: onLock("session"), event: stream })
+const goPrompt = (sessionID) => ({ sessionID, prompt: { text: "Request: ABC-1\nTake the ticket from its analysis to its Draft merge request, in this single run." } })
+const first = goPrompt("lock-a")
+await lockHooks["session.prompt"](first)
+const second = goPrompt("lock-b")
+await lockHooks["session.prompt"](second)
+await check("[v2 lock] a second /go in the same folder gets the refusal sentence", () => assert.match(second.prompt.text, /⛔ \/go refusé : \/go tourne déjà dans ce dossier/))
+await check("[v2 lock] no tool runs in the refused turn", () => assert.rejects(() => lockHooks["tool.execute.before"]({ tool: "shell", sessionID: "lock-b", agent: "pilot", id: "x", input: { command: "git status" } }), /this run was refused/))
+const again = goPrompt("lock-a")
+await lockHooks["session.prompt"](again)
+await check("[v2 lock] the running session itself may go on", () => assert.doesNotMatch(again.prompt.text, /refusé/))
+push({ type: "session.status", data: { sessionID: "lock-a", status: { type: "idle" } } })
+await new Promise((r) => setTimeout(r, 20))
+const third = goPrompt("lock-b")
+await lockHooks["session.prompt"](third)
+await check("[v2 lock] once the first session is idle, the folder is free", () => assert.doesNotMatch(third.prompt.text, /refusé/))
+await check("[v2 lock] and the tools of that session run again", () => lockHooks["tool.execute.before"]({ tool: "shell", sessionID: "lock-b", agent: "pilot", id: "y", input: { command: "git status" } }))
+const fortify = { sessionID: "lock-c", prompt: { text: "Fix a batch of Fortify vulnerabilities, from the scan to a Draft merge request" } }
+await lockHooks["session.prompt"](fortify)
+await check("[v2 lock] /fortify is refused while /go runs", () => assert.match(fortify.prompt.text, /⛔ \/fortify refusé : \/go tourne déjà/))
+push({ type: "session.error", properties: { sessionID: "lock-b" } })
+await new Promise((r) => setTimeout(r, 20))
+const fortify2 = { sessionID: "lock-c", prompt: { text: "Fix a batch of Fortify vulnerabilities, from the scan to a Draft merge request" } }
+await lockHooks["session.prompt"](fortify2)
+await check("[v2 lock] an error of the running session frees the folder too", () => assert.doesNotMatch(fortify2.prompt.text, /refusé/))
+const chat = { sessionID: "lock-d", prompt: { text: "explique-moi ce service" } }
+await lockHooks["session.prompt"](chat)
+await check("[v2 lock] a conversation is never refused", () => assert.equal(chat.prompt.text, "explique-moi ce service"))
 
 console.log(`\n${count - failures}/${count} plugin checks as expected`)
 process.exit(failures ? 1 : 0)

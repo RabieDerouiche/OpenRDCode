@@ -257,7 +257,7 @@ Le pilote reprend une fois un checker en échec, puis livre sans auto-review en 
 
 ## Plusieurs tickets d'un même dépôt (espaces de travail)
 
-Un espace de travail est un deuxième dossier du même dépôt (un worktree git), avec sa propre branche et ses propres sessions. OpenCode 1.19 web n'a plus d'option pour en créer : l'ancienne mise en page qui l'avait a été retirée le 14 septembre 2026, et la nouvelle ne l'affiche que dans ses versions de développement. Le pack les crée avec un script, à taper dans un terminal de la machine qui héberge OpenCode (aucun agent n'a le droit de le lancer). Organisation conseillée : le dépôt principal reste sur develop pour `/daily`, `/review`, `/compare` et tes questions ; chaque ticket a son dossier.
+Un espace de travail est un deuxième dossier du même dépôt (un worktree git), avec sa propre branche et ses propres sessions. Sous OpenCode v2, le sélecteur « Local » → « Nouvel espace de travail », sous la zone de saisie d'une nouvelle session, les crée (lu dans son code ; à vérifier, MIGRATION.md étape 5) : c'est le plus simple. S'il manque, le pack les crée avec un script, à taper dans un terminal de la machine qui héberge OpenCode (aucun agent n'a le droit de le lancer). Organisation conseillée : le dépôt principal reste sur develop pour `/daily`, `/review`, `/compare` et tes questions ; chaque ticket a son dossier.
 
 **1. Créer le dossier d'un ticket**, depuis le dossier du dépôt (remplace le chemin et la clé) :
 ```sh
@@ -568,3 +568,26 @@ Les autres outils (audit, licences, release notes, cqrs, AGENTS.md du dépôt, a
 ```text
 /outil
 ```
+
+## Fortify (`/fortify`)
+
+Prérequis, vérifiés au début de chaque `/fortify` ; pour les voir avant, dans le dossier du dépôt :
+```sh
+sh ~/.config/opencode/scripts/fortify.sh prereq
+```
+`PREREQ: OK` : tout est prêt. Une ligne `STOP:` dit ce qui manque. Le cas le plus courant est coverlet, à ajouter par toi, dans sa propre MR, à chaque projet de tests nommé :
+```sh
+dotnet add <chemin du projet de tests>.csproj package coverlet.collector
+```
+Lancer un lot depuis develop, dans une session du dépôt : `/fortify` (5 vulnérabilités au plus), `/fortify 3`, `/fortify 5 Path Manipulation`, `/fortify ABC-123` (avec un ticket Jira). Reprendre après une coupure : `/fortify` dans une session sur la branche du lot ; il repart de la vulnérabilité en cours.
+
+Le travail d'une vulnérabilité abandonnée est mis de côté, jamais effacé. Pour le voir puis le ramener (sur la branche du lot, sans fichier non commité) :
+```sh
+git stash list | grep fortify
+git stash pop stash@{<n>}
+```
+Les mesures d'une vulnérabilité (cartes, couvertures, sorties des tests rouges et verts) sont dans le dossier du lot, jamais commité :
+```sh
+ls "$(git rev-parse --git-common-dir)"/opencode-tickets/*.fortify/
+```
+

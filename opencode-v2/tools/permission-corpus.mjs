@@ -116,6 +116,16 @@ const PILOT_DENY = [
   "sh -c \"git push --force\"", "bash -c \"git push\"", "cat ~/.git-credentials | " + S + "ship.sh x",
 ]
 add(["pilot"], PILOT_DENY, "deny")
+// /fortify: the measures and proofs of the test-guardian; putting work aside (git stash) is the pilot's
+add(["test-guardian"], [S + "fortify.sh deps src/Api/Services/ExportService.cs",
+  S + "fortify.sh coverage V1-before tests/Api.Tests/Api.Tests.csproj src/Api/Services/ExportService.cs src/Api/Storage/FileStore.cs",
+  S + "fortify.sh red tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_PathTraversal_V1",
+  S + "fortify.sh green tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_PathTraversal_V1",
+  S + "fortify.sh compare V1-before V1-after", S + "fortify.sh tests-only", S + "fortify.sh prereq",
+  "dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60", "git status --short", "git diff --stat"], "allow")
+add(["test-guardian", "coder", ...RO], [S + "fortify.sh discard V1", S + "ship.sh --no-push \"test: x (ABC-1)\""], "deny")
+add(["test-guardian"], ["git commit -m x", "git push", "git stash", S + "workspace.sh new ABC-1", "rm -rf tests"], "deny")
+add(["pilot"], [S + "fortify.sh prereq", S + "fortify.sh discard V2", S + "fortify.sh discard V3-interrupted"], "allow")
 // worktree folders are made and removed by the developer only (workspace.sh), never by an agent
 add(ALL, [S + "workspace.sh new ABC-124", S + "workspace.sh remove ABC-124", S + "workspace.sh list",
   "sh $HOME/.config/opencode/scripts/workspace.sh new ABC-124"], "deny")

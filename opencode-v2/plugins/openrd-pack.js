@@ -100,7 +100,7 @@ const SETS_ENVIRONMENT = new RegExp(ASSIGN + String.raw`(?:PATH|DOTNET_ROOT\w*)=
 const SETS_SECRET = new RegExp(ASSIGN + String.raw`(?:\w*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_?KEY|CREDENTIALS?)\w*|ARTIFACTORY\w*)=`, "i")
 const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
 // Commands that take minutes (8): a build or tests, a restore, the front-end tooling; the pack's git scripts
-const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|dotnet\s+(?:build|test|restore|format|ef|clean)|npm\s+(?:test|ci|install|i|run\s+(?:test|build|lint))|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint))|yarn\s+(?:test|install|build|lint)|pnpm\s+(?:test|install|build|lint))(?=\s|$|[;&|)])/
+const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*fortify\.sh\s+(?:prereq|coverage|red|green)|dotnet\s+(?:build|test|restore|format|ef|clean)|npm\s+(?:test|ci|install|i|run\s+(?:test|build|lint))|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint))|yarn\s+(?:test|install|build|lint)|pnpm\s+(?:test|install|build|lint))(?=\s|$|[;&|)])/
 const GIT_SCRIPT = /(?:^|[\s;&|(])\S*(?:ship|branch)\.sh(?=\s|$)/
 // A build tool called by its full path at the start of a command (11): ~/.bin/dotnet, $HOME/.dotnet/dotnet, /usr/bin/git
 const TOOL_PATH = /(^\s*|[;&|(`\n]\s*)((?:~|\$\{HOME\}|\$HOME)?\/(?:[^\s;&|()<>'"`]*\/)?)(dotnet|node|npm|npx|yarn|pnpm|git)(?=$|[\s;&|)`])/g
@@ -125,7 +125,7 @@ function refusal(command) {
 }
 
 // ---------- 7. the repository of the session, and the folders allowed outside it ----------
-const PACK_AGENTS = new Set(["pilot", "analyst", "coder", "checker", "debugger", "doc-writer"])
+const PACK_AGENTS = new Set(["pilot", "analyst", "coder", "checker", "debugger", "doc-writer", "test-guardian"])
 // agents that may read a reference or a folder I named through the shell (git log of another repository); the pilot,
 // the coder and doc-writer read them with the file tools only
 const SHELL_READERS = new Set(["analyst", "checker", "debugger", "build", "plan", "general", "explore"])
@@ -1154,11 +1154,32 @@ export const CompactCommands = async (input) => {
 //   location. The output stays visible in the message: v2 has no hidden part of a prompt.
 // - The v2 tools that create or remove a worktree or move a session to another folder are refused to every agent: a
 //   moved session would leave the repository its guards were set up for. The developer does it in the web interface.
-// Not ported yet (opencode-v2/MIGRATION.md, "Ce qui n'est pas encore porté"): the compact command line (3), the
-// command chosen in a multiple-choice question (4), the progress, outcome and folder in the session titles (5, 10,
-// 12), one /go or /fix at a time (9), and the folders named in a message (7: configured references only).
+// - session → prompt and the event stream: one /go, /fix or /fortify at a time per folder (9). The second one gets
+//   a one-line answer and no tool runs in its turn; the folder is free again when the first session goes idle or
+//   fails (or after 4 hours without that news).
+// Not ported (opencode-v2/MIGRATION.md, "Ce qui n'est pas porté"): the compact command line (3), the command chosen
+// in a multiple-choice question (4), the progress, outcome and folder in the session titles (5, 10, 12), and the
+// folders named in a message (7: configured references only).
 const V2_TOOLS = { shell: "bash", subagent: "task" }
 const V2_REFUSED = new Set(["session_move", "worktree_create", "worktree_remove"])
+// the first sentence of the body of each pilot command: a prompt that holds one is a run of that command
+const PILOT_RUNS = [
+  ["/go", "Take the ticket from its analysis to its Draft merge request"],
+  ["/fix", "Bring the branch to a green, review-ready state"],
+  ["/fortify", "Fix a batch of Fortify vulnerabilities"],
+]
+const LOCK_MS = 4 * 3600 * 1000
+// the session of an event, whatever the shape of the event
+const eventSession = (e) => (e && (e.sessionID || (e.data && e.data.sessionID) || (e.properties && e.properties.sessionID) || (e.payload && e.payload.sessionID))) || ""
+// the end of a turn: the durable execution events of v2, and the ephemeral status ones
+const TURN_END = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted", "session.idle", "session.error"])
+const eventIdle = (e) => {
+  if (!e) return false
+  if (TURN_END.has(e.type)) return true
+  if (e.type !== "session.status") return false
+  const status = (e.data && e.data.status) || (e.properties && e.properties.status) || e.status
+  return !!status && (status === "idle" || status.type === "idle")
+}
 
 // the "references" of the OpenCode configuration (alias -> folder), read by the plugin only
 function configuredReferences() {
@@ -1197,11 +1218,37 @@ export default Plugin.define({
       },
     }
     const hooks = await CompactCommands({ client, directory, worktree })
+    // 9. the pilot runs of this folder: session id -> { command, since }; the sessions whose run was refused
+    const runningPilots = new Map()
+    const refusedRuns = new Set()
+    const release = (id) => {
+      runningPilots.delete(id)
+      refusedRuns.delete(id)
+    }
+    if (ctx.event && typeof ctx.event.subscribe === "function") {
+      ;(async () => {
+        try {
+          let connected = false
+          for await (const e of ctx.event.subscribe()) {
+            if (!connected) {
+              connected = true
+              console.error("[openrd-pack] event stream connected for " + worktree)
+            }
+            if (eventIdle(e)) release(eventSession(e))
+          }
+        } catch {
+          // no event stream: the 4-hour limit frees the folder
+        }
+      })()
+    }
 
     await ctx.tool.hook("execute.before", async (event) => {
       if (!event) return
       if (V2_REFUSED.has(event.tool)) {
         throw new Error("Refused by the pack: " + event.tool + " is for the developer, in the web interface. Work in the repository of this session.")
+      }
+      if (refusedRuns.has(event.sessionID)) {
+        throw new Error("Refused by the pack: this run was refused (another /go, /fix or /fortify runs in this folder). Answer with the sentence of the request only.")
       }
       const tool = V2_TOOLS[event.tool] || event.tool
       const input = event.input && typeof event.input === "object" ? event.input : {}
@@ -1223,8 +1270,24 @@ export default Plugin.define({
 
     await ctx.session.hook("prompt", async (event) => {
       const prompt = event && event.prompt
-      if (!prompt || typeof prompt.text !== "string" || !prompt.text.includes("[[run ")) return
-      prompt.text = await resolveRuns(prompt.text, worktree)
+      if (!prompt || typeof prompt.text !== "string") return
+      const run = PILOT_RUNS.find(([, sentence]) => prompt.text.includes(sentence))
+      if (run) {
+        const now = Date.now()
+        for (const [id, item] of runningPilots) if (now - item.since > LOCK_MS) runningPilots.delete(id)
+        const other = [...runningPilots.entries()].find(([id]) => id !== event.sessionID)
+        if (other) {
+          refusedRuns.add(event.sessionID)
+          prompt.text =
+            "Answer exactly this sentence and nothing else, without any tool: « ⛔ " + run[0] + " refusé : " + other[1].command +
+            " tourne déjà dans ce dossier depuis " + Math.round((now - other[1].since) / 60000) + " min. Attends sa fin, ou ouvre un " +
+            "espace de travail pour travailler en parallèle (s'il est fini ou arrêté, redémarrer OpenCode libère le dossier). »"
+          return
+        }
+        refusedRuns.delete(event.sessionID)
+        runningPilots.set(event.sessionID, { command: run[0], since: now })
+      }
+      if (prompt.text.includes("[[run ")) prompt.text = await resolveRuns(prompt.text, worktree)
     })
   },
 })

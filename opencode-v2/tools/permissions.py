@@ -20,7 +20,7 @@ How OpenCode 1.19 decides (verified in its source):
   every agent until OpenCode restarts. Hence: NO "ask" rule on bash, read or edit, anywhere; what used to ask is refused.
   Only external_directory still asks (its approval covers one folder), and only the build agent meets it: the pack
   plugin refuses a path outside the repository for the agents of the pack before OpenCode would ask.
-- A shell command whose text names a path outside the repository is refused by the pack plugin (compact-commands.js),
+- A shell command whose text names a path outside the repository is refused by the pack plugin (openrd-pack.js),
   which sees through quotes, `sh -c` and redirections: tree-sitter rules cannot.
 Duplicate keys are forbidden: OpenCode's YAML parser (gray-matter) rejects them.
 """
@@ -114,7 +114,8 @@ RM_RECURSIVE = ["rm -r*", "rm -R*", "rm -fr*", "rm -fR*", "rm -f -r*", "rm -f -R
 # them: with SCRIPTS allowed, a read-only agent could otherwise commit and push through ship.sh.
 # workspace.sh creates and removes worktree folders outside the repository: the developer runs it, never an agent.
 DEVELOPER_SCRIPTS = ["*scripts/workspace.sh*"]
-WRITE_SCRIPTS = ["*ship.sh*", "*branch.sh*", "*ticket-sheet.sh*"] + DEVELOPER_SCRIPTS
+# fortify.sh discard puts work aside (git stash): the pilot only
+WRITE_SCRIPTS = ["*ship.sh*", "*branch.sh*", "*ticket-sheet.sh*", "*fortify.sh discard*"] + DEVELOPER_SCRIPTS
 
 # The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS)
 SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
@@ -247,13 +248,16 @@ def coder_bash():
 
 AGENTS = {
     # /go, /fix, /daily: every MCP server, read-only, except the creation of the merge request of the branch
-    "pilot": SHEET + BASE + [("task", only(["analyst", "coder", "checker", "debugger"]))]
+    "pilot": SHEET + BASE + [("task", only(["analyst", "coder", "checker", "debugger", "test-guardian"]))]
     + [("bash", pilot_bash())] + MCP_WRITE_DENY + [("*create_merge_request", "allow")]
     + mcp_only(["jira", "confluence", "gitlab", "sonar", "fortify"]),
     "analyst": SHEET + SILENT + NO_TASK + [("bash", read_only_bash())] + MCP_WRITE_DENY
     + mcp_only(["jira", "confluence", "gitlab"]),
     # code and tests anywhere in the repository except .git (the ticket sheet is the pilot's), no MCP
     "coder": [("edit", [("*", "allow"), ("../*", "deny"), (".git/**", "deny"), ("*/.git/**", "deny")])] + SILENT
+    + NO_TASK + [("bash", coder_bash())] + mcp_only([]),
+    # /fortify: the tests of one vulnerability, in the test projects only (fortify.sh tests-only checks it again), no MCP
+    "test-guardian": [("edit", only(["*Tests/**", "*Test/**", "tests/**", "test/**", "*/tests/**", "*/test/**"]))] + SILENT
     + NO_TASK + [("bash", coder_bash())] + mcp_only([]),
     "checker": NO_EDIT + SILENT + NO_TASK
     + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS))] + MCP_WRITE_DENY + mcp_only(["jira"]),
