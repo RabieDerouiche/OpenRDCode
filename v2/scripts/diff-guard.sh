@@ -5,7 +5,9 @@
 # commit (the history is pushed too): private key, cloud or GitLab/GitHub/Slack token, user and password in a URL, a
 # password in a connection string, a secret value in a configuration file; a key or certificate file or a .env file
 # added by one of these commits; a merge conflict marker left in the code; a package whose added version is paid or
-# copyleft (package-licenses.sh). The value of a secret is never printed: only its kind and its place.
+# copyleft (package-licenses.sh); the value of a secret variable of the environment (a name with PASSWORD, PASSWD,
+# TOKEN, SECRET, API_KEY or CREDENTIAL: the Artifactory password of ~/.zshenv) anywhere in an added line, test files
+# and "gitleaks:allow" included. The value of a secret is never printed: only its kind and its place.
 # WARNING (exit 0): the same findings in test files (fake tokens in fixtures), a binary or a file over 1 MB added.
 # PACKAGES (exit 0): every package added or changed, for the merge request.
 # A false positive: the comment "gitleaks:allow" (or "pragma: allowlist secret") on that line lets it through.
@@ -58,6 +60,17 @@ files=$(grep -c . "$tmp/numstat")
 
 scan() {
   awk -v mode="$1" '
+  # the values of the secret variables of the environment: never pushed, whatever the file, and never printed
+  BEGIN {
+    if (mode == "secrets") for (k in ENVIRON) {
+      v = ENVIRON[k]
+      if (toupper(k) ~ /PASSWORD|PASSWD|TOKEN|SECRET|API_?KEY|CREDENTIAL/ && length(v) >= 8 && v !~ /^[\/~.$]/ && v !~ /^(true|false|[0-9]+)$/) {
+        secrets++
+        secret_name[secrets] = k
+        secret_value[secrets] = v
+      }
+    }
+  }
   function test_file(f) {
     f = tolower(f)
     return f ~ /(^|\/)(tests?|specs?|__tests__|testdata|test-data|fixtures?|mocks?)\// || f ~ /\.(unit|integration|functional|e2e)?tests?\// || f ~ /(tests?|spec)\.(cs|ts|tsx|js|jsx)$/ || f ~ /\.(spec|test)\.(ts|tsx|js|jsx)$/
@@ -95,6 +108,12 @@ scan() {
   }
   /^\+/ && file != "" {
     text = substr($0, 2)
+    found = 0
+    for (i = 1; i <= secrets; i++) if (index(text, secret_value[i])) {
+      print "STOP|value of the environment variable " secret_name[i] " in " file ":" line (commit != "" ? " (commit " commit ")" : "")
+      found = 1
+    }
+    if (found) { line++; next }
     if (text ~ /-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY( BLOCK)?-----/) report("private key")
     else if (text ~ /(^|[^A-Z0-9])(AKIA|ASIA)[0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z]([^A-Z0-9]|$)/) report("AWS access key")
     else if (text ~ /gl(pat|dt|rt|ptt|ft|imt|oas|cbt|soat|ffct|agent)-[0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-][0-9A-Za-z_-]/) report("GitLab token")
