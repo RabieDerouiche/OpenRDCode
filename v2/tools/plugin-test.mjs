@@ -40,7 +40,9 @@ const client = {
     command: async () => ({}),
   },
   config: { get: async () => ({ data: { references } }) },
+  app: { log: async ({ body }) => logs.push(body) },
 }
+const logs = []
 const session = (id, extra = {}) => sessions.set(id, { id, title: "Session " + id, ...extra })
 
 references = { legacy: { path: "~/repos/legacy", description: "legacy export" } }
@@ -170,6 +172,70 @@ await hooks["chat.message"]({ sessionID: "coder-1", agent: "coder" }, { message:
 await check("[coder] a subagent prompt names nothing", () => refused("coder-1", "bash", { command: "ls " + home }))
 await hooks["chat.message"]({ sessionID: "pilot-1", agent: "pilot" }, { message: {}, parts: [{ type: "text", synthetic: true, text: "Repository root: " + home }] })
 await check("[pilot] the expanded text of a command names nothing", () => refused("pilot-1", "bash", { command: "ls " + home }))
+
+// ---------- 7. the folders outside the repository are read-only ----------
+const P = "~/.config/opencode/scripts/"
+const K = "~/.config/opencode/skills/build-fix/"
+const READ_ONLY = [
+  "cp src/Foo.cs " + P + "ship.sh", "rm " + P + "diff-guard.sh", "mv " + P + "diff-guard.sh src/",
+  "echo 'exit 0' > " + P + "diff-guard.sh", "printf x >> " + P + "diff-guard.sh", "cd " + P + " && rm diff-guard.sh",
+  "cd ~/.config/opencode/scripts && echo x > diff-guard.sh", "ls -d " + P + "* | xargs rm", "find " + P + " -name '*.sh' -delete",
+  "sed -i 's/STOP/OK/' " + P + "diff-guard.sh", "python3 " + P + "outil.sh", "touch " + K + "x", "chmod +x " + P + "x.sh",
+  "tee " + K + "SKILL.md < src/Foo.cs", "cd " + K + " && touch x",
+]
+for (const who of ["pilot-1", "coder-1", "analyst-1", "build-1"]) {
+  for (const command of READ_ONLY) await check(`[${who}] read-only: ${command}`, () => refused(who, "bash", { command }, /never change it/))
+}
+const READS = [
+  "cat " + P + "ship.sh", "grep -n Usage " + P + "ship.sh", "ls " + P, "sed -n '1,20p' " + P + "ship.sh", "head -5 " + K + "SKILL.md",
+  "cd " + K + " && grep -rn Foo .", "find ~/.config/opencode/skills -name SKILL.md", "diff " + K + "SKILL.md src/Foo.cs",
+  P + "workflow-state.sh --no-fetch", "cd " + P + " && sh workflow-state.sh --no-fetch", "wc -l < " + K + "SKILL.md",
+  "ls " + P + " | xargs echo", "cd src && cat ../src/Foo.cs",
+]
+for (const who of ["pilot-1", "coder-1", "analyst-1", "build-1"]) {
+  for (const command of READS) await check(`[${who}] reads: ${command}`, () => allowed(who, "bash", { command }))
+}
+// a reference: read, never changed or built
+for (const command of ["git -C ~/repos/legacy checkout -b x", "dotnet build ~/repos/legacy/Legacy.sln", "cd ~/repos/legacy && dotnet build",
+  "cd ~/repos/legacy && git checkout -b x", "rm ~/repos/legacy/src/Export.cs"]) {
+  await check(`[analyst] read-only reference: ${command}`, () => refused("analyst-1", "bash", { command }, /never change it/))
+}
+for (const command of ["cd ~/repos/legacy && git log --oneline -5", "grep -rn Export ~/repos/legacy/src", "git -C ~/repos/legacy diff HEAD~1 --stat"]) {
+  await check(`[analyst] reads the reference: ${command}`, () => allowed("analyst-1", "bash", { command }))
+}
+// a cd that cannot be followed
+for (const command of ["cd - && ls", "popd", "pushd +1"]) {
+  await check(`[coder] refused: ${command}`, () => refused("coder-1", "bash", { command }))
+}
+// the agents of the pack write only in the repository, even in a folder they may read
+for (const [name, args] of [["write", { filePath: join(home, ".config", "opencode", "skills", "build-fix", "SKILL.md"), content: "x" }],
+  ["edit", { filePath: join(home, ".config", "opencode", "scripts", "ship.sh"), oldString: "a", newString: "b" }]]) {
+  await check(`[coder] read-only: ${name} ${args.filePath}`, () => refused("coder-1", name, args, /never change it/))
+}
+
+// ---------- 11. a build tool called by its full path runs by its name ----------
+const command = async (text) => (await tool("coder-1", "bash", { command: text })).command
+await check("~/.bin/dotnet becomes dotnet", async () => assert.equal(await command("~/.bin/dotnet build src/App.sln"), "dotnet build src/App.sln"))
+await check("an absolute dotnet becomes dotnet", async () => assert.equal(await command(join(home, ".bin", "dotnet") + " test --no-build"), "dotnet test --no-build"))
+await check("after &&", async () => assert.equal(await command("cd src && $HOME/.dotnet/dotnet --info"), "cd src && dotnet --info"))
+await check("/usr/bin/git becomes git", async () => assert.equal(await command("/usr/bin/git status"), "git status"))
+await check("a path in a search stays", async () => assert.equal(await command("grep -rn /api/v1/node src"), "grep -rn /api/v1/node src"))
+
+// ---------- refusals written to OpenCode's log, without the command ----------
+logs.length = 0
+await check("an outside path is logged", async () => {
+  await refused("coder-1", "bash", { command: "cat ~/.zshenv" })
+  const last = logs.at(-1)
+  assert.equal(last.service, "pack")
+  assert.equal(last.extra.agent, "coder")
+  assert.equal(last.extra.path, "~/.zshenv")
+})
+await check("a credential refusal is logged without the command", async () => {
+  await refused("coder-1", "bash", { command: "export GITLAB_TOKEN=glpat-abc123 && git fetch" }, /Refused by the pack/)
+  const last = logs.at(-1)
+  assert.match(last.extra.reason, /credential/)
+  assert.ok(!JSON.stringify(last).includes("glpat-abc123"))
+})
 
 // ---------- environment dumps and recursive rm (every agent) ----------
 for (const command of ["export -p", "export", "declare -p", "declare -x", "typeset -x", "readonly", "set", "dotnet build; export -p",

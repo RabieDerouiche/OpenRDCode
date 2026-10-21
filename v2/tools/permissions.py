@@ -300,8 +300,8 @@ def as_dict(rules):
     return {k: as_dict(v) if isinstance(v, list) and v and isinstance(v[0], tuple) else v for k, v in rules}
 
 
-# Qwen 3.6 recommended sampling for thinking mode and precise coding
-SAMPLING = [("temperature", 0.6), ("top_p", 0.95)]
+# Qwen 3.8 recommended sampling for thinking mode (its model card: temperature 1.0, top_p 0.95, top_k 20 in the model options)
+SAMPLING = [("temperature", 1.0), ("top_p", 0.95)]
 # The conversation agents (build, general, explore) run any command but these. They are not global rules: the agents
 # of the pack have complete shell rules of their own (starting with "*": deny), and OpenCode repeats every rule that
 # applies to an agent in the message of each refusal (5 KB more per refusal for nothing).
@@ -325,8 +325,11 @@ SNIPPET = as_dict([
         ("question", "allow"),
         ("skill", [("*", "allow")]),
         ("doom_loop", "deny"),
-        # Readable without asking: the NuGet package cache (XML documentation of in-house packages) and the skills
-        ("external_directory", allow(["~/.nuget/packages/*", "~/.config/opencode/skills/*"])),
+        # Readable without asking: the NuGet package cache (XML documentation of in-house packages), the skills and the
+        # pack's scripts (an approval is kept only until OpenCode restarts, and per project). Never written: the edit
+        # rules below, and the pack plugin for the shell (these folders are read-only to every agent)
+        ("external_directory", allow(["~/.nuget/packages/*", "~/.config/opencode/skills/*",
+                                      "~/.config/opencode/scripts/*"])),
         # No agent writes outside the repository of its session (the edit tools see paths relative to the repository:
         # ../ means outside), except /outil pattern into a pattern skill
         ("edit", deny(["../*"]) + allow(["*/.config/opencode/skills/pattern-*"])),

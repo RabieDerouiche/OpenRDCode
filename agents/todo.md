@@ -2,7 +2,7 @@
 description: "Answers the /todo command of the pack in one word: the todo list is already displayed by the pack's script. No tool at all."
 mode: all
 hidden: true
-temperature: 0.6
+temperature: 1.0
 top_p: 0.95
 permission: { "*": deny }
 ---

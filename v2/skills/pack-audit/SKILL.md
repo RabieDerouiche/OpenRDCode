@@ -1,9 +1,11 @@
 ---
-name: outil-audit
+name: pack-audit
 description: "Procédure de /outil audit : audit des bonnes pratiques de tout le dépôt selon son type (health checks, gestion d'erreurs, configuration, résilience, logs, sécurité, tests, Result pattern, feature flags, performance), avec preuves et la plus petite façon d'ajouter ce qui manque. Lecture seule."
 compatibility: opencode
 ---
 # /outil audit
+
+Started directly as the command `/pack-audit` (this procedure is the message that started you, with no line « Skill : pack-audit » printed before it): answer only « Lance `/outil audit` : cette procédure a besoin de ce que /outil prépare. » and stop.
 
 Audit this repository against the best practices of its project type. Read-only: never modify a file. The arguments, when there are some, are the area to audit (« health checks », « logging », « tests »…); the project detection and the packages are printed above.
 

@@ -1,9 +1,11 @@
 ---
-name: outil-stats
+name: pack-stats
 description: "Procédure de /outil stats : le tableau de ce que /go et /fix ont fait sur les tickets du dépôt (étapes, lancements, /fix, réponses du développeur, décisions de l'agent, arrêts, temps de l'analyse à la MR) est déjà affiché ; ce skill dit comment le commenter en trois lignes au plus."
 compatibility: opencode
 ---
 # /outil stats
+
+Started directly as the command `/pack-stats` (this procedure is the message that started you, with no line « Skill : pack-stats » printed before it): answer only « Lance `/outil stats` : cette procédure a besoin de ce que /outil prépare. » and stop.
 
 The table and its "Total" line are already shown to the developer, above: never repeat them, never rebuild them.
 

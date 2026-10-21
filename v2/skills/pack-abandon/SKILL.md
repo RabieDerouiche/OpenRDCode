@@ -1,9 +1,11 @@
 ---
-name: outil-abandon
+name: pack-abandon
 description: "Procédure de /outil abandon : annule un ticket lancé par erreur (mauvais dépôt, mauvais ticket) : retour sur la branche de base, puis suppression de la branche locale du ticket et de sa fiche, après ma validation. Refuse quand la branche contient du travail. Rien ne change dans Jira ni dans GitLab."
 compatibility: opencode
 ---
 # /outil abandon
+
+Started directly as the command `/pack-abandon` (this procedure is the message that started you, with no line « Skill : pack-abandon » printed before it): answer only « Lance `/outil abandon` : cette procédure a besoin de ce que /outil prépare. » and stop.
 
 Undo the ticket of the current branch, started by mistake. Never lose work. The workflow state is printed above.
 

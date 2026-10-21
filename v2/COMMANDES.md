@@ -24,12 +24,12 @@ Le push et la MR de `/go` demandent des identifiants GitLab que git trouve seul 
 
 ## Mettre à jour une v2 déjà installée
 
-Depuis ton clone du pack à jour (`git pull`), en une commande : agents, commandes, scripts, plugin et skills du pack sont remplacés ; tes skills `pattern-…`, ta todo et tes fiches ticket ne sont pas touchés.
+Depuis ton clone du pack à jour (`git pull`), en une commande : agents, commandes, scripts, plugin et skills du pack sont remplacés ; les anciens skills `outil-…` sont supprimés (ils s'appellent maintenant `pack-…`, pour que l'autocomplétion de `/outil` ne propose plus qu'eux) ; tes skills `pattern-…`, ta todo et tes fiches ticket ne sont pas touchés.
 ```sh
-cd ~/OpenRDCode && cp -r v2/agents v2/commands v2/scripts v2/plugins ~/.config/opencode/ && cp -r v2/skills/. ~/.config/opencode/skills/ && ls ~/.config/opencode/scripts/diff-guard.sh ~/.config/opencode/scripts/ticket-stats.sh ~/.config/opencode/skills/outil-stats
+cd ~/OpenRDCode && find ~/.config/opencode/skills -maxdepth 1 -name 'outil-*' -exec rm -rf {} + && cp -r v2/agents v2/commands v2/scripts v2/plugins ~/.config/opencode/ && cp -r v2/skills/. ~/.config/opencode/skills/ && ls ~/.config/opencode/scripts/diff-guard.sh ~/.config/opencode/skills/pack-stats
 ```
 Puis :
-1. `~/.config/opencode/opencode.json` : remplace les sections `agent` et `permission` par celles de `v2/opencode.snippet.json`, et ajoute ses deux nouvelles sections, `experimental` et `compaction`.
+1. `~/.config/opencode/opencode.json` : remplace les sections `agent` et `permission` par celles de `v2/opencode.snippet.json` ; ajoute ses sections `experimental` et `compaction` si elles n'y sont pas encore.
 2. `~/.config/opencode/AGENTS.md` : reprends `v2/AGENTS.global.md` en gardant tes sections « Daily » et « Release groups ».
 3. Section « Vérifier qu'aucune règle ne demande », puis redémarre OpenCode.
 
@@ -43,7 +43,7 @@ grep -n '"ask"' ~/.config/opencode/opencode.json
 ## Revenir à la v1
 
 ```sh
-cd ~/.config/opencode && rm -r agents commands scripts plugins && for s in best-practices build-fix dotnet-cqrs-conventions explain-code fortify-remediation integrations-guardrails outil-todo outil-licences outil-audit outil-cqrs outil-abandon outil-setup outil-doc outil-release-notes outil-pattern outil-stats; do rm -rf "skills/$s"; done && cp -r ~/opencode-v1/agents ~/opencode-v1/commands ~/opencode-v1/scripts ~/opencode-v1/plugins . && cp -r ~/opencode-v1/skills/. skills/ && cp ~/opencode-v1/AGENTS.md ~/opencode-v1/opencode.json .
+cd ~/.config/opencode && rm -r agents commands scripts plugins && for s in best-practices build-fix dotnet-cqrs-conventions explain-code fortify-remediation integrations-guardrails pack-todo pack-licences pack-audit pack-cqrs pack-abandon pack-setup pack-doc pack-release-notes pack-pattern pack-stats; do rm -rf "skills/$s"; done && cp -r ~/opencode-v1/agents ~/opencode-v1/commands ~/opencode-v1/scripts ~/opencode-v1/plugins . && cp -r ~/opencode-v1/skills/. skills/ && cp ~/opencode-v1/AGENTS.md ~/opencode-v1/opencode.json .
 ```
 Puis redémarre OpenCode.
 
@@ -136,6 +136,29 @@ Ce que `/outil pattern` voit du dépôt source pour un ticket : branche extraite
 sh ~/.config/opencode/scripts/pattern-source.sh /chemin/du/depot/source ABC-123
 ```
 
+## Qwen 3.8 : le modèle servi, l'effort de réflexion, les « Gateway Time-out »
+
+Le modèle qui répond vraiment (la plateforme peut envoyer un nom de modèle vers un autre). Remplace l'adresse par la `baseURL` de ton provider et le nom par celui de ton `opencode.json` ; si le serveur demande une clé, ajoute `-H "Authorization: Bearer <ta clé>"` :
+```sh
+curl -s https://adresse-du-serveur/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"<nom du modèle>","messages":[{"role":"user","content":"Réponds OK"}],"max_tokens":4000}' | grep -oE '"model": ?"[^"]*"|"completion_tokens": ?[0-9]+'
+```
+Une passerelle peut réécrire le nom affiché : en cas de doute, demande à l'équipe qui héberge le modèle sa taille exacte (27B ou autre) et son `max_model_len`.
+
+L'effort de réflexion (`reasoning_effort`, nouveau dans Qwen 3.8) : la même requête avec un effort bas. Si `completion_tokens` baisse nettement par rapport à la commande précédente, le serveur en tient compte :
+```sh
+curl -s https://adresse-du-serveur/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"<nom du modèle>","messages":[{"role":"user","content":"Réponds OK"}],"max_tokens":4000,"chat_template_kwargs":{"reasoning_effort":"low"}}' | grep -oE '"completion_tokens": ?[0-9]+'
+```
+S'il en tient compte, l'effort se règle par agent dans `~/.config/opencode/opencode.json`, section `agent`, par exemple pour le pilote, qui orchestre et n'a pas besoin de réfléchir longtemps : `"pilot": { "options": { "chat_template_kwargs": { "reasoning_effort": "medium" } } }`. À valider sur un `/go` réel avant de le garder ; le coder, l'analyste et le checker gardent l'effort par défaut.
+
+Les « Gateway Time-out » (504) : combien, et les derniers :
+```sh
+grep -c 'Gateway Time-out' ~/.local/share/opencode/log/opencode.log
+```
+```sh
+grep 'Gateway Time-out' ~/.local/share/opencode/log/opencode.log | tail -5 | cut -c1-200
+```
+OpenCode réessaie seul 5 fois (de 2 à 30 s d'attente) : la session ne s'arrête que si les 5 essais échouent, mais chaque essai repart de zéro. À demander à l'équipe qui héberge le modèle, avec ces chiffres : le délai de la passerelle devant vLLM pour `/v1/chat/completions` (une réponse avec réflexion peut durer plusieurs minutes : 10 minutes laisse de la marge), et des réponses en streaming transmises sans mise en tampon (nginx : `proxy_read_timeout 600s` et `proxy_buffering off`).
+
 ## Logs d'OpenCode
 
 Le fichier est `~/.local/share/opencode/log/opencode.log` (s'il n'existe pas : `opencode debug paths`, ligne `log`).
@@ -153,6 +176,11 @@ grep -E 'level=(ERROR|WARN)' ~/.local/share/opencode/log/opencode.log | tail -30
 Les commandes refusées aux agents, avec la règle qui a refusé (`action.pattern`). C'est ce qu'il faut m'envoyer quand un agent bute sur un refus :
 ```sh
 grep 'message=evaluated' ~/.local/share/opencode/log/opencode.log | grep 'action.action=deny' | tail -20
+```
+
+Les refus du plugin du pack (chemin hors du dépôt, dossier en lecture seule, commande qui écrit un identifiant, second `/go`), avec l'agent et le chemin, jamais la commande :
+```sh
+grep 'refused by the pack' ~/.local/share/opencode/log/opencode.log | tail -20
 ```
 
 Les commandes qui t'ont demandé une validation :

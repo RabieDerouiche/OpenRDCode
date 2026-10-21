@@ -215,6 +215,11 @@ readCase(ALL.filter((a) => a !== "doc-writer"), "src/Api/appsettings.json", "all
 readCase(["doc-writer"], "src/Api/appsettings.json", "deny")
 readCase(["doc-writer"], "src/Api/appsettings.Production.json", "deny")
 readCase(["build", "pilot", "coder", "debugger"], "/home/dev/repos/legacy-api/src/Exports/ExportService.cs", "ask")
+// the pack's scripts: read without asking (no secret in them; asking made me answer "always" again in every project
+// and after every restart), never written (the edit rules, and the plugin for the shell)
+readCase([...ALL, "plan"], "~/.config/opencode/scripts/build-test.sh", "allow")
+editCase(["coder", "build"], "~/.config/opencode/scripts/diff-guard.sh", "deny")
+add(ALL, ["cat ~/.config/opencode/scripts/build-test.sh", "cd ~/.config/opencode/scripts && ls"], "allow")
 editCase(["coder", "build"], "src/Foo.cs", "allow")
 editCase(["coder"], "tests/App.Tests/FooTests.cs", "allow")
 editCase(["coder"], "src/Api/appsettings.json", "allow")

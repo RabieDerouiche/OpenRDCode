@@ -1,9 +1,11 @@
 ---
-name: outil-pattern
+name: pack-pattern
 description: "Procédure de /outil pattern : crée ou enrichit un skill pattern-<nom>-<back|front> depuis une bonne implémentation d'un autre dépôt (packages internes décrits par leurs appels dans le code, jamais en ouvrant les DLL). /go s'en sert ensuite tout seul quand un ticket s'y prête, ou sur consigne (« comme le pattern <nom> »). Arguments : <nom> <dépôt source> [où : clé Jira, classes, dossiers]."
 compatibility: opencode
 ---
 # /outil pattern
+
+Started directly as the command `/pack-pattern` (this procedure is the message that started you, with no line « Skill : pack-pattern » printed before it): answer only « Lance `/outil pattern` : cette procédure a besoin de ce que /outil prépare. » and stop.
 
 The "Action" line above says what to do:
 - « Action : manquante »: say « Précise le pattern et le dépôt : `/outil pattern <nom> <chemin absolu du dépôt source> [où : clé Jira, classes]` » and stop.

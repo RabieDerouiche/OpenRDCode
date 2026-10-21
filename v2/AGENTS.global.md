@@ -27,7 +27,8 @@
 - Long outputs through `| tail -60`; `git diff --stat` before a full diff.
 - A tool answer that says it was truncated and saved to a file (often one long line of JSON, from an MCP tool) is not worth searching: call the same tool again with a smaller page (20 results or fewer) or stricter filters. Never run several searches on that file.
 - Use the shell only for the build, the tests, git reads and the `~/.config/opencode/scripts` commands. For everything else the tools: `read`, `grep`, `glob`, `edit`, `write`. Shell commands already run in the project folder: never `cd <project>` or `git -C <project>`. The read, grep, glob, edit and write tools do not expand `~`: absolute paths (`realpath ~` gives the home folder).
-- Refused shell forms (never try them, never look for another form that would pass): a path outside the repository (`~`, `$HOME`, `/home/…`, `../..`, a bare `cd`), unless I named that folder in my message or in the command; anything that prints or reads the environment or credentials (`env`, `printenv`, `export`, `set`, `echo $…`, `git config`, `git remote -v`, nuget.config, `.env` files, `~/.nuget/NuGet`, `~/.z*` files); anything that looks inside packages or assemblies (`~/.nuget/packages`, `.dll`, `.nupkg`, `/tmp`, `mktemp`, `dotnet new console`, `dotnet fsi`, ilspy, ildasm, `strings`); a recursive `rm`; `git commit`, `push`, `merge`, `pull`, `rebase`, `reset` (only /go and /fix write the history); for the agents that only read: a redirection to a file, `$(...)` and backticks.
+- Refused shell forms (never try them, never look for another form that would pass): a path outside the repository (`~`, `$HOME`, `/home/…`, `../..`, a bare `cd`), unless I named that folder in my message or in the command; anything that prints or reads the environment or credentials (`env`, `printenv`, `export`, `set`, `echo $…`, `git config`, `git remote -v`, nuget.config, `.env` files, `~/.nuget/NuGet`, `~/.z*` files); anything that looks inside packages or assemblies (`~/.nuget/packages`, `.dll`, `.nupkg`, `/tmp`, `mktemp`, `dotnet new console`, `dotnet fsi`, ilspy, ildasm, `strings`); a recursive `rm`; `git commit`, `push`, `merge`, `pull`, `rebase`, `reset` (only /go and /fix write the history); starting the application or any program (`dotnet run`, `npm start`, `func start`): check a behavior with a test instead (an integration test with WebApplicationFactory when the project has some); changing anything outside the repository, the pack's scripts and skills included (they are read-only); for the agents that only read: a redirection to a file, `$(...)` and backticks.
+- Tools by their name only (`dotnet`, `node`, `npm`, `git`), never by their path (`~/.bin/dotnet`): not found is an ENVIRONMENT PROBLEM.
 - Independent tool calls go together in ONE turn: they run in parallel. AGENTS.md files are already in your instructions: never read them again, except to edit one.
 
 ## Project types
@@ -50,6 +51,7 @@
 - "prends le ticket ABC-123", "fais le ticket", "continue le ticket" → offer `/go <KEY>` (with my words as directives).
 - "corrige les retours", "la CI est rouge", "Sonar", "Fortify", "les commentaires de la MR", "pousse", "commite", "j'ai poussé depuis mon Mac" → offer `/fix`.
 - "pourquoi ça plante", a stack trace, a failing test → invoke the `debugger` subagent with the task tool.
+- A problem to check without a ticket ("vérifie si…", "est-ce que…", "regarde pourquoi…") → investigate here, in this conversation (the `debugger` subagent for a failure): no branch, no commit. When it needs a fix, say so with the cause and the files, and offer `/go <KEY>` once I have created the Jira ticket: /go in this same session hands your findings to the analysis.
 - "explique", "comment marche" → load the skill `explain-code` and follow it.
 - "corrige le build", compilation errors → load the skill `build-fix` and follow it.
 - "corrige le point Fortify <id>" or "Sonar <key>", one finding → load `fortify-remediation`, fix it with its test, build and test; /fix then commits it.
@@ -76,6 +78,10 @@
 - Never print, echo, log or read these values or the files that define them: no NuGet.Config or nuget.config through the shell (the user one, `~/.nuget/NuGet/NuGet.Config`, never at all), no `echo`, `test -n` or `printenv` on environment variables, no search for passwords, tokens or credentials anywhere. Never modify nuget.config to hardcode credentials.
 - `dotnet restore` failing with 401/403/NU1301, or `dotnet`, `node` or `npm` not found ("ENVIRONMENT PROBLEM"): stop and tell me in one line. Never investigate it, never change PATH, DOTNET_ROOT or any variable.
 - Never write `export`, `PATH=`, `DOTNET_ROOT=` or a credential (user name, password, token, in a variable, a URL or an option) in a command, even one I gave you: the pack refuses such commands.
+
+## Jira (MCP)
+- An issue is read by its key: the ticket, then its parent or epic and its linked issues by their keys (they are in the ticket). A JQL search only for a list (/daily, the choice of a ticket).
+- A Jira error (JQL refused, unknown field, server error): never another form of the same search. Say it in one line and go on without it, or stop when nothing can be done without it.
 
 ## Fortify SSC (MCP)
 - The SSC application name of each repository is the value of APPSEC_PROJECT_NAME in its appsec-ci.env file, printed by the workflow state of /fix; never read appsec-ci.env entirely: it may contain secrets.

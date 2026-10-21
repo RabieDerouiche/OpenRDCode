@@ -266,8 +266,8 @@ def as_dict(rules):
     return {k: as_dict(v) if isinstance(v, list) else v for k, v in rules}
 
 
-# Qwen 3.6 recommended sampling for thinking mode and precise coding
-SAMPLING = [("temperature", 0.6), ("top_p", 0.95)]
+# Qwen 3.8 recommended sampling for thinking mode (its model card: temperature 1.0, top_p 0.95, top_k 20 in the model options)
+SAMPLING = [("temperature", 1.0), ("top_p", 0.95)]
 SNIPPET = as_dict([
     ("$schema", "https://opencode.ai/config.json"),
     ("agent", [

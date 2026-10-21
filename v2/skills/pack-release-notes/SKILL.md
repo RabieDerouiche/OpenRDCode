@@ -1,9 +1,12 @@
 ---
-name: outil-release-notes
+name: pack-release-notes
 description: "Procédure de /outil release-notes : note de version d'une mise en production, publiée sur Confluence après ma validation. Un dépôt (déployé depuis master), un groupe de dépôts (back, front, librairies) regroupé par ticket Jira, ou une description libre. Arguments : [groupe [AAAA-MM-JJ]] | [commit-précédent|AAAA-MM-JJ] [commit-déployé] | <description>."
 compatibility: opencode
 ---
 # /outil release-notes
+
+Started directly as the command `/pack-release-notes` (this procedure is the message that started you, with no line « Skill : pack-release-notes » printed before it): answer only « Lance `/outil release-notes` : cette procédure a besoin de ce que /outil prépare. » and stop.
+
 The arguments are on the "Arguments" line above; the current repository and its production branch (after fetch) are printed above too.
 
 Read-only everywhere except the Confluence page of step 8, whose writing asks for my approval: never write in the repositories, Jira, GitLab, SonarQube or Fortify.

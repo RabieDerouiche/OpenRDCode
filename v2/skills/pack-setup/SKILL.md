@@ -1,9 +1,12 @@
 ---
-name: outil-setup
+name: pack-setup
 description: "Procédure de /outil setup : crée ou met à jour l'AGENTS.md du dépôt depuis le code (structure et frameworks, commandes de build et de test qui tournent ici, contrôles de la CI, style imposé par le build, architecture et conventions, autorisations, packages, tests, exemples de référence, conventions git) et Confluence si on lui donne une page. Une fois par dépôt, puis après un gros changement."
 compatibility: opencode
 ---
 # /outil setup
+
+Started directly as the command `/pack-setup` (this procedure is the message that started you, with no line « Skill : pack-setup » printed before it): answer only « Lance `/outil setup` : cette procédure a besoin de ce que /outil prépare. » and stop.
+
 Create or update the AGENTS.md at the repository root so that every agent works like this repository, from the code as it is today. The arguments, when there are some, are a Confluence root page, page URL or space key. The project detection, the repository root, the state of AGENTS.md and the solution, build, CI and code style files are printed above.
 
 This is what makes /go autonomous: the build and test commands, the conventions and the reference examples written here are what the coder follows without asking.

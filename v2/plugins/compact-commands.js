@@ -37,7 +37,10 @@
 //    checker, debugger, doc-writer) outside it. Allowed outside: the pack's scripts and skills, the outputs OpenCode
 //    saves, the NuGet package cache for the file tools, the folders configured as "references" in opencode.json and
 //    the folders I name myself (in the arguments of a command or in a message I type): the conversation agents and the
-//    read-only agents may use them in the shell, every agent of the pack with the file tools. Secrets (~/.zshenv, the
+//    read-only agents may use them in the shell, every agent of the pack with the file tools. These folders are
+//    read-only: in the shell, only a command that reads (cat, grep, ls, git log…) may name them, never cp, mv, rm, a
+//    redirection, a build, an interpreter or xargs running another command (the pack's own guards stay as installed);
+//    the agents of the pack write only in the repository. A cd is followed. Secrets (~/.zshenv, the
 //    git credentials, ~/.nuget/NuGet) are outside every repository: no `grep -r <word> ~` can print them. The
 //    arguments of the pack's scripts are not checked: a commit message may contain any text.
 //    OpenCode's own rules cannot do this (tree-sitter does not look inside quotes, and `export -p` is not a command to
@@ -52,6 +55,9 @@
 //    nothing left to do) or "⛔ " (stopped: its answer holds ⛔, or the run ended with an error). With several
 //    /go running in several repositories, the list of sessions says which one needs me. The mark goes away when the
 //    next turn of the session starts.
+// 11. Runs a build tool called by its full path (`~/.bin/dotnet build`, `/usr/bin/git log`) by its name (`dotnet
+//    build`): the permission rules of the agents name the tools, and the folder of the tool is outside the repository.
+// Every refusal of 6, 7 and 9 is written to OpenCode's log as "refused by the pack" (COMMANDES.md, "Logs d'OpenCode").
 // Any error leaves the command as it is: a "[[run ...]]" line left in the prompt is then run by the model itself.
 import { execFile, spawn } from "node:child_process"
 import { existsSync, readFileSync, statSync } from "node:fs"
@@ -86,6 +92,8 @@ const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
 // Commands that take minutes (8): a build or tests, a restore, the front-end tooling; the pack's git scripts
 const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|dotnet\s+(?:build|test|restore|format|ef|clean)|npm\s+(?:test|ci|install|i|run\s+(?:test|build|lint))|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint))|yarn\s+(?:test|install|build|lint)|pnpm\s+(?:test|install|build|lint))(?=\s|$|[;&|)])/
 const GIT_SCRIPT = /(?:^|[\s;&|(])\S*(?:ship|branch)\.sh(?=\s|$)/
+// A build tool called by its full path at the start of a command (11): ~/.bin/dotnet, $HOME/.dotnet/dotnet, /usr/bin/git
+const TOOL_PATH = /(^\s*|[;&|(`\n]\s*)((?:~|\$\{HOME\}|\$HOME)?\/(?:[^\s;&|()<>'"`]*\/)?)(dotnet|node|npm|npx|yarn|pnpm|git)(?=$|[\s;&|)`])/g
 // A user and a password in a URL (https://user:token@host), in curl/wget -u, or in a NuGet source
 const SECRET_IN_URL = /\b(?:https?|ssh|git|ftp):\/\/[\w.%-]+:[^\s/@*]+@/i
 const SECRET_IN_OPTION = /\b(?:curl|wget)\b[^\n]*\s(?:-u|--user)\s*[\w.%-]+:\S|\bdotnet\s+nuget\s+(?:add|update)\s+source\b[^\n]*(?:\s-p\s|--password)/i
@@ -124,23 +132,53 @@ const FILE_TOOLS = { read: "filePath", write: "filePath", edit: "filePath", grep
 
 const within = (target, dir) => target === dir || target.startsWith(dir.endsWith(sep) ? dir : dir + sep)
 
+// Commands that only read what they are given. They alone may touch the folders outside the repository that an agent
+// may read (the pack's scripts and skills, the outputs OpenCode saves, the references, the folders I name): anything
+// else there (cp, mv, rm, a redirection, an interpreter, a build, xargs running another command) would change the
+// pack, its guards included, or another repository.
+const READERS = new Set(["cat", "head", "tail", "less", "more", "grep", "egrep", "fgrep", "rg", "ls", "wc", "file",
+  "stat", "diff", "cmp", "realpath", "readlink", "basename", "dirname", "jq", "uniq", "cut", "tr", "md5sum", "sha1sum",
+  "sha256sum", "du", "echo", "printf", "test", "[", "tree", "sort", "sed", "find", "git", "cd", "pushd"])
+const GIT_READS = new Set(["log", "show", "diff", "blame", "grep", "ls-files", "ls-tree", "status", "rev-parse",
+  "branch", "for-each-ref", "cat-file", "describe", "shortlog", "rev-list", "name-rev", "merge-base"])
+
+// Whether a simple command only reads the files it names
+function readsOnly(words) {
+  const [name, ...rest] = words
+  if (!READERS.has(name)) return false
+  if (name === "sed") return !rest.some((w) => /^-[A-Za-z]*i/.test(w) || w.startsWith("--in-place"))
+  if (name === "sort" || name === "tree") return !rest.some((w) => /^-[A-Za-z]*o/.test(w) || w.startsWith("--output"))
+  if (name === "find") return !rest.some((w) => /^-(?:delete|exec|execdir|ok|okdir|fprint0?|fprintf|fls)$/.test(w))
+  if (name === "git") {
+    let i = 0
+    while (i < rest.length && rest[i].startsWith("-")) i += /^-[Cc]$/.test(rest[i]) ? 2 : 1
+    const sub = rest[i]
+    if (sub === "branch" && rest.slice(i + 1).some((w) => /^-[A-Za-z]*[dDmMcCf]|^--(?:delete|move|copy|force)/.test(w))) return false
+    return GIT_READS.has(sub) && !rest.some((w) => w.startsWith("--output"))
+  }
+  return true
+}
+
 // The words of a shell command, per simple command (split on ; & | ( ) ` < > and new lines outside quotes), with the
-// quotes removed as the shell does; a quoted word keeps its spaces (it is checked again as a command: sh -c '...')
+// quotes removed as the shell does; a quoted word keeps its spaces (it is checked again as a command: sh -c '...').
+// Each list of words has `after`: the separator before it (">" for the target of a redirection).
 function commandWords(text) {
   const out = []
   let words = []
   let word = ""
   let started = false
   let quote = ""
+  let after = ""
   const push = () => {
     if (started) words.push(word)
     word = ""
     started = false
   }
-  const end = () => {
+  const end = (separator = "") => {
     push()
-    if (words.length) out.push(words)
+    if (words.length) out.push(Object.assign(words, { after }))
     words = []
+    after = separator
   }
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]
@@ -154,7 +192,7 @@ function commandWords(text) {
     } else if (ch === "\\" && i + 1 < text.length) {
       word += text[++i]
       started = true
-    } else if (/[;&|()\n`<>]/.test(ch)) end()
+    } else if (/[;&|()\n`<>]/.test(ch)) end(ch)
     else if (/\s/.test(ch)) push()
     else {
       word += ch
@@ -181,32 +219,67 @@ function pathOf(word, cwd) {
   return undefined
 }
 
-// The first word of a shell command that points outside the allowed folders, or ""
-function shellOutside(command, cwd, allowed, depth = 0) {
+// The first word of a shell command that leaves the repository, as { piece, readOnly }, or null. readOnly: the word
+// points into a folder the agent may read, but the command does more than read it. A cd is followed: the relative
+// paths of the next commands are in its folder.
+function shellOutside(command, cwd, root, readable, depth = 0) {
+  let here = cwd
+  let readsReadable = false
+  let xargsRuns = ""
   for (const words of commandWords(String(command || ""))) {
+    // the target of a redirection is written
+    if (words.after === ">") {
+      const target = pathOf(words[0], here) || resolve(here, words[0])
+      if (DEVICES.has(target) || within(target, root)) continue
+      return { piece: words[0], readOnly: readable.some((dir) => within(target, dir)) }
+    }
     // the pack's scripts check their own arguments, which may be free text (a commit message, a decision)
     if (/^(?:ba|da|z)?sh$/.test(words[0]) && words[1]) {
-      const script = pathOf(words[1], cwd) || resolve(cwd, words[1])
+      const script = pathOf(words[1], here) || resolve(here, words[1])
       if (within(script, SCRIPTS)) continue
     }
-    if (words.length === 1 && /^(?:cd|pushd)$/.test(words[0])) return "~"
-    for (const word of words) {
+    // a cd to the home folder, back, or along the folder stack goes where nothing can be checked
+    if (/^(?:cd|pushd)$/.test(words[0]) && words.length === 1) return { piece: "~" }
+    if (words[0] === "popd" || (/^(?:cd|pushd)$/.test(words[0]) && /^[-+]/.test(words[1]))) return { piece: words.join(" ") }
+    if (words[0] === "xargs") {
+      let i = 1
+      while (i < words.length && words[i].startsWith("-")) i += /^-[nIdLPEsa]$/.test(words[i]) ? 2 : 1
+      const run = words.slice(i)
+      if (run.length && !readsOnly(run)) xargsRuns = run[0]
+    }
+    const reads = readsOnly(words)
+    // after a cd out of the repository, every operand is in that folder
+    const away = !within(here, root)
+    for (let w = 0; w < words.length; w++) {
+      const word = words[w]
       if (/\s/.test(word)) {
         if (depth < 3) {
-          const inner = shellOutside(word, cwd, allowed, depth + 1)
+          const inner = shellOutside(word, here, root, readable, depth + 1)
           if (inner) return inner
         }
         continue
       }
       for (const piece of word.split("=")) {
-        const target = pathOf(piece, cwd)
-        if (!target || DEVICES.has(target) || allowed.some((dir) => within(target, dir))) continue
+        let target = pathOf(piece, here)
+        if (!target && away && piece && !piece.startsWith("-") && (w > 0 || words.after === "<")) target = resolve(here, piece)
+        if (!target || DEVICES.has(target) || within(target, root)) continue
         if (target === HOME && PRINTS_PATH.has(words[0])) continue
-        return piece
+        if (readable.some((dir) => within(target, dir))) {
+          // a command that only reads, the source of a redirection, or a script of the pack run directly
+          if (reads || words.after === "<" || (w === 0 && within(target, SCRIPTS))) {
+            readsReadable = true
+            continue
+          }
+          return { piece, readOnly: true }
+        }
+        return { piece }
       }
     }
+    if (/^(?:cd|pushd)$/.test(words[0])) here = pathOf(words[1], here) || resolve(here, words[1])
   }
-  return ""
+  // xargs runs a command on the names another command printed: never on a folder the agent may only read
+  if (readsReadable && xargsRuns) return { piece: "xargs " + xargsRuns, readOnly: true }
+  return null
 }
 
 // The folders named in a text I typed (command arguments, a message): existing folders or files outside the repository
@@ -497,24 +570,41 @@ export const CompactCommands = async (input) => {
     if (found.length) named.set(sessionID, [...new Set([...(named.get(sessionID) || []), ...found])])
   }
 
-  // Why a tool call goes outside the folders allowed to its agent (7), or ""
+  // Where a tool call leaves the folders allowed to its agent (7), as { piece, readOnly }, or null
   async function escape(tool, sessionID, args) {
     const agent = agents.get(sessionID) || ""
     const cwd = args && typeof args.workdir === "string" && args.workdir ? resolve(directory, args.workdir) : directory
-    const base = [root, ...PACK_DIRS, ...SAVED_OUTPUTS]
+    const shared = [...PACK_DIRS, ...SAVED_OUTPUTS]
     if (tool === "bash") {
       const extra = SHELL_READERS.has(agent) || !PACK_AGENTS.has(agent) ? [...(await referenceFolders()), ...(await namedIn(sessionID))] : []
-      const allowed = [...base, ...extra]
-      if (!allowed.some((dir) => within(cwd, dir))) return args.workdir
-      return shellOutside(args && args.command, cwd, allowed)
+      const readable = [...shared, ...extra]
+      if (!within(cwd, root) && !readable.some((dir) => within(cwd, dir))) return { piece: args.workdir }
+      return shellOutside(args && args.command, cwd, root, readable)
     }
     const key = FILE_TOOLS[tool]
-    if (!key || !PACK_AGENTS.has(agent)) return ""
+    if (!key || !PACK_AGENTS.has(agent)) return null
     const value = args && args[key]
-    if (typeof value !== "string" || !value) return ""
+    if (typeof value !== "string" || !value) return null
     const target = value === "~" || value.startsWith("~/") ? join(HOME, value.slice(2)) : resolve(directory, value)
-    const allowed = [...base, PACKAGE_CACHE, ...(await referenceFolders()), ...(await namedIn(sessionID))]
-    return DEVICES.has(target) || allowed.some((dir) => within(target, dir)) ? "" : value
+    if (DEVICES.has(target) || within(target, root)) return null
+    const readable = [...shared, PACKAGE_CACHE, ...(await referenceFolders()), ...(await namedIn(sessionID))]
+    const inReadable = readable.some((dir) => within(target, dir))
+    // the agents of the pack write only in the repository
+    if (tool === "write" || tool === "edit") return { piece: value, readOnly: inReadable }
+    return inReadable ? null : { piece: value }
+  }
+
+  // Each refusal of the plugin goes to OpenCode's log ("refused by the pack"): the agent, the tool, the reason, the path,
+  // never the command (it may hold a credential)
+  function logRefusal(call, reason, piece) {
+    try {
+      if (!client || !client.app || typeof client.app.log !== "function") return
+      const extra = { agent: call.agent || agents.get(call.sessionID) || "", tool: call.tool, reason }
+      if (piece) extra.path = piece
+      Promise.resolve(client.app.log({ body: { service: "pack", level: "warn", message: "refused by the pack", extra } })).catch(() => {})
+    } catch {
+      // the log is best-effort
+    }
   }
 
   // ---------- 9 and 10. one /go or /fix at a time, and its outcome in the title ----------
@@ -737,9 +827,15 @@ export const CompactCommands = async (input) => {
       if (refused.has(call.sessionID)) {
         throw new Error("Refused by the pack: this /go or /fix was refused (another one runs in this repository). Answer with the sentence of the request only.")
       }
+      if (call.tool === "bash" && typeof output.args.command === "string") {
+        // 11. a build tool called by its full path runs by its name: the rules of the agents know `dotnet build`, not
+        // `/home/me/.bin/dotnet build`, and the folder of the tool is outside the repository
+        output.args.command = output.args.command.replace(TOOL_PATH, "$1$3")
+      }
       if (call.tool === "bash") {
         const why = refusal(output.args.command)
         if (why) {
+          logRefusal(call, why)
           throw new Error(
             "Refused by the pack: " + why + ". A command never sets PATH, DOTNET_ROOT or a credential, never prints the " +
               "environment and never deletes a folder: the environment of the agents comes from ~/.zshenv, and a " +
@@ -749,18 +845,27 @@ export const CompactCommands = async (input) => {
           )
         }
       }
-      let outside = ""
+      let outside = null
       try {
         outside = await escape(call.tool, call.sessionID, output.args)
       } catch {
-        outside = ""
+        outside = null
+      }
+      if (outside && outside.readOnly) {
+        logRefusal(call, "read-only folder", outside.piece)
+        throw new Error(
+          "Refused by the pack: " + outside.piece + " is outside the repository of this session (" + root + "): the " +
+            "agents may read it, never change it or run anything there (no cp, mv, rm, redirection, build, " +
+            "interpreter or xargs on it). Work in the repository. Never try another form of this command.",
+        )
       }
       if (outside) {
+        logRefusal(call, "outside the repository", outside.piece)
         throw new Error(
-          "Refused by the pack: " + outside + " is outside the repository of this session (" + root + "). The agents " +
-            "stay in the repository: secrets live outside it. Work with the files of the repository; a folder outside " +
-            "it is readable only when the developer names it in the command or in a message, or configures it as a " +
-            "reference. Never try another form of this path.",
+          "Refused by the pack: " + outside.piece + " is outside the repository of this session (" + root + "). The " +
+            "agents stay in the repository: secrets live outside it. Work with the files of the repository; a folder " +
+            "outside it is readable only when the developer names it in the command or in a message, or configures " +
+            "it as a reference. Never try another form of this path.",
         )
       }
       if (call.tool === "bash" && typeof output.args.command === "string") {
@@ -804,6 +909,7 @@ export const CompactCommands = async (input) => {
             "⛔ /" + command.command + " refusé : /" + other.command + " tourne déjà sur ce dépôt dans la session « " +
             other.title + " ». Un seul /go ou /fix à la fois par dépôt : deux pilotes dans le même dossier " +
             "mélangeraient leurs commits. Relance-le quand l'autre aura fini (titre ✅ ou ⛔), ou arrête l'autre."
+          logRefusal({ sessionID, tool: "/" + command.command, agent: "pilot" }, "another /" + other.command + " runs in this repository")
           refused.add(sessionID)
           parts.length = 0
           parts.push({ type: "text", text: ("/" + command.command + " " + (command.arguments || "")).trim() })

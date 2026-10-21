@@ -1,9 +1,11 @@
 ---
-name: outil-cqrs
+name: pack-cqrs
 description: "Procédure de /outil cqrs : une command ou une query CQRS avec son handler, son validator et ses tests, dans un projet cqrs-api, en suivant les exemples du dépôt. Arguments : <command|query> <Nom> <Feature>."
 compatibility: opencode
 ---
 # /outil cqrs
+
+Started directly as the command `/pack-cqrs` (this procedure is the message that started you, with no line « Skill : pack-cqrs » printed before it): answer only « Lance `/outil cqrs` : cette procédure a besoin de ce que /outil prépare. » and stop.
 
 Arguments: `<command|query> <Name> <Feature>` (the "Arguments" line above). Create that CQRS command or query in the feature.
 

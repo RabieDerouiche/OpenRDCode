@@ -62,7 +62,7 @@ if [ "$name" = stats ]; then
   echo "[[visible]]"
 fi
 echo "Outil : $name"
-echo "Skill : outil-$name"
+echo "Skill : pack-$name"
 echo "Arguments : ${rest:-aucun}"
 
 # The words of the arguments, for the tools that take positional ones

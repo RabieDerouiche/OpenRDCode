@@ -1,16 +1,18 @@
 ---
-name: outil-doc
+name: pack-doc
 description: "Procédure de /outil doc : écrit ou met à jour la documentation du dépôt depuis son code, en français : docs/ (architecture, API, configuration, intégrations, données, exploitation), factuelle, avec ses sources, jamais une valeur de configuration ni un secret, puis la publie sur Confluence si on le demande, chaque page après ma validation. Arguments : [sujets] [confluence <ESPACE> [<page parente>]]."
 compatibility: opencode
 ---
 # /outil doc
+
+Started directly as the command `/pack-doc` (this procedure is the message that started you, with no line « Skill : pack-doc » printed before it): answer only « Lance `/outil doc` : cette procédure a besoin de ce que /outil prépare. » and stop.
 
 Two parts: the writing is done by the `doc-writer` subagent, which never opens a configuration file and never copies a value; the publishing on Confluence, when asked, by the agent that runs /outil, each page after my approval.
 
 ## Part A0, by the agent that runs /outil: delegate the writing
 Arguments (the "Arguments" line): the topics among architecture, api, configuration, integrations, donnees, exploitation; after the word `confluence`, the space key, then the parent page title (all the remaining words). On develop, master or main: say in one line that the files will be uncommitted changes of this branch.
 One line « Rédaction de la documentation (doc-writer)… », then invoke the `doc-writer` subagent with the task tool:
-"Write or update the documentation of the repository <repository root>. Topics: <the topics, or « tous ceux qui s'appliquent »>. Load the skill `outil-doc` and follow its part A, then report in its format."
+"Write or update the documentation of the repository <repository root>. Topics: <the topics, or « tous ceux qui s'appliquent »>. Load the skill `pack-doc` and follow its part A, then report in its format."
 Then Part B if the arguments ask for Confluence, then the answer.
 
 ## Part A, by the doc-writer subagent
