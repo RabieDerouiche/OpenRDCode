@@ -8,6 +8,7 @@
 # itself (work started on develop before /go); in every other case the script stops and lists them.
 # - A change without a Jira ticket: the key LOCAL becomes the next free local key, LOCAL-<n> (branches here and on
 #   origin, ticket sheets), printed on a "KEY:" line.
+# - In a worktree made by workspace.sh (a detached HEAD on the base), the branch is checked out or created the same way.
 # - In an OpenCode workspace (a git worktree that OpenCode starts on its own branch, opencode/<name>), that branch is
 #   deleted once the ticket branch is checked out, when it has no commit of its own; a ticket branch already open in
 #   another worktree stops the script (one ticket per worktree).

@@ -116,6 +116,12 @@ const PILOT_DENY = [
   "sh -c \"git push --force\"", "bash -c \"git push\"", "cat ~/.git-credentials | " + S + "ship.sh x",
 ]
 add(["pilot"], PILOT_DENY, "deny")
+// worktree folders are made and removed by the developer only (workspace.sh), never by an agent
+add(ALL, [S + "workspace.sh new ABC-124", S + "workspace.sh remove ABC-124", S + "workspace.sh list",
+  "sh $HOME/.config/opencode/scripts/workspace.sh new ABC-124"], "deny")
+// a commit message or a search that names the script is not a run of it
+add(["pilot"], [S + "ship.sh --no-push \"docs: explain workspace.sh in the guide (ABC-7)\""], "allow")
+add(["pilot", "coder", ...RO], ["grep -n workspace.sh COMMANDES.md"], "allow")
 
 // ---------- coder: code, tests, build; no git write, nothing that would ask ----------
 const CODER_ALLOW = [

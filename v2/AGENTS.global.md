@@ -54,6 +54,7 @@
 - "corrige les retours", "la CI est rouge", "Sonar", "Fortify", "les commentaires de la MR", "pousse", "commite", "j'ai poussé depuis mon Mac" → offer `/fix`.
 - "merge la branche X", "intègre le hotfix X" on a ticket branch → offer `/fix merge X` (it merges, builds, tests and pushes).
 - "pourquoi ça plante", a stack trace, a failing test → invoke the `debugger` subagent with the task tool.
+- A worktree, « un espace de travail », several tickets of one repository at the same time → you cannot create or remove one (the shell refuses it to every agent) and OpenCode 1.19 web has no option for it: give me, for a terminal in the repository, `sh ~/.config/opencode/scripts/workspace.sh new <KEY>` (then the ADDRESS it prints, after the OpenCode address in the browser, opens a session in that folder; `list`, `remove <KEY>`), and COMMANDES.md, « Plusieurs tickets d'un même dépôt ».
 - A problem to check without a ticket ("vérifie si…", "est-ce que…", "regarde pourquoi…") → investigate here, in this conversation (the `debugger` subagent for a failure): no branch, no commit. When it needs a fix, say so with the cause and the files, and offer `/go sans ticket : <the fix>` (or `/go <KEY>` if I create a Jira ticket): /go in this same session hands your findings to the analysis.
 - "explique", "comment marche" → load the skill `explain-code` and follow it.
 - "corrige le build", compilation errors → load the skill `build-fix` and follow it.

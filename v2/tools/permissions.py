@@ -112,7 +112,9 @@ RM_RECURSIVE = ["rm -r*", "rm -R*", "rm -fr*", "rm -fR*", "rm -f -r*", "rm -f -R
                 "rm * -R*", "rm * -fr*", "rm * -fR*"]
 # The pack's scripts that write: git (branch.sh, ship.sh) and the ticket sheet (ticket-sheet.sh). Only the pilot runs
 # them: with SCRIPTS allowed, a read-only agent could otherwise commit and push through ship.sh.
-WRITE_SCRIPTS = ["*ship.sh*", "*branch.sh*", "*ticket-sheet.sh*"]
+# workspace.sh creates and removes worktree folders outside the repository: the developer runs it, never an agent.
+DEVELOPER_SCRIPTS = ["*scripts/workspace.sh*"]
+WRITE_SCRIPTS = ["*ship.sh*", "*branch.sh*", "*ticket-sheet.sh*"] + DEVELOPER_SCRIPTS
 
 # The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS)
 SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
@@ -202,7 +204,7 @@ def pilot_bash():
     rules = [("*", "deny")]
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS)
     rules += REDIRECT
-    rules += deny(GIT_READ_GUARD + OTHER_DENY + SECRETS + PACKAGE_GUARD)
+    rules += deny(GIT_READ_GUARD + OTHER_DENY + SECRETS + PACKAGE_GUARD + DEVELOPER_SCRIPTS)
     rules += allow([SSC_NAME] + TEXT_SCRIPTS)
     rules += deny(SUBST)
     return rules

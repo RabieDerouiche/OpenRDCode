@@ -112,7 +112,7 @@ fi
 echo "Now: $(date '+%Y-%m-%d %H:%M')"
 echo "Repository root: $root"
 if [ -n "$common" ] && [ "$common" != "$root/.git" ]; then
-  echo "Worktree: yes, an OpenCode workspace (main checkout: ${common%/.git})"
+  echo "Worktree: yes, folder $(basename "$root") (main checkout: ${common%/.git})"
 else
   echo "Worktree: no (main checkout)"
 fi

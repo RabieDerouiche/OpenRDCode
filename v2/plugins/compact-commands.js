@@ -59,6 +59,10 @@
 //    next turn of the session starts.
 // 11. Runs a build tool called by its full path (`~/.bin/dotnet build`, `/usr/bin/git log`) by its name (`dotnet
 //    build`): the permission rules of the agents name the tools, and the folder of the tool is outside the repository.
+// 12. Starts the title of every session of a worktree with the folder of that worktree, "[ABC-123] <title>" (after
+//    the ✅ or ⛔ of 10): the home page of OpenCode lists the sessions of all the worktrees of a repository together,
+//    without their folder. Not in the main checkout, not in a subagent's session, never on a title OpenCode has not
+//    generated yet.
 // Every refusal of 6, 7 and 9 is written to OpenCode's log as "refused by the pack" (COMMANDES.md, "Logs d'OpenCode").
 // Any error leaves the command as it is: a "[[run ...]]" line left in the prompt is then run by the model itself.
 import { execFile, spawn } from "node:child_process"
@@ -416,8 +420,9 @@ function gitCommonDir(cwd) {
   })
 }
 
-// "<repository folder> · branche <branch>" of the session's project, or "" outside a git repository. In a worktree
-// (an OpenCode workspace, whose folder has a generated name), the folder of the main checkout names the repository.
+// "<repository folder> · branche <branch>" of the session's project, or "" outside a git repository. In a worktree,
+// the folder of the main checkout names the repository, followed by the folder of the worktree:
+// "<repository> · worktree <folder> · branche <branch>".
 function where(cwd) {
   const git = (args) =>
     new Promise((resolve) => {
@@ -427,7 +432,7 @@ function where(cwd) {
     async ([root, branch, common]) => {
       if (!root) return ""
       const name = branch ? "branche " + branch : "HEAD détachée " + (await git(["rev-parse", "--short", "HEAD"]))
-      const repository = basename(common) === ".git" && resolve(common, "..") !== root ? basename(resolve(common, "..")) + " (worktree)" : basename(root)
+      const repository = basename(common) === ".git" && resolve(common, "..") !== root ? basename(resolve(common, "..")) + " · worktree " + basename(root) : basename(root)
       return repository + " · " + name
     },
   )
@@ -518,6 +523,14 @@ export const CompactCommands = async (input) => {
   const common = await gitCommonDir(root)
   const SHEETS = common ? join(common, "opencode-tickets") : ""
   const SHEET_WRITERS = new Set(["pilot", "analyst"])
+  // 12. the folder of this worktree at the start of the session titles ("" in the main checkout)
+  const TAG = common && common !== join(root, ".git") ? "[" + basename(root) + "] " : ""
+  const tagged = (title) => {
+    if (!TAG || !title || PROGRESS.test(title)) return title
+    const mark = (OUTCOME.exec(title) || [""])[0]
+    const rest = title.slice(mark.length)
+    return !rest || DEFAULT_TITLE.test(rest) || rest.startsWith(TAG) ? title : mark + TAG + rest
+  }
   // session id -> name of the agent of its last request to the model (7)
   const agents = new Map()
   // session id -> parent session id, "" for a top-level session (7)
@@ -669,7 +682,7 @@ export const CompactCommands = async (input) => {
       const info = (await client.session.get({ path: { id: sessionID } })).data
       if (!info || info.parentID) return
       const title = (info.title || "").replace(PROGRESS, "").replace(OUTCOME, "")
-      await client.session.update({ path: { id: sessionID }, body: { title: mark + title } })
+      await client.session.update({ path: { id: sessionID }, body: { title: tagged(mark + title) } })
     } catch {
       // the title stays as it is
     }
@@ -715,7 +728,7 @@ export const CompactCommands = async (input) => {
       if (current !== state.written) state.original = current.replace(PROGRESS, "").replace(OUTCOME, "")
       const now = Date.now()
       if (DEFAULT_TITLE.test(state.original) && state.phase !== "preparing" && now - state.start < DEFAULT_WAIT_MS) return
-      const title = progressLabel(state, now, state.child && subagents.get(state.child)) + " — " + state.original
+      const title = progressLabel(state, now, state.child && subagents.get(state.child)) + " — " + tagged(state.original)
       if (title === current) return
       await client.session.update({ path: { id: sessionID }, body: { title } })
       state.written = title
@@ -732,7 +745,7 @@ export const CompactCommands = async (input) => {
     try {
       const info = (await client.session.get({ path: { id: sessionID } })).data
       if (info && info.title === state.written) {
-        await client.session.update({ path: { id: sessionID }, body: { title: state.original } })
+        await client.session.update({ path: { id: sessionID }, body: { title: tagged(state.original) } })
       }
       state.written = undefined
     } catch {
@@ -813,6 +826,16 @@ export const CompactCommands = async (input) => {
         } else if (type === "idle") {
           refused.delete(props.sessionID)
           void finish(props.sessionID).then(() => markOutcome(props.sessionID, false))
+        }
+        return
+      }
+      case "session.updated": {
+        // 12. a title generated or renamed in a worktree gets its folder
+        const info = props.info
+        if (!TAG || !info || info.parentID || children.has(info.id) || !client) return
+        const title = tagged(info.title || "")
+        if (title !== (info.title || "")) {
+          Promise.resolve(client.session.update({ path: { id: info.id }, body: { title } })).catch(() => {})
         }
         return
       }

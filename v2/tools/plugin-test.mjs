@@ -343,6 +343,31 @@ await check("[worktree coder] the main checkout is outside", () => assert.reject
 await check("[worktree coder] the rest of the main .git is outside", () => assert.rejects(() => toolWt("wt-coder", "bash", { command: "cat " + join(mainRepo, ".git", "config") }), /outside the repository/))
 await check("[worktree coder] its own files", () => toolWt("wt-coder", "write", { filePath: join(workspace, "src", "B.cs"), content: "x" }))
 
+// ---------- 12. the folder of the worktree in the session titles and on the command line ----------
+const updated = async (h, info) => {
+  await h.event({ event: { type: "session.updated", properties: { info } } })
+  await new Promise((r) => setTimeout(r, 30))
+}
+for (const [id, title, extra] of [["wt-t1", "Export PDF des factures"], ["wt-t2", "New session - 2026-10-21T10:00:00.000Z"],
+  ["wt-t3", "✅ Export PDF"], ["wt-t4", "⏳ 0:05 réflexion 1,2k tokens — Export"], ["wt-t5", "Revue", { parentID: "wt-t1" }],
+  ["wt-t6", "[brave-fox] Déjà marqué"], ["main-t1", "Export PDF"]]) {
+  session(id, { title, ...(extra || {}) })
+  await updated(id.startsWith("main") ? hooks : hooksWt, sessions.get(id))
+}
+await check("[worktree title] a generated title gets the folder", () => assert.equal(sessions.get("wt-t1").title, "[brave-fox] Export PDF des factures"))
+await check("[worktree title] a default title is left for OpenCode", () => assert.equal(sessions.get("wt-t2").title, "New session - 2026-10-21T10:00:00.000Z"))
+await check("[worktree title] after the outcome mark", () => assert.equal(sessions.get("wt-t3").title, "✅ [brave-fox] Export PDF"))
+await check("[worktree title] a progress title is left as it is", () => assert.match(sessions.get("wt-t4").title, /^⏳ 0:05/))
+await check("[worktree title] never a subagent's session", () => assert.equal(sessions.get("wt-t5").title, "Revue"))
+await check("[worktree title] once only", () => assert.equal(sessions.get("wt-t6").title, "[brave-fox] Déjà marqué"))
+await check("[worktree title] never in the main checkout", () => assert.equal(sessions.get("main-t1").title, "Export PDF"))
+await check("[worktree] the command line names the worktree folder", async () => {
+  session("wt-cmd")
+  const output = { parts: [{ type: "text", text: "Fais le point." }] }
+  await hooksWt["command.execute.before"]({ command: "daily", sessionID: "wt-cmd", arguments: "" }, output)
+  assert.ok(output.parts.some((p) => /main-api · worktree brave-fox · branche opencode\/brave-fox/.test(p.text)), JSON.stringify(output.parts).slice(0, 300))
+})
+
 // ---------- 5. what a subagent waits for, in the title of its parent ----------
 session("go-p")
 session("chk-1", { parentID: "go-p" })

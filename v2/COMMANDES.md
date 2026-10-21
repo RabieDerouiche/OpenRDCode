@@ -254,29 +254,35 @@ Le pilote reprend une fois un checker en échec, puis livre sans auto-review en 
 
 ## Plusieurs tickets d'un même dépôt (espaces de travail)
 
-Un espace de travail est un deuxième dossier du même dépôt (un worktree git), avec sa propre branche et ses propres sessions. L'organisation conseillée : le dépôt principal (« Dépôt local » dans OpenCode) reste sur develop, pour `/daily`, `/review`, `/compare` et tes questions ; chaque ticket a son espace.
+Un espace de travail est un deuxième dossier du même dépôt (un worktree git), avec sa propre branche et ses propres sessions. OpenCode 1.19 web n'a plus d'option pour en créer : l'ancienne mise en page qui l'avait a été retirée le 14 septembre 2026, et la nouvelle ne l'affiche que dans ses versions de développement. Le pack les crée avec un script, à taper dans un terminal de la machine qui héberge OpenCode (aucun agent n'a le droit de le lancer). Organisation conseillée : le dépôt principal reste sur develop pour `/daily`, `/review`, `/compare` et tes questions ; chaque ticket a son dossier.
 
-**1. Activer, une fois par dépôt.** Dans la barre latérale d'OpenCode, clic droit sur le projet (deux doigts sur le trackpad) → « Activer les espaces de travail ». Le projet affiche alors « local » (le dépôt principal) et ses espaces, chacun avec un « + » (Nouvelle session) et un « … » (Renommer, Réinitialiser, Supprimer).
+**1. Créer le dossier d'un ticket**, depuis le dossier du dépôt (remplace le chemin et la clé) :
+```sh
+cd ~/mon-depot && sh ~/.config/opencode/scripts/workspace.sh new ABC-124
+```
+Il crée `~/worktrees/<dépôt>/ABC-124` à partir de develop à jour et affiche une ligne `ADDRESS: /…/session`. Une ligne `NOTE:` nomme les fichiers ignorés par git du dépôt principal (un `.env`, des réglages locaux) : ils ne sont pas dans le nouveau dossier, copie ceux dont le build ou les tests ont besoin. Sans ticket : un nom court à la place de la clé (`new essai-cache`), puis `/go sans ticket : …` dans sa session.
 
-**2. Un nouveau ticket.** « Nouvelle session » ; sous la zone de saisie, à droite du nom du projet, le sélecteur « Local » → « Nouvel espace de travail » ; puis tape `/go ABC-124` et envoie. OpenCode crée l'espace (sur une branche `opencode/<nom>`), `/go` le bascule sur la branche du ticket et supprime `opencode/<nom>`. Le premier build de l'espace repart de zéro : quelques minutes de plus.
+**2. Ouvrir une session dans ce dossier.** Dans la barre d'adresse du navigateur, garde l'adresse d'OpenCode jusqu'au port inclus (par exemple `http://machine:4096`), efface la suite, colle le chemin de la ligne ADDRESS, Entrée : une « Nouvelle session » s'ouvre dans le dossier. Tape `/go ABC-124`. La ligne de ta commande affiche alors `<dépôt> · worktree ABC-124 · …` : c'est la preuve que la session travaille dans le bon dossier. Avant l'envoi, sous la zone de saisie, OpenCode affiche le nom et la branche du dépôt principal : ne t'y fie pas, son affichage confond les deux dossiers.
 
-**3. Reprendre un ticket qui a déjà son espace.** Dans la barre latérale, sous l'espace, sa session ; ou le « + » de l'espace pour une session neuve. Puis `/go` seul : la clé vient de la branche, il reprend où il s'était arrêté. Après la CI : `/fix` dans la même session.
+N'ouvre pas le dossier avec « Ajouter un projet » : OpenCode le prend pour le dépôt principal et la session travaillerait dans le dépôt principal.
 
-**4. Un ticket en cours dans le dépôt principal, à passer dans un espace.** Une branche ne s'ouvre que dans un dossier à la fois. Dans le dépôt principal, avec rien de non commité (`git status -s` n'affiche rien ; sinon `/fix` livre d'abord) :
+**3. D'autres sessions dans le même dossier, et le lendemain.** Le « + » en haut, depuis une session du dossier, en ouvre une autre au même endroit. Sur l'accueil, toutes les sessions du dépôt sont listées ensemble sous le projet : celles d'un dossier commencent par `[ABC-124]` (le plugin l'ajoute). Pour reprendre : ouvre une de ses sessions, puis `/go` seul ; après la CI, `/fix` dans la même session. `list` redonne l'adresse de chaque dossier (étape 5).
+
+**4. Un ticket en cours dans le dépôt principal, à passer dans un dossier.** Une branche ne s'ouvre que dans un dossier à la fois (le script le vérifie). Dans le dépôt principal, avec rien de non commité (`git status -s` n'affiche rien ; sinon `/fix` livre d'abord) :
 ```sh
 git switch develop
 ```
-Puis un nouvel espace (étape 2) avec `/go ABC-123` : il reprend la branche existante, sa fiche et sa MR. Un ticket poussé seulement depuis le Mac : `/go ABC-123` dans un nouvel espace récupère la branche de GitLab.
+Puis les étapes 1 et 2 avec sa clé : `/go ABC-123` dans le nouveau dossier reprend la branche existante, sa fiche et sa MR. Un ticket poussé seulement depuis le Mac : pareil, `/go` récupère la branche de GitLab.
 
-**5. Fermer un espace, quand la MR est créée (✅) ou le ticket abandonné (`/outil abandon`).** OpenCode ne vérifie que les fichiers non commités, pas les commits non poussés, et supprimer l'espace supprime sa branche locale. Dans l'espace, `ahead N` veut dire N commits pas encore poussés (`/fix` les livre) :
+**5. Supprimer un dossier, quand la MR est créée (✅) ou le ticket abandonné (`/outil abandon`)**, depuis le dépôt principal :
 ```sh
-git status -sb | head -1
+cd ~/mon-depot && sh ~/.config/opencode/scripts/workspace.sh remove ABC-124
 ```
-Rien en avance : « … » de l'espace → « Supprimer ». N'utilise pas « Réinitialiser » sur un espace qui porte un ticket : il le ramène sur la branche par défaut.
+Le script refuse tant qu'il reste des fichiers non commités, ou des commits sur aucune branche ; la branche, elle, reste (la MR en a besoin), avec sa fiche. Archive ensuite les sessions de ce dossier sur l'accueil : sans leur dossier, elles ne peuvent plus rien faire.
 
-Les espaces du dépôt, avec leur branche :
+Les dossiers du dépôt, avec leur branche, ce qui n'est pas commité ou pas poussé, et leur adresse :
 ```sh
-git worktree list
+cd ~/mon-depot && sh ~/.config/opencode/scripts/workspace.sh list
 ```
 
 ## Identifiants GitLab
