@@ -2,6 +2,8 @@
 
 Analyse du 21 octobre 2026, faite sur OpenCode v2.1.2 (paquet npm `@opencode/cli`, sorti le 21 octobre) : lecture de son code source, puis la configuration actuelle du pack (v2 du pack, faite pour OpenCode 1.19) chargée par le vrai binaire v2 (`opencode debug config`, `opencode debug agents`, `opencode serve`). Chaque point dit d'où vient l'information : **constaté** (vu en faisant tourner v2), **code** (lu dans son source, pas encore vu tourner), **à vérifier**.
 
+> **Document d'origine, gardé pour l'historique.** La migration faite depuis, et vérifiée, est dans `MIGRATION.md`. Points tranchés depuis cette analyse : les espaces de travail de l'interface v2 existent et marchent avec le pack (vérifié à l'écran : « Local » → « Nouvel espace de travail ») ; la v2 tourne à côté de la 1.19 avec `OPENCODE_CONFIG_DIR` et ses propres dossiers XDG dans `~/oc2`, sans toucher à ceux de la 1.19 (vérifié par leurs empreintes) ; `experimental.primary_tools` et `compaction.prune` sont ignorés par la v2, et le plugin refuse lui-même les questions des sous-agents ; la v2 démarrée avec `serve` laisse son mot de passe dans l'environnement des commandes, et le plugin le leur retire.
+
 ## En bref
 
 1. **Le plugin du pack ne se charge pas, et v2 démarre quand même** (constaté). Son journal dit seulement `WARN failed to load plugin … Plugin must export a default definition with an id and an effect or setup function`. Tout ce que fait le plugin disparaît sans autre signe : le dossier du dépôt comme limite des agents, le refus des secrets et des dumps d'environnement, les délais longs, un seul `/go` à la fois, les lignes `[[run …]]` des commandes (le modèle les lancerait lui-même), les titres d'avancement. **C'est le chantier principal, et il bloque : ne lance pas v2 sur ta configuration actuelle avant qu'il soit fait.**
@@ -25,7 +27,7 @@ Analyse du 21 octobre 2026, faite sur OpenCode v2.1.2 (paquet npm `@opencode/cli
 | Lignes `[[run …]]` des commandes | exécutées par le plugin | `` !`sh ~/.config/opencode/scripts/…` `` natif si le point 4 se confirme | Les convertir ; sinon, une commande définie par le plugin (`command.transform`). |
 | `opencode.json`, section provider | options de modèle 1.19 | `reasoning` et `temperature` dans `provider.<id>.models.<modèle>`, et `compaction.prune`, sont ignorés (constaté, avertissement au démarrage) | Réécrire la partie provider (passerelle vLLM, `chat_template_kwargs`, délais) au format v2, avec ta vraie configuration. |
 | Serveur | `opencode web` | `opencode serve` (API v2 et interface web) ; un mot de passe est généré à chaque démarrage, sauf si `OPENCODE_SERVER_PASSWORD` est fixé (constaté) | Nouvelle commande de démarrage dans COMMANDES.md. |
-| `workspace.sh` et la marque `[dossier]` dans les titres | contournement de l'option absente | option native | À retirer une fois l'interface v2 vérifiée. |
+| `workspace.sh` et la marque `[dossier]` dans les titres | contournement de l'option absente | option native | Fait : l'interface v2 est vérifiée, `workspace.sh` n'est plus utile avec la v2. |
 | Tests du plugin (461) et essais de bout en bout | faux client 1.19, API `/session/…` | autre forme de plugin, API `/api/…` | À réécrire avec le plugin. |
 
 ### Le plugin, fonction par fonction

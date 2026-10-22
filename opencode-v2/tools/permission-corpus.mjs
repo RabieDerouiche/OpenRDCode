@@ -211,6 +211,9 @@ const BUILD_ALLOW = [
   "git switch develop", "git branch -d feature/ABC-1-x", "rm docs/old/page.md",
 ]
 add(["build"], BUILD_ALLOW, "allow")
+// the diagnostics COMMANDES.md tells the developer to ask in a session, so that he never runs a script himself
+add(["build"], [S + "package-refs.sh", S + "pattern-source.sh . ABC-123", S + "doc-inventory.sh", S + "api-routes.sh",
+  S + "config-keys.sh", S + "diff-guard.sh", S + "build-test.sh --build-only"], "allow")
 // they used to ask: refused now, since an "always" answer would have allowed them to every agent
 add(["build"], ["git push origin feature/x", "git reset --hard HEAD~1", "git rebase origin/develop", "rm -rf docs/old",
   "rm -rf ~/.nuget/packages/inhouse.lib/1.2.0", "dotnet run --project src/Api", "dotnet tool install -g dotnet-ef",

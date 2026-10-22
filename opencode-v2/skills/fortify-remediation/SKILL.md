@@ -92,4 +92,3 @@ Cause: untrusted data written to logs can inject fake lines (CR/LF).
 - Tokens: prefer HttpOnly cookies managed by the backend; do not add new tokens to localStorage / sessionStorage.
 - `eval`, `new Function`, `setTimeout` with a string: remove, replace with direct code.
 - Dependency findings: upgrade the vulnerable package to the fixed version (`npm audit` lists it); do not ignore the finding without a justification.
-

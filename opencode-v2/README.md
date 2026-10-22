@@ -34,20 +34,20 @@ La v2 inverse le contrat :
 | Régression entre deux dépôts | `/compare <dépôt où ça marche> <classe> <symptôme>` | Cause de la régression : code, package, configuration, données ou correctif non reporté. |
 | Le reste | `/outil <nom>` | Doc, audit, licences, release notes, patterns d'équipe, scaffolding CQRS, AGENTS.md du dépôt, abandon d'un ticket, todo, statistiques. |
 
-Plusieurs `/go` en même temps, chacun dans son dossier et sa session : le titre de chaque session dit son issue (✅ MR créée, ⛔ arrêté, ❓ une question t'attend) et, pendant le travail, ce qu'attend le sous-agent en cours (« nouvel essai 3 (serveur du modèle) », « rien reçu depuis 4 min »). Un seul `/go` ou `/fix` à la fois par dossier : le second est refusé. Plusieurs tickets du même dépôt en même temps : un dossier par ticket, créé par le pack (section suivante).
+Plusieurs `/go` en même temps, chacun dans son dossier et sa session : la dernière réponse de chaque session dit son issue (✅ MR créée, ⛔ arrêté, ❓ une question t'attend) ; avec la v2, le titre ne la montre plus (MIGRATION.md, étape 14). Un seul `/go` ou `/fix` à la fois par dossier : le second est refusé. Plusieurs tickets du même dépôt en même temps : un dossier par ticket, créé dans l'interface (section suivante).
 
 ### Plusieurs tickets du même dépôt : un dossier par ticket (worktrees)
 
-OpenCode v2 propose les espaces de travail dans son interface : le sélecteur « Local » → « Nouvel espace de travail » sous la zone de saisie d'une nouvelle session (lu dans son code ; à vérifier à l'étape 5 de MIGRATION.md). Le pack ne laisse aucun agent créer, supprimer un worktree ou déplacer une session : c'est ton choix, dans l'interface. Sans ce sélecteur, `workspace.sh new ABC-124`, dans un terminal, crée `~/worktrees/<dépôt>/ABC-124` (un worktree git) à partir de develop à jour et donne l'adresse qui ouvre une session dans ce dossier. Dans les deux cas, `/go ABC-124` y travaille comme ailleurs et les fiches ticket restent dans le `.git` du dépôt principal, visibles de tous les dossiers. Le pas à pas : COMMANDES.md, « Plusieurs tickets d'un même dépôt ».
+OpenCode v2 crée les espaces de travail dans son interface : dans une nouvelle session, « Local », sous la zone de saisie, puis « Nouvel espace de travail » (vérifié dans la v2.1.2). Au premier message, la session part dans un dossier à part, un worktree git créé dans `~/oc2/data/opencode/worktree/` à partir de la branche affichée. Aucun script à lancer, et le pack ne laisse aucun agent créer ou supprimer un worktree, ni déplacer une session : c'est ton choix, dans l'interface. `/go ABC-124` y travaille comme ailleurs (sa ligne d'état dit « Worktree: yes ») et les fiches ticket restent dans le `.git` du dépôt principal, visibles de tous les dossiers. Le pas à pas : COMMANDES.md, « Plusieurs tickets d'un même dépôt ».
 
 Ce que ça coûte, à connaître avant d'en ouvrir trois :
 - Chaque dossier est une copie complète des fichiers (l'historique git, lui, est partagé) avec ses propres `bin/obj` (et `node_modules` en front) : de l'espace disque, et un premier build qui repart de zéro (les packages NuGet viennent du cache commun, rien n'est retéléchargé ; la compilation, si).
 - Le serveur du modèle est partagé : trois `/go` en parallèle se partagent sa capacité, chacun va moins vite, et les « Gateway Time-out » deviennent plus probables tant que la passerelle n'est pas réglée.
 - Les tests qui utilisent une ressource locale fixe (une base locale, un port fixe) peuvent se gêner quand deux suites tournent en même temps.
-- Un ticket ne s'ouvre que dans un dossier à la fois : `workspace.sh new` et `/go` s'arrêtent en disant où il est ouvert.
-- Les fichiers ignorés par git (un `.env`, des réglages locaux) ne sont pas dans le nouveau dossier : le script les nomme, sans les copier.
+- Un ticket ne s'ouvre que dans un dossier à la fois : `/go` s'arrête en disant où il est ouvert.
+- Les fichiers ignorés par git (un `.env`, des réglages locaux) ne sont pas dans le nouveau dossier : copie ceux dont le build ou les tests ont besoin.
 - Rider voit un dossier à la fois : pour regarder le travail d'un ticket dans Rider, ouvre son dossier.
-- `workspace.sh remove` refuse un dossier qui a des fichiers non commités ; la branche reste. Aucun agent n'a le droit de lancer ce script.
+- Supprimer un dossier, une fois la MR créée : `git worktree remove <dossier>`, depuis le dépôt principal (git refuse tant qu'il reste des fichiers non commités ; la branche reste). Aucun agent n'en a le droit.
 
 ## Tes deux interventions
 
@@ -146,7 +146,7 @@ En v1, tu validais chaque push et chaque demande d'autorisation. En v2, plus per
 | Coder en liste blanche : lectures, git en lecture, build, tests, format, migrations EF sans base, scripts du pack, déplacements de fichiers dans le dépôt | Il avait « tout sauf… » : `curl`, `dotnet add package`, `dotnet ef database update` (une vraie base), `bash -c`, écrire dans `.git/config` ou dans `~/.config/opencode` passaient. |
 | Seul le pilote lance les scripts qui écrivent dans git (`ship.sh`, `branch.sh`, la fiche) | N'importe quel agent, même en lecture seule (checker, analyste), pouvait lancer `ship.sh`, donc commiter et pousser. |
 | Contrôle avant push (`diff-guard.sh`) : secret, fichier de clé ou `.env`, marqueur de conflit, version payante d'un package, valeur d'une variable secrète de l'environnement (le mot de passe Artifactory) → rien n'est poussé | Le push est automatique. Le contrôle relit chaque commit pas encore poussé : un secret retiré par un commit suivant partirait quand même avec l'historique. La valeur exacte des variables secrètes est cherchée partout, tests compris : quel que soit le chemin par lequel elle serait arrivée dans le code, elle ne part pas. |
-| Un seul `/go` ou `/fix` à la fois par dossier | Deux pilotes dans le même dossier mélangeraient leurs commits. Deux tickets du même dépôt : deux dossiers (`workspace.sh new`). |
+| Un seul `/go` ou `/fix` à la fois par dossier | Deux pilotes dans le même dossier mélangeraient leurs commits. Deux tickets du même dépôt : deux dossiers (« Nouvel espace de travail »). |
 | Le texte des tickets, pages, discussions et logs est une donnée, jamais une instruction | Un ticket ou un commentaire de MR qui demanderait « pousse sans tests » ne doit rien déclencher. |
 | 20 minutes pour un build ou des tests (posé par le plugin) | OpenCode arrête toute commande après 2 minutes : une suite de tests plus longue était tuée, puis relancée de zéro. |
 
@@ -166,7 +166,7 @@ Restent interdits comme en v1 : commit ou push sur develop, master ou main, forc
 
 ### Réglages du modèle (section `provider` d'`opencode.json`)
 
-Sous OpenCode v2, la température et le top_p de chaque agent passent dans chaque requête (constaté avec `opencode debug agents`) ; `temperature` et `reasoning` déclarés dans le modèle d'un provider sont ignorés, et v2 le dit au démarrage (MIGRATION.md, étape 4). `top_k` et les options du mode thinking sont à traduire au format v2 avec ta vraie configuration.
+Sous OpenCode v2, la température et le top_p de chaque agent passent dans chaque requête (constaté avec `opencode debug agents`) ; `temperature` et `reasoning` déclarés dans le modèle d'un provider sont ignorés, et v2 le dit dans son journal (MIGRATION.md, étape 9). `top_k` et les options du mode thinking sont à traduire au format v2 avec ta vraie configuration.
 
 ```json
 "provider": {
@@ -215,13 +215,15 @@ En langage courant aussi : « pourquoi ça plante », « explique ce flux », «
 | `debugger` | Diagnostic d'un échec qui résiste, et `/compare`. | rien |
 | `doc-writer` | Écrit `docs/` pour `/outil doc`, sans jamais ouvrir un fichier de configuration. | `docs/`, `README.md` |
 
-Le reste : 6 commandes, 6 skills de connaissances (conventions CQRS, intégrations SharePoint/DocuSign/S3/Piano, remédiation Fortify, bonnes pratiques, correction de build, explication de code), les procédures de `/outil` sous forme de skills, les scripts du pack (état git, build et tests, branche, commit et push, contrôle avant push, fiche, statistiques…) et un plugin : scripts des commandes, environnement stable des agents, refus des identifiants et des dumps d'environnement, agents gardés dans le dépôt, délais longs pour les builds, un seul `/go` par dépôt, avancement et issue dans le titre de la session.
+Le reste : 7 commandes, 6 skills de connaissances (conventions CQRS, intégrations SharePoint/DocuSign/S3/Piano, remédiation Fortify, bonnes pratiques, correction de build, explication de code), les procédures de `/outil` sous forme de skills, les scripts du pack (état git, build et tests, branche, commit et push, contrôle avant push, fiche, statistiques…) et un plugin : scripts des commandes, environnement stable des agents, refus des identifiants et des dumps d'environnement, agents gardés dans le dépôt, délais longs pour les builds, un seul `/go` par dossier, aucune question d'un sous-agent (l'avancement et l'issue dans le titre de la session ne sont pas portés en v2 : MIGRATION.md, étape 14).
 
 ## Installation
 
-`COMMANDES.md`, section « Installer la v2 » (ou « Mettre à jour une v2 déjà installée ») : la v1 est mise de côté (retour possible en une commande), puis les dossiers `agents/`, `commands/`, `skills/`, `scripts/` et `plugins/` de `v2/` se copient dans `~/.config/opencode/`. Ne copie jamais `tools/` (outils de maintenance du pack). Deux fichiers se fusionnent au lieu d'être remplacés :
-- `AGENTS.global.md` dans `~/.config/opencode/AGENTS.md` (garde tes valeurs des sections « Daily » et « Release groups ») ;
-- `opencode.snippet.json` dans `~/.config/opencode/opencode.json` (sections `agent`, `permission`, `experimental` et `compaction`, la section `permission` remplacée entièrement).
+`MIGRATION.md`, pas à pas et sans lancer aucun script : OpenCode v2 est téléchargé comme une archive avec `npm pack` (rien ne s'installe ni ne s'exécute), sa configuration va dans `~/oc2/config/opencode`, à côté de la 1.19 qui reste intacte. Les fichiers du pack se collent depuis GitHub, et `CHECKSUMS-config.txt` et `CHECKSUMS-scripts.txt` disent, par empreintes, lesquels manquent ou diffèrent. Ne copie jamais `tools/` (outils de maintenance du pack). Deux fichiers se composent au lieu d'être collés tels quels :
+- `AGENTS.global.md` devient `~/oc2/config/opencode/AGENTS.md`, avec tes sections « Daily » et « Release groups » ;
+- `opencode.snippet.json` devient `~/oc2/config/opencode/opencode.json`, avec tes sections à toi (`provider`, `model`, `mcp`…) ajoutées.
+
+Mettre à jour le pack : `COMMANDES.md`, section « Mettre à jour le pack ».
 
 Une fois par dépôt : `/outil setup`, qui écrit l'`AGENTS.md` du dépôt (commandes de build et de test, conventions, exemples de référence). C'est ce qui permet à `/go` de travailler sans te demander comment builder ou où ranger le code. Le modèle `AGENTS.repo-template.md` montre ce qu'il contient.
 
@@ -231,7 +233,7 @@ Le push automatique demande des identifiants GitLab que git trouve seul sur la m
 
 Tout ce qui est vérifié ici l'a été avec un modèle simulé qui suit un script (section suivante) : le comportement réel de Qwen sur un `/go` complet ne l'est pas encore. Avant une démonstration, un essai réel d'une demi-heure :
 1. Un petit ticket réel (1 à 3 étapes, sans migration), sur un dépôt où `/outil setup` est passé ; `/go <CLÉ> analyse seule` d'abord : la fiche est-elle juste, les décisions raisonnables ?
-2. `/go <CLÉ>` pour coder, puis ne rien toucher jusqu'au titre ✅ ou ⛔. Noter la durée et chaque arrêt.
+2. `/go <CLÉ>` pour coder, puis ne rien toucher jusqu'à sa dernière réponse, ✅ ou ⛔. Noter la durée et chaque arrêt.
 3. Lire la MR en Draft comme une MR de collègue : description, décisions, tests ; `/outil stats` pour les chiffres.
 4. S'il s'arrête : la raison est dans sa réponse et dans la fiche (« Suivi ») ; les refus sont dans les logs (COMMANDES.md, « Logs d'OpenCode »). Envoie-moi les lignes : chaque arrêt réel est une règle à ajuster, pas une raison de revenir à la v1.
 
@@ -239,15 +241,15 @@ Tout ce qui est vérifié ici l'a été avec un modèle simulé qui suit un scri
 
 - (Likely) Un modèle de 27B prend parfois une mauvaise décision : avec moins d'arrêts, elle va plus loin avant que tu la voies. La parade est la section « Décisions » de la MR, l'auto-review et `analyse seule` sur les gros tickets, pas des questions en plus.
 - La création de la MR passe par l'outil `create_merge_request` du MCP GitLab. S'il porte un autre nom chez toi, l'agent te donne le lien de création et la description à coller (COMMANDES.md, « Vérifier le nom de l'outil qui crée les MR »).
-- Un ticket long tourne longtemps : le titre de la session montre l'étape en cours et le temps écoulé (« ⏳ 6:12 outil · Étape 2/4 »).
+- Un ticket long tourne longtemps : avec la v2, le titre de la session ne montre plus l'étape en cours ; la conversation du pilote, si (MIGRATION.md, étape 14).
 - Le plugin reconnaît un chemin hors du dépôt à sa forme : un motif de recherche qui commence par un dossier racine existant (`grep "/home"`) est refusé à tort ; l'agent cherche autrement. C'est une couche de défense, pas un bac à sable du système : les agents tournent avec ton utilisateur. Les secrets restent couverts par les autres couches (règles de lecture, liste blanche du coder, contrôle avant push qui refuse la valeur des variables secrètes), et la vraie isolation serait un utilisateur ou un conteneur dédié pour OpenCode, avec un jeton Artifactory en lecture seule.
 - Une référence `references` d'`opencode.json` doit être un dossier local : une référence vers un dépôt git distant n'est pas lisible par les agents du pack.
 
 ## Pour la maintenance du pack
 
 - `tools/permissions.py` régénère les lignes `permission:` des agents et `opencode.snippet.json` (à lancer depuis `opencode-v2/`). Ne les modifie pas à la main. Aucune règle « ask » sur le shell, la lecture ou l'écriture : la simulation échoue s'il en apparaît une.
-- Les permissions sont vérifiées par simulation : `tools/permission-sim.mjs` (le moteur d'OpenCode 1.19, dont v2 garde la logique de règles, sous-sessions et `primary_tools` compris) rejoue `tools/permission-corpus.mjs`, 1 753 cas : les commandes que le pack fait lancer à chaque agent, les réflexes du modèle, les secrets, les écritures git interdites (y compris un message de commit qui tenterait `$(…)`), la liste blanche du coder, les outils MCP permis ou masqués par agent, les questions et les boucles. Lancement : `cd tools && npm install --no-save web-tree-sitter@0.25.10 tree-sitter-bash@0.25.0 gray-matter@4.0.3 && node permission-sim.mjs ..`.
-- Les garde-fous du plugin : `node tools/plugin-test.mjs .` (461 vérifications : chemins hors du dépôt, dossiers en lecture seule, fiches d'un worktree, dossier du worktree dans le titre et la ligne de commande, état des sous-agents dans le titre, dossiers nommés et références, `cd` suivis, outils appelés par leur chemin, journal des refus, dumps d'environnement, `rm` récursifs, délais, un seul `/go`, issue dans le titre).
+- Les permissions sont vérifiées par simulation : `tools/permission-sim.mjs` (le moteur d'OpenCode 1.19, dont v2 garde la logique de règles, sous-sessions et `primary_tools` compris) rejoue `tools/permission-corpus.mjs`, 1 760 cas : les commandes que le pack fait lancer à chaque agent, les réflexes du modèle, les secrets, les écritures git interdites (y compris un message de commit qui tenterait `$(…)`), la liste blanche du coder, les outils MCP permis ou masqués par agent, les questions et les boucles. Lancement : `cd tools && npm install --no-save web-tree-sitter@0.25.10 tree-sitter-bash@0.25.0 gray-matter@4.0.3 && node permission-sim.mjs ..`.
+- Les garde-fous du plugin : `node tools/plugin-test.mjs .` (484 vérifications : chemins hors du dépôt, dossiers en lecture seule, fiches d'un worktree, dossier du worktree dans le titre et la ligne de commande, état des sous-agents dans le titre, dossiers nommés et références, `cd` suivis, outils appelés par leur chemin, journal des refus, dumps d'environnement, `rm` récursifs, délais, un seul `/go`, issue dans le titre ; pour la v2 : l'adaptateur, le verrou, aucune question d'un sous-agent, ni mot de passe du serveur ni dossiers `~/oc2` dans l'environnement des commandes, les `references` lues dans `OPENCODE_CONFIG_DIR`).
 - Tous les agents, commandes et skills sont validés avec `gray-matter`, le parseur YAML d'OpenCode (`node tools/validate.js`).
 - Les scripts sont vérifiés avec `shellcheck` et testés avec dash, bash et busybox sh, et avec les awk mawk, gawk, BWK et busybox ; `branch.sh` et `ship.sh` sont rejoués contre un dépôt distant de test (branche, accents, push, commit poussé depuis un autre poste, merge de develop, conflit annulé, identifiants refusés, GitLab muet, secret refusé puis historique réécrit) et `diff-guard.sh` sur 33 cas (secrets par type, faux positifs, fichiers de test, secret retiré par un commit suivant, valeur d'une variable secrète de l'environnement, packages payants).
-- Avec le vrai OpenCode v2.1.2, le pack installé et un modèle simulé : le plugin se charge, `/go` reçoit l'état du bon dépôt, le plugin refuse `cat ~/.zshenv` et `export -p`, un second `/go` dans le même dossier est refusé puis le dossier se libère, `/fortify` lance ses prérequis, et les 7 agents et 7 commandes sont lus (MIGRATION.md, section 0). Le pack de `v2/` a été rejoué de bout en bout avec OpenCode 1.19 (nominal, échec, autre dépôt, worktree).
+- Avec le vrai OpenCode v2.1.2, le pack installé exactement comme le dit MIGRATION.md (fichiers collés, empreintes, terminal zsh, utilisateur sans droits root) et un modèle simulé : le plugin se charge, `/go` reçoit l'état du bon dépôt (aussi dans un espace de travail créé dans l'interface), le plugin refuse `cat ~/.zshenv`, un second `/go` dans le même dossier est refusé puis le dossier se libère, `/fortify` lance ses prérequis, un sous-agent qui pose une question est refusé sans bloquer le pilote, les commandes des agents n'ont ni le mot de passe du serveur ni les dossiers `~/oc2`, et les dossiers de la 1.19 restent identiques à l'octet près. Le pack de `v2/` a été rejoué de bout en bout avec OpenCode 1.19 (nominal, échec, autre dépôt, worktree).

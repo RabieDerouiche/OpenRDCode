@@ -79,6 +79,20 @@ const SCRIPTS = join(HOME, ".config", "opencode", "scripts")
 const RUN = /\[\[run ([a-z][a-z0-9-]*\.sh)((?: [^\n]*?)?)\]\]/g
 const VISIBLE = /\n?\[\[visible\]\]\n?/
 const TIMEOUT_MS = 180000
+// The environment of the commands the pack runs ([[run]] scripts, commands of the agents): never the password of the
+// OpenCode server (v2.1.2 keeps it in the environment of what it runs when started with "serve"), and the developer's
+// usual folders when OpenCode v2 runs next to 1.19 with its own XDG folders in ~/oc2 (MIGRATION.md): git (its credential
+// cache), dotnet (the NuGet caches) and the other tools then behave as in the developer's terminal
+const SERVER_SECRETS = ["OPENCODE_SERVER_PASSWORD", "OPENCODE_PASSWORD"]
+const ISOLATED = join(HOME, "oc2")
+function cleanEnv(env) {
+  for (const name of SERVER_SECRETS) delete env[name]
+  for (const name of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"]) {
+    const value = env[name]
+    if (typeof value === "string" && isAbsolute(value) && within(resolve(value), ISOLATED)) delete env[name]
+  }
+  return env
+}
 const MAX_OUTPUT = 32 * 1024 * 1024
 // Commands of the pack that a multiple-choice answer may start (built-in OpenCode commands are never started)
 const CHAINABLE = new Set(["go", "fix", "daily", "review", "compare", "outil"])
@@ -369,7 +383,7 @@ function run(script, args, cwd) {
         cwd,
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+        env: cleanEnv({ ...process.env, GIT_TERMINAL_PROMPT: "0" }),
       })
     } catch (error) {
       resolve(script + " failed: " + String((error && error.message) || error))
@@ -1157,11 +1171,18 @@ export const CompactCommands = async (input) => {
 // - session → prompt and the event stream: one /go, /fix or /fortify at a time per folder (9). The second one gets
 //   a one-line answer and no tool runs in its turn; the folder is free again when the first session goes idle or
 //   fails (or after 4 hours without that news).
+// - shell → create.before: the commands of the agents get neither the server password nor the XDG folders of
+//   OpenCode v2 in ~/oc2 (cleanEnv).
+// - A subagent never asks a question: nobody answers during /go, /fix or /fortify. OpenCode 1.19 did it with
+//   experimental.primary_tools, which v2 ignores; v2 starts every subagent session with SUBAGENT_PROMPT, so the
+//   sessions that start with it are the subagent ones, and their question tool is refused.
 // Not ported (opencode-v2/MIGRATION.md, "Ce qui n'est pas porté"): the compact command line (3), the command chosen
 // in a multiple-choice question (4), the progress, outcome and folder in the session titles (5, 10, 12), and the
 // folders named in a message (7: configured references only).
 const V2_TOOLS = { shell: "bash", subagent: "task" }
 const V2_REFUSED = new Set(["session_move", "worktree_create", "worktree_remove"])
+// the first line of the prompt of every subagent session in OpenCode v2.1.2 (its subagent tool)
+const SUBAGENT_PROMPT = "You are a subagent spawned by another session."
 // the first sentence of the body of each pilot command: a prompt that holds one is a run of that command
 const PILOT_RUNS = [
   ["/go", "Take the ticket from its analysis to its Draft merge request"],
@@ -1181,19 +1202,28 @@ const eventIdle = (e) => {
   return !!status && (status === "idle" || status.type === "idle")
 }
 
-// the "references" of the OpenCode configuration (alias -> folder), read by the plugin only
+// JSON with comments and trailing commas, as OpenCode reads its configuration (strings kept as they are)
+const STRING = String.raw`"(?:\\.|[^"\\])*"`
+function parseJsonc(text) {
+  const noComments = text.replace(new RegExp(STRING + String.raw`|\/\/[^\n]*|\/\*[\s\S]*?\*\/`, "g"), (m) => (m[0] === '"' ? m : ""))
+  return JSON.parse(noComments.replace(new RegExp(STRING + String.raw`|,(\s*[}\]])`, "g"), (m, tail) => (m[0] === '"' ? m : tail)))
+}
+
+// the "references" of the OpenCode configuration (alias -> folder), read by the plugin only: in the configuration
+// folder of OpenCode v2 (OPENCODE_CONFIG_DIR, as MIGRATION.md starts it; otherwise the XDG one), opencode.json then
+// opencode.jsonc, the second one winning as in OpenCode
 function configuredReferences() {
-  const base = process.env.XDG_CONFIG_HOME || join(HOME, ".config")
+  const dir = process.env.OPENCODE_CONFIG_DIR || join(process.env.XDG_CONFIG_HOME || join(HOME, ".config"), "opencode")
+  const references = {}
   for (const name of ["opencode.json", "opencode.jsonc"]) {
     try {
-      const text = readFileSync(join(base, "opencode", name), "utf8")
-      const data = JSON.parse(name.endsWith(".jsonc") ? text.replace(/^\s*\/\/.*$/gm, "") : text)
-      return (data && data.references) || {}
+      const data = parseJsonc(readFileSync(join(dir, name), "utf8"))
+      Object.assign(references, (data && (data.references || data.reference)) || {})
     } catch {
-      // next name
+      // no file, or a file OpenCode rejects as well
     }
   }
-  return {}
+  return references
 }
 
 export default Plugin.define({
@@ -1221,6 +1251,8 @@ export default Plugin.define({
     // 9. the pilot runs of this folder: session id -> { command, since }; the sessions whose run was refused
     const runningPilots = new Map()
     const refusedRuns = new Set()
+    // the subagent sessions, which never ask a question
+    const subagentSessions = new Set()
     const release = (id) => {
       runningPilots.delete(id)
       refusedRuns.delete(id)
@@ -1247,6 +1279,9 @@ export default Plugin.define({
       if (V2_REFUSED.has(event.tool)) {
         throw new Error("Refused by the pack: " + event.tool + " is for the developer, in the web interface. Work in the repository of this session.")
       }
+      if (event.tool === "question" && subagentSessions.has(event.sessionID)) {
+        throw new Error("Refused by the pack: a subagent never asks a question, nobody answers during /go, /fix or /fortify. Decide with the rules of your instructions, or write the question in your report.")
+      }
       if (refusedRuns.has(event.sessionID)) {
         throw new Error("Refused by the pack: this run was refused (another /go, /fix or /fortify runs in this folder). Answer with the sentence of the request only.")
       }
@@ -1265,13 +1300,18 @@ export default Plugin.define({
 
     await ctx.shell.hook("create.before", async (invocation) => {
       if (!invocation || !invocation.env) return
+      // no server password, and the developer's usual folders (cleanEnv)
+      cleanEnv(invocation.env)
       await hooks["shell.env"]({ callID: "v2" }, { env: invocation.env })
     })
 
     await ctx.session.hook("prompt", async (event) => {
       const prompt = event && event.prompt
       if (!prompt || typeof prompt.text !== "string") return
-      const run = PILOT_RUNS.find(([, sentence]) => prompt.text.includes(sentence))
+      // a subagent session is never a run of a pilot command, whatever its prompt quotes
+      const subagent = prompt.text.startsWith(SUBAGENT_PROMPT)
+      if (subagent) subagentSessions.add(event.sessionID)
+      const run = subagent ? undefined : PILOT_RUNS.find(([, sentence]) => prompt.text.includes(sentence))
       if (run) {
         const now = Date.now()
         for (const [id, item] of runningPilots) if (now - item.since > LOCK_MS) runningPilots.delete(id)

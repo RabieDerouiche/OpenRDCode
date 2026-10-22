@@ -425,10 +425,77 @@ await check("[v2] the commands of the agents get a stable environment", async ()
   await v2hooks["shell.create.before"](invocation)
   assert.equal(invocation.env.GIT_TERMINAL_PROMPT, "0")
 })
+await check("[v2] the commands of the agents never get the server password", async () => {
+  const invocation = { command: "git status", env: { PATH: "/usr/bin", OPENCODE_SERVER_PASSWORD: "pw", OPENCODE_PASSWORD: "pw" } }
+  await v2hooks["shell.create.before"](invocation)
+  assert.equal(invocation.env.OPENCODE_SERVER_PASSWORD, undefined)
+  assert.equal(invocation.env.OPENCODE_PASSWORD, undefined)
+  assert.equal(invocation.env.PATH, "/usr/bin")
+})
+await check("[v2] the commands of the agents get the developer's folders back, not the XDG ones of ~/oc2", async () => {
+  const env = { XDG_DATA_HOME: join(home, "oc2", "data"), XDG_CACHE_HOME: join(home, "oc2", "cache"), XDG_STATE_HOME: join(home, "oc2", "state"),
+    XDG_CONFIG_HOME: "/etc/xdg-of-the-developer", OPENCODE_CONFIG_DIR: join(home, "oc2", "config", "opencode") }
+  const invocation = { command: "git fetch", env }
+  await v2hooks["shell.create.before"](invocation)
+  assert.equal(env.XDG_DATA_HOME, undefined)
+  assert.equal(env.XDG_CACHE_HOME, undefined)
+  assert.equal(env.XDG_STATE_HOME, undefined)
+  assert.equal(env.XDG_CONFIG_HOME, "/etc/xdg-of-the-developer")
+})
+await check("[v2] the [[run]] scripts get neither the server password nor the XDG folders of ~/oc2", async () => {
+  writeFileSync(join(home, ".config", "opencode", "scripts", "envcheck.sh"), 'echo "PW=${OPENCODE_SERVER_PASSWORD:-unset} CACHE=${XDG_CACHE_HOME:-unset} HOME_OK=$([ -n "$HOME" ] && echo yes)"\n')
+  const saved = { pw: process.env.OPENCODE_SERVER_PASSWORD, cache: process.env.XDG_CACHE_HOME }
+  process.env.OPENCODE_SERVER_PASSWORD = "pw"
+  process.env.XDG_CACHE_HOME = join(home, "oc2", "cache")
+  try {
+    const event = { sessionID: "v2-env", prompt: { text: "State:\n[[run envcheck.sh]]" } }
+    await v2hooks["session.prompt"](event)
+    assert.match(event.prompt.text, /PW=unset CACHE=unset HOME_OK=yes/)
+  } finally {
+    if (saved.pw === undefined) delete process.env.OPENCODE_SERVER_PASSWORD
+    else process.env.OPENCODE_SERVER_PASSWORD = saved.pw
+    if (saved.cache === undefined) delete process.env.XDG_CACHE_HOME
+    else process.env.XDG_CACHE_HOME = saved.cache
+  }
+})
 await check("[v2] [[run]] lines of a command run in the repository", async () => {
   const event = { sessionID: "v2-s", prompt: { text: "State:\n[[run hello.sh]]\nGo." } }
   await v2hooks["session.prompt"](event)
   assert.match(event.prompt.text, /hello from my-api/)
+})
+await check("[v2] a subagent session never asks a question (OpenCode v2 ignores experimental.primary_tools)", async () => {
+  const sub = { sessionID: "v2-sub", prompt: { text: "You are a subagent spawned by another session.\nFind why the test fails." } }
+  await v2hooks["session.prompt"](sub)
+  await assert.rejects(() => v2hooks["tool.execute.before"]({ tool: "question", sessionID: "v2-sub", agent: "debugger", messageID: "m", id: "q1", input: { questions: [] } }), /a subagent never asks a question/)
+})
+await check("[v2] a primary session may still ask a question", () =>
+  v2hooks["tool.execute.before"]({ tool: "question", sessionID: "v2-s", agent: "pilot", messageID: "m", id: "q2", input: { questions: [] } }))
+await check("[v2] a subagent prompt that quotes a pilot command is not a run of it", async () => {
+  const sub = { sessionID: "v2-sub2", prompt: { text: "You are a subagent spawned by another session.\nThe command says: Take the ticket from its analysis to its Draft merge request." } }
+  await v2hooks["session.prompt"](sub)
+  assert.doesNotMatch(sub.prompt.text, /refusé/)
+  const pilot = { sessionID: "v2-pilot", prompt: { text: "Take the ticket from its analysis to its Draft merge request, now." } }
+  await v2hooks["session.prompt"](pilot)
+  assert.doesNotMatch(pilot.prompt.text, /refusé/)
+})
+await check("[v2] the references of opencode.json in OPENCODE_CONFIG_DIR are readable, comments and trailing commas included", async () => {
+  const configDir = join(home, "oc2", "config", "opencode")
+  const referenced = join(home, "repos", "legacy-ref")
+  mkdirSync(configDir, { recursive: true })
+  mkdirSync(referenced, { recursive: true })
+  writeFileSync(join(referenced, "README.md"), "legacy\n")
+  writeFileSync(join(configDir, "opencode.json"), '{\n  // my settings\n  "model": "fake/qwen",\n  "references": { "legacy": { "path": "' + referenced + '", }, },\n}\n')
+  const refHooks = {}
+  const onRef = (domain) => ({ hook: async (name, fn) => { refHooks[domain + "." + name] = fn } })
+  const read = (path, id) => refHooks["tool.execute.before"]({ tool: "read", sessionID: "ref-s", agent: "coder", messageID: "m", id, input: { path } })
+  process.env.OPENCODE_CONFIG_DIR = configDir
+  try {
+    await v2Plugin.setup({ location: { directory: repo }, tool: onRef("tool"), shell: onRef("shell"), session: onRef("session") })
+    await read(join(referenced, "README.md"), "r1")
+    await assert.rejects(() => read(join(home, "repos", "unreferenced", "README.md"), "r2"), /outside the repository/)
+  } finally {
+    delete process.env.OPENCODE_CONFIG_DIR
+  }
 })
 
 // ---------- OpenCode v2 adapter: one /go, /fix or /fortify at a time per folder (9) ----------
