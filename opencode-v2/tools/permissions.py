@@ -333,13 +333,21 @@ SNIPPET = as_dict([
     # creation of its merge request, build its Confluence pages with approval, with their own rules, which come after).
     ("permission", [
         ("question", "allow"),
-        ("skill", [("*", "allow")]),
+        # the built-in skill "report" of OpenCode v2 collects the configuration and publishes a GitHub issue with gh
+        ("skill", [("*", "allow"), ("report", "deny")]),
         ("doom_loop", "deny"),
         # OpenCode v2 tools: a worktree or a moved session is the developer's choice, in the web interface (the pack
-        # plugin refuses them too)
+        # plugin refuses them too), by their names and by their names in code mode
         ("session_move", "deny"),
         ("worktree_create", "deny"),
         ("worktree_remove", "deny"),
+        ("opencode_session_move", "deny"),
+        ("opencode_worktree_create", "deny"),
+        ("opencode_worktree_remove", "deny"),
+        # code mode runs JavaScript that can call any address, without any permission; the web search sends the query
+        # to an outside service (the pack plugin takes both out of every request)
+        ("execute", "deny"),
+        ("websearch", "deny"),
         # Readable without asking: the NuGet package cache (XML documentation of in-house packages), the skills and the
         # pack's scripts (an approval is kept only until OpenCode restarts, and per project). Never written: the edit
         # rules below, and the pack plugin for the shell (these folders are read-only to every agent)
@@ -361,6 +369,12 @@ SNIPPET = as_dict([
     # Outputs of tools from the older turns of a long session (/daily, then /go, then /fix) are erased from the
     # context; the last two turns stay whole
     ("compaction", [("prune", True)]),
+    # Nothing goes to opencode.ai or to a search service: no session shared on a public link, no update checked or
+    # installed by OpenCode itself (a new version is a package you download on purpose, MIGRATION.md), no web search
+    # (also refused by the rules above and taken out of every request by the pack plugin)
+    ("share", "disabled"),
+    ("autoupdate", False),
+    ("websearch", False),
 ])
 with open("opencode.snippet.json", "w") as out:
     json.dump(SNIPPET, out, indent=2, ensure_ascii=False)

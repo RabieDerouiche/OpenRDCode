@@ -490,12 +490,18 @@
   "permission": {
     "question": "allow",
     "skill": {
-      "*": "allow"
+      "*": "allow",
+      "report": "deny"
     },
     "doom_loop": "deny",
     "session_move": "deny",
     "worktree_create": "deny",
     "worktree_remove": "deny",
+    "opencode_session_move": "deny",
+    "opencode_worktree_create": "deny",
+    "opencode_worktree_remove": "deny",
+    "execute": "deny",
+    "websearch": "deny",
     "external_directory": {
       "~/.nuget/packages/*": "allow",
       "~/.config/opencode/skills/*": "allow",
@@ -561,5 +567,8 @@
   },
   "compaction": {
     "prune": true
-  }
+  },
+  "share": "disabled",
+  "autoupdate": false,
+  "websearch": false
 }

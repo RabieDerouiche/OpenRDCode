@@ -3,6 +3,7 @@ description: "After the CI or the review: gathers in one pass the failed jobs of
 agent: pilot
 subtask: false
 ---
+[[command fix $ARGUMENTS]]
 Directives: « $ARGUMENTS »
 
 Workflow state (one fetch, then the state of the branch, its ticket sheet and the Fortify SSC application line):
@@ -39,7 +40,7 @@ The developer's directives narrow the list (« seulement la review », « pas So
 ## 4. Fix
 In groups of 15 items at most, grouped by file, one `coder` subagent per group, a line « Corrections : <n> points… » before each:
 "Fix these items of the branch of ticket <KEY> in the repository <Repository root>, with the smallest change for each and a test when the behavior changes: <numbered items: source, file:line, problem, expected fix; for a CI failure its error lines; for a Sonar or Fortify finding its rule or category and the fix of the skill fortify-remediation>. Decisions already taken (never reopen them): <« ## Décisions » lines>. Directives: <…>. Project type: <type>. Build and tests: <AGENTS.md "Build & test">. Report in your format, with one line per item: corrigé, ou non corrigé et pourquoi."
-After each report, in ONE shell call: `sh ~/.config/opencode/scripts/ship.sh --no-push "fix(<scope>): <what this group fixes, in English> (<KEY>)"`, then `&& sh ~/.config/opencode/scripts/ticket-sheet.sh decision "<topic> : <choice> — <reason> (/fix)"` for each decision of the report. ÉCHEC, a report without its RÉSULTAT line or a task error: the `debugger`, then the SAME coder session with its `sessionID` and the diagnosis, as /go does; still failing: record `ticket-sheet.sh suivi "/fix - bloqué : <reason>"` and stop with the report.
+After each report, in ONE shell call: `sh ~/.config/opencode/scripts/ship.sh --no-push "fix(<scope>): <what this group fixes, in English> (<KEY>)"`, then `&& sh ~/.config/opencode/scripts/ticket-sheet.sh decision "<topic> : <choice> — <reason> (/fix)"` for each decision of the report. ÉCHEC, a report without its RÉSULTAT line or a subagent error: the `debugger`, then the SAME coder session with its `sessionID` and the diagnosis, as /go does; still failing: record `ticket-sheet.sh suivi "/fix - bloqué : <reason>"` and stop with the report.
 
 ## 5. Verify
 When something was fixed: the full suite in one call (`sh ~/.config/opencode/scripts/build-test.sh` with the solution or project and the options of AGENTS.md "Build & test"); a failure that is not in the « /go - base develop » line of the sheet: one `coder` round with the failing lines, then the suite again; still failing: stop. More than 30 lines changed by the fixes: the `checker` subagent on `git diff <Pushed commit line>..HEAD`, telling it that the build and tests just passed; its « bloquant » and « majeur » points: one `coder` round. The checker fails: resume it once with its `sessionID` (« Donne ton verdict maintenant, dans ton format, avec ce que tu as déjà lu. »), then go on without it and say « auto-review non faite » in the answer.

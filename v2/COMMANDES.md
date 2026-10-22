@@ -421,7 +421,7 @@ git reset --soft "$(git merge-base HEAD origin/develop)"
 
 ## Lire un autre dépôt (« comme dans… »)
 
-`/go ABC-123 comme dans ~/repos/ancienne-api (ExportService)` : l'analyste lit l'implémentation de l'autre dépôt et la décrit dans la fiche (section « Référence »), le coder la reproduit. Au début du `/go`, OpenCode te demande l'accès en lecture à ce dossier : réponds « Toujours » (une fois pour toute la session OpenCode, pour ce dossier seulement). Personne n'écrit dans l'autre dépôt.
+`/go ABC-123 comme dans ~/repos/ancienne-api (ExportService)` : l'analyste lit l'implémentation de l'autre dépôt et la décrit dans la fiche (section « Référence »), le coder la reproduit. Au début du `/go`, OpenCode te demande l'accès en lecture à ce dossier : réponds « Toujours » (une fois pour toute la session OpenCode, pour ce dossier seulement). Personne n'écrit dans l'autre dépôt. Un fichier cité rend lisible son dossier, jamais ton dossier personnel lui-même ni un de ses dossiers cachés (`~/.ssh`, `~/.config`…) : citer `~/.zshenv` ne rend rien lisible.
 
 Pour un dépôt que tu cites souvent, sans plus aucune demande : déclare-le comme référence dans `~/.config/opencode/opencode.json` (au premier niveau ; le nom, sans espace ni `/`, sert aussi dans `/go … comme dans ancienne-api`), puis redémarre OpenCode :
 ```json

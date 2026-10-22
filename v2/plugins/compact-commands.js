@@ -38,8 +38,9 @@
 //    redirection, is refused, and so is a read, search, edit or write of an agent of the pack (pilot, analyst, coder,
 //    checker, debugger, doc-writer) outside it. Allowed outside: the pack's scripts and skills, the outputs OpenCode
 //    saves, the NuGet package cache for the file tools, the folders configured as "references" in opencode.json and
-//    the folders I name myself (in the arguments of a command or in a message I type): the conversation agents and the
-//    read-only agents may use them in the shell, every agent of the pack with the file tools. These folders are
+//    the folders I name myself (in the arguments of a command or in a message I type; a file names its folder, but
+//    never my home folder, a hidden folder of it or /proc, /sys, /dev): the conversation agents and the read-only
+//    agents may use them in the shell, every agent of the pack with the file tools. These folders are
 //    read-only: in the shell, only a command that reads (cat, grep, ls, git log…) may name them, never cp, mv, rm, a
 //    redirection, a build, an interpreter or xargs running another command (the pack's own guards stay as installed);
 //    the agents of the pack write only in the repository. A cd is followed. Secrets (~/.zshenv, the
@@ -289,7 +290,19 @@ function shellOutside(command, cwd, root, readable, depth = 0) {
   return null
 }
 
-// The folders named in a text I typed (command arguments, a message): existing folders or files outside the repository
+// A folder I name never opens what holds secrets: never my home folder or one of its parents (a file named directly in
+// it, such as ~/.zshenv, names no folder), never a hidden folder of my home (~/.ssh, ~/.config, ~/.local/share/opencode,
+// ~/.nuget/NuGet…), never the folders of the processes and devices of the system
+const SYSTEM_FOLDERS = ["/proc", "/sys", "/dev"]
+function nameable(folder) {
+  if (within(HOME, folder)) return false
+  if (SYSTEM_FOLDERS.some((dir) => within(folder, dir))) return false
+  if (within(folder, HOME) && folder.slice(HOME.length + 1).split(sep)[0].startsWith(".")) return false
+  return true
+}
+
+// The folders named in a text I typed (command arguments, a message): existing folders, or the folders of existing
+// files, outside the repository
 function namedFolders(text, root) {
   const out = []
   for (const words of commandWords(String(text || ""))) {
@@ -298,10 +311,12 @@ function namedFolders(text, root) {
         // a path at the end of a sentence: "~/repos/old-api," or "(~/repos/old-api)"
         const piece = raw.replace(/^[(«"']+/, "").replace(/[),.;:!?»"']+$/, "")
         const target = pathOf(piece, root) || (isAbsolute(piece) ? resolve(piece) : undefined)
-        if (!target || target === "/" || target === HOME || within(target, root)) continue
+        if (!target || within(target, root)) continue
         try {
           const info = statSync(target)
-          out.push(info.isDirectory() ? target : resolve(target, ".."))
+          // a file names its folder
+          const folder = info.isDirectory() ? target : resolve(target, "..")
+          if (nameable(folder)) out.push(folder)
         } catch {
           // not a folder or a file of this machine
         }

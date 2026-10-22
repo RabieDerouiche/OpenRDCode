@@ -3,6 +3,7 @@ description: "From a Jira ticket to a Draft merge request, without stopping: ana
 agent: pilot
 subtask: false
 ---
+[[command go $ARGUMENTS]]
 Request: « $ARGUMENTS » (an optional Jira key, then the developer's directives)
 
 Workflow state (fetch of every branch, then the state of the branch and its ticket sheet):

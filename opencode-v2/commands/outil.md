@@ -3,6 +3,7 @@ description: "Les autres outils du pack, à la demande : doc, audit, licences, r
 agent: build
 subtask: false
 ---
+[[command outil $ARGUMENTS]]
 [[run outil.sh --raw $ARGUMENTS]]
 
 My request: « /outil $ARGUMENTS »

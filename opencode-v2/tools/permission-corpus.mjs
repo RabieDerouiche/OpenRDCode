@@ -298,6 +298,15 @@ tool("checker", "gitlab_get_merge_request", "deny")
 tool("doc-writer", "confluence_get_page", "deny")
 tool("doc-writer", "confluence_create_page", "deny")
 for (const t of ["confluence_create_page", "confluence_update_page", "confluence_upload_attachment"]) tool("build", t, "ask")
+
+// ---------- OpenCode v2: code mode (JavaScript that calls any address), the web search, the tools that move a session
+// or create a worktree (also by their code mode names), and the built-in skill that publishes a GitHub issue ----------
+for (const a of [...ALL, "plan", "test-guardian"]) {
+  for (const t of ["execute", "websearch", "opencode_session_move", "opencode_worktree_create", "opencode_worktree_remove",
+    "session_move", "worktree_create", "worktree_remove"]) tool(a, t, "deny")
+  cases.push({ agent: a, perm: "skill", pattern: "report", expect: "deny" })
+  cases.push({ agent: a, perm: "skill", pattern: "best-practices", expect: "allow" })
+}
 for (const t of ["jira_create_issue", "jira_add_comment", "gitlab_create_merge_request", "jira_update_issue"]) tool("build", t, "deny")
 tool("build", "jira_get_issue", "allow")
 

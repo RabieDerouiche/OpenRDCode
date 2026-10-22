@@ -3,6 +3,7 @@ description: "Fortify par lot : les 4-5 vulnérabilités les plus graves de l'ap
 agent: pilot
 subtask: false
 ---
+[[command fortify $ARGUMENTS]]
 Request: « $ARGUMENTS » (an optional count, 5 at most; an optional Fortify category, file name or Jira key; the developer's directives)
 
 Workflow state (fetch of every branch, then the state of the branch, its ticket sheet and the Fortify SSC application line):

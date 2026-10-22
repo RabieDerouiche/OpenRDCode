@@ -1,36 +1,32 @@
 // OpenCode v2 plugin of the pack: ~/.config/opencode/plugins/openrd-pack.js (restart OpenCode after a change).
-// The guards below were written for the hooks of OpenCode 1.19; the adapter at the end of this file ("OpenCode v2")
-// runs them behind the hooks of OpenCode v2. What is not ported yet is listed there.
+// Written for OpenCode v2.1.2 (Plugin.define, hooks by domain, the v2 event stream). What it does:
 //
-//
-// 1. Runs the "[[run <script> <arguments>]]" lines of the pack's commands with the pack's scripts, in the folder of
-//    the session's project. OpenCode 1.19 runs the !`...` injections of a command in the folder where the server
-//    was started; `opencode web` serves every project from one server, so they described the wrong repository.
-//    Each script runs without a terminal (git or ssh can never wait there for a password) and is stopped, with
-//    everything it started, after 3 minutes. "[[run <script> --raw <text>]]" passes the text as ONE argument, as
-//    typed (apostrophes included).
+// 1. Runs the "[[run <script> <arguments>]]" lines of the pack's commands with the pack's scripts, in the git root of
+//    the folder of the session, before the prompt reaches the model. Each script runs without a terminal (git or ssh
+//    can never wait there for a password) and is stopped, with everything it started, after 3 minutes.
+//    "[[run <script> --raw <text>]]" passes the text as ONE argument, as typed (apostrophes included).
 // 2. Gives every shell command of the agents a stable environment: English .NET messages, no .NET banner or
-//    telemetry, no npm notices, file names printed by git as they are (no octal escapes), and git never waiting for
-//    a password or an editor (a command that waits ends only at the 2-minute timeout). Other variables already set
-//    in the environment are kept.
-// 3. Shows only "/<command> <arguments> — <repository folder> · branche <branch>" in the conversation (the web
-//    interface does not show the current branch in a session), followed by "· ⏰ <n> rappel(s)" when items of my
-//    todo list are due today or overdue; the expanded prompt (workflow state, ticket sheet, diffs) is still sent to
-//    the model, as a "synthetic" part that the web interface does not display. A command whose prompt has a line
-//    "[[visible]]" shows what is above that line instead (/outil todo shows the list at once).
+//    telemetry, no npm notices, file names printed by git as they are (no octal escapes), git never waiting for a
+//    password or an editor; and never the password of the OpenCode server (v2 keeps it in the environment of what it
+//    runs when started with "serve"), nor a token of the MCP servers (Jira, Confluence, GitLab, Sonar, Fortify), nor
+//    the XDG folders of an OpenCode v2 run next to 1.19 in ~/oc2.
+// 3. Shows only "/<command> <arguments> — <repository folder> · branche <branch>" for a command of the pack in the
+//    conversation (the web interface does not show the current branch), followed by "· ⏰ <n> rappel(s)" when items of
+//    my todo list are due; the expanded prompt (workflow state, ticket sheet, diffs) still goes to the model. A command
+//    whose prompt has a line "[[visible]]" shows what is above that line instead (/outil todo shows the list at once).
+//    The pack's commands start with a line "[[command <name> $ARGUMENTS]]" that tells the plugin which command runs.
+//    A command run in a session that has no title yet names it ("/go ABC-123"): no model request for the title.
 // 4. Starts the command I choose in a multiple-choice question: an option whose label is a command of the pack
 //    ("/go ABC-123", "/fix (recommandé)") runs by itself in the same session as soon as the agent's turn ends, unless
-//    that turn ended with an error or was stopped, and never in a subagent's session. Agents cannot run a command.
+//    that turn failed or was stopped, and never in a subagent's session. Agents cannot run a command.
 // 5. Shows the progress of the agent in the session title while it works, for example
 //    "⏳ 1:42 réflexion 2,3k tokens — <title>", and while a subagent works, what it waits for ("⏳ 31:02 outil ·
-//    Auto-review · nouvel essai 3 (serveur du modèle)", "… · rien reçu depuis 4 min", "❓ … · autorisation
-//    attendue"): the web interface only shows a small "Réflexion" that keeps moving
-//    even when nothing comes from the model, and that is out of sight when the conversation is scrolled up. Phases:
-//    préparation (the scripts of the command), attente du modèle, réflexion, rédaction, outil (with its
+//    Auto-review · nouvel essai 3 (serveur du modèle)", "… · rien reçu depuis 4 min", "❓ … · autorisation attendue").
+//    Phases: préparation (the scripts of the command), attente du modèle, réflexion, rédaction, outil (with its
 //    description), réponse or autorisation attendue (a question or an approval waits for me), nouvel essai (error of
-//    the model server, OpenCode retries), and "rien reçu depuis <n> s" when the model has sent nothing for 30 s.
-//    The title comes back as it was when the turn ends. Never in a subagent's session; in a new session, only once
-//    OpenCode has written its title (or after 90 s), so that its title generation is not disturbed.
+//    the model server, OpenCode retries), and "rien reçu depuis <n> s" when the model has sent nothing for 30 s. The
+//    title comes back as it was when the turn ends. Never in a subagent's session, never on a session OpenCode has not
+//    named yet (its title generation would be lost).
 // 6. Refuses an agent's shell command that sets PATH or DOTNET_ROOT, or that writes a credential (an assignment or an
 //    export of a password, token, secret or Artifactory variable, a password in a URL, in curl -u or in a NuGet source):
 //    the environment of the agents comes from ~/.zshenv, and a credential written in a command stays in the session
@@ -38,41 +34,81 @@
 //    parser). The agent is told to stop and report an environment problem instead.
 // 7. Keeps the agents of the pack inside the repository of the session: a shell command of any agent that names a path
 //    outside it (`~`, `$HOME`, `/home/…`, `../..`, a bare `cd`), even inside quotes, `sh -c '…'` or after a
-//    redirection, is refused, and so is a read, search, edit or write of an agent of the pack (pilot, analyst, coder,
-//    checker, debugger, doc-writer) outside it. Allowed outside: the pack's scripts and skills, the outputs OpenCode
-//    saves, the NuGet package cache for the file tools, the folders configured as "references" in opencode.json and
-//    the folders I name myself (in the arguments of a command or in a message I type): the conversation agents and the
-//    read-only agents may use them in the shell, every agent of the pack with the file tools. These folders are
-//    read-only: in the shell, only a command that reads (cat, grep, ls, git log…) may name them, never cp, mv, rm, a
-//    redirection, a build, an interpreter or xargs running another command (the pack's own guards stay as installed);
-//    the agents of the pack write only in the repository. A cd is followed. Secrets (~/.zshenv, the
+//    redirection, is refused, and so is a read, search, edit, write or patch of an agent of the pack (pilot, analyst,
+//    coder, checker, debugger, doc-writer, test-guardian) outside it. Allowed outside: the pack's scripts and skills,
+//    the outputs OpenCode saves, the NuGet package cache for the file tools, the ticket sheets, the folders configured
+//    as "references" in opencode.json and the folders I name myself (in the arguments of a command or in a message I
+//    type in a top-level session; never in the arguments of a command chosen in a question, whose options the model
+//    writes; a file names its folder, but never my home folder, a hidden folder of it or /proc, /sys, /dev): the
+//    conversation agents and the read-only agents may use them in the shell, every agent of the pack with the file
+//    tools. These folders are read-only: in the shell, only a command that reads (cat, grep, ls, git
+//    log…) may name them, never cp, mv, rm, a redirection, a build, an interpreter or xargs running
+//    another command; the agents of the pack write only in the repository. A cd is followed. Secrets (~/.zshenv, the
 //    git credentials, ~/.nuget/NuGet) are outside every repository: no `grep -r <word> ~` can print them. The
-//    arguments of the pack's scripts are not checked: a commit message may contain any text.
-//    OpenCode's own rules cannot do this (tree-sitter does not look inside quotes, and `export -p` is not a command to
-//    it); an approval answered "always" cannot lift it either. Also refused for every agent: an environment dump
-//    (`export`, `declare -p`, `set` alone) and a recursive rm, whatever the order of its options.
+//    arguments of the pack's scripts are not checked: a commit message may contain any text. OpenCode's own rules
+//    cannot do this (tree-sitter does not look inside quotes, and `export -p` is not a command to it); an approval
+//    answered "always" cannot lift it either. Also refused for every agent: an environment dump (`export`,
+//    `declare -p`, `set` alone) and a recursive rm, whatever the order of its options.
 // 8. Gives the long commands the time they need: a build or test command 20 minutes (OpenCode stops any command after
 //    2 minutes unless the agent asks for more, and a stopped full test suite is run again from the start), ship.sh
-//    and branch.sh 5 minutes.
-// 9. Starts only one /go or /fix at a time per repository: two pilots in one working tree would commit each other's
-//    changes. The second one is replaced by a one-line answer that names the session that runs (no tool runs).
-// 10. Leaves the outcome of a /go or /fix in the session title once it ends: "✅ " (merge request created or updated,
-//    nothing left to do) or "⛔ " (stopped: its answer holds ⛔, or the run ended with an error). With several
-//    /go running in several repositories, the list of sessions says which one needs me. The mark goes away when the
-//    next turn of the session starts.
+//    and branch.sh 5 minutes. The agents of the pack never run a shell command or a subagent in the background: /go,
+//    /fix and /fortify wait for each result, and the folder lock (9) ends with the turn.
+// 9. Starts only one /go, /fix or /fortify at a time per folder: two pilots in one working tree would commit each
+//    other's changes. The second one gets a one-line answer and no tool runs in its turn. The lock is also a file in
+//    the git folder of the working tree, so that a second OpenCode of the machine (the terminal client) sees it too;
+//    a lock left by an OpenCode that stopped is ignored, except by OpenCode run as its background service: it resumes
+//    the turn a restart interrupted, and the plugin keeps the folder for that resumed run (freed after 2 minutes if
+//    the run does not start again).
+// 10. Leaves the outcome of a /go, /fix or /fortify in the session title once it ends: "✅ " (merge request created
+//    or updated, nothing left to do) or "⛔ " (stopped: its answer holds ⛔, or the run failed or was stopped). The mark
+//    goes away when the next turn of the session starts.
 // 11. Runs a build tool called by its full path (`~/.bin/dotnet build`, `/usr/bin/git log`) by its name (`dotnet
 //    build`): the permission rules of the agents name the tools, and the folder of the tool is outside the repository.
-// 12. Starts the title of every session of a worktree with the folder of that worktree, "[ABC-123] <title>" (after
-//    the ✅ or ⛔ of 10): the home page of OpenCode lists the sessions of all the worktrees of a repository together,
-//    without their folder. Not in the main checkout, not in a subagent's session, never on a title OpenCode has not
-//    generated yet.
-// Every refusal of 6, 7 and 9 is written to OpenCode's log as "refused by the pack" (COMMANDES.md, "Logs d'OpenCode").
-// Any error leaves the command as it is: a "[[run ...]]" line left in the prompt is then run by the model itself.
+// 12. Closes what OpenCode v2 opens that the guards above cannot check:
+//    - code mode (`execute`): JavaScript that can call any address with fetch, without any permission, and the
+//      opencode_* tools that move a session to another folder, create or remove a worktree. It is taken out of every
+//      request, and the MCP servers (Jira, GitLab, Confluence…) are offered as plain tools instead, as in 1.19;
+//    - the web search, which sends the query to an outside search service;
+//    - the tools that move a session or create or remove a worktree, refused to every agent by their names (the
+//      developer does it in the web interface);
+//    - the question tool in a subagent's session (nobody answers during /go, /fix or /fortify; 1.19 did it with
+//      experimental.primary_tools, which v2 ignores): taken out of its requests, and refused if called.
+// 13. When "compaction.prune" is true in opencode.json, the outputs of old tool calls are cleared from what the model
+//    receives, as 1.19 did (v2 ignores that setting): only the tool outputs before the last two messages I typed, and
+//    beyond the 40 000 most recent tokens of them, and only when that frees more than 20 000 tokens. The skills are
+//    never cleared. The conversation shown and the session history keep everything.
+// 14. Waits for the MCP servers that are still connecting, as 1.19 did: v2 sends a request to the model with the tools
+//    of the servers connected at that moment, and a /go whose first step has no Jira tool stops. During the first 5
+//    minutes of an instance (OpenCode started, or its configuration changed), a prompt waits for them, 30 s at most.
+// 15. Starts the title of every session of a worktree (an OpenCode workspace) with the folder of that worktree,
+//    "[crisp-river] <title>" (after the ✅ or ⛔ of 10): the home page of OpenCode lists the sessions of all the
+//    workspaces of a repository together, without their folder. Not in the main checkout, not in a subagent's session,
+//    never on a title OpenCode has not generated yet.
+// 16. Refuses the third identical tool call (same tool, same input) of one answer of the model, as 1.19 did with its
+//    "doom_loop" rule (v2 no longer detects it): a model stuck in a loop gets an error and changes its approach, or
+//    its subagent ends with an error the pilot handles, instead of running the same call again and again.
+// Every refusal of 6, 7, 9, 12 and 16 is written as "refused by the pack" to the log of the plugin,
+// <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
+// the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". Any error
+// leaves the prompt or the call as it is.
 import { execFile, execFileSync, spawn } from "node:child_process"
 import { Plugin } from "@opencode/plugin"
-import { existsSync, readFileSync, statSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
-import { basename, isAbsolute, join, resolve, sep } from "node:path"
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs"
+import { homedir, hostname, tmpdir } from "node:os"
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path"
 
 const HOME = homedir()
 const SCRIPTS = join(HOME, ".config", "opencode", "scripts")
@@ -80,13 +116,23 @@ const RUN = /\[\[run ([a-z][a-z0-9-]*\.sh)((?: [^\n]*?)?)\]\]/g
 const VISIBLE = /\n?\[\[visible\]\]\n?/
 const TIMEOUT_MS = 180000
 // The environment of the commands the pack runs ([[run]] scripts, commands of the agents): never the password of the
-// OpenCode server (v2.1.2 keeps it in the environment of what it runs when started with "serve"), and the developer's
+// OpenCode server (v2.1.2 keeps it in the environment of what it runs when started with "serve"), never a credential of
+// the MCP servers (a Jira, Confluence, GitLab, Sonar or Fortify token: the MCP servers get it from OpenCode itself, no
+// command of an agent and no script of the pack uses it, and git has its own credential store), and the developer's
 // usual folders when OpenCode v2 runs next to 1.19 with its own XDG folders in ~/oc2 (MIGRATION.md): git (its credential
-// cache), dotnet (the NuGet caches) and the other tools then behave as in the developer's terminal
+// cache), dotnet (the NuGet caches) and the other tools then behave as in the developer's terminal. The Artifactory
+// credentials stay: the builds need them.
 const SERVER_SECRETS = ["OPENCODE_SERVER_PASSWORD", "OPENCODE_PASSWORD"]
+const MCP_SERVICE = /^(?:JIRA|CONFLUENCE|ATLASSIAN|GITLAB|SONAR|SONARQUBE|FORTIFY|SSC)$/
+const SECRET_WORD = /^(?:TOKEN|SECRET|KEY|APIKEY|PASSWORD|PASSWD|PAT|CREDENTIALS?)$/
+export function mcpSecret(name) {
+  const parts = String(name).toUpperCase().split(/[^A-Z0-9]+/)
+  return parts.some((part) => MCP_SERVICE.test(part)) && parts.some((part) => SECRET_WORD.test(part))
+}
 const ISOLATED = join(HOME, "oc2")
 function cleanEnv(env) {
   for (const name of SERVER_SECRETS) delete env[name]
+  for (const name of Object.keys(env)) if (mcpSecret(name)) delete env[name]
   for (const name of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"]) {
     const value = env[name]
     if (typeof value === "string" && isAbsolute(value) && within(resolve(value), ISOLATED)) delete env[name]
@@ -95,16 +141,18 @@ function cleanEnv(env) {
 }
 const MAX_OUTPUT = 32 * 1024 * 1024
 // Commands of the pack that a multiple-choice answer may start (built-in OpenCode commands are never started)
-const CHAINABLE = new Set(["go", "fix", "daily", "review", "compare", "outil"])
-const CHOICE = /^\/([a-z][a-z0-9-]*)((?:\s+\S.*?)?)\s*(?:\((?:recommandé|recommended)\))?\s*$/i
+const CHAINABLE = new Set(["go", "fix", "fortify", "daily", "review", "compare", "outil"])
+// An option that names a command: "/go ABC-123", "/daily (recommandé)" (the mark of the recommended option is no argument)
+const RECOMMENDED = /\s*\((?:recommandé|recommended)\)\s*$/i
+const CHOICE = /^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?$/i
 // Progress in the title
 const PROGRESS = /^(?:⏳|❓) [^—]*— /
-// Outcome of the last /go or /fix of a session (10)
+// Outcome of the last /go, /fix or /fortify of a session (10)
 const OUTCOME = /^(?:✅|⛔) /
+// The title of a session OpenCode has not named yet
 const DEFAULT_TITLE = /^(New session - |Child session - )\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
-const TICK_MS = 5000
+const TICK_MS = 10000
 const SILENCE_MS = 30000
-const DEFAULT_WAIT_MS = 90000
 // Shell commands that set the environment or write a credential (point 6). An assignment starts a command (start of
 // the text, after ; & | ( ` or a new line), possibly after export/declare/typeset/readonly/local/env and other
 // assignments; quoted text is left out first, so that "token=null" in a commit message or "password=|secret=" in a
@@ -141,7 +189,7 @@ function refusal(command) {
 // ---------- 7. the repository of the session, and the folders allowed outside it ----------
 const PACK_AGENTS = new Set(["pilot", "analyst", "coder", "checker", "debugger", "doc-writer", "test-guardian"])
 // agents that may read a reference or a folder I named through the shell (git log of another repository); the pilot,
-// the coder and doc-writer read them with the file tools only
+// the coder, doc-writer and test-guardian read them with the file tools only
 const SHELL_READERS = new Set(["analyst", "checker", "debugger", "build", "plan", "general", "explore"])
 const PACK_DIRS = [SCRIPTS, join(HOME, ".config", "opencode", "skills")]
 const SAVED_OUTPUTS = [
@@ -308,6 +356,17 @@ function shellOutside(command, cwd, root, readable, depth = 0) {
 }
 
 // The folders named in a text I typed (command arguments, a message): existing folders or files outside the repository
+// A folder I name never opens what holds secrets: never my home folder or one of its parents (a file named directly in
+// it, such as ~/.zshenv, names no folder), never a hidden folder of my home (~/.ssh, ~/.config, ~/.local/share/opencode,
+// ~/.nuget/NuGet…), never the folders of the processes and devices of the system
+const SYSTEM_FOLDERS = ["/proc", "/sys", "/dev"]
+function nameable(folder) {
+  if (within(HOME, folder)) return false
+  if (SYSTEM_FOLDERS.some((dir) => within(folder, dir))) return false
+  if (within(folder, HOME) && folder.slice(HOME.length + 1).split(sep)[0].startsWith(".")) return false
+  return true
+}
+
 function namedFolders(text, root) {
   const out = []
   for (const words of commandWords(String(text || ""))) {
@@ -316,10 +375,12 @@ function namedFolders(text, root) {
         // a path at the end of a sentence: "~/repos/old-api," or "(~/repos/old-api)"
         const piece = raw.replace(/^[(«"']+/, "").replace(/[),.;:!?»"']+$/, "")
         const target = pathOf(piece, root) || (isAbsolute(piece) ? resolve(piece) : undefined)
-        if (!target || target === "/" || target === HOME || within(target, root)) continue
+        if (!target || within(target, root)) continue
         try {
           const info = statSync(target)
-          out.push(info.isDirectory() ? target : resolve(target, ".."))
+          // a file names its folder
+          const folder = info.isDirectory() ? target : resolve(target, "..")
+          if (nameable(folder)) out.push(folder)
         } catch {
           // not a folder or a file of this machine
         }
@@ -334,10 +395,10 @@ function chosenCommand(answers) {
   if (!Array.isArray(answers)) return undefined
   for (const list of answers) {
     for (const label of Array.isArray(list) ? list : []) {
-      const match = CHOICE.exec(String(label).trim())
+      const match = CHOICE.exec(String(label).trim().replace(RECOMMENDED, ""))
       // OpenCode runs the !`...` of a command's arguments: an option that would run something is never started
-      if (match && CHAINABLE.has(match[1].toLowerCase()) && !/[`$]/.test(match[2])) {
-        return { command: match[1].toLowerCase(), arguments: match[2].trim() }
+      if (match && CHAINABLE.has(match[1].toLowerCase()) && !/[`$]/.test(match[2] || "")) {
+        return { command: match[1].toLowerCase(), arguments: (match[2] || "").trim() }
       }
     }
   }
@@ -517,21 +578,22 @@ function progressLabel(state, now, child) {
   return "⏳ " + elapsed + " attente du modèle"
 }
 
-// What a running tool part is doing, in a few words
-function toolText(part) {
-  const state = part.state || {}
-  const input = state.input || {}
-  const text =
-    state.title ||
-    input.description ||
-    (input.filePath && basename(String(input.filePath))) ||
-    input.pattern ||
-    part.tool ||
-    "outil"
+// What a running tool is doing, in a few words: its description, the file it works on, its pattern, or its name
+function toolText(name, input) {
+  const args = input && typeof input === "object" ? input : {}
+  const file = args.path || args.filePath
+  const text = args.description || (file && basename(String(file))) || args.pattern || name || "outil"
   return String(text).replace(/\s+/g, " ").trim().slice(0, 40)
 }
 
-export const CompactCommands = async (input) => {
+// The files a patch of the patch tool adds, updates, deletes or moves to ("*** Add File: <path>"…)
+const PATCH_FILE = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+?)\s*$/gm
+const patchFiles = (text) => [...String(text || "").matchAll(PATCH_FILE)].map((m) => m[1])
+
+// The guards of the shell and file tools (6, 7, 11, the timeouts of 8) and the stable environment (2), for the folder
+// of one location. `client` gives the session of an id ({ data: { parentID } }), the configuration (references) and
+// the log.
+export const Guards = async (input) => {
   const directory = (input && (input.directory || input.worktree)) || process.cwd()
   const client = input && input.client
   // the repository of this instance: its git root (OpenCode gives "/" as the worktree of a folder outside git)
@@ -541,52 +603,13 @@ export const CompactCommands = async (input) => {
   const common = await gitCommonDir(root)
   const SHEETS = common ? join(common, "opencode-tickets") : ""
   const SHEET_WRITERS = new Set(["pilot", "analyst"])
-  // 12. the folder of this worktree at the start of the session titles ("" in the main checkout)
-  const TAG = common && common !== join(root, ".git") ? "[" + basename(root) + "] " : ""
-  const tagged = (title) => {
-    if (!TAG || !title || PROGRESS.test(title)) return title
-    const mark = (OUTCOME.exec(title) || [""])[0]
-    const rest = title.slice(mark.length)
-    return !rest || DEFAULT_TITLE.test(rest) || rest.startsWith(TAG) ? title : mark + TAG + rest
-  }
-  // session id -> name of the agent of its last request to the model (7)
+  // session id -> name of the agent of its last tool call (7)
   const agents = new Map()
   // session id -> parent session id, "" for a top-level session (7)
   const parents = new Map()
   // session id -> folders outside the repository that I named in that session (7)
   const named = new Map()
-  // session id -> the /go or /fix that runs in it (9, 10)
-  const pilots = new Map()
-  // sessions whose /go or /fix was refused: no tool runs in their turn (9)
-  const refused = new Set()
   let references
-  // session id -> the command chosen in its last multiple-choice question, started when the session becomes idle
-  const chosen = new Map()
-  // session id -> progress of its current turn (5)
-  const runs = new Map()
-  const children = new Set()
-  // subagent session → { phase, attempt, last }, while its task runs
-  const subagents = new Map()
-  let ticker
-
-  async function startChosen(sessionID) {
-    const next = chosen.get(sessionID)
-    if (!next || !client) return
-    chosen.delete(sessionID)
-    const session = await client.session.get({ path: { id: sessionID } })
-    if (!session || !session.data || session.data.parentID) return
-    // the turn that asked must have ended normally: no error, not stopped
-    const recent = await client.session.messages({ path: { id: sessionID }, query: { limit: 4 } })
-    const last = (Array.isArray(recent && recent.data) ? recent.data : [])
-      .map((message) => message && message.info)
-      .filter((info) => info && info.role === "assistant")
-      .sort((a, b) => ((a.time && a.time.created) || 0) - ((b.time && b.time.created) || 0))
-      .pop()
-    if (!last || last.error) return
-    client.session
-      .command({ path: { id: sessionID }, body: { command: next.command, arguments: next.arguments } })
-      .catch(() => {})
-  }
 
   // ---------- 7. folders allowed outside the repository ----------
   async function parentOf(sessionID) {
@@ -646,8 +669,17 @@ export const CompactCommands = async (input) => {
       if (!within(cwd, root) && !readable.some((dir) => within(cwd, dir))) return { piece: args.workdir }
       return shellOutside(args && args.command, cwd, root, readable)
     }
+    if (!PACK_AGENTS.has(agent)) return null
+    // a patch writes every file it names
+    if (tool === "patch") {
+      for (const file of patchFiles(args && args.patchText)) {
+        const outside = await escape("write", sessionID, { filePath: file })
+        if (outside) return outside
+      }
+      return null
+    }
     const key = FILE_TOOLS[tool]
-    if (!key || !PACK_AGENTS.has(agent)) return null
+    if (!key) return null
     const value = args && args[key]
     if (typeof value !== "string" || !value) return null
     const target = value === "~" || value.startsWith("~/") ? join(HOME, value.slice(2)) : resolve(directory, value)
@@ -662,8 +694,8 @@ export const CompactCommands = async (input) => {
     return inReadable ? null : { piece: value }
   }
 
-  // Each refusal of the plugin goes to OpenCode's log ("refused by the pack"): the agent, the tool, the reason, the path,
-  // never the command (it may hold a credential)
+  // Each refusal goes to the log ("refused by the pack"): the agent, the tool, the reason, the path, never the command
+  // (it may hold a credential)
   function logRefusal(call, reason, piece) {
     try {
       if (!client || !client.app || typeof client.app.log !== "function") return
@@ -675,304 +707,30 @@ export const CompactCommands = async (input) => {
     }
   }
 
-  // ---------- 9 and 10. one /go or /fix at a time, and its outcome in the title ----------
-  async function markOutcome(sessionID, failed) {
-    if (!pilots.has(sessionID) || !client) return
-    pilots.delete(sessionID)
-    try {
-      let mark = failed ? "⛔ " : ""
-      if (!mark) {
-        const recent = await client.session.messages({ path: { id: sessionID }, query: { limit: 6 } })
-        const last = (Array.isArray(recent && recent.data) ? recent.data : [])
-          .filter((message) => message && message.info && message.info.role === "assistant")
-          .sort((a, b) => ((a.info.time && a.info.time.created) || 0) - ((b.info.time && b.info.time.created) || 0))
-          .pop()
-        if (!last) return
-        if (last.info.error) mark = "⛔ "
-        else {
-          const text = (last.parts || []).filter((part) => part && part.type === "text").map((part) => part.text).join("\n")
-          // a stop wins over everything else of the answer (a table of done steps may hold ✅ before it)
-          if (text.includes("⛔")) mark = "⛔ "
-          else if (/🚀|🔁|✅/u.test(text)) mark = "✅ "
-        }
-      }
-      if (!mark) return
-      const info = (await client.session.get({ path: { id: sessionID } })).data
-      if (!info || info.parentID) return
-      const title = (info.title || "").replace(PROGRESS, "").replace(OUTCOME, "")
-      await client.session.update({ path: { id: sessionID }, body: { title: tagged(mark + title) } })
-    } catch {
-      // the title stays as it is
-    }
-  }
-
-  // ---------- 5. progress in the session title ----------
-  function track(sessionID, phase) {
-    if (!client || !sessionID || children.has(sessionID)) return undefined
-    let state = runs.get(sessionID)
-    if (!state) {
-      const now = Date.now()
-      state = { start: now, last: now, chars: 0, phase: "waiting", tool: "", attempt: 0, kinds: new Map() }
-      runs.set(sessionID, state)
-      if (!ticker) {
-        ticker = setInterval(() => {
-          if (runs.size === 0) {
-            clearInterval(ticker)
-            ticker = undefined
-            return
-          }
-          for (const [id, item] of runs) void show(id, item)
-        }, TICK_MS)
-        if (ticker && typeof ticker.unref === "function") ticker.unref()
-      }
-    }
-    if (phase) state.phase = phase
-    return state
-  }
-
-  async function show(sessionID, state) {
-    if (state.writing || state.done) return
-    state.writing = true
-    try {
-      const info = (await client.session.get({ path: { id: sessionID } })).data
-      if (!info) return
-      if (info.parentID) {
-        children.add(sessionID)
-        runs.delete(sessionID)
-        return
-      }
-      const current = info.title || ""
-      // a title written by someone else (OpenCode's title generation, a rename) becomes the one to come back to
-      if (current !== state.written) state.original = current.replace(PROGRESS, "").replace(OUTCOME, "")
-      const now = Date.now()
-      if (DEFAULT_TITLE.test(state.original) && state.phase !== "preparing" && now - state.start < DEFAULT_WAIT_MS) return
-      const title = progressLabel(state, now, state.child && subagents.get(state.child)) + " — " + tagged(state.original)
-      if (title === current) return
-      await client.session.update({ path: { id: sessionID }, body: { title } })
-      state.written = title
-    } catch {
-      // the title stays as it is
-    } finally {
-      state.writing = false
-    }
-  }
-
-  async function restore(sessionID, state) {
-    for (let i = 0; i < 30 && state.writing; i++) await new Promise((resolve) => setTimeout(resolve, 100))
-    if (!state.written || state.original === undefined) return
-    try {
-      const info = (await client.session.get({ path: { id: sessionID } })).data
-      if (info && info.title === state.written) {
-        await client.session.update({ path: { id: sessionID }, body: { title: tagged(state.original) } })
-      }
-      state.written = undefined
-    } catch {
-      // the next turn will clean it
-    }
-  }
-
-  async function finish(sessionID) {
-    const state = sessionID && runs.get(sessionID)
-    if (!state) return
-    runs.delete(sessionID)
-    state.done = true
-    await restore(sessionID, state)
-  }
-
-  // What a subagent does while its task runs (a retry of the model server, a silence, a question or an approval
-  // that waits), shown in the title of its parent: the subagent's own session has no progress title
-  function subagentEvent(event) {
-    const props = event.properties || {}
-    const part = props.part
-    const sessionID = props.sessionID || (part && part.sessionID)
-    const child = sessionID && subagents.get(sessionID)
-    if (!child) return false
-    const now = Date.now()
-    switch (event.type) {
-      case "session.status": {
-        const type = props.status && props.status.type
-        if (type === "retry") {
-          child.phase = "retry"
-          child.attempt = props.status.attempt || child.attempt + 1
-        } else if (type === "idle") subagents.delete(sessionID)
-        else if (child.phase === "retry") child.phase = "waiting"
-        child.last = now
-        return true
-      }
-      case "session.idle":
-      case "session.error":
-        subagents.delete(sessionID)
-        return true
-      case "message.part.updated":
-        child.last = now
-        if (part.type === "tool" && part.tool !== "question") {
-          const status = part.state && part.state.status
-          child.phase = status === "running" || status === "pending" ? "tool" : "waiting"
-        } else if (part.type === "reasoning" || part.type === "text") child.phase = "work"
-        return true
-      case "message.part.delta":
-        child.last = now
-        if (child.phase !== "tool") child.phase = "work"
-        return true
-      case "question.asked":
-      case "permission.asked":
-        child.phase = event.type === "question.asked" ? "question" : "permission"
-        return true
-      case "question.replied":
-      case "question.rejected":
-      case "permission.replied":
-        child.phase = "waiting"
-        child.last = now
-        return true
-    }
-    return true
-  }
-
-  function progressEvent(event) {
-    const props = event.properties || {}
-    if (subagentEvent(event)) return
-    switch (event.type) {
-      case "session.status": {
-        const type = props.status && props.status.type
-        if (type === "busy") track(props.sessionID)
-        else if (type === "retry") {
-          const state = track(props.sessionID, "retry")
-          if (state) {
-            state.attempt = props.status.attempt || state.attempt + 1
-            state.last = Date.now()
-          }
-        } else if (type === "idle") {
-          refused.delete(props.sessionID)
-          void finish(props.sessionID).then(() => markOutcome(props.sessionID, false))
-        }
-        return
-      }
-      case "session.updated": {
-        // 12. a title generated or renamed in a worktree gets its folder
-        const info = props.info
-        if (!TAG || !info || info.parentID || children.has(info.id) || !client) return
-        const title = tagged(info.title || "")
-        if (title !== (info.title || "")) {
-          Promise.resolve(client.session.update({ path: { id: info.id }, body: { title } })).catch(() => {})
-        }
-        return
-      }
-      case "session.idle":
-      case "session.error": {
-        refused.delete(props.sessionID)
-        const failed = event.type === "session.error"
-        void finish(props.sessionID).then(() => markOutcome(props.sessionID, failed))
-        return
-      }
-      case "message.part.updated": {
-        const part = props.part
-        const state = part && runs.get(part.sessionID)
-        if (!state) return
-        state.last = Date.now()
-        state.kinds.set(part.id, part.type)
-        if (part.type === "reasoning") state.phase = "reasoning"
-        else if (part.type === "text") state.phase = "text"
-        else if (part.type === "tool") {
-          const status = part.state && part.state.status
-          if (part.tool === "question") return
-          if (status === "running" || status === "pending") {
-            state.phase = "tool"
-            state.tool = toolText(part)
-            // the session of the subagent that a task runs
-            const childID = part.tool === "task" && part.state.metadata && part.state.metadata.sessionId
-            if (childID && state.child !== childID) {
-              state.child = childID
-              if (!subagents.has(childID)) subagents.set(childID, { phase: "waiting", attempt: 0, last: Date.now() })
-            }
-          } else {
-            if (state.phase === "tool") state.phase = "waiting"
-            if (part.tool === "task" && state.child) {
-              subagents.delete(state.child)
-              state.child = undefined
-            }
-          }
-        }
-        return
-      }
-      case "message.part.delta": {
-        const state = runs.get(props.sessionID)
-        if (!state) return
-        state.last = Date.now()
-        state.chars += String(props.delta || "").length
-        const kind = state.kinds.get(props.partID)
-        if (kind === "reasoning") state.phase = "reasoning"
-        else if (kind === "text") state.phase = "text"
-        return
-      }
-      case "question.asked":
-      case "permission.asked": {
-        const state = runs.get(props.sessionID)
-        if (!state) return
-        state.phase = event.type === "question.asked" ? "question" : "permission"
-        void show(props.sessionID, state)
-        return
-      }
-      case "question.replied":
-      case "question.rejected":
-      case "permission.replied": {
-        const state = runs.get(props.sessionID)
-        if (!state) return
-        state.phase = "waiting"
-        state.last = Date.now()
-        return
-      }
-    }
-  }
-
-  // A title left with a progress prefix (OpenCode stopped during a turn) gets its own title back
-  if (client) {
-    const cleanup = setTimeout(async () => {
-      try {
-        const list = (await client.session.list()).data || []
-        for (const info of list) {
-          if (info && !info.parentID && PROGRESS.test(info.title || "") && !runs.has(info.id)) {
-            await client.session.update({ path: { id: info.id }, body: { title: info.title.replace(PROGRESS, "") } })
-          }
-        }
-      } catch {
-        // nothing to clean
-      }
-    }, 15000)
-    if (cleanup && typeof cleanup.unref === "function") cleanup.unref()
-  }
-
   return {
-    "chat.params": async (request) => {
-      try {
-        if (request && request.sessionID && request.agent) agents.set(request.sessionID, request.agent)
-      } catch {
-        // nothing to remember
-      }
+    logRefusal,
+    // the agent of a session, as its last tool call says
+    agent(sessionID, name) {
+      if (sessionID && name) agents.set(sessionID, name)
     },
-    "chat.message": async (message, output) => {
+    // the folders I name in a text I typed in a top-level session (never in a subagent's session)
+    async named(sessionID, text) {
       try {
-        // folders I name in a message I type in a top-level session (never the prompt that an agent writes to a
-        // subagent, never the expanded text of a command)
-        if (!message || !message.sessionID || !output || !Array.isArray(output.parts)) return
-        if (await parentOf(message.sessionID)) return
-        for (const part of output.parts) {
-          if (part && part.type === "text" && !part.synthetic && typeof part.text === "string") addNamed(message.sessionID, part.text)
-        }
+        if (!sessionID || typeof text !== "string" || !text) return
+        if (await parentOf(sessionID)) return
+        addNamed(sessionID, text)
       } catch {
         // nothing named
       }
     },
-    "tool.execute.before": async (call, output) => {
+    // 6, 7, 8 and 11 for a tool call: { tool (1.19 names: bash, read…), sessionID, agent }, { args } changed in place
+    async before(call, output) {
       if (!call || !output || !output.args) return
-      if (refused.has(call.sessionID)) {
-        throw new Error("Refused by the pack: this /go or /fix was refused (another one runs in this repository). Answer with the sentence of the request only.")
-      }
+      if (call.agent) agents.set(call.sessionID, call.agent)
       if (call.tool === "bash" && typeof output.args.command === "string") {
         // 11. a build tool called by its full path runs by its name: the rules of the agents know `dotnet build`, not
         // `/home/me/.bin/dotnet build`, and the folder of the tool is outside the repository
         output.args.command = output.args.command.replace(TOOL_PATH, "$1$3")
-      }
-      if (call.tool === "bash") {
         const why = refusal(output.args.command)
         if (why) {
           logRefusal(call, why)
@@ -1014,123 +772,11 @@ export const CompactCommands = async (input) => {
         if (need && !(Number(output.args.timeout) >= need)) output.args.timeout = need
       }
     },
-    "tool.execute.after": async (call, result) => {
+    // 2. the environment of every shell command of the agents
+    env(env) {
       try {
-        if (!call || call.tool !== "question" || !client) return
-        const next = chosenCommand(result && result.metadata && result.metadata.answers)
-        if (next) chosen.set(call.sessionID, next)
-      } catch {
-        // no command to start
-      }
-    },
-    event: async ({ event }) => {
-      try {
-        if (!event || !event.properties) return
-        progressEvent(event)
-        const sessionID = event.properties.sessionID
-        if (!sessionID || !chosen.has(sessionID)) return
-        if (event.type === "session.error") chosen.delete(sessionID)
-        else if (event.type === "session.idle") await startChosen(sessionID)
-      } catch {
-        // never start a command after a failure
-      }
-    },
-    "command.execute.before": async (command, output) => {
-      const parts = output && output.parts
-      if (!Array.isArray(parts)) return
-      const sessionID = command && command.sessionID
-      // 9. one /go or /fix at a time in this repository. A hook that throws would only show "Unexpected server error":
-      // the command is replaced by a request to say why it is refused, and every tool of that turn is refused.
-      if (command && (command.command === "go" || command.command === "fix") && sessionID) {
-        let other
-        for (const [id, run] of pilots) if (id !== sessionID && Date.now() - run.start < 8 * 3600000) other = run
-        if (other) {
-          const notice =
-            "⛔ /" + command.command + " refusé : /" + other.command + " tourne déjà sur ce dépôt dans la session « " +
-            other.title + " ». Un seul /go ou /fix à la fois par dépôt : deux pilotes dans le même dossier " +
-            "mélangeraient leurs commits. Relance-le quand l'autre aura fini (titre ✅ ou ⛔), ou arrête l'autre."
-          logRefusal({ sessionID, tool: "/" + command.command, agent: "pilot" }, "another /" + other.command + " runs in this repository")
-          refused.add(sessionID)
-          parts.length = 0
-          parts.push({ type: "text", text: ("/" + command.command + " " + (command.arguments || "")).trim() })
-          parts.push({
-            type: "text",
-            synthetic: true,
-            text: "The pack refused this command before it started: another /go or /fix runs in this repository. " +
-              "Answer with exactly the sentence below, as it is, and nothing else; call no tool.\n\n" + notice,
-          })
-          return
-        }
-        let title = sessionID
-        try {
-          const info = client && (await client.session.get({ path: { id: sessionID } })).data
-          if (info && info.title) title = info.title.replace(PROGRESS, "").replace(OUTCOME, "")
-        } catch {
-          // the id names it
-        }
-        pilots.set(sessionID, { command: command.command, start: Date.now(), title })
-      }
-      try {
-        // 7. a folder outside the repository named in the arguments of a command may be read in this session
-        if (sessionID && command && command.arguments) addNamed(sessionID, command.arguments)
-      } catch {
-        // nothing named
-      }
-      let state
-      try {
-        state = track(sessionID, "preparing")
-        if (state) await show(sessionID, state)
-      } catch {
-        // no progress title
-      }
-      try {
-        for (const part of parts) {
-          if (part && part.type === "text" && typeof part.text === "string") {
-            part.text = await resolveRuns(part.text, directory)
-          } else if (part && part.type === "subtask" && typeof part.prompt === "string") {
-            part.prompt = await resolveRuns(part.prompt, directory)
-          }
-        }
-      } catch {
-        // keep the lines: the model runs them
-      }
-      try {
-        if (state) {
-          state.phase = "waiting"
-          state.last = Date.now()
-          // a new session gets its default title back before the turn starts, so that OpenCode generates its title
-          if (state.written && DEFAULT_TITLE.test(state.original || "")) await restore(sessionID, state)
-        }
-      } catch {
-        // the title stays as it is
-      }
-      try {
-        const prompt = parts.find((part) => part && part.type === "text" && !part.synthetic)
-        if (!prompt) return
-        const split = VISIBLE.exec(prompt.text)
-        if (split) {
-          // what is above [[visible]] is shown as my message, the rest only goes to the model
-          const shown = prompt.text.slice(0, split.index).trim()
-          prompt.text = prompt.text.slice(split.index + split[0].length).trim()
-          prompt.synthetic = true
-          parts.unshift({ type: "text", text: shown || "/" + command.command })
-          return
-        }
-        prompt.synthetic = true
-        const label = ("/" + command.command + " " + (command.arguments || "")).trim()
-        const place = await where(directory).catch(() => "")
-        const due = reminders()
-        const reminder = due > 0 ? " · ⏰ " + due + (due > 1 ? " rappels" : " rappel") : ""
-        parts.unshift({ type: "text", text: (place ? label + " — " + place : label) + reminder })
-      } catch {
-        // keep the command as it is
-      }
-    },
-    "shell.env": async (shell, output) => {
-      try {
-        // Only the commands of the agents (they have a call id), not the terminal of the web interface
-        if (!shell || !shell.callID || !output || !output.env) return
-        const env = output.env
+        if (!env) return
+        cleanEnv(env)
         const set = (name, value) => {
           if (process.env[name] === undefined && env[name] === undefined) env[name] = value
         }
@@ -1157,50 +803,57 @@ export const CompactCommands = async (input) => {
 }
 
 // ---------- OpenCode v2 ----------
-// OpenCode v2 loads a plugin from its default export, Plugin.define({ id, setup }), once per location (folder), with
-// hooks by domain. The functions of the 1.19 hooks above run unchanged behind these ones:
-// - tool → execute.before: refusals (6), repository jail (7), long timeouts (8), tool called by its path (11). A thrown
-//   error refuses the call alone, with its message, as in 1.19. v2 names the shell tool "shell" (1.19: "bash") and the
-//   file path "path" (1.19: "filePath").
-// - shell → create.before: the stable environment of the commands (2). v2 does not tell an agent's command from the
-//   other commands of its shell service here; the web terminal is a separate service.
-// - session → prompt: the "[[run <script> <arguments>]]" lines of the pack's commands (1), run in the git root of the
-//   location. The output stays visible in the message: v2 has no hidden part of a prompt.
-// - The v2 tools that create or remove a worktree or move a session to another folder are refused to every agent: a
-//   moved session would leave the repository its guards were set up for. The developer does it in the web interface.
-// - session → prompt and the event stream: one /go, /fix or /fortify at a time per folder (9). The second one gets
-//   a one-line answer and no tool runs in its turn; the folder is free again when the first session goes idle or
-//   fails (or after 4 hours without that news).
-// - shell → create.before: the commands of the agents get neither the server password nor the XDG folders of
-//   OpenCode v2 in ~/oc2 (cleanEnv).
-// - A subagent never asks a question: nobody answers during /go, /fix or /fortify. OpenCode 1.19 did it with
-//   experimental.primary_tools, which v2 ignores; v2 starts every subagent session with SUBAGENT_PROMPT, so the
-//   sessions that start with it are the subagent ones, and their question tool is refused.
-// Not ported (opencode-v2/MIGRATION.md, "Ce qui n'est pas porté"): the compact command line (3), the command chosen
-// in a multiple-choice question (4), the progress, outcome and folder in the session titles (5, 10, 12), and the
-// folders named in a message (7: configured references only).
+// The log of the plugin, next to the log of OpenCode: never a command or a text of the conversation (they may hold a
+// credential), only what the plugin did and why
+const LOG_FILE = join(process.env.XDG_DATA_HOME || join(HOME, ".local", "share"), "opencode", "log", "openrd-pack.log")
+const LOG_MAX = 1024 * 1024
+function writeLog(line) {
+  try {
+    try {
+      if (statSync(LOG_FILE).size > LOG_MAX) renameSync(LOG_FILE, LOG_FILE + ".1")
+    } catch {
+      // no log yet
+    }
+    mkdirSync(dirname(LOG_FILE), { recursive: true })
+    appendFileSync(LOG_FILE, new Date().toISOString() + " " + line + "\n", { mode: 0o600 })
+  } catch {
+    // the log is best-effort
+  }
+}
+// v2 names the shell tool "shell" (1.19: "bash") and the subagent tool "subagent" (1.19: "task"), and the file path
+// "path" (1.19: "filePath")
 const V2_TOOLS = { shell: "bash", subagent: "task" }
-const V2_REFUSED = new Set(["session_move", "worktree_create", "worktree_remove"])
-// the first line of the prompt of every subagent session in OpenCode v2.1.2 (its subagent tool)
+// 12. tools that move a session or create or remove a worktree, by their names and by their names in code mode
+const V2_REFUSED = new Set(["session_move", "worktree_create", "worktree_remove"].flatMap((name) => [name, "opencode_" + name]))
+// 12. tools taken out of every request to the model: code mode and the web search
+const V2_HIDDEN = ["execute", "websearch"]
+// the first line of the prompt of a new subagent session in OpenCode v2.1.2 (its subagent tool)
 const SUBAGENT_PROMPT = "You are a subagent spawned by another session."
-// the first sentence of the body of each pilot command: a prompt that holds one is a run of that command
+// 3. the first line of every command of the pack: "[[command <name> <arguments>]]"
+const COMMAND_LINE = /^\s*\[\[command ([a-z][a-z0-9-]*)(?:[ \t]+([\s\S]*?))?\]\][ \t]*(?:\r?\n|$)/
+const PILOT_COMMANDS = new Set(["go", "fix", "fortify"])
+// a command file of an older pack, without its [[command]] line: the first sentence of the body of each pilot command
 const PILOT_RUNS = [
-  ["/go", "Take the ticket from its analysis to its Draft merge request"],
-  ["/fix", "Bring the branch to a green, review-ready state"],
-  ["/fortify", "Fix a batch of Fortify vulnerabilities"],
+  ["go", "Take the ticket from its analysis to its Draft merge request"],
+  ["fix", "Bring the branch to a green, review-ready state"],
+  ["fortify", "Fix a batch of Fortify vulnerabilities"],
 ]
 const LOCK_MS = 4 * 3600 * 1000
-// the session of an event, whatever the shape of the event
-const eventSession = (e) => (e && (e.sessionID || (e.data && e.data.sessionID) || (e.properties && e.properties.sessionID) || (e.payload && e.payload.sessionID))) || ""
-// the end of a turn: the durable execution events of v2, and the ephemeral status ones
-const TURN_END = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted", "session.idle", "session.error"])
-const eventIdle = (e) => {
-  if (!e) return false
-  if (TURN_END.has(e.type)) return true
-  if (e.type !== "session.status") return false
-  const status = (e.data && e.data.status) || (e.properties && e.properties.status) || e.status
-  return !!status && (status === "idle" || status.type === "idle")
-}
+const LOCK_FILE_NAME = "opencode-pilot.lock"
+// 9. how long a lock taken over from a stopped OpenCode waits for its resumed run to start
+const ADOPT_MS = 2 * 60000
+// 14. how long a prompt waits for the MCP servers still connecting, during the first minutes of an instance
+const MCP_WAIT_MS = 30000
+const MCP_BOOT_MS = 5 * 60000
+// 16. the identical calls of one answer of the model that make a loop (1.19: DOOM_LOOP_THRESHOLD)
+const LOOP_CALLS = 3
+// 13. what 1.19 kept of the tool outputs when it pruned (compaction.prune)
+const PRUNE_PROTECT = 40000
+const PRUNE_MINIMUM = 20000
+const PRUNE_PROTECTED_TOOLS = new Set(["skill"])
+const PRUNED = "[Old tool result content cleared]"
+// the end of a turn in v2 (durable execution events), and the status events of older shapes
+const TURN_END = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
 
 // JSON with comments and trailing commas, as OpenCode reads its configuration (strings kept as they are)
 const STRING = String.raw`"(?:\\.|[^"\\])*"`
@@ -1209,54 +862,630 @@ function parseJsonc(text) {
   return JSON.parse(noComments.replace(new RegExp(STRING + String.raw`|,(\s*[}\]])`, "g"), (m, tail) => (m[0] === '"' ? m : tail)))
 }
 
-// the "references" of the OpenCode configuration (alias -> folder), read by the plugin only: in the configuration
-// folder of OpenCode v2 (OPENCODE_CONFIG_DIR, as MIGRATION.md starts it; otherwise the XDG one), opencode.json then
-// opencode.jsonc, the second one winning as in OpenCode
-function configuredReferences() {
+// The OpenCode configuration as the plugin reads it: in the configuration folder of OpenCode v2 (OPENCODE_CONFIG_DIR,
+// as MIGRATION.md starts it next to 1.19; otherwise the XDG one), opencode.json then opencode.jsonc, the second one
+// winning as in OpenCode
+function configuration() {
   const dir = process.env.OPENCODE_CONFIG_DIR || join(process.env.XDG_CONFIG_HOME || join(HOME, ".config"), "opencode")
-  const references = {}
+  const out = { references: {}, prune: false }
   for (const name of ["opencode.json", "opencode.jsonc"]) {
     try {
-      const data = parseJsonc(readFileSync(join(dir, name), "utf8"))
-      Object.assign(references, (data && (data.references || data.reference)) || {})
+      const data = parseJsonc(readFileSync(join(dir, name), "utf8")) || {}
+      Object.assign(out.references, data.references || data.reference || {})
+      if (data.compaction && typeof data.compaction.prune === "boolean") out.prune = data.compaction.prune
     } catch {
       // no file, or a file OpenCode rejects as well
     }
   }
-  return references
+  return out
 }
+
+// The text of a tool result as the model receives it
+function resultText(result) {
+  if (!result || typeof result !== "object") return ""
+  if (typeof result.value === "string") return result.value
+  try {
+    return JSON.stringify(result.value) || ""
+  } catch {
+    return ""
+  }
+}
+
+// 13. Clears the outputs of old tool calls in the messages of a request, as 1.19 did; returns how many
+export function prune(messages) {
+  if (!Array.isArray(messages)) return 0
+  let turns = 0
+  let total = 0
+  let freed = 0
+  const parts = []
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (!message) continue
+    if (message.role === "user") turns++
+    if (turns < 2 || message.role !== "tool" || !Array.isArray(message.content)) continue
+    for (let j = message.content.length - 1; j >= 0; j--) {
+      const part = message.content[j]
+      if (!part || part.type !== "tool-result" || PRUNE_PROTECTED_TOOLS.has(part.name)) continue
+      const text = resultText(part.result)
+      if (text === PRUNED) continue
+      const estimate = Math.round(text.length / 4)
+      total += estimate
+      if (total > PRUNE_PROTECT) {
+        freed += estimate
+        parts.push(part)
+      }
+    }
+  }
+  if (freed <= PRUNE_MINIMUM) return 0
+  for (const part of parts) part.result = { type: "text", value: PRUNED }
+  return parts.length
+}
+
+// The metadata of a user message that the web interface shows instead of its text
+const presentation = (metadata, displayText) => ({ ...(metadata && typeof metadata === "object" ? metadata : {}), displayText, comments: [], attachments: [] })
 
 export default Plugin.define({
   id: "openrd-pack",
   setup: async (ctx) => {
+    const options = (ctx && ctx.options) || {}
+    const tickMs = Number(options.tickMs) > 0 ? Number(options.tickMs) : TICK_MS
+    const mcpWaitMs = Number(options.mcpWaitMs) >= 0 ? Number(options.mcpWaitMs) : MCP_WAIT_MS
+    const mcpBootMs = Number(options.mcpBootMs) >= 0 ? Number(options.mcpBootMs) : MCP_BOOT_MS
+    const adoptMs = Number(options.adoptMs) > 0 ? Number(options.adoptMs) : ADOPT_MS
     const directory = String((ctx && ctx.location && ctx.location.directory) || process.cwd())
-    let worktree = directory
-    try {
-      worktree = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd: directory, encoding: "utf8", timeout: 5000 }).trim() || directory
-    } catch {
-      // a folder outside git: the folder itself
+    const git = (args, cwd) => {
+      try {
+        return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim()
+      } catch {
+        return ""
+      }
     }
-    const client = {
-      app: { log: async ({ body }) => console.error("[openrd-pack] " + body.message + " " + JSON.stringify(body.extra || {})) },
-      config: { get: async () => ({ data: { references: configuredReferences() } }) },
-      session: {
-        get: async () => ({ data: undefined }),
-        list: async () => ({ data: [] }),
-        update: async () => ({ data: undefined }),
-        messages: async () => ({ data: [] }),
-        command: async () => ({}),
+    // the git root of the folder (a folder outside git: the folder itself), and its git folder (per worktree)
+    const worktree = git(["rev-parse", "--show-toplevel"], directory) || directory
+    const gitDir = git(["rev-parse", "--absolute-git-dir"], worktree)
+    // 15. the folder of a worktree at the start of the titles of its sessions ("" in the main checkout)
+    const real = (path) => {
+      try {
+        return realpathSync(path)
+      } catch {
+        return resolve(path)
+      }
+    }
+    const commonDir = gitDir ? git(["rev-parse", "--git-common-dir"], worktree) : ""
+    const TAG = gitDir && commonDir && real(gitDir) !== real(resolve(worktree, commonDir)) ? "[" + basename(worktree) + "] " : ""
+    const tagged = (title) => {
+      if (!TAG || !title || PROGRESS.test(title)) return title
+      const mark = (OUTCOME.exec(title) || [""])[0]
+      const rest = title.slice(mark.length)
+      return !rest || DEFAULT_TITLE.test(rest) || rest.startsWith(TAG) ? title : mark + TAG + rest
+    }
+    const api = (ctx && ctx.session) || {}
+    const log = (message, extra) => {
+      const line = "[openrd-pack] " + message + (extra ? " " + JSON.stringify(extra) : "")
+      console.error(line)
+      writeLog(line)
+    }
+    const sessionInfo = async (sessionID) => {
+      try {
+        return typeof api.get === "function" ? await api.get({ sessionID }) : undefined
+      } catch {
+        return undefined
+      }
+    }
+    const rename = async (sessionID, title) => {
+      if (typeof api.update === "function") await api.update({ sessionID, title })
+    }
+    const guards = await Guards({
+      directory,
+      worktree,
+      client: {
+        app: { log: async ({ body }) => log(body.message, body.extra || {}) },
+        config: { get: async () => ({ data: { references: configuration().references } }) },
+        session: { get: async ({ path }) => ({ data: await sessionInfo(path.id) }) },
       },
+    })
+    const pruning = configuration().prune
+
+    // 14. 1.19 waited for the MCP servers before the first request to the model; v2 sends it with the tools of the
+    // servers connected at that moment, and Jira or GitLab missing from the first step of a /go stops it. A prompt of
+    // the first minutes of this instance waits for the servers still connecting (30 s at most).
+    const booted = Date.now()
+    const pause = (ms) => new Promise((done) => setTimeout(done, ms))
+    const mcpReady = async () => {
+      try {
+        if (Date.now() - booted > mcpBootMs || !ctx.mcp || typeof ctx.mcp.list !== "function") return
+        const end = Date.now() + mcpWaitMs
+        let waited = false
+        while (Date.now() < end) {
+          const result = await ctx.mcp.list()
+          const servers = Array.isArray(result) ? result : result && result.data
+          if (!Array.isArray(servers) || !servers.some((server) => server && server.status && server.status.status === "pending")) break
+          waited = true
+          await pause(250)
+        }
+        // the tools of a server that has just connected reach the tool list 100 ms later
+        if (waited) await pause(500)
+      } catch {
+        // the prompt goes on
+      }
     }
-    const hooks = await CompactCommands({ client, directory, worktree })
+
+    // the sessions of this folder (their prompts or tools went through this instance), and their subagent sessions
+    const mine = new Set()
+    const parents = new Map()
+    const subagentSessions = new Set()
+    // session id -> the command of the pack its current turn runs: { command, args, pilot }
+    const commandRuns = new Map()
     // 9. the pilot runs of this folder: session id -> { command, since }; the sessions whose run was refused
     const runningPilots = new Map()
     const refusedRuns = new Set()
-    // the subagent sessions, which never ask a question
-    const subagentSessions = new Set()
-    const release = (id) => {
-      runningPilots.delete(id)
-      refusedRuns.delete(id)
+    // 4. session id -> the command chosen in its last multiple-choice question; the sessions where the plugin starts
+    // it (the options are written by the model: their arguments never name a folder, 7)
+    const chosen = new Map()
+    const chained = new Set()
+    // 16. session id -> { message, calls: signature -> count } of the answer of the model being run
+    const loops = new Map()
+    const looping = (event) => {
+      if (!event.sessionID || !event.messageID) return false
+      let entry = loops.get(event.sessionID)
+      if (!entry || entry.message !== event.messageID) {
+        loops.delete(event.sessionID)
+        // the sessions of the last answers only
+        if (loops.size >= 200) loops.delete(loops.keys().next().value)
+        entry = { message: event.messageID, calls: new Map() }
+        loops.set(event.sessionID, entry)
+      }
+      let signature
+      try {
+        signature = event.tool + "\u0000" + JSON.stringify(event.input === undefined ? null : event.input)
+      } catch {
+        return false
+      }
+      const count = (entry.calls.get(signature) || 0) + 1
+      entry.calls.set(signature, count)
+      return count >= LOOP_CALLS
     }
+    // 5. session id -> progress of its current turn; subagent session -> { phase, attempt, last }
+    const runs = new Map()
+    const subagents = new Map()
+    // tool call id -> tool name (the v2 events give it once); session id -> the texts of its last answer (10)
+    const toolNames = new Map()
+    const answers = new Map()
+    let ticker
+
+    // ---------- 9. the lock of the folder, in this process and in the git folder for the other ones ----------
+    const lockFile = gitDir ? join(gitDir, LOCK_FILE_NAME) : ""
+    const readLock = () => {
+      try {
+        return JSON.parse(readFileSync(lockFile, "utf8"))
+      } catch {
+        return undefined
+      }
+    }
+    // a lock of a running OpenCode of this machine (or of another machine, until it is 4 hours old)
+    const held = (lock) => {
+      if (!lock || typeof lock.since !== "number" || Date.now() - lock.since > LOCK_MS) return false
+      if (lock.host !== hostname()) return true
+      try {
+        process.kill(lock.pid, 0)
+        return true
+      } catch (error) {
+        return !!error && error.code === "EPERM"
+      }
+    }
+    const writeLock = (sessionID, command, since) => {
+      if (!lockFile) return true
+      const data = JSON.stringify({ session: sessionID, command, since, pid: process.pid, host: hostname() })
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const fd = openSync(lockFile, "wx", 0o600)
+          writeSync(fd, data)
+          closeSync(fd)
+          return true
+        } catch (error) {
+          if (!error || error.code !== "EEXIST") return true
+          const lock = readLock()
+          if (lock && lock.session === sessionID && lock.pid === process.pid) {
+            try {
+              writeFileSync(lockFile, data)
+            } catch {
+              // the lock stays as it is
+            }
+            return true
+          }
+          if (held(lock)) return false
+          try {
+            unlinkSync(lockFile)
+          } catch {
+            // another process took it meanwhile
+          }
+        }
+      }
+      return false
+    }
+    // the run that holds the folder, or undefined when this session may run
+    const acquire = (sessionID, command) => {
+      const now = Date.now()
+      for (const [id, item] of runningPilots) if (now - item.since > LOCK_MS) runningPilots.delete(id)
+      const other = [...runningPilots.entries()].find(([id]) => id !== sessionID)
+      if (other) return other[1]
+      if (!writeLock(sessionID, command, now)) {
+        const lock = readLock() || {}
+        return { command: "/" + (lock.command || "go"), since: lock.since || now, elsewhere: true }
+      }
+      runningPilots.set(sessionID, { command: "/" + command, since: now })
+      return undefined
+    }
+    const release = (sessionID) => {
+      runningPilots.delete(sessionID)
+      refusedRuns.delete(sessionID)
+      if (adopted && adopted.session === sessionID) adopted = undefined
+      if (!lockFile) return
+      const lock = readLock()
+      if (lock && lock.session === sessionID && lock.pid === process.pid) {
+        try {
+          unlinkSync(lockFile)
+        } catch {
+          // already gone
+        }
+      }
+    }
+    // OpenCode run as its background service resumes, at its start, the turns that a restart interrupted ("The server
+    // restarted while you were working…"), without a prompt the plugin sees: the run of a lock left by the stopped
+    // process goes on. The plugin takes that lock over until the turn ends, or frees it when the run does not start
+    // again within 2 minutes. OpenCode run with "serve" resumes nothing: its stale locks stay ignored.
+    let adopted
+    const adoptLock = (service) => {
+      try {
+        if (!lockFile || !service) return
+        const lock = readLock()
+        if (!lock || typeof lock.since !== "number" || Date.now() - lock.since > LOCK_MS) return
+        if (lock.host !== hostname() || lock.pid === process.pid || held(lock)) return
+        if (typeof lock.session !== "string" || !lock.session || !PILOT_COMMANDS.has(lock.command)) return
+        unlinkSync(lockFile)
+        if (!writeLock(lock.session, lock.command, lock.since)) return
+        runningPilots.set(lock.session, { command: "/" + lock.command, since: lock.since })
+        commandRuns.set(lock.session, { command: lock.command, args: "", pilot: true })
+        mine.add(lock.session)
+        adopted = { session: lock.session, started: false }
+        const timer = setTimeout(() => {
+          if (adopted && adopted.session === lock.session && !adopted.started) {
+            commandRuns.delete(lock.session)
+            release(lock.session)
+            log("freed the folder: the interrupted run did not start again", { command: "/" + lock.command })
+          }
+        }, adoptMs)
+        if (timer && typeof timer.unref === "function") timer.unref()
+        log("kept the folder for a run resumed after a restart", { command: "/" + lock.command })
+      } catch {
+        // the lock stays as it is: ignored, as any lock of a stopped OpenCode
+      }
+    }
+
+    // A subagent's session: its first prompt says so, or OpenCode gives it a parent (a subagent taken up again by the
+    // pilot gets a prompt without the first line)
+    const topLevel = new Set()
+    const isSubagent = async (sessionID, text) => {
+      if (!sessionID) return false
+      if (subagentSessions.has(sessionID) || parents.has(sessionID)) return true
+      if (typeof text === "string" && text.startsWith(SUBAGENT_PROMPT)) {
+        subagentSessions.add(sessionID)
+        return true
+      }
+      if (topLevel.has(sessionID)) return false
+      const info = await sessionInfo(sessionID)
+      if (info && info.parentID) {
+        parents.set(sessionID, info.parentID)
+        subagentSessions.add(sessionID)
+        return true
+      }
+      if (info) topLevel.add(sessionID)
+      return false
+    }
+
+    // ---------- 5. progress in the session title ----------
+    function track(sessionID, phase) {
+      if (!sessionID || parents.has(sessionID) || subagentSessions.has(sessionID)) return undefined
+      let state = runs.get(sessionID)
+      if (!state) {
+        const now = Date.now()
+        state = { start: now, last: now, chars: 0, phase: "waiting", tool: "", attempt: 0 }
+        runs.set(sessionID, state)
+        if (!ticker) {
+          ticker = setInterval(() => {
+            if (runs.size === 0) {
+              clearInterval(ticker)
+              ticker = undefined
+              return
+            }
+            for (const [id, item] of runs) void show(id, item)
+          }, tickMs)
+          if (ticker && typeof ticker.unref === "function") ticker.unref()
+        }
+      }
+      if (phase) state.phase = phase
+      return state
+    }
+
+    async function show(sessionID, state) {
+      if (!state || state.writing || state.done) return
+      state.writing = true
+      try {
+        const info = await sessionInfo(sessionID)
+        if (!info) return
+        if (info.parentID) {
+          parents.set(sessionID, info.parentID)
+          runs.delete(sessionID)
+          return
+        }
+        const current = info.title || ""
+        // a title written by someone else (OpenCode's title generation, a rename) becomes the one to come back to
+        if (current !== state.written) state.original = current.replace(PROGRESS, "").replace(OUTCOME, "")
+        // never on a session OpenCode has not named yet: its title generation would be thrown away
+        if (!state.original || DEFAULT_TITLE.test(state.original)) return
+        const title = progressLabel(state, Date.now(), state.child && subagents.get(state.child)) + " — " + tagged(state.original)
+        if (title === current) return
+        await rename(sessionID, title)
+        state.written = title
+      } catch {
+        // the title stays as it is
+      } finally {
+        state.writing = false
+      }
+    }
+
+    async function restore(sessionID, state) {
+      for (let i = 0; i < 30 && state.writing; i++) await new Promise((done) => setTimeout(done, 100))
+      try {
+        if (state.written && state.original !== undefined) {
+          const info = await sessionInfo(sessionID)
+          if (info && info.title === state.written) await rename(sessionID, tagged(state.original))
+        } else if (TAG) {
+          // 15. a title OpenCode generated during a turn too short to show its progress
+          const info = await sessionInfo(sessionID)
+          if (info && !info.parentID && info.title && tagged(info.title) !== info.title) await rename(sessionID, tagged(info.title))
+        }
+        state.written = undefined
+      } catch {
+        // the next turn will clean it
+      }
+    }
+
+    async function finish(sessionID) {
+      const state = sessionID && runs.get(sessionID)
+      if (!state) return
+      runs.delete(sessionID)
+      state.done = true
+      if (state.child) subagents.delete(state.child)
+      await restore(sessionID, state)
+    }
+
+    // ---------- 10. the outcome of a pilot run in the title ----------
+    async function markOutcome(sessionID, mark) {
+      if (!mark) return
+      try {
+        const info = await sessionInfo(sessionID)
+        if (!info || info.parentID) return
+        const title = (info.title || "").replace(PROGRESS, "").replace(OUTCOME, "")
+        if (!title || DEFAULT_TITLE.test(title)) return
+        await rename(sessionID, tagged(mark + title))
+      } catch {
+        // the title stays as it is
+      }
+    }
+    const outcomeOf = (sessionID) => {
+      const text = ((answers.get(sessionID) || {}).texts || []).join("\n")
+      // a stop wins over everything else of the answer (a table of done steps may hold ✅ before it)
+      if (text.includes("⛔")) return "⛔ "
+      if (/🚀|🔁|✅/u.test(text)) return "✅ "
+      return ""
+    }
+
+    // The end of a turn: the title without progress, the outcome of a pilot run, the folder free, the command chosen
+    // in a question started
+    function end(sessionID, type, data) {
+      const run = commandRuns.get(sessionID)
+      commandRuns.delete(sessionID)
+      release(sessionID)
+      const next = chosen.get(sessionID)
+      chosen.delete(sessionID)
+      const reason = data && data.reason
+      const stopped = type === "session.execution.failed" || (type === "session.execution.interrupted" && reason !== "superseded")
+      void (async () => {
+        await finish(sessionID)
+        if (run && run.pilot && reason !== "superseded") await markOutcome(sessionID, stopped ? "⛔ " : outcomeOf(sessionID))
+        if (next && type === "session.execution.succeeded" && typeof api.command === "function") {
+          chained.add(sessionID)
+          try {
+            await api.command({ sessionID, name: next.command, text: next.arguments })
+          } finally {
+            chained.delete(sessionID)
+          }
+        }
+      })().catch(() => {})
+    }
+
+    // What a subagent does while its task runs, shown in the title of its parent
+    function childEvent(sessionID, type, data) {
+      const child = subagents.get(sessionID)
+      if (!child) return
+      const now = Date.now()
+      switch (type) {
+        case "session.retry.scheduled":
+          child.phase = "retry"
+          child.attempt = data.attempt || child.attempt + 1
+          child.last = now
+          return
+        case "session.step.started":
+        case "session.reasoning.started":
+        case "session.reasoning.delta":
+        case "session.text.started":
+        case "session.text.delta":
+          if (child.phase !== "tool") child.phase = "work"
+          child.last = now
+          return
+        case "session.tool.called":
+          child.phase = "tool"
+          child.last = now
+          return
+        case "session.tool.success":
+        case "session.tool.failed":
+          child.phase = "waiting"
+          child.last = now
+          return
+        case "form.created":
+        case "permission.asked": {
+          child.phase = type === "form.created" ? "question" : "permission"
+          const parent = runs.get(parents.get(sessionID))
+          if (parent) void show(parents.get(sessionID), parent)
+          return
+        }
+        case "form.replied":
+        case "form.cancelled":
+        case "permission.replied":
+          child.phase = "waiting"
+          child.last = now
+          return
+      }
+    }
+
+    // What the agent of a top-level session does now
+    function topEvent(sessionID, type, data) {
+      if (TURN_END.has(type)) return end(sessionID, type, data)
+      if (type === "session.execution.started") {
+        track(sessionID)
+        return
+      }
+      const state = runs.get(sessionID)
+      const now = Date.now()
+      switch (type) {
+        case "session.step.started":
+          answers.set(sessionID, { message: data.assistantMessageID, texts: [] })
+          if (state) {
+            state.phase = "waiting"
+            state.last = now
+          }
+          return
+        case "session.text.ended": {
+          const answer = answers.get(sessionID)
+          if (answer && answer.message === data.assistantMessageID) answer.texts.push(String(data.text || ""))
+          return
+        }
+        case "session.reasoning.started":
+        case "session.reasoning.delta":
+        case "session.text.started":
+        case "session.text.delta":
+          if (!state) return
+          state.phase = type.startsWith("session.reasoning") ? "reasoning" : "text"
+          state.chars += String(data.delta || "").length
+          state.last = now
+          return
+        case "session.tool.input.started":
+          toolNames.set(data.id, data.name)
+          if (state && data.name !== "question") {
+            state.phase = "tool"
+            state.tool = toolText(data.name, {})
+            state.last = now
+          }
+          return
+        case "session.tool.called": {
+          const name = toolNames.get(data.id) || ""
+          if (state && name !== "question") {
+            state.phase = "tool"
+            state.tool = toolText(name, data.input)
+            state.last = now
+          }
+          return
+        }
+        case "session.tool.progress": {
+          // the session of the subagent that a subagent tool runs
+          const child = data.metadata && data.metadata.sessionID
+          if (!child || child === sessionID) return
+          parents.set(child, sessionID)
+          subagentSessions.add(child)
+          mine.add(child)
+          if (state && state.child !== child) {
+            state.child = child
+            if (!subagents.has(child)) subagents.set(child, { phase: "waiting", attempt: 0, last: now })
+          }
+          return
+        }
+        case "session.tool.success":
+        case "session.tool.failed":
+          toolNames.delete(data.id)
+          if (!state) return
+          if (state.phase === "tool") state.phase = "waiting"
+          if (state.child && data.metadata && data.metadata.sessionID === state.child) {
+            subagents.delete(state.child)
+            state.child = undefined
+          }
+          state.last = now
+          return
+        case "session.retry.scheduled":
+          if (!state) return
+          state.phase = "retry"
+          state.attempt = data.attempt || state.attempt + 1
+          state.last = now
+          return
+        case "form.created":
+        case "permission.asked":
+          if (!state) return
+          state.phase = type === "form.created" ? "question" : "permission"
+          void show(sessionID, state)
+          return
+        case "form.replied":
+        case "form.cancelled":
+        case "permission.replied":
+          if (!state) return
+          state.phase = "waiting"
+          state.last = now
+          return
+      }
+    }
+
+    function onEvent(e) {
+      if (!e || !e.type) return
+      const data = e.data || e.properties || {}
+      if (e.type === "session.created") {
+        if (data.parentID && data.sessionID && mine.has(data.parentID)) {
+          parents.set(data.sessionID, data.parentID)
+          subagentSessions.add(data.sessionID)
+          mine.add(data.sessionID)
+        }
+        return
+      }
+      const sessionID = data.sessionID || (data.form && data.form.sessionID) || ""
+      if (!sessionID) return
+      if (adopted && adopted.session === sessionID && !TURN_END.has(e.type)) adopted.started = true
+      // the older status events of OpenCode v2 also end a turn
+      const idle = e.type === "session.idle" || (e.type === "session.status" && !!data.status && (data.status === "idle" || data.status.type === "idle"))
+      // 9. the lock file of a run of this process ends with its turn, even when this instance of the plugin started
+      // after it (the plugin was loaded again)
+      if ((idle || TURN_END.has(e.type)) && !mine.has(sessionID)) {
+        const lock = readLock()
+        if (lock && lock.session === sessionID && lock.pid === process.pid) release(sessionID)
+      }
+      if (!mine.has(sessionID)) return
+      if (idle) {
+        if (!parents.has(sessionID) && !subagentSessions.has(sessionID)) release(sessionID)
+        return
+      }
+      if (parents.has(sessionID) || subagentSessions.has(sessionID)) return childEvent(sessionID, e.type, data)
+      if (e.type === "session.renamed") {
+        // 15. a title OpenCode generated, or that I typed, between two turns gets the folder of the worktree (during a
+        // turn, the progress and its end write it)
+        const title = String(data.title || "")
+        if (TAG && !runs.has(sessionID) && tagged(title) !== title) {
+          void (async () => {
+            const info = await sessionInfo(sessionID)
+            if (info && !info.parentID && info.title === title) await rename(sessionID, tagged(title))
+          })().catch(() => {})
+        }
+        return
+      }
+      topEvent(sessionID, e.type, data)
+    }
+
     if (ctx.event && typeof ctx.event.subscribe === "function") {
       ;(async () => {
         try {
@@ -1264,9 +1493,13 @@ export default Plugin.define({
           for await (const e of ctx.event.subscribe()) {
             if (!connected) {
               connected = true
-              console.error("[openrd-pack] event stream connected for " + worktree)
+              log("event stream connected for " + worktree)
             }
-            if (eventIdle(e)) release(eventSession(e))
+            try {
+              onEvent(e)
+            } catch {
+              // never stop reading the events
+            }
           }
         } catch {
           // no event stream: the 4-hour limit frees the folder
@@ -1274,12 +1507,48 @@ export default Plugin.define({
       })()
     }
 
+    // 9. the lock of a run that OpenCode's background service resumes after a restart
+    const isService = () => {
+      if (options.service !== undefined) return !!options.service
+      if (process.argv.includes("--service")) return true
+      try {
+        return readFileSync("/proc/self/cmdline", "utf8").split("\0").includes("--service")
+      } catch {
+        return false
+      }
+    }
+    adoptLock(isService())
+
+    // 12. the MCP servers as plain tools (code mode is taken out of every request)
+    if (ctx.mcp && typeof ctx.mcp.transform === "function") {
+      try {
+        await ctx.mcp.transform((editor) => {
+          for (const [, server] of editor.list()) server.codemode = false
+        })
+      } catch (error) {
+        log("MCP servers left as they are", { error: String((error && error.message) || error) })
+      }
+    }
+
     await ctx.tool.hook("execute.before", async (event) => {
       if (!event) return
+      if (event.sessionID) mine.add(event.sessionID)
       if (V2_REFUSED.has(event.tool)) {
+        guards.logRefusal({ sessionID: event.sessionID, agent: event.agent, tool: event.tool }, "moves the session or a worktree")
         throw new Error("Refused by the pack: " + event.tool + " is for the developer, in the web interface. Work in the repository of this session.")
       }
-      if (event.tool === "question" && subagentSessions.has(event.sessionID)) {
+      if (V2_HIDDEN.includes(event.tool)) {
+        guards.logRefusal({ sessionID: event.sessionID, agent: event.agent, tool: event.tool }, "not offered by the pack")
+        throw new Error("Refused by the pack: " + event.tool + " is not available. Use the other tools of this request.")
+      }
+      if (looping(event)) {
+        guards.logRefusal({ sessionID: event.sessionID, agent: event.agent, tool: event.tool }, "same call three times in one answer")
+        throw new Error(
+          "Refused by the pack: this is the third identical " + event.tool + " call of your answer, a loop. Its result " +
+            "will not change: use the results you already have, take another approach, or report what blocks you.",
+        )
+      }
+      if (event.tool === "question" && (await isSubagent(event.sessionID))) {
         throw new Error("Refused by the pack: a subagent never asks a question, nobody answers during /go, /fix or /fortify. Decide with the rules of your instructions, or write the question in your report.")
       }
       if (refusedRuns.has(event.sessionID)) {
@@ -1287,47 +1556,149 @@ export default Plugin.define({
       }
       const tool = V2_TOOLS[event.tool] || event.tool
       const input = event.input && typeof event.input === "object" ? event.input : {}
-      await hooks["chat.params"]({ sessionID: event.sessionID, agent: event.agent })
+      // 8. the agents of the pack wait for each command and each subagent
+      if (PACK_AGENTS.has(event.agent) && (tool === "bash" || tool === "task") && input.background === true) input.background = false
       const args = { ...input }
       if (typeof args.path === "string" && ["read", "edit", "write"].includes(tool)) args.filePath = args.path
       const output = { args }
-      await hooks["tool.execute.before"]({ tool, sessionID: event.sessionID, callID: event.id }, output)
+      await guards.before({ tool, sessionID: event.sessionID, agent: event.agent, callID: event.id }, output)
       if (tool === "bash" && typeof output.args.command === "string") {
         input.command = output.args.command
         if (output.args.timeout !== undefined) input.timeout = output.args.timeout
       }
     })
 
-    await ctx.shell.hook("create.before", async (invocation) => {
-      if (!invocation || !invocation.env) return
-      // no server password, and the developer's usual folders (cleanEnv)
-      cleanEnv(invocation.env)
-      await hooks["shell.env"]({ callID: "v2" }, { env: invocation.env })
+    // 4. the command chosen in a multiple-choice question of a top-level session
+    await ctx.tool.hook("execute.after", async (event) => {
+      try {
+        if (!event || event.tool !== "question" || event.status !== "completed") return
+        if (event.sessionID) mine.add(event.sessionID)
+        if (await isSubagent(event.sessionID)) return
+        const result = event.result || {}
+        const answered = (result.output && result.output.answers) || (result.metadata && result.metadata.answers)
+        const next = chosenCommand(answered)
+        if (next) chosen.set(event.sessionID, next)
+      } catch {
+        // no command to start
+      }
     })
 
-    await ctx.session.hook("prompt", async (event) => {
+    await ctx.shell.hook("create.before", async (invocation) => {
+      if (!invocation || !invocation.env) return
+      guards.env(invocation.env)
+    })
+
+    // 12 and 13. what each request to the model carries
+    if (typeof api.hook === "function") {
+      await api.hook("context", async (event) => {
+        try {
+          if (!event) return
+          if (event.tools) {
+            for (const name of V2_HIDDEN) delete event.tools[name]
+            if (event.tools.question && (await isSubagent(event.sessionID))) delete event.tools.question
+          }
+          if (pruning) prune(event.messages)
+        } catch {
+          // the request goes as it is
+        }
+      })
+    }
+
+    await api.hook("prompt", async (event) => {
+      const ready = mcpReady()
+      try {
+        await onPrompt(event)
+      } finally {
+        await ready
+      }
+    })
+
+    async function onPrompt(event) {
       const prompt = event && event.prompt
       if (!prompt || typeof prompt.text !== "string") return
-      // a subagent session is never a run of a pilot command, whatever its prompt quotes
-      const subagent = prompt.text.startsWith(SUBAGENT_PROMPT)
-      if (subagent) subagentSessions.add(event.sessionID)
-      const run = subagent ? undefined : PILOT_RUNS.find(([, sentence]) => prompt.text.includes(sentence))
-      if (run) {
-        const now = Date.now()
-        for (const [id, item] of runningPilots) if (now - item.since > LOCK_MS) runningPilots.delete(id)
-        const other = [...runningPilots.entries()].find(([id]) => id !== event.sessionID)
+      const sessionID = event.sessionID
+      if (sessionID) mine.add(sessionID)
+      const subagent = await isSubagent(sessionID, prompt.text)
+      // the command of the pack this prompt runs: its [[command]] line, or the first sentence of an older pilot command
+      let command = ""
+      let args = ""
+      const line = subagent ? null : COMMAND_LINE.exec(prompt.text)
+      if (line) {
+        command = line[1]
+        args = (line[2] || "").trim()
+        prompt.text = prompt.text.slice(line[0].length)
+      } else if (!subagent) {
+        const run = PILOT_RUNS.find(([, sentence]) => prompt.text.includes(sentence))
+        if (run) command = run[0]
+      }
+      const label = command ? ("/" + command + " " + args).trim() : ""
+      // 3. a session with no title yet takes the name of the command (OpenCode then asks no model for a title)
+      if (command) {
+        try {
+          const info = await sessionInfo(sessionID)
+          if (info && !info.parentID && (!info.title || DEFAULT_TITLE.test(info.title))) await rename(sessionID, tagged(label.slice(0, 80)))
+        } catch {
+          // OpenCode names it
+        }
+      }
+      // 9. one /go, /fix or /fortify at a time per folder
+      if (PILOT_COMMANDS.has(command)) {
+        const other = acquire(sessionID, command)
         if (other) {
-          refusedRuns.add(event.sessionID)
-          prompt.text =
-            "Answer exactly this sentence and nothing else, without any tool: « ⛔ " + run[0] + " refusé : " + other[1].command +
-            " tourne déjà dans ce dossier depuis " + Math.round((now - other[1].since) / 60000) + " min. Attends sa fin, ou ouvre un " +
-            "espace de travail pour travailler en parallèle (s'il est fini ou arrêté, redémarrer OpenCode libère le dossier). »"
+          refusedRuns.add(sessionID)
+          const notice =
+            "⛔ /" + command + " refusé : " + other.command + " tourne déjà dans ce dossier" +
+            (other.elsewhere ? " (dans un autre OpenCode de cette machine)" : "") + " depuis " +
+            Math.round((Date.now() - other.since) / 60000) + " min. Attends sa fin, ou ouvre un espace de travail pour " +
+            "travailler en parallèle (s'il est fini ou arrêté, redémarrer OpenCode libère le dossier)."
+          guards.logRefusal({ sessionID, agent: "pilot", tool: "/" + command }, "another " + other.command + " runs in this folder")
+          prompt.text = "Answer exactly this sentence and nothing else, without any tool: « " + notice + " »"
+          event.metadata = presentation(event.metadata, label)
           return
         }
-        refusedRuns.delete(event.sessionID)
-        runningPilots.set(event.sessionID, { command: run[0], since: now })
+        refusedRuns.delete(sessionID)
       }
-      if (prompt.text.includes("[[run ")) prompt.text = await resolveRuns(prompt.text, worktree)
-    })
+      if (command) commandRuns.set(sessionID, { command, args, pilot: PILOT_COMMANDS.has(command) })
+      // 7. the folders I name, in a message or in the arguments of a command I type, in a top-level session
+      if (!subagent && !chained.has(sessionID)) await guards.named(sessionID, command ? args : prompt.text)
+      // 5. the progress of the turn in the title, from the scripts of the command on
+      let state
+      if (command) {
+        state = track(sessionID, "preparing")
+        if (state) void show(sessionID, state)
+      }
+      // 1. the scripts of the command, in the git root of the folder
+      try {
+        if (prompt.text.includes("[[run ")) prompt.text = await resolveRuns(prompt.text, worktree)
+      } catch {
+        // keep the lines: the model runs them
+      }
+      if (state) {
+        state.phase = "waiting"
+        state.last = Date.now()
+      }
+      // 3. what the conversation shows
+      if (!command) return
+      try {
+        const split = VISIBLE.exec(prompt.text)
+        if (split) {
+          const shown = prompt.text.slice(0, split.index).trim()
+          prompt.text = prompt.text.slice(split.index + split[0].length).trim()
+          event.metadata = presentation(event.metadata, shown || label)
+          return
+        }
+        const place = await where(directory).catch(() => "")
+        const due = reminders()
+        const reminder = due > 0 ? " · ⏰ " + due + (due > 1 ? " rappels" : " rappel") : ""
+        event.metadata = presentation(event.metadata, (place ? label + " — " + place : label) + reminder)
+      } catch {
+        // the expanded prompt is shown
+      }
+    }
+
+    // the lock file of a run that goes on stays until its turn ends (an instance loaded again frees it then)
+    return () => {
+      if (ticker) clearInterval(ticker)
+    }
   },
 })

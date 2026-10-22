@@ -3,6 +3,7 @@ description: "Compare a feature with a repository where it works (migrated code,
 agent: debugger
 subtask: false
 ---
+[[command compare $ARGUMENTS]]
 Comparison report:
 [[run compare-repos.sh --raw $ARGUMENTS]]
 

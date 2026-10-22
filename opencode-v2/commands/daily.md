@@ -3,6 +3,7 @@ description: "Morning brief for ONE Jira project or board: my sprint first, revi
 agent: pilot
 subtask: false
 ---
+[[command daily $ARGUMENTS]]
 Scope given: "$ARGUMENTS"
 Today: !`date +%Y-%m-%d`
 

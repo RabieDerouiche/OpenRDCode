@@ -3,6 +3,7 @@ description: "Review a teammate's merge request, read-only and without touching 
 agent: checker
 subtask: false
 ---
+[[command review $ARGUMENTS]]
 Merge request to review: "$1" (target branch given: "$2")
 
 Project detection (this repository):

@@ -1,10 +1,12 @@
-// Tests of the guards of the pack plugin (plugins/openrd-pack.js, the 1.19 guards behind the OpenCode v2 adapter): the repository jail (7), the refusals of
-// environment dumps and recursive rm, the long timeouts (8), one /go or /fix at a time (9) and the outcome in the
-// session title (10). The plugin runs against a fake OpenCode client, in a fake home folder.
-// Usage, from v2/: node tools/plugin-test.mjs
+// Tests of the pack plugin (plugins/openrd-pack.js, OpenCode v2): the guards of the shell and file tools (the repository
+// jail 7, the refusals 6, the long timeouts 8, the tool called by its path 11), then the v2 hooks against a fake OpenCode
+// v2 context (prompt, context, tools, events): the command line and its title (3), the command chosen in a question
+// (4), the progress (5), one pilot per folder (9), the outcome (10), what v2 opens that the pack closes (12) and the
+// pruning of old tool outputs (13). In a fake home folder.
+// Usage, from opencode-v2/: node tools/plugin-test.mjs
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
@@ -28,7 +30,7 @@ mkdirSync(join(stub, "node_modules", "@opencode", "plugin"), { recursive: true }
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "package.json"), '{"name":"@opencode/plugin","type":"module","main":"index.js"}')
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "index.js"), "export const Plugin = { define: (definition) => definition }\n")
 writeFileSync(join(stub, "openrd-pack.js"), readFileSync(join(pack, "plugins", "openrd-pack.js"), "utf8"))
-const { CompactCommands, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
+const { Guards, prune, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
 
 // ---------- fake OpenCode client ----------
 const sessions = new Map()
@@ -52,7 +54,7 @@ const logs = []
 const session = (id, extra = {}) => sessions.set(id, { id, title: "Session " + id, ...extra })
 
 references = { legacy: { path: "~/repos/legacy", description: "legacy export" } }
-const hooks = await CompactCommands({ client, directory: repo, worktree: repo })
+const guards = await Guards({ client, directory: repo, worktree: repo })
 
 let failures = 0
 let count = 0
@@ -66,11 +68,11 @@ async function check(label, fn) {
   }
 }
 async function agent(sessionID, name) {
-  await hooks["chat.params"]({ sessionID, agent: name }, {})
+  guards.agent(sessionID, name)
 }
 async function tool(sessionID, name, args) {
   const output = { args: { ...args } }
-  await hooks["tool.execute.before"]({ tool: name, sessionID, callID: "c" + count }, output)
+  await guards.before({ tool: name, sessionID, callID: "c" + count }, output)
   return output.args
 }
 const refused = (sessionID, name, args, why = /outside the repository|Refused by the pack/) =>
@@ -153,7 +155,7 @@ await check("[coder] shell on a reference", () => refused("coder-1", "bash", { c
 
 // ---------- 7. folders I name ----------
 // in the arguments of /compare (the debugger is the agent of that command)
-await hooks["command.execute.before"]({ command: "compare", sessionID: "debugger-1", arguments: other + " ExportService le titre" }, { parts: [] })
+await guards.named("debugger-1", other + " ExportService le titre")
 await check("[debugger] shell on the named reference", () => allowed("debugger-1", "bash", { command: "git -C " + other + " log --oneline -5" }))
 await check("[debugger] file tool on the named reference", () => allowed("debugger-1", "read", { filePath: join(other, "src", "x.cs") }))
 await check("[debugger] home still refused", () => refused("debugger-1", "bash", { command: "grep -r export ~" }))
@@ -164,20 +166,17 @@ session("analyst-2", { parentID: "pilot-2" })
 await agent("pilot-2", "pilot")
 await agent("coder-2", "coder")
 await agent("analyst-2", "analyst")
-await hooks["command.execute.before"]({ command: "go", sessionID: "pilot-2", arguments: "ABC-12 comme dans ~/repos/old-api (ExportService)" }, { parts: [] })
+await guards.named("pilot-2", "ABC-12 comme dans ~/repos/old-api (ExportService)")
 await check("[coder of /go] read in the named folder", () => allowed("coder-2", "read", { filePath: join(other, "src", "x.cs") }))
 await check("[analyst of /go] shell in the named folder", () => allowed("analyst-2", "bash", { command: "git -C ~/repos/old-api log -3" }))
 await check("[coder of /go] shell in the named folder", () => refused("coder-2", "bash", { command: "ls ~/repos/old-api" }))
 await check("[pilot of /go] glob of the named folder", () => allowed("pilot-2", "glob", { pattern: "*", path: other }))
-await hooks.event({ event: { type: "session.idle", properties: { sessionID: "pilot-2" } } })
 // in a message I type (top-level session only)
 await check("[build] before naming", () => refused("build-1", "bash", { command: "ls ~/repos/old-api" }))
-await hooks["chat.message"]({ sessionID: "build-1", agent: "build" }, { message: {}, parts: [{ type: "text", text: "Regarde l'implémentation dans ~/repos/old-api, merci." }] })
+await guards.named("build-1", "Regarde l'implémentation dans ~/repos/old-api, merci.")
 await check("[build] after naming", () => allowed("build-1", "bash", { command: "ls ~/repos/old-api" }))
-await hooks["chat.message"]({ sessionID: "coder-1", agent: "coder" }, { message: {}, parts: [{ type: "text", text: "Read " + home + " now" }] })
+await guards.named("coder-1", "Read " + home + " now")
 await check("[coder] a subagent prompt names nothing", () => refused("coder-1", "bash", { command: "ls " + home }))
-await hooks["chat.message"]({ sessionID: "pilot-1", agent: "pilot" }, { message: {}, parts: [{ type: "text", synthetic: true, text: "Repository root: " + home }] })
-await check("[pilot] the expanded text of a command names nothing", () => refused("pilot-1", "bash", { command: "ls " + home }))
 
 // ---------- 7. the folders outside the repository are read-only ----------
 const P = "~/.config/opencode/scripts/"
@@ -263,59 +262,14 @@ await check("ship.sh gets 5 min", async () => assert.equal(await tool("pilot-1",
 await check("git status keeps the default", async () => assert.equal(await timeout("git status"), undefined))
 await check("a longer timeout is kept", async () => assert.equal(await timeout(S + "build-test.sh", 3600000), 3600000))
 
-// ---------- 9. one /go or /fix at a time ----------
-session("go-a")
-session("go-b")
-const run = (command, sessionID) => hooks["command.execute.before"]({ command, sessionID, arguments: "ABC-1" }, { parts: [{ type: "text", text: "x" }] })
-await check("first /go starts", () => run("go", "go-a"))
-const refusedRun = async (command) => {
-  const parts = [{ type: "text", text: "Workflow state: [[run workflow-state.sh --fetch-all --sheet]]" }]
-  await hooks["command.execute.before"]({ command, sessionID: "go-b", arguments: "ABC-9" }, { parts })
-  return parts
-}
-await check("second /go: replaced by its refusal", async () => {
-  const parts = await refusedRun("go")
-  assert.equal(parts[0].text, "/go ABC-9")
-  assert.match(parts[1].text, /⛔ \/go refusé : \/go tourne déjà/)
-  assert.ok(parts[1].synthetic)
-  assert.ok(!parts.some((p) => /\[\[run/.test(p.text)))
-})
-await check("no tool runs in the refused turn", () => refused("go-b", "bash", { command: "git status" }, /was refused/))
-await check("/fix refused too", async () => assert.match((await refusedRun("fix"))[1].text, /⛔ \/fix refusé/))
-await hooks.event({ event: { type: "session.idle", properties: { sessionID: "go-b" } } })
-await check("tools again after the refused turn", () => allowed("go-b", "bash", { command: "git status" }))
-await check("/daily is not a pilot run", () => run("daily", "go-b"))
-await check("the same session may start again", () => run("go", "go-a"))
-
-// ---------- 10. outcome in the title ----------
-const idle = async (sessionID, type = "session.idle") => {
-  await hooks.event({ event: { type, properties: { sessionID } } })
-  await new Promise((r) => setTimeout(r, 50))
-}
-const answer = (sessionID, text, error) => messages.set(sessionID, [{ info: { role: "assistant", time: { created: 2 }, ...(error ? { error } : {}) }, parts: [{ type: "text", text }] }])
-answer("go-a", "**[ABC-1](x) - Export**\n🚀 MR en Draft : https://gitlab/x/-/merge_requests/42")
-await idle("go-a")
-await check("delivered: ✅", () => assert.equal(sessions.get("go-a").title, "✅ Session go-a"))
-await check("after the end, another session may run /go", () => run("go", "go-b"))
-answer("go-b", "⛔ Arrêt à l'étape 3 : le build échoue après deux essais.")
-await idle("go-b")
-await check("stopped: ⛔", () => assert.equal(sessions.get("go-b").title, "⛔ Session go-b"))
-await check("next /go keeps one mark", () => run("go", "go-b"))
-answer("go-b", "**[ABC-1](x)** ✅ Déjà livré (MR !42) : /fix pour la CI ou la review")
-await idle("go-b")
-await check("already delivered: ✅ replaces ⛔", () => assert.equal(sessions.get("go-b").title, "✅ Session go-b"))
-answer("go-b", "**[ABC-1](x)**\n⛔ Arrêt à l'étape 3 : build en échec.\n| # | Étape | ✅ |\n| 1 | a | ✅ |")
-await run("go", "go-b")
-await idle("go-b")
-await check("a stop after a table of done steps: ⛔", () => assert.equal(sessions.get("go-b").title, "⛔ Session go-b"))
-session("go-c")
-await run("fix", "go-c")
-await idle("go-c", "session.error")
-await check("error: ⛔", () => assert.equal(sessions.get("go-c").title, "⛔ Session go-c"))
-session("chat-1")
-answer("chat-1", "🚀 voilà")
-await idle("chat-1")
-await check("a conversation is never marked", () => assert.equal(sessions.get("chat-1").title, "Session chat-1"))
+// ---------- 7. the patch tool (offered by OpenCode v2 to some models instead of edit and write) ----------
+const patchOf = (path) => "*** Begin Patch\n*** Update File: " + path + "\n@@\n-a\n+b\n*** End Patch"
+await check("[coder] refused: patch outside", () => refused("coder-1", "patch", { patchText: patchOf("../old-api/src/x.cs") }))
+await check("[coder] refused: patch adding a file in the skills", () =>
+  refused("coder-1", "patch", { patchText: "*** Begin Patch\n*** Add File: " + join(home, ".config", "opencode", "skills", "x", "SKILL.md") + "\n+x\n*** End Patch" }, /never change it/))
+await check("[coder] refused: patch moving a file outside", () =>
+  refused("coder-1", "patch", { patchText: "*** Begin Patch\n*** Update File: src/Foo.cs\n*** Move to: " + join(home, "Foo.cs") + "\n@@\n-a\n+b\n*** End Patch" }))
+await check("[coder] allowed: patch in the repository", () => allowed("coder-1", "patch", { patchText: patchOf("src/Foo.cs") }))
 
 // ---------- 7. a worktree (an OpenCode workspace): the ticket sheets are in the git folder of the main checkout ----------
 const mainRepo = join(home, "repos", "main-api")
@@ -328,15 +282,15 @@ gitIn(mainRepo, ["add", "-A"])
 gitIn(mainRepo, ["commit", "-q", "-m", "init"])
 gitIn(mainRepo, ["worktree", "add", "-q", "-b", "opencode/brave-fox", workspace])
 mkdirSync(join(mainRepo, ".git", "opencode-tickets"), { recursive: true })
-const hooksWt = await CompactCommands({ client, directory: workspace, worktree: workspace })
+const guardsWt = await Guards({ client, directory: workspace, worktree: workspace })
 const sheetOut = join(mainRepo, ".git", "opencode-tickets", "ABC-9.md")
 for (const [id, name] of [["wt-analyst", "analyst"], ["wt-coder", "coder"], ["wt-checker", "checker"], ["wt-pilot", "pilot"]]) {
   session(id)
-  await hooksWt["chat.params"]({ sessionID: id, agent: name }, {})
+  guardsWt.agent(id, name)
 }
 const toolWt = async (sessionID, name, args) => {
   const output = { args: { ...args } }
-  await hooksWt["tool.execute.before"]({ tool: name, sessionID, callID: "w" + count }, output)
+  await guardsWt.before({ tool: name, sessionID, callID: "w" + count }, output)
   return output.args
 }
 await check("[worktree analyst] writes the sheet in the main .git", () => toolWt("wt-analyst", "write", { filePath: sheetOut, content: "# ABC-9" }))
@@ -349,94 +303,172 @@ await check("[worktree coder] the main checkout is outside", () => assert.reject
 await check("[worktree coder] the rest of the main .git is outside", () => assert.rejects(() => toolWt("wt-coder", "bash", { command: "cat " + join(mainRepo, ".git", "config") }), /outside the repository/))
 await check("[worktree coder] its own files", () => toolWt("wt-coder", "write", { filePath: join(workspace, "src", "B.cs"), content: "x" }))
 
-// ---------- 12. the folder of the worktree in the session titles and on the command line ----------
-const updated = async (h, info) => {
-  await h.event({ event: { type: "session.updated", properties: { info } } })
-  await new Promise((r) => setTimeout(r, 30))
-}
-for (const [id, title, extra] of [["wt-t1", "Export PDF des factures"], ["wt-t2", "New session - 2026-10-21T10:00:00.000Z"],
-  ["wt-t3", "✅ Export PDF"], ["wt-t4", "⏳ 0:05 réflexion 1,2k tokens — Export"], ["wt-t5", "Revue", { parentID: "wt-t1" }],
-  ["wt-t6", "[brave-fox] Déjà marqué"], ["main-t1", "Export PDF"]]) {
-  session(id, { title, ...(extra || {}) })
-  await updated(id.startsWith("main") ? hooks : hooksWt, sessions.get(id))
-}
-await check("[worktree title] a generated title gets the folder", () => assert.equal(sessions.get("wt-t1").title, "[brave-fox] Export PDF des factures"))
-await check("[worktree title] a default title is left for OpenCode", () => assert.equal(sessions.get("wt-t2").title, "New session - 2026-10-21T10:00:00.000Z"))
-await check("[worktree title] after the outcome mark", () => assert.equal(sessions.get("wt-t3").title, "✅ [brave-fox] Export PDF"))
-await check("[worktree title] a progress title is left as it is", () => assert.match(sessions.get("wt-t4").title, /^⏳ 0:05/))
-await check("[worktree title] never a subagent's session", () => assert.equal(sessions.get("wt-t5").title, "Revue"))
-await check("[worktree title] once only", () => assert.equal(sessions.get("wt-t6").title, "[brave-fox] Déjà marqué"))
-await check("[worktree title] never in the main checkout", () => assert.equal(sessions.get("main-t1").title, "Export PDF"))
-await check("[worktree] the command line names the worktree folder", async () => {
-  session("wt-cmd")
-  const output = { parts: [{ type: "text", text: "Fais le point." }] }
-  await hooksWt["command.execute.before"]({ command: "daily", sessionID: "wt-cmd", arguments: "" }, output)
-  assert.ok(output.parts.some((p) => /main-api · worktree brave-fox · branche opencode\/brave-fox/.test(p.text)), JSON.stringify(output.parts).slice(0, 300))
-})
-
-// ---------- 5. what a subagent waits for, in the title of its parent ----------
-session("go-p")
-session("chk-1", { parentID: "go-p" })
-const emit = (type, properties) => hooks.event({ event: { type, properties } })
-const tick = () => new Promise((r) => setTimeout(r, 5600))
-const task = (status) => ({ part: { id: "t1", sessionID: "go-p", type: "tool", tool: "task",
-  state: { status, title: "Auto-review", input: { description: "Auto-review" }, metadata: { sessionId: "chk-1" } } } })
-await emit("session.status", { sessionID: "go-p", status: { type: "busy" } })
-await emit("message.part.updated", task("running"))
-await emit("session.status", { sessionID: "chk-1", status: { type: "busy" } })
-await emit("session.status", { sessionID: "chk-1", status: { type: "retry", attempt: 3, message: "Gateway Time-out" } })
-await tick()
-await check("a retry of the subagent shows in the parent title", () =>
-  assert.match(sessions.get("go-p").title, /^⏳ \d+:\d\d outil · Auto-review · nouvel essai 3 \(serveur du modèle\) — Session go-p$/))
-await emit("permission.asked", { sessionID: "chk-1", id: "per1", permission: "external_directory" })
-await tick()
-await check("an approval the subagent waits for shows in the parent title", () =>
-  assert.match(sessions.get("go-p").title, /^❓ \d+:\d\d Auto-review · autorisation attendue — Session go-p$/))
-await emit("permission.replied", { sessionID: "chk-1", requestID: "per1", reply: "once" })
-await emit("message.part.updated", task("completed"))
-await emit("session.idle", { sessionID: "chk-1" })
-await check("the subagent title is never touched", () => assert.equal(sessions.get("chk-1").title, "Session chk-1"))
-await emit("session.idle", { sessionID: "go-p" })
-await new Promise((r) => setTimeout(r, 200))
-await check("the parent gets its title back", () => assert.equal(sessions.get("go-p").title, "Session go-p"))
-
-// ---------- OpenCode v2 adapter ----------
-const v2hooks = {}
-const on = (domain) => ({ hook: async (name, fn) => { v2hooks[domain + "." + name] = fn } })
+// ---------- OpenCode v2: a fake v2 context ----------
+const ensure = (dir) => (mkdirSync(dir, { recursive: true }), dir)
+const configDir = ensure(join(home, ".config", "opencode"))
+writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ compaction: { prune: true }, references: { legacy: { path: "~/repos/legacy" } } }))
 writeFileSync(join(home, ".config", "opencode", "scripts", "hello.sh"), 'echo "hello from $(basename "$PWD")"\n')
-await v2Plugin.setup({ location: { directory: repo }, tool: on("tool"), shell: on("shell"), session: on("session") })
-const v2call = async (tool, input, agent = "coder") => {
-  const event = { tool, sessionID: "v2-s", agent, messageID: "m", id: "c" + count, input }
-  await v2hooks["tool.execute.before"](event)
+function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcpWaitMs: 600 } } = {}) {
+  const fake = { runCommands: false }
+  const hooks = {}
+  const queue = []
+  let wake
+  const stream = {
+    subscribe: () => ({
+      [Symbol.asyncIterator]() {
+        return { next: () => new Promise((r) => { if (queue.length) r({ value: queue.shift(), done: false }); else wake = () => r({ value: queue.shift(), done: false }) }) }
+      },
+    }),
+  }
+  const push = (type, data) => { queue.push({ type, data }); if (wake) { const w = wake; wake = undefined; w() } }
+  const calls = { update: [], command: [] }
+  const servers = [["gitlab", { type: "local", command: ["node", "x"] }], ["jira", { type: "remote", url: "https://jira.invalid/mcp", codemode: true }]]
+  const mcpState = { status: "connected" }
+  const domain = (name) => ({ hook: async (hook, fn) => { hooks[name + "." + hook] = fn } })
+  const ctx = {
+    location: { directory },
+    options,
+    tool: domain("tool"),
+    shell: domain("shell"),
+    session: {
+      hook: async (hook, fn) => { hooks["session." + hook] = fn },
+      get: async ({ sessionID }) => {
+        const s = sessionsAt.get(sessionID)
+        if (!s) throw new Error("Session not found: " + sessionID)
+        return { ...s }
+      },
+      update: async ({ sessionID, title }) => {
+        calls.update.push({ sessionID, title })
+        const s = sessionsAt.get(sessionID)
+        if (s) s.title = title
+      },
+      // v2 expands the command and prompts the session with it (only when a test asks for it)
+      command: async (input) => {
+        calls.command.push(input)
+        if (fake.runCommands) {
+          await hooks["session.prompt"]({ sessionID: input.sessionID, messageID: "cmd", prompt: { text: "[[command " + input.name + " " + input.text + "]]\nRun." }, delivery: "steer" })
+        }
+      },
+    },
+    event: stream,
+    mcp: {
+      transform: async (fn) => fn({ list: () => servers }),
+      list: async () => ({ location: { directory }, data: [{ name: "gitlab", status: { status: mcpState.status } }] }),
+    },
+  }
+  return Object.assign(fake, { ctx, hooks, push, sessions: sessionsAt, calls, servers, mcpState })
+}
+const wait = (ms = 60) => new Promise((r) => setTimeout(r, ms))
+const v2 = fakeV2(repo)
+await v2Plugin.setup(v2.ctx)
+const top = (id, title) => v2.sessions.set(id, { id, ...(title === undefined ? {} : { title }) })
+const child = (id, parentID, title = "Sous-tâche") => v2.sessions.set(id, { id, parentID, title })
+const before = async (sessionID, tool, input, agent = "coder") => {
+  const event = { tool, sessionID, agent, messageID: "m", id: "c" + count, input }
+  await v2.hooks["tool.execute.before"](event)
   return event.input
 }
-await check("[v2] the setup registers its three hooks", () => assert.deepEqual(Object.keys(v2hooks).sort(), ["session.prompt", "shell.create.before", "tool.execute.before"]))
-await check("[v2] a shell command outside the repository is refused", () => assert.rejects(() => v2call("shell", { command: "cat ~/.zshenv" }), /outside the repository/))
-await check("[v2] an environment dump is refused", () => assert.rejects(() => v2call("shell", { command: "export -p" }), /prints the environment/))
-await check("[v2] a read outside the repository is refused (path)", () => assert.rejects(() => v2call("read", { path: join(home, ".zshenv") }), /outside the repository/))
+const prompt = async (sessionID, text, metadata) => {
+  const event = { sessionID, messageID: "msg", prompt: { text }, metadata, delivery: "steer" }
+  await v2.hooks["session.prompt"](event)
+  return event
+}
+const context = async (sessionID, tools, agent = "build", messages = []) => {
+  const event = { sessionID, agent, model: { id: "qwen", providerID: "fake" }, system: [], messages, options: {}, tools: Object.fromEntries(tools.map((t) => [t, { description: t, input: {} }])) }
+  await v2.hooks["session.context"](event)
+  return event
+}
+const TOOLS = ["edit", "glob", "grep", "question", "read", "shell", "skill", "subagent", "webfetch", "websearch", "write", "execute"]
+
+await check("[v2] the setup registers its hooks", () => assert.deepEqual(Object.keys(v2.hooks).sort(),
+  ["session.context", "session.prompt", "shell.create.before", "tool.execute.after", "tool.execute.before"]))
+await check("[v2 12] the MCP servers are plain tools, never code mode", () => assert.deepEqual(v2.servers.map(([, s]) => s.codemode), [false, false]))
+
+// ---------- 12. what v2 opens that the pack closes ----------
+top("t-1", "Conversation")
+child("sub-1", "t-1")
+await check("[v2 12] code mode and the web search are taken out of every request", async () => {
+  const event = await context("t-1", TOOLS)
+  assert.ok(!("execute" in event.tools) && !("websearch" in event.tools))
+  assert.ok("question" in event.tools && "shell" in event.tools && "webfetch" in event.tools)
+})
+await check("[v2 12] a subagent's requests have no question tool", async () => {
+  const event = await context("sub-1", TOOLS, "general")
+  assert.ok(!("question" in event.tools) && !("execute" in event.tools))
+  assert.ok("read" in event.tools)
+})
+for (const tool of ["opencode_session_move", "opencode_worktree_create", "opencode_worktree_remove", "session_move", "worktree_create", "worktree_remove"]) {
+  await check(`[v2 12] refused: ${tool}`, () => assert.rejects(() => before("t-1", tool, { directory: home }, "build"), /for the developer/))
+}
+for (const tool of ["execute", "websearch"]) {
+  await check(`[v2 12] refused if called anyway: ${tool}`, () => assert.rejects(() => before("t-1", tool, { code: "await fetch('https://x.invalid')" }, "build"), /not available/))
+}
+await check("[v2 12] a subagent never asks a question (known by its parent)", () =>
+  assert.rejects(() => before("sub-1", "question", { questions: [] }, "general"), /a subagent never asks a question/))
+await prompt("sub-2", "You are a subagent spawned by another session.\nFind why the test fails.")
+await check("[v2 12] a subagent never asks a question (known by its first prompt)", () =>
+  assert.rejects(() => before("sub-2", "question", { questions: [] }, "debugger"), /a subagent never asks a question/))
+await check("[v2 12] a top-level session may ask", () => before("t-1", "question", { questions: [] }, "pilot"))
+
+// ---------- 6, 7, 8, 11 through the v2 tool names ----------
+await check("[v2] a shell command outside the repository is refused", () => assert.rejects(() => before("t-1", "shell", { command: "cat ~/.zshenv" }), /outside the repository/))
+await check("[v2] an environment dump is refused", () => assert.rejects(() => before("t-1", "shell", { command: "export -p" }), /prints the environment/))
+await check("[v2] a read outside the repository is refused (path)", () => assert.rejects(() => before("t-1", "read", { path: join(home, ".zshenv") }), /outside the repository/))
+await check("[v2] a patch outside the repository is refused", () =>
+  assert.rejects(() => before("t-1", "patch", { patchText: "*** Begin Patch\n*** Add File: " + join(home, "x.cs") + "\n+x\n*** End Patch" }), /outside the repository/))
 await check("[v2] a build gets 20 minutes and a tool path is rewritten", async () => {
-  const input = await v2call("shell", { command: "~/.bin/dotnet build -nologo" })
+  const input = await before("t-1", "shell", { command: "~/.bin/dotnet build -nologo" })
   assert.equal(input.command, "dotnet build -nologo")
   assert.equal(input.timeout, 1200000)
 })
-await check("[v2] moving a session or creating a worktree is refused", () => assert.rejects(() => v2call("session_move", { directory: "/tmp" }), /for the developer/))
+await check("[v2 8] the agents of the pack never run a command in the background", async () => {
+  assert.equal((await before("t-1", "shell", { command: "dotnet test", background: true }, "coder")).background, false)
+  assert.equal((await before("t-1", "subagent", { agent: "coder", description: "x", prompt: "y", background: true }, "pilot")).background, false)
+})
+await check("[v2 8] a conversation agent keeps its background command", async () =>
+  assert.equal((await before("t-1", "shell", { command: "npm run dev", background: true }, "build")).background, true))
+
+// ---------- 16. the same call three times in one answer of the model ----------
+const call16 = (messageID, input, tool = "read") => v2.hooks["tool.execute.before"]({ tool, sessionID: "t-1", agent: "coder", messageID, id: "l" + count, input })
+await check("[v2 16] two identical calls of one answer run", async () => {
+  await call16("loop-1", { path: "src/Foo.cs" })
+  await call16("loop-1", { path: "src/Foo.cs" })
+})
+await check("[v2 16] the third one is refused", () => assert.rejects(() => call16("loop-1", { path: "src/Foo.cs" }), /third identical read call of your answer, a loop/))
+await check("[v2 16] another input in the same answer runs", () => call16("loop-1", { path: "src/Bar.cs" }))
+await check("[v2 16] the same call in the next answer runs", () => call16("loop-2", { path: "src/Foo.cs" }))
+
+// ---------- 2. the environment of the commands ----------
 await check("[v2] the commands of the agents get a stable environment", async () => {
   const invocation = { command: "git fetch", env: {} }
-  await v2hooks["shell.create.before"](invocation)
+  await v2.hooks["shell.create.before"](invocation)
   assert.equal(invocation.env.GIT_TERMINAL_PROMPT, "0")
+  assert.equal(invocation.env.DOTNET_CLI_UI_LANGUAGE, "en")
 })
 await check("[v2] the commands of the agents never get the server password", async () => {
   const invocation = { command: "git status", env: { PATH: "/usr/bin", OPENCODE_SERVER_PASSWORD: "pw", OPENCODE_PASSWORD: "pw" } }
-  await v2hooks["shell.create.before"](invocation)
+  await v2.hooks["shell.create.before"](invocation)
   assert.equal(invocation.env.OPENCODE_SERVER_PASSWORD, undefined)
   assert.equal(invocation.env.OPENCODE_PASSWORD, undefined)
   assert.equal(invocation.env.PATH, "/usr/bin")
 })
+await check("[v2 2] the commands of the agents never get a token of the MCP servers, and keep the Artifactory credentials", async () => {
+  const env = { PATH: "/usr/bin", GITLAB_PERSONAL_ACCESS_TOKEN: "t", JIRA_API_TOKEN: "t", confluence_personal_token: "t",
+    SONAR_TOKEN: "t", FORTIFY_SSC_TOKEN: "t", SSC_PASSWORD: "t", ATLASSIAN_API_KEY: "t",
+    artifactory_user: "u", artifactory_password: "p", ARTIFACTORY_PASSWORD: "p", JIRA_URL: "https://jira.invalid", GITLAB_HOST: "x",
+    DB_PASSWORD: "test", NPM_TOKEN: "n" }
+  await v2.hooks["shell.create.before"]({ command: "dotnet restore", env })
+  for (const gone of ["GITLAB_PERSONAL_ACCESS_TOKEN", "JIRA_API_TOKEN", "confluence_personal_token", "SONAR_TOKEN", "FORTIFY_SSC_TOKEN", "SSC_PASSWORD", "ATLASSIAN_API_KEY"]) {
+    assert.equal(env[gone], undefined, gone)
+  }
+  for (const kept of ["PATH", "artifactory_user", "artifactory_password", "ARTIFACTORY_PASSWORD", "JIRA_URL", "GITLAB_HOST", "DB_PASSWORD", "NPM_TOKEN"]) {
+    assert.ok(kept in env, kept)
+  }
+})
 await check("[v2] the commands of the agents get the developer's folders back, not the XDG ones of ~/oc2", async () => {
   const env = { XDG_DATA_HOME: join(home, "oc2", "data"), XDG_CACHE_HOME: join(home, "oc2", "cache"), XDG_STATE_HOME: join(home, "oc2", "state"),
-    XDG_CONFIG_HOME: "/etc/xdg-of-the-developer", OPENCODE_CONFIG_DIR: join(home, "oc2", "config", "opencode") }
-  const invocation = { command: "git fetch", env }
-  await v2hooks["shell.create.before"](invocation)
+    XDG_CONFIG_HOME: "/etc/xdg-of-the-developer" }
+  await v2.hooks["shell.create.before"]({ command: "git fetch", env })
   assert.equal(env.XDG_DATA_HOME, undefined)
   assert.equal(env.XDG_CACHE_HOME, undefined)
   assert.equal(env.XDG_STATE_HOME, undefined)
@@ -448,8 +480,8 @@ await check("[v2] the [[run]] scripts get neither the server password nor the XD
   process.env.OPENCODE_SERVER_PASSWORD = "pw"
   process.env.XDG_CACHE_HOME = join(home, "oc2", "cache")
   try {
-    const event = { sessionID: "v2-env", prompt: { text: "State:\n[[run envcheck.sh]]" } }
-    await v2hooks["session.prompt"](event)
+    top("env-1", "Env")
+    const event = await prompt("env-1", "[[command outil env]]\nState:\n[[run envcheck.sh]]")
     assert.match(event.prompt.text, /PW=unset CACHE=unset HOME_OK=yes/)
   } finally {
     if (saved.pw === undefined) delete process.env.OPENCODE_SERVER_PASSWORD
@@ -458,87 +490,482 @@ await check("[v2] the [[run]] scripts get neither the server password nor the XD
     else process.env.XDG_CACHE_HOME = saved.cache
   }
 })
-await check("[v2] [[run]] lines of a command run in the repository", async () => {
-  const event = { sessionID: "v2-s", prompt: { text: "State:\n[[run hello.sh]]\nGo." } }
-  await v2hooks["session.prompt"](event)
-  assert.match(event.prompt.text, /hello from my-api/)
+
+// ---------- 1 and 3. the command line, the scripts, what the conversation shows, the title ----------
+top("cmd-1")
+const daily = await prompt("cmd-1", "[[command daily ABC]]\nScope: ABC\nState:\n[[run hello.sh]]\nBuild my morning brief.")
+await check("[v2 3] the [[command]] line is removed", () => assert.ok(!daily.prompt.text.includes("[[command")))
+await check("[v2 1] the [[run]] lines run in the repository", () => assert.match(daily.prompt.text, /hello from my-api/))
+await check("[v2 3] the conversation shows the command, the folder and the branch", () =>
+  assert.match(daily.metadata.displayText, /^\/daily ABC — my-api · (branche \S+|HEAD détachée.*)$/))
+await check("[v2 3] the presentation is complete for the web interface", () => assert.deepEqual([daily.metadata.comments, daily.metadata.attachments], [[], []]))
+await check("[v2 3] a session with no title takes the name of the command", () => assert.deepEqual(v2.calls.update.find((u) => u.sessionID === "cmd-1"), { sessionID: "cmd-1", title: "/daily ABC" }))
+await check("[v2 5] then shows the preparation of the command", () => assert.match(v2.sessions.get("cmd-1").title, /^⏳ 0:0\d (préparation|attente du modèle) — \/daily ABC$/))
+top("cmd-2", "Mon travail du jour")
+await prompt("cmd-2", "[[command daily]]\nBuild my morning brief.")
+await check("[v2 3] a session with a title keeps it", () => assert.equal(v2.sessions.get("cmd-2").title.replace(/^⏳ [^—]*— /, ""), "Mon travail du jour"))
+for (const id of ["cmd-1", "cmd-2"]) v2.push("session.execution.succeeded", { sessionID: id })
+top("cmd-3", "Todo")
+const todo = await prompt("cmd-3", "[[command outil todo]]\n- [ ] #1 2026-10-22 relancer\n[[visible]]\nOutil : todo\nSkill : pack-todo")
+await check("[v2 3] [[visible]]: what is above is shown, the rest goes to the model", () => {
+  assert.equal(todo.metadata.displayText, "- [ ] #1 2026-10-22 relancer")
+  assert.equal(todo.prompt.text, "Outil : todo\nSkill : pack-todo")
 })
-await check("[v2] a subagent session never asks a question (OpenCode v2 ignores experimental.primary_tools)", async () => {
-  const sub = { sessionID: "v2-sub", prompt: { text: "You are a subagent spawned by another session.\nFind why the test fails." } }
-  await v2hooks["session.prompt"](sub)
-  await assert.rejects(() => v2hooks["tool.execute.before"]({ tool: "question", sessionID: "v2-sub", agent: "debugger", messageID: "m", id: "q1", input: { questions: [] } }), /a subagent never asks a question/)
+const typed = await prompt("cmd-3", "explique-moi ce service", { displayText: "explique-moi ce service", comments: [], attachments: [], agent: "build" })
+await check("[v2 3] a message I type is left as it is", () => {
+  assert.equal(typed.prompt.text, "explique-moi ce service")
+  assert.equal(typed.metadata.agent, "build")
 })
-await check("[v2] a primary session may still ask a question", () =>
-  v2hooks["tool.execute.before"]({ tool: "question", sessionID: "v2-s", agent: "pilot", messageID: "m", id: "q2", input: { questions: [] } }))
-await check("[v2] a subagent prompt that quotes a pilot command is not a run of it", async () => {
-  const sub = { sessionID: "v2-sub2", prompt: { text: "You are a subagent spawned by another session.\nThe command says: Take the ticket from its analysis to its Draft merge request." } }
-  await v2hooks["session.prompt"](sub)
+await check("[v2 3] the reminders of my todo list are counted", async () => {
+  writeFileSync(join(home, ".config", "opencode", "todo.md"), "- [ ] #1 2020-01-01 vieux rappel\n- [ ] #2 2999-01-01 plus tard\n")
+  top("cmd-4", "Todo")
+  const event = await prompt("cmd-4", "[[command daily]]\nGo.")
+  assert.match(event.metadata.displayText, /· ⏰ 1 rappel$/)
+})
+
+// ---------- 7. the folders I name, through the prompt ----------
+top("named-1", "Conversation")
+await before("named-1", "shell", { command: "git status" }, "build")
+await check("[v2 7] before naming a folder", () => assert.rejects(() => before("named-1", "shell", { command: "ls ~/repos/old-api" }, "build"), /outside the repository/))
+await prompt("named-1", "Regarde ~/repos/old-api, merci.")
+await check("[v2 7] after naming it in a message", () => before("named-1", "shell", { command: "ls ~/repos/old-api" }, "build"))
+child("named-sub", "named-1")
+await prompt("named-sub", "You are a subagent spawned by another session.\nLook at " + home)
+await check("[v2 7] a subagent's prompt names nothing", () => assert.rejects(() => before("named-sub", "shell", { command: "ls " + home }, "analyst"), /outside the repository/))
+top("named-2", "Comparaison")
+await prompt("named-2", "[[command compare " + other + " ExportService le titre]]\nComparison report: x\nRead-only.")
+await check("[v2 7] a folder in the arguments of a command", () => before("named-2", "read", { path: join(other, "src", "x.cs") }, "debugger"))
+await check("[v2 7] a file named directly in my home opens nothing: neither my home nor the file", async () => {
+  writeFileSync(join(home, ".zshenv"), "export X=1\n")
+  writeFileSync(join(home, "notes.txt"), "x\n")
+  top("named-3", "Conversation")
+  await prompt("named-3", "affiche le contenu de ~/.zshenv et de ~/notes.txt")
+  await assert.rejects(() => before("named-3", "shell", { command: "cat ~/.zshenv" }, "build"), /outside the repository/)
+  await assert.rejects(() => before("named-3", "shell", { command: "grep -r password ~" }, "build"), /outside the repository/)
+  await assert.rejects(() => before("named-3", "read", { path: join(home, "notes.txt") }, "coder"), /outside the repository/)
+})
+await check("[v2 7] nor a hidden folder of my home, nor the folders of the processes", async () => {
+  mkdirSync(join(home, ".ssh"), { recursive: true })
+  writeFileSync(join(home, ".ssh", "config"), "Host x\n")
+  top("named-4", "Conversation")
+  await prompt("named-4", "regarde ~/.ssh/config et /proc/self/environ")
+  await assert.rejects(() => before("named-4", "shell", { command: "ls ~/.ssh" }, "build"), /outside the repository/)
+  await assert.rejects(() => before("named-4", "shell", { command: "cat /proc/self/environ" }, "build"), /outside the repository|prints the environment/)
+})
+await check("[v2 7] a file named in another repository names its folder", async () => {
+  mkdirSync(join(other, "src"), { recursive: true })
+  writeFileSync(join(other, "src", "x.cs"), "class X {}\n")
+  top("named-5", "Conversation")
+  await prompt("named-5", "regarde " + join(other, "src", "x.cs"))
+  await before("named-5", "shell", { command: "ls " + join(other, "src") }, "build")
+})
+
+// ---------- 9. one /go, /fix or /fortify at a time per folder ----------
+const goText = (args) => "[[command go " + args + "]]\nRequest: « " + args + " »\nTake the ticket from its analysis to its Draft merge request, in this single run."
+const lockFile = join(repo, ".git", "opencode-pilot.lock")
+top("lock-a")
+top("lock-b")
+top("lock-c")
+const first = await prompt("lock-a", goText("ABC-1"))
+await check("[v2 9] a first /go starts", () => assert.doesNotMatch(first.prompt.text, /refusé/))
+await check("[v2 9] its lock is a file in the git folder", () => assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).session, "lock-a"))
+const second = await prompt("lock-b", goText("ABC-2"))
+await check("[v2 9] a second /go in the same folder gets the refusal sentence", () => assert.match(second.prompt.text, /⛔ \/go refusé : \/go tourne déjà dans ce dossier/))
+await check("[v2 9] the refused command is still shown as typed", () => assert.equal(second.metadata.displayText, "/go ABC-2"))
+await check("[v2 9] and still names its untitled session (no model request for its title)", () =>
+  assert.deepEqual(v2.calls.update.find((u) => u.sessionID === "lock-b"), { sessionID: "lock-b", title: "/go ABC-2" }))
+await check("[v2 9] no tool runs in the refused turn", () => assert.rejects(() => before("lock-b", "shell", { command: "git status" }, "pilot"), /this run was refused/))
+const again = await prompt("lock-a", goText("ABC-1"))
+await check("[v2 9] the running session itself may go on", () => assert.doesNotMatch(again.prompt.text, /refusé/))
+const fortify = await prompt("lock-c", "[[command fortify 3]]\nFix a batch of Fortify vulnerabilities, from the scan to a Draft merge request")
+await check("[v2 9] /fortify is refused while /go runs", () => assert.match(fortify.prompt.text, /⛔ \/fortify refusé : \/go tourne déjà/))
+v2.push("session.execution.succeeded", { sessionID: "lock-b" })
+v2.push("session.execution.succeeded", { sessionID: "lock-a" })
+await wait()
+await check("[v2 9] the end of the turn frees the folder and removes the lock file", () => assert.ok(!existsSync(lockFile)))
+const third = await prompt("lock-b", goText("ABC-2"))
+await check("[v2 9] once the first run is over, another session may run /go", () => assert.doesNotMatch(third.prompt.text, /refusé/))
+await check("[v2 9] and the tools of that session run again", () => before("lock-b", "shell", { command: "git status" }, "pilot"))
+v2.push("session.execution.failed", { sessionID: "lock-b", error: { type: "provider", message: "x" } })
+await wait()
+const chat = await prompt("lock-c", "explique-moi ce service")
+await check("[v2 9] a conversation is never refused", () => assert.equal(chat.prompt.text, "explique-moi ce service"))
+await check("[v2 9] a subagent prompt that quotes a pilot command is not a run of it", async () => {
+  child("lock-sub", "lock-a")
+  const sub = await prompt("lock-sub", "You are a subagent spawned by another session.\nThe command says: Take the ticket from its analysis to its Draft merge request.")
   assert.doesNotMatch(sub.prompt.text, /refusé/)
-  const pilot = { sessionID: "v2-pilot", prompt: { text: "Take the ticket from its analysis to its Draft merge request, now." } }
-  await v2hooks["session.prompt"](pilot)
-  assert.doesNotMatch(pilot.prompt.text, /refusé/)
+  assert.ok(!existsSync(lockFile))
 })
+await check("[v2 9] nor the prompt of a subagent taken up again (no first line, but a parent)", async () => {
+  const sub = await prompt("lock-sub", "Take the ticket from its analysis to its Draft merge request: continue.")
+  assert.doesNotMatch(sub.prompt.text, /refusé/)
+  assert.ok(!existsSync(lockFile))
+})
+await check("[v2 9] an older command file, without its [[command]] line, is still a run", async () => {
+  top("lock-old")
+  await prompt("lock-old", "Request: ABC-5\nTake the ticket from its analysis to its Draft merge request, in this single run.")
+  assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).session, "lock-old")
+  v2.push("session.execution.succeeded", { sessionID: "lock-old" })
+  await wait()
+  assert.ok(!existsSync(lockFile))
+})
+await check("[v2 9] a /go running in another OpenCode of the machine (the terminal client) holds the folder", async () => {
+  writeFileSync(lockFile, JSON.stringify({ session: "ses-elsewhere", command: "fix", since: Date.now() - 120000, pid: process.ppid, host: (await import("node:os")).hostname() }))
+  top("lock-d")
+  const event = await prompt("lock-d", goText("ABC-3"))
+  assert.match(event.prompt.text, /⛔ \/go refusé : \/fix tourne déjà dans ce dossier \(dans un autre OpenCode de cette machine\) depuis 2 min/)
+})
+await check("[v2 9] a lock left by an OpenCode that stopped is ignored", async () => {
+  writeFileSync(lockFile, JSON.stringify({ session: "ses-dead", command: "go", since: Date.now() - 60000, pid: 2147483646, host: (await import("node:os")).hostname() }))
+  top("lock-e")
+  const event = await prompt("lock-e", goText("ABC-4"))
+  assert.doesNotMatch(event.prompt.text, /refusé/)
+  assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).session, "lock-e")
+  v2.push("session.execution.interrupted", { sessionID: "lock-e", reason: "user" })
+  await wait()
+  assert.ok(!existsSync(lockFile))
+})
+
+await check("[v2 9] OpenCode's background service resumes an interrupted run: the plugin keeps its folder until the run ends", async () => {
+  const os = await import("node:os")
+  writeFileSync(lockFile, JSON.stringify({ session: "ses-resumed", command: "fix", since: Date.now() - 300000, pid: 2147483646, host: os.hostname() }))
+  const svc = fakeV2(repo, { options: { tickMs: 25, mcpWaitMs: 600, service: true, adoptMs: 400 } })
+  await v2Plugin.setup(svc.ctx)
+  assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).session, "ses-resumed")
+  svc.sessions.set("lock-f", { id: "lock-f" })
+  const refused = { sessionID: "lock-f", messageID: "m", prompt: { text: goText("ABC-6") }, delivery: "steer" }
+  await svc.hooks["session.prompt"](refused)
+  assert.match(refused.prompt.text, /⛔ \/go refusé : \/fix tourne déjà dans ce dossier depuis 5 min/)
+  svc.sessions.set("ses-resumed", { id: "ses-resumed", title: "/fix" })
+  svc.push("session.execution.started", { sessionID: "ses-resumed" })
+  await wait(600)
+  assert.ok(existsSync(lockFile), "a resumed run keeps the folder past the 2 minutes (here 400 ms)")
+  svc.push("session.step.started", { sessionID: "ses-resumed", assistantMessageID: "r1" })
+  svc.push("session.text.ended", { sessionID: "ses-resumed", assistantMessageID: "r1", ordinal: 0, text: "🔁 MR mise à jour" })
+  svc.push("session.execution.succeeded", { sessionID: "ses-resumed" })
+  await wait(150)
+  assert.ok(!existsSync(lockFile))
+  assert.equal(svc.sessions.get("ses-resumed").title, "✅ /fix")
+})
+await check("[v2 9] a run that the service does not resume frees the folder after 2 minutes (here 400 ms)", async () => {
+  const os = await import("node:os")
+  writeFileSync(lockFile, JSON.stringify({ session: "ses-gone", command: "go", since: Date.now() - 60000, pid: 2147483646, host: os.hostname() }))
+  const svc = fakeV2(repo, { options: { tickMs: 25, mcpWaitMs: 600, service: true, adoptMs: 400 } })
+  await v2Plugin.setup(svc.ctx)
+  assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).session, "ses-gone")
+  await wait(600)
+  assert.ok(!existsSync(lockFile))
+})
+await check("[v2 9] OpenCode run with serve resumes nothing: the lock of a stopped OpenCode stays ignored", async () => {
+  const os = await import("node:os")
+  writeFileSync(lockFile, JSON.stringify({ session: "ses-old", command: "go", since: Date.now() - 60000, pid: 2147483646, host: os.hostname() }))
+  const plain = fakeV2(repo, { options: { tickMs: 25, mcpWaitMs: 600, service: false } })
+  await v2Plugin.setup(plain.ctx)
+  plain.sessions.set("lock-g", { id: "lock-g" })
+  const event = { sessionID: "lock-g", messageID: "m", prompt: { text: goText("ABC-8") }, delivery: "steer" }
+  await plain.hooks["session.prompt"](event)
+  assert.doesNotMatch(event.prompt.text, /refusé/)
+  plain.push("session.execution.succeeded", { sessionID: "lock-g" })
+  await wait()
+  assert.ok(!existsSync(lockFile))
+})
+
+// ---------- 4. the command chosen in a question ----------
+const answered = async (sessionID, labels) => v2.hooks["tool.execute.after"]({ tool: "question", sessionID, agent: "pilot", messageID: "m", id: "q", input: {},
+  status: "completed", result: { output: { answers: [labels] }, content: [{ type: "text", text: "x" }], metadata: { answers: [labels] } } })
+top("qcm-1", "Daily")
+await answered("qcm-1", ["/go ABC-7 (recommandé)"])
+v2.push("session.execution.succeeded", { sessionID: "qcm-1" })
+await wait()
+await check("[v2 4] the chosen command starts when the turn ends", () => assert.deepEqual(v2.calls.command.at(-1), { sessionID: "qcm-1", name: "go", text: "ABC-7" }))
+const commands = v2.calls.command.length
+top("qcm-2", "Daily")
+await answered("qcm-2", ["/fix"])
+v2.push("session.execution.failed", { sessionID: "qcm-2", error: { type: "x", message: "y" } })
+await wait()
+await check("[v2 4] never after a failed turn", () => assert.equal(v2.calls.command.length, commands))
+top("qcm-3", "Daily")
+await answered("qcm-3", ["/fix"])
+v2.push("session.execution.interrupted", { sessionID: "qcm-3", reason: "user" })
+await wait()
+await check("[v2 4] never after a stopped turn", () => assert.equal(v2.calls.command.length, commands))
+child("qcm-sub", "qcm-1")
+await answered("qcm-sub", ["/go ABC-8"])
+v2.push("session.execution.succeeded", { sessionID: "qcm-sub" })
+await wait()
+await check("[v2 4] never in a subagent's session", () => assert.equal(v2.calls.command.length, commands))
+top("qcm-4", "Daily")
+for (const label of ["/init", "/go ABC-9 `rm -rf ~`", "Rien pour l'instant", "/go $(whoami)"]) await answered("qcm-4", [label])
+v2.push("session.execution.succeeded", { sessionID: "qcm-4" })
+await wait()
+await check("[v2 4] only a command of the pack, and never one that would run something", () => assert.equal(v2.calls.command.length, commands))
+top("qcm-5", "Outils")
+await answered("qcm-5", ["/outil doc"])
+v2.push("session.execution.succeeded", { sessionID: "qcm-5" })
+await wait()
+await check("[v2 4] /outil doc", () => assert.deepEqual(v2.calls.command.at(-1), { sessionID: "qcm-5", name: "outil", text: "doc" }))
+top("qcm-6", "Daily")
+await answered("qcm-6", ["/daily (recommandé)"])
+v2.push("session.execution.succeeded", { sessionID: "qcm-6" })
+await wait()
+await check("[v2 4] the mark of the recommended option is no argument", () => assert.deepEqual(v2.calls.command.at(-1), { sessionID: "qcm-6", name: "daily", text: "" }))
+top("qcm-7", "Daily")
+await answered("qcm-7", ["/go ABC-12 avec un feature flag"])
+v2.push("session.execution.succeeded", { sessionID: "qcm-7" })
+await wait()
+await check("[v2 4] an answer I type keeps all its words", () => assert.deepEqual(v2.calls.command.at(-1), { sessionID: "qcm-7", name: "go", text: "ABC-12 avec un feature flag" }))
+await check("[v2 7] the arguments of a command chosen in a question never name a folder (the model writes the options)", async () => {
+  v2.runCommands = true
+  try {
+    top("qcm-8", "Outils")
+    await answered("qcm-8", ["/outil " + other])
+    v2.push("session.execution.succeeded", { sessionID: "qcm-8" })
+    await wait()
+    assert.deepEqual(v2.calls.command.at(-1), { sessionID: "qcm-8", name: "outil", text: other })
+    await assert.rejects(() => before("qcm-8", "shell", { command: "ls " + other }, "build"), /outside the repository/)
+    await prompt("qcm-8", "[[command outil " + other + "]]\nRun.")
+    await before("qcm-8", "shell", { command: "ls " + other }, "build")
+  } finally {
+    v2.runCommands = false
+  }
+})
+
+// ---------- 14. the MCP servers still connecting ----------
+top("mcp-1", "Jira")
+await check("[v2 14] a prompt waits for the MCP servers still connecting", async () => {
+  v2.mcpState.status = "pending"
+  setTimeout(() => { v2.mcpState.status = "connected" }, 300)
+  const started = Date.now()
+  await prompt("mcp-1", "lis ABC-1")
+  const took = Date.now() - started
+  assert.ok(took >= 300 && took < 2000, String(took))
+})
+await check("[v2 14] no wait when they are connected, failed, disabled or wait for a sign-in", async () => {
+  for (const status of ["connected", "failed", "disabled", "needs_auth"]) {
+    v2.mcpState.status = status
+    const started = Date.now()
+    await prompt("mcp-1", "encore")
+    assert.ok(Date.now() - started < 250, status)
+  }
+})
+await check("[v2 14] the wait has a limit", async () => {
+  v2.mcpState.status = "pending"
+  try {
+    const started = Date.now()
+    await prompt("mcp-1", "et alors ?")
+    const took = Date.now() - started
+    assert.ok(took >= 600 && took < 2500, String(took))
+  } finally {
+    v2.mcpState.status = "connected"
+  }
+})
+await check("[v2 14] and only during the first minutes of an instance", async () => {
+  const late = fakeV2(repo, { options: { tickMs: 25, mcpWaitMs: 600, mcpBootMs: 0 } })
+  await v2Plugin.setup(late.ctx)
+  late.mcpState.status = "pending"
+  late.sessions.set("mcp-2", { id: "mcp-2", title: "x" })
+  await wait(5)
+  const started = Date.now()
+  await late.hooks["session.prompt"]({ sessionID: "mcp-2", messageID: "m", prompt: { text: "bonjour" }, delivery: "steer" })
+  assert.ok(Date.now() - started < 250)
+})
+
+// ---------- 5 and 10. progress and outcome in the title ----------
+const title = (id) => v2.sessions.get(id).title
+top("run-1")
+await prompt("run-1", goText("ABC-11"))
+v2.push("session.execution.started", { sessionID: "run-1" })
+v2.push("session.step.started", { sessionID: "run-1", assistantMessageID: "a1" })
+v2.push("session.reasoning.delta", { sessionID: "run-1", assistantMessageID: "a1", delta: "x".repeat(8000) })
+await wait()
+await check("[v2 5] the title shows the reasoning", () => assert.match(title("run-1"), /^⏳ 0:0\d réflexion 2,0k tokens — \/go ABC-11$/))
+v2.push("session.tool.input.started", { sessionID: "run-1", assistantMessageID: "a1", id: "t1", name: "subagent" })
+v2.push("session.tool.called", { sessionID: "run-1", assistantMessageID: "a1", id: "t1", input: { agent: "checker", description: "Auto-review", prompt: "x" } })
+v2.push("session.tool.progress", { sessionID: "run-1", assistantMessageID: "a1", id: "t1", metadata: { sessionID: "run-1-child", status: "running" } })
+child("run-1-child", "run-1", "Auto-review")
+v2.push("session.execution.started", { sessionID: "run-1-child" })
+v2.push("session.retry.scheduled", { sessionID: "run-1-child", assistantMessageID: "c1", attempt: 3, at: 1, error: { type: "provider", message: "Gateway Time-out" } })
+await wait()
+await check("[v2 5] a retry of the subagent shows in the parent title", () =>
+  assert.match(title("run-1"), /^⏳ \d+:\d\d outil · Auto-review · nouvel essai 3 \(serveur du modèle\) — \/go ABC-11$/))
+v2.push("permission.asked", { sessionID: "run-1-child", id: "per1", action: "external_directory" })
+await wait()
+await check("[v2 5] an approval the subagent waits for shows in the parent title", () =>
+  assert.match(title("run-1"), /^❓ \d+:\d\d Auto-review · autorisation attendue — \/go ABC-11$/))
+await check("[v2 5] the subagent's title is never touched", () => assert.equal(title("run-1-child"), "Auto-review"))
+v2.push("permission.replied", { sessionID: "run-1-child", requestID: "per1" })
+v2.push("session.execution.succeeded", { sessionID: "run-1-child" })
+v2.push("session.tool.success", { sessionID: "run-1", assistantMessageID: "a1", id: "t1", content: [{ type: "text", text: "ok" }], metadata: { sessionID: "run-1-child", status: "completed" } })
+v2.push("form.created", { form: { id: "f1", sessionID: "run-1", title: "Questions", fields: [] } })
+await wait()
+await check("[v2 5] a question that waits for me", () => assert.match(title("run-1"), /^❓ \d+:\d\d réponse attendue — \/go ABC-11$/))
+v2.push("form.replied", { id: "f1", sessionID: "run-1", answer: {} })
+v2.push("session.step.started", { sessionID: "run-1", assistantMessageID: "a2" })
+v2.push("session.text.ended", { sessionID: "run-1", assistantMessageID: "a2", ordinal: 0, text: "**[ABC-11](x) - Export**\n🚀 MR en Draft : https://gitlab/x/-/merge_requests/42" })
+v2.push("session.execution.succeeded", { sessionID: "run-1" })
+await wait(150)
+await check("[v2 10] delivered: ✅ and the progress is gone", () => assert.equal(title("run-1"), "✅ /go ABC-11"))
+await prompt("run-1", goText("ABC-11"))
+v2.push("session.execution.started", { sessionID: "run-1" })
+v2.push("session.step.started", { sessionID: "run-1", assistantMessageID: "a3" })
+await wait()
+await check("[v2 10] the mark goes away when the next turn starts", () => assert.match(title("run-1"), /^⏳ \d+:\d\d (attente du modèle|préparation) — \/go ABC-11$/))
+v2.push("session.text.ended", { sessionID: "run-1", assistantMessageID: "a3", ordinal: 0, text: "**[ABC-11](x)**\n⛔ Arrêt à l'étape 3 : build en échec.\n| # | Étape | ✅ |\n| 1 | a | ✅ |" })
+v2.push("session.execution.succeeded", { sessionID: "run-1" })
+await wait(150)
+await check("[v2 10] a stop after a table of done steps: ⛔", () => assert.equal(title("run-1"), "⛔ /go ABC-11"))
+top("run-2")
+await prompt("run-2", "[[command fix]]\nBring the branch to a green, review-ready state.")
+v2.push("session.execution.started", { sessionID: "run-2" })
+v2.push("session.execution.failed", { sessionID: "run-2", error: { type: "provider", message: "x" } })
+await wait(150)
+await check("[v2 10] a failed run: ⛔", () => assert.equal(title("run-2"), "⛔ /fix"))
+top("run-3")
+await prompt("run-3", "[[command fortify]]\nFix a batch of Fortify vulnerabilities.")
+v2.push("session.execution.started", { sessionID: "run-3" })
+v2.push("session.execution.interrupted", { sessionID: "run-3", reason: "user" })
+await wait(150)
+await check("[v2 10] a run I stopped: ⛔", () => assert.equal(title("run-3"), "⛔ /fortify"))
+top("run-4", "Une question")
+await prompt("run-4", "explique-moi le service")
+v2.push("session.execution.started", { sessionID: "run-4" })
+v2.push("session.step.started", { sessionID: "run-4", assistantMessageID: "b1" })
+v2.push("session.text.ended", { sessionID: "run-4", assistantMessageID: "b1", ordinal: 0, text: "🚀 voilà" })
+await wait()
+await check("[v2 5] a conversation shows its progress too", () => assert.match(title("run-4"), /^⏳ \d+:\d\d attente du modèle — Une question$/))
+v2.push("session.execution.succeeded", { sessionID: "run-4" })
+await wait(150)
+await check("[v2 10] a conversation is never marked", () => assert.equal(title("run-4"), "Une question"))
+top("run-5")
+await prompt("run-5", "bonjour")
+v2.push("session.execution.started", { sessionID: "run-5" })
+await wait()
+await check("[v2 5] never on a session OpenCode has not named yet", () => assert.equal(title("run-5"), undefined))
+v2.push("session.execution.succeeded", { sessionID: "run-5" })
+await check("[v2 5] another folder's sessions are left alone", async () => {
+  top("foreign-1", "Ailleurs")
+  v2.push("session.execution.started", { sessionID: "foreign-1" })
+  await wait()
+  assert.equal(title("foreign-1"), "Ailleurs")
+})
+
+// ---------- 13. the outputs of old tool calls ----------
+// each output: 80 000 characters, about 20 000 tokens
+const result = (n, name = "shell") => ({ type: "tool-result", id: "r" + n, name, result: { type: "text", value: "o".repeat(80000) } })
+const call = (n, name = "shell") => ({ type: "tool-call", id: "r" + n, name, input: {} })
+const turn = (n, name) => [{ role: "assistant", content: [call(n, name)] }, { role: "tool", content: [result(n, name)] }]
+const conversation = () => [
+  { role: "user", content: [{ type: "text", text: "/go ABC-1" }] },
+  ...turn(1), ...turn(2, "skill"), ...turn(3), ...turn(4), ...turn(5), ...turn(6),
+  { role: "user", content: [{ type: "text", text: "et maintenant /fix" }] },
+  ...turn(7),
+  { role: "user", content: [{ type: "text", text: "merci" }] },
+  ...turn(8),
+]
+const cleared = (messages) => messages.flatMap((m) => (m.role === "tool" ? m.content : [])).filter((p) => p.result.value === "[Old tool result content cleared]").map((p) => p.id)
+await check("[v2 13] old outputs beyond the 40k most recent tokens are cleared", () => {
+  const messages = conversation()
+  prune(messages)
+  assert.deepEqual(cleared(messages), ["r1", "r3", "r4"])
+})
+await check("[v2 13] the skills and the last two messages I typed are kept", () => {
+  const messages = conversation()
+  prune(messages)
+  const kept = messages.flatMap((m) => (m.role === "tool" ? m.content : [])).filter((p) => p.result.value !== "[Old tool result content cleared]").map((p) => p.id)
+  assert.deepEqual(kept.sort(), ["r2", "r5", "r6", "r7", "r8"])
+})
+await check("[v2 13] nothing is cleared below 20k tokens to free", () => {
+  const messages = [{ role: "user", content: [{ type: "text", text: "a" }] }, ...turn(1), ...turn(3), ...turn(4),
+    { role: "user", content: [{ type: "text", text: "b" }] }, { role: "user", content: [{ type: "text", text: "c" }] }]
+  assert.equal(prune(messages), 0)
+})
+await check("[v2 13] a request is pruned when opencode.json says compaction.prune", async () => {
+  const event = await context("t-1", ["shell"], "build", conversation())
+  assert.deepEqual(cleared(event.messages), ["r1", "r3", "r4"])
+})
+await check("[v2 13] and left whole otherwise", async () => {
+  writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ compaction: { prune: false } }))
+  const other2 = fakeV2(repo)
+  await v2Plugin.setup(other2.ctx)
+  const event = { sessionID: "t-x", agent: "build", messages: conversation(), tools: {} }
+  other2.sessions.set("t-x", { id: "t-x", title: "x" })
+  await other2.hooks["session.context"](event)
+  assert.deepEqual(cleared(event.messages), [])
+})
+
+// ---------- the log of the plugin: a file next to the log of OpenCode (the background service drops the server output) ----------
+await check("[v2] the refusals are written to <XDG data>/opencode/log/openrd-pack.log, without the command", () => {
+  const text = readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8")
+  assert.match(text, /^\d{4}-\d\d-\d\dT[\d:.]+Z \[openrd-pack\] event stream connected for /m)
+  assert.match(text, /\[openrd-pack\] refused by the pack \{"agent":"coder","tool":"bash","reason":"it prints the environment"\}/)
+  assert.doesNotMatch(text, /export -p/)
+})
+
+// ---------- 15. the folder of a worktree (an OpenCode workspace) in the titles of its sessions ----------
+const wt = fakeV2(workspace)
+await v2Plugin.setup(wt.ctx)
+const wtPrompt = async (sessionID, text) => {
+  const event = { sessionID, messageID: "m", prompt: { text }, delivery: "steer" }
+  await wt.hooks["session.prompt"](event)
+  return event
+}
+wt.sessions.set("wt-1", { id: "wt-1" })
+await wtPrompt("wt-1", "[[command go ABC-21]]\nRequest: « ABC-21 »\nTake the ticket from its analysis to its Draft merge request, in this single run.")
+await check("[v2 15] a command names its session after the folder of the worktree", () => assert.equal(wt.calls.update[0].title, "[brave-fox] /go ABC-21"))
+wt.push("session.execution.started", { sessionID: "wt-1" })
+await wait()
+await check("[v2 15] the progress keeps the folder", () => assert.match(wt.sessions.get("wt-1").title, /^⏳ \d+:\d\d [^—]+ — \[brave-fox\] \/go ABC-21$/))
+wt.push("session.step.started", { sessionID: "wt-1", assistantMessageID: "w1" })
+wt.push("session.text.ended", { sessionID: "wt-1", assistantMessageID: "w1", ordinal: 0, text: "🚀 MR en Draft : https://gitlab/x/-/merge_requests/7" })
+wt.push("session.execution.succeeded", { sessionID: "wt-1" })
+await wait(150)
+await check("[v2 15] the outcome comes before the folder", () => assert.equal(wt.sessions.get("wt-1").title, "✅ [brave-fox] /go ABC-21"))
+wt.sessions.set("wt-2", { id: "wt-2", title: "New session - 2026-10-22T10:00:00.000Z" })
+await wtPrompt("wt-2", "explique-moi ce service")
+wt.push("session.execution.started", { sessionID: "wt-2" })
+wt.push("session.execution.succeeded", { sessionID: "wt-2" })
+await wait(150)
+await check("[v2 15] never on a title OpenCode has not generated yet", () => assert.equal(wt.sessions.get("wt-2").title, "New session - 2026-10-22T10:00:00.000Z"))
+wt.sessions.get("wt-2").title = "Explication du service"
+wt.push("session.renamed", { sessionID: "wt-2", title: "Explication du service" })
+await wait(150)
+await check("[v2 15] a title OpenCode generates after the turn gets the folder", () => assert.equal(wt.sessions.get("wt-2").title, "[brave-fox] Explication du service"))
+wt.sessions.set("wt-3", { id: "wt-3", title: "New session - 2026-10-22T10:01:00.000Z" })
+await wtPrompt("wt-3", "bonjour")
+wt.push("session.execution.started", { sessionID: "wt-3" })
+await wait(10)
+wt.sessions.get("wt-3").title = "Salutations"
+wt.push("session.renamed", { sessionID: "wt-3", title: "Salutations" })
+wt.push("session.execution.succeeded", { sessionID: "wt-3" })
+await wait(200)
+await check("[v2 15] so does a title generated during a short turn", () => assert.equal(wt.sessions.get("wt-3").title, "[brave-fox] Salutations"))
+wt.sessions.set("wt-sub", { id: "wt-sub", parentID: "wt-1", title: "Auto-review" })
+await wtPrompt("wt-sub", "You are a subagent spawned by another session.\nReview the diff.")
+wt.push("session.renamed", { sessionID: "wt-sub", title: "Auto-review" })
+await wait(100)
+await check("[v2 15] never in a subagent's session", () => assert.equal(wt.sessions.get("wt-sub").title, "Auto-review"))
+await check("[v2 15] never in the main checkout", () => assert.equal(v2.sessions.get("run-1").title.startsWith("⛔ /go"), true))
+
+// ---------- the references of opencode.json, in OPENCODE_CONFIG_DIR, with comments and trailing commas ----------
 await check("[v2] the references of opencode.json in OPENCODE_CONFIG_DIR are readable, comments and trailing commas included", async () => {
-  const configDir = join(home, "oc2", "config", "opencode")
+  const ocDir = join(home, "oc2", "config", "opencode")
   const referenced = join(home, "repos", "legacy-ref")
-  mkdirSync(configDir, { recursive: true })
+  mkdirSync(ocDir, { recursive: true })
   mkdirSync(referenced, { recursive: true })
   writeFileSync(join(referenced, "README.md"), "legacy\n")
-  writeFileSync(join(configDir, "opencode.json"), '{\n  // my settings\n  "model": "fake/qwen",\n  "references": { "legacy": { "path": "' + referenced + '", }, },\n}\n')
-  const refHooks = {}
-  const onRef = (domain) => ({ hook: async (name, fn) => { refHooks[domain + "." + name] = fn } })
-  const read = (path, id) => refHooks["tool.execute.before"]({ tool: "read", sessionID: "ref-s", agent: "coder", messageID: "m", id, input: { path } })
-  process.env.OPENCODE_CONFIG_DIR = configDir
+  writeFileSync(join(ocDir, "opencode.json"), '{\n  // my settings\n  "model": "fake/qwen",\n  "references": { "legacy": { "path": "' + referenced + '", }, },\n}\n')
+  process.env.OPENCODE_CONFIG_DIR = ocDir
   try {
-    await v2Plugin.setup({ location: { directory: repo }, tool: onRef("tool"), shell: onRef("shell"), session: onRef("session") })
+    const ref = fakeV2(repo)
+    await v2Plugin.setup(ref.ctx)
+    ref.sessions.set("ref-s", { id: "ref-s", title: "x" })
+    const read = (path, id) => ref.hooks["tool.execute.before"]({ tool: "read", sessionID: "ref-s", agent: "coder", messageID: "m", id, input: { path } })
     await read(join(referenced, "README.md"), "r1")
     await assert.rejects(() => read(join(home, "repos", "unreferenced", "README.md"), "r2"), /outside the repository/)
   } finally {
     delete process.env.OPENCODE_CONFIG_DIR
   }
 })
-
-// ---------- OpenCode v2 adapter: one /go, /fix or /fortify at a time per folder (9) ----------
-const lockHooks = {}
-const onLock = (domain) => ({ hook: async (name, fn) => { lockHooks[domain + "." + name] = fn } })
-const queue = []
-let wake
-const stream = {
-  subscribe: () => ({
-    [Symbol.asyncIterator]() {
-      return { next: () => new Promise((r) => { if (queue.length) r({ value: queue.shift(), done: false }); else wake = () => r({ value: queue.shift(), done: false }) }) }
-    },
-  }),
-}
-const push = (e) => { queue.push(e); if (wake) { const w = wake; wake = undefined; w() } }
-await v2Plugin.setup({ location: { directory: repo }, tool: onLock("tool"), shell: onLock("shell"), session: onLock("session"), event: stream })
-const goPrompt = (sessionID) => ({ sessionID, prompt: { text: "Request: ABC-1\nTake the ticket from its analysis to its Draft merge request, in this single run." } })
-const first = goPrompt("lock-a")
-await lockHooks["session.prompt"](first)
-const second = goPrompt("lock-b")
-await lockHooks["session.prompt"](second)
-await check("[v2 lock] a second /go in the same folder gets the refusal sentence", () => assert.match(second.prompt.text, /⛔ \/go refusé : \/go tourne déjà dans ce dossier/))
-await check("[v2 lock] no tool runs in the refused turn", () => assert.rejects(() => lockHooks["tool.execute.before"]({ tool: "shell", sessionID: "lock-b", agent: "pilot", id: "x", input: { command: "git status" } }), /this run was refused/))
-const again = goPrompt("lock-a")
-await lockHooks["session.prompt"](again)
-await check("[v2 lock] the running session itself may go on", () => assert.doesNotMatch(again.prompt.text, /refusé/))
-push({ type: "session.status", data: { sessionID: "lock-a", status: { type: "idle" } } })
-await new Promise((r) => setTimeout(r, 20))
-const third = goPrompt("lock-b")
-await lockHooks["session.prompt"](third)
-await check("[v2 lock] once the first session is idle, the folder is free", () => assert.doesNotMatch(third.prompt.text, /refusé/))
-await check("[v2 lock] and the tools of that session run again", () => lockHooks["tool.execute.before"]({ tool: "shell", sessionID: "lock-b", agent: "pilot", id: "y", input: { command: "git status" } }))
-const fortify = { sessionID: "lock-c", prompt: { text: "Fix a batch of Fortify vulnerabilities, from the scan to a Draft merge request" } }
-await lockHooks["session.prompt"](fortify)
-await check("[v2 lock] /fortify is refused while /go runs", () => assert.match(fortify.prompt.text, /⛔ \/fortify refusé : \/go tourne déjà/))
-push({ type: "session.error", properties: { sessionID: "lock-b" } })
-await new Promise((r) => setTimeout(r, 20))
-const fortify2 = { sessionID: "lock-c", prompt: { text: "Fix a batch of Fortify vulnerabilities, from the scan to a Draft merge request" } }
-await lockHooks["session.prompt"](fortify2)
-await check("[v2 lock] an error of the running session frees the folder too", () => assert.doesNotMatch(fortify2.prompt.text, /refusé/))
-const chat = { sessionID: "lock-d", prompt: { text: "explique-moi ce service" } }
-await lockHooks["session.prompt"](chat)
-await check("[v2 lock] a conversation is never refused", () => assert.equal(chat.prompt.text, "explique-moi ce service"))
 
 console.log(`\n${count - failures}/${count} plugin checks as expected`)
 process.exit(failures ? 1 : 0)
