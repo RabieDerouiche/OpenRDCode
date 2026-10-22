@@ -6,7 +6,72 @@ Les commandes du pack à taper toi-même, à copier-coller, quand OpenCode v2 to
 
 ## Installer
 
-Tout est dans `MIGRATION.md` : téléchargement de la v2 sans rien installer, configuration collée depuis GitHub et vérifiée par empreintes, démarrage, vérifications. Si la v2 a déjà remplacé ta 1.19 (procédure interne), c'est son annexe A : la configuration est alors dans `~/.config/opencode` et le journal dans `~/.local/share/opencode/log/opencode.log`, au lieu des chemins `~/oc2` de ce guide.
+Tout est dans `MIGRATION.md` : téléchargement de la v2 sans rien installer, configuration collée depuis GitHub et vérifiée par empreintes, démarrage, vérifications. Si la v2 a déjà remplacé ta 1.19 (procédure interne), c'est son annexe A, de l'état des lieux à l'interface web démarrée par `opencode-web.sh` ; la section suivante donne alors tes chemins.
+
+## Si ta v2 a remplacé la 1.19 (annexe A de `MIGRATION.md`)
+
+Les autres sections de ce guide sont écrites pour l'essai côte à côte. Si tu as suivi l'annexe A, remplace dans leurs commandes :
+
+| Dans ce guide | Chez toi |
+|---|---|
+| `~/oc2/config/opencode` | `~/.config/opencode` |
+| `~/oc2/serve.log` | `~/.local/share/opencode/log/opencode.log` |
+| `~/oc2/CHECKSUMS-config.txt` et `~/oc2/CHECKSUMS-scripts.txt` | `~/CHECKSUMS-config.txt` et `~/CHECKSUMS-scripts.txt` |
+| `~/oc2/cli/package/bin/opencode` | `opencode` |
+| redémarrer : Ctrl+C, puis l'étape 6 | `opencode-web.sh stop && opencode-web.sh start`, ou `oc-web restart` |
+| `MIGRATION.md`, étapes 5.5 et 5.6 | annexe A.9 et A.10 |
+
+Une exception : les lignes du plugin du pack, `event stream connected` et `refused by the pack`, ne vont pas dans `opencode.log`. Elles vont dans le journal de `opencode-web.sh` (annexe A.2.3), ou dans `~/.local/share/opencode/log/oc-web.log` avec `oc-web`.
+
+Les plus utilisées, déjà adaptées :
+
+Redémarrer OpenCode, depuis un terminal ouvert après l'annexe A.11 (il a le mot de passe) :
+```sh
+opencode-web.sh stop && opencode-web.sh start
+```
+
+Ce qui tourne (une seule ligne `opencode serve`, celle du port <port>, et peut-être celle de `opencode-web.sh start`) :
+```sh
+ps -eo pid,args | grep -i '[o]pencode'
+```
+
+Le serveur sur <port> : depuis combien de secondes il tourne (un petit nombre juste après un redémarrage), son programme, sa version, et s'il a reçu son mot de passe (annexe A.12, point 5) :
+```sh
+for p in $(pgrep -f -- '--port <port>'); do e=$(readlink -f /proc/$p/exe); case $e in */opencode*) echo "pid $p, démarré il y a $(ps -o etimes= -p $p | tr -d ' ') s"; echo "$e"; $e --version; tr '\0' '\n' < /proc/$p/environ | grep -c -E '^OPENCODE_(SERVER_)?PASSWORD=';; esac; done
+```
+
+Mettre à jour le pack (section suivante), avec tes chemins :
+```sh
+cd ~/.config/opencode && sha256sum --quiet --strict -c ~/CHECKSUMS-config.txt 2>/dev/null && echo "OK : la configuration est identique à GitHub"
+```
+```sh
+cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
+```
+
+Le journal :
+```sh
+tail -n 200 ~/.local/share/opencode/log/opencode.log
+```
+```sh
+grep -E 'level=(ERROR|WARN)' ~/.local/share/opencode/log/opencode.log | tail -30 | cut -c1-300
+```
+```sh
+grep -c 'kind=invalid' ~/.local/share/opencode/log/opencode.log
+```
+```sh
+grep -c 'loading plugin.*openrd-pack' ~/.local/share/opencode/log/opencode.log
+```
+```sh
+grep 'configuration normalization diagnostic' ~/.local/share/opencode/log/opencode.log | grep -o 'path=[^ ]*' | sort -u
+```
+```sh
+grep -c 'Gateway Time-out' ~/.local/share/opencode/log/opencode.log
+```
+
+Les règles « ask » (6 lignes attendues, section « Vérifier qu'aucune règle ne demande ») :
+```sh
+grep -n '"ask"' ~/.config/opencode/opencode.json
+```
 
 ## Mettre à jour le pack
 
@@ -31,7 +96,7 @@ grep -n '"ask"' ~/oc2/config/opencode/opencode.json
 
 ## Revenir à OpenCode 1.19
 
-Arrête la v2 (Ctrl+C dans son terminal) et rouvre l'adresse de ta 1.19 : `MIGRATION.md`, étape 11. Rien d'autre à faire, sa configuration n'a pas été modifiée.
+Arrête la v2 (Ctrl+C dans son terminal) et rouvre l'adresse de ta 1.19 : `MIGRATION.md`, étape 11. Rien d'autre à faire, sa configuration n'a pas été modifiée. Si la v2 a remplacé ta 1.19 : annexe A.17.
 
 ## Vérifier le nom de l'outil qui crée les MR
 
@@ -41,7 +106,7 @@ Arrête la v2 (Ctrl+C dans son terminal) et rouvre l'adresse de ta 1.19 : `MIGRA
 
 Après une modification d'`opencode.json`, du plugin, d'un agent, d'une commande ou d'un skill. Inutile après un `/outil pattern` (`/go` lit les fichiers des patterns lui-même) et après une modification de `~/.zshenv` (relu à chaque commande d'un agent).
 
-Dans le terminal de la v2 : Ctrl+C, puis les étapes 6.1, 6.3 et 6.4 de `MIGRATION.md` (les dossiers, le mot de passe, le démarrage).
+Dans le terminal de la v2 : Ctrl+C, puis les étapes 6.1, 6.3 et 6.4 de `MIGRATION.md` (les dossiers, le mot de passe, le démarrage). Si la v2 a remplacé ta 1.19 : `opencode-web.sh stop && opencode-web.sh start`, ou `oc-web restart`.
 
 ## Trouver les chemins à mettre dans la config
 

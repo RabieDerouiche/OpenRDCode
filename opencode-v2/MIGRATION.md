@@ -4,7 +4,7 @@ Ce guide part de zéro. Chaque étape dit **pourquoi** on la fait, **quoi taper*
 
 Le principe : OpenCode v2 s'installe **à côté** de ta version 1.19, dans son propre dossier `~/oc2`, sur un autre port. La 1.19 continue de tourner comme avant pendant tout l'essai : la v2 n'écrit rien dans ses dossiers, à une exception près, le script `fortify.sh` que tu ajoutes toi-même au dossier des scripts du pack (étape 5.4). Revenir en arrière consiste à rouvrir l'adresse de la 1.19.
 
-**La v2 a déjà remplacé ta 1.19** (par exemple avec une procédure interne qui fait `npm install -g @opencode/cli`) ? Va directement à l'**annexe A**, à la fin de ce guide.
+**La v2 a déjà remplacé ta 1.19** (par exemple avec une procédure interne qui fait `npm install -g @opencode/cli`) ? Ne fais pas les étapes 1 à 12 : va directement à l'**annexe A**, à la fin de ce guide. C'est le parcours complet pour ce cas, de l'état des lieux à l'interface web démarrée par `opencode-web.sh`.
 
 Tout ce guide a été rejoué de bout en bout sur une machine de test, avec un utilisateur `coder`, zsh, une configuration 1.19 du pack, et le vrai OpenCode v2.1.2. Les résultats « Ce que tu dois voir » viennent de ce test.
 
@@ -46,7 +46,7 @@ Durée : environ une heure la première fois, surtout pour coller les fichiers.
 | 11 | Revenir à la 1.19 | 1 min |
 | 12 | Dépannage | — |
 
-Les étapes 13 à 15 sont des annexes : ce qui change, ce qui n'est pas porté, et les fichiers du pack. L'annexe A remplace les étapes 3 à 6 quand la v2 est déjà installée à la place de la 1.19.
+Les étapes 13 à 15 sont des annexes : ce qui change, ce qui n'est pas porté, et les fichiers du pack. L'annexe A est le parcours complet quand la v2 est déjà installée à la place de la 1.19.
 
 ## Étape 0 — Les mots utilisés
 
@@ -613,111 +613,581 @@ Les vérifications automatiques passent :
 - **Identiques** : les autres scripts et les autres skills.
 - **`tools/`** : mes outils de vérification. Ne les copie jamais dans ta configuration.
 
-## Annexe A — La v2 a déjà remplacé ta 1.19
+## Annexe A — La v2 a déjà remplacé ta 1.19 : tout remettre d'aplomb, avec l'interface web
 
-Pour toi si `opencode --version` affiche `opencode v2.1.2` et que ta 1.19 a été désinstallée, par exemple par une procédure interne. Tes dossiers sont alors ceux de la 1.19 : la configuration dans `~/.config/opencode`, les sessions dans `~/.local/share/opencode`. La v2 relit tes sessions 1.19 (vérifié). Mais tant que `~/.config/opencode` contient le pack 1.19, son plugin ne se charge pas dans la v2 : **aucun garde-fou du pack n'est actif. Ne lance ni `/go`, ni `/fix`, ni `/fortify` avant la fin de cette annexe.**
+**Pour toi si** `opencode --version` affiche `opencode v2.1.2` parce qu'une procédure interne a fait `npm uninstall -g opencode-ai` puis `npm install -g @opencode/cli`. Ta configuration et tes sessions sont restées aux endroits de la 1.19 : `~/.config/opencode` et `~/.local/share/opencode`. La v2 relit tes sessions 1.19 (vérifié).
 
-Cette annexe remplace les étapes 3 à 6. Les étapes 0 à 2, puis 7 à 15, restent valables, avec deux différences : ta configuration est dans `~/.config/opencode` (et non `~/oc2/config/opencode`), et le journal de la v2 est `~/.local/share/opencode/log/opencode.log`.
+**Ce que tu as à la fin :**
+- un seul serveur OpenCode, la v2, démarré comme avant par `opencode-web.sh` sur le port <port>, et ouvert dans ton navigateur comme avant ;
+- le pack v2 complet, avec son plugin et donc ses garde-fous ;
+- ni service en arrière-plan, ni client terminal.
 
-**A.1 Un seul OpenCode à la fois.** Si ta procédure interne démarre la v2 comme service (`opencode service start`, par exemple depuis `~/.zshrc_perso`), c'est ce service ton serveur : n'en lance pas un second avec `opencode-web.sh`. Pour l'instant, arrête tout : quitte les `opencode` ouverts dans un terminal (Ctrl+C), puis :
+**Tant que cette annexe n'est pas finie, aucun garde-fou du pack n'est actif** : le plugin du pack n'est pas encore installé. Ne lance ni `/go`, ni `/fix`, ni `/fortify`.
+
+Durée : environ 45 minutes. Les règles du début de ce guide s'appliquent : tu ne lances aucun script téléchargé, et chaque fichier collé depuis GitHub (vue Raw) est vérifié par son empreinte. Tape les commandes une par une, dans l'ordre, et compare avec « Tu dois voir ». Aucune n'affiche ton mot de passe.
+
+Toute cette annexe a été rejouée sur une machine de test qui reproduit ta situation :
+- zsh avec `~/.zshenv`, `~/.zshrc` et `~/.zshrc_perso` comme ta procédure interne les décrit ;
+- la v2.1.2 installée par npm à la place d'une 1.19 ;
+- le service sur 4096 ;
+- un `opencode-web.sh` de plateforme sur <port> ;
+- un pack 1.19 complété avec les agents, les commandes et les scripts de `opencode-v2`.
+
+Les résultats « Tu dois voir » viennent de ce test.
+
+| Étape | Ce que tu fais |
+|---|---|
+| A.1 | Ouvrir un terminal |
+| A.2 | Faire l'état des lieux, sans rien modifier |
+| A.3 | Lire ce que tu as trouvé |
+| A.4 | Tout arrêter, et couper le service |
+| A.5 | Sauvegarder |
+| A.6 à A.10 | Mettre le pack v2 en place |
+| A.11 | Sortir le mot de passe de `~/.zshenv` |
+| A.12 | Redémarrer |
+| A.13 | Ouvrir l'interface web |
+| A.14 | Vérifier |
+| A.15 | Au quotidien |
+| A.16 | Dépannage |
+| A.17 | Revenir à la 1.19 |
+
+### A.1 Ouvrir un terminal
+
+Le terminal de ton environnement de travail, sur la machine où tourne OpenCode :
+```sh
+whoami && hostname && echo "$HOME" && echo "$SHELL"
+```
+Tu dois voir quatre lignes :
+- ton utilisateur (`coder`) ;
+- le nom de la machine ;
+- ton dossier personnel (`/home/dev`) ;
+- `/usr/bin/zsh` ou `/bin/zsh`.
+
+Toutes les commandes de cette annexe sont écrites pour zsh.
+
+### A.2 L'état des lieux, sans rien modifier
+
+Ces commandes ne font que lire. Note ce que chacune affiche : A.3 s'en sert.
+
+**A.2.1 Le programme `opencode` :**
+```sh
+whence -a opencode
+```
+Tu dois voir une seule ligne, du type `/home/dev/.nvm/versions/node/v<version>/bin/opencode`. Une deuxième ligne est sans doute un reste de ta 1.19 : note-la.
+```sh
+opencode --version
+```
+Tu dois voir `opencode v2.1.2`.
+
+**A.2.2 Où est `opencode-web.sh` :**
+```sh
+whence -va opencode-web.sh
+```
+Trois réponses possibles :
+- `opencode-web.sh is /un/chemin/opencode-web.sh` : c'est un fichier, installé par ta plateforme. C'est le cas le plus probable.
+- `opencode-web.sh is an alias for …` ou `opencode-web.sh is a shell function from …` : il est défini dans un de tes fichiers zsh. Envoie-moi cette ligne avant de continuer.
+- `opencode-web.sh not found` : retrouve comment tu le lançais.
+```sh
+fc -ln 1 | grep 'opencode-web' | tail -n 3
+```
+  Si tu y vois un chemin complet, par exemple `/opt/plateforme/bin/opencode-web.sh start`, c'est ce chemin qu'il faudra taper partout où cette annexe écrit `opencode-web.sh`. En A.2.3, remplace alors `"$(whence -p opencode-web.sh)"` par ce chemin.
+
+**A.2.3 Ce que démarre `opencode-web.sh`.** Ce script ne fait que démarrer et arrêter un serveur OpenCode. Cette commande affiche ses lignes utiles, sans le lancer :
+```sh
+grep -n -E 'opencode|PASSWORD|port|log' "$(whence -p opencode-web.sh)"
+```
+Repère trois choses :
+1. **La ligne qui démarre le serveur**, celle qui contient `serve` ou `web` :
+   - le programme y est écrit `opencode` tout court, suivi de `serve` : c'est celui de A.2.1, donc la v2 ;
+   - c'est un chemin complet (`/…/opencode`) : c'est ce programme-là, note le chemin ;
+   - c'est `opencode web` : la v2 n'a plus cette commande.
+2. **Son journal** : le fichier après `>>` ou `>` sur cette ligne, ou dans une variable (`LOG=…`). Note-le : les messages du plugin du pack iront là.
+3. **Le mot de passe** : la variable qu'il utilise, `OPENCODE_PASSWORD` ou `OPENCODE_SERVER_PASSWORD`, ou aucune (il prend alors celle de ton terminal). Si une ligne montre un mot de passe écrit en clair, ne me l'envoie pas.
+
+**A.2.4 Ce qui tourne maintenant :**
+```sh
+ps -eo pid,args | grep -i '[o]pencode'
+```
+Chaque ligne commence par un numéro de processus. Tu dois voir, par exemple :
+- `opencode serve --hostname 0.0.0.0 --port <port>` : le serveur démarré par `opencode-web.sh` ;
+- `… serve --service` : le service démarré par ton `~/.zshrc_perso`, sur le port 4096 ;
+- `opencode --standalone`, `… serve --stdio` : un `opencode` ouvert dans un terminal.
+
+**A.2.5 Quel programme tourne sur le port <port>.** En une commande : le numéro du processus, son programme, sa version, et si le serveur a reçu un mot de passe (le mot de passe lui-même n'est jamais affiché, seulement un compte) :
+```sh
+for p in $(pgrep -f -- '--port <port>'); do e=$(readlink -f /proc/$p/exe); case $e in */opencode*) echo "pid $p, démarré il y a $(ps -o etimes= -p $p | tr -d ' ') s"; echo "$e"; $e --version; tr '\0' '\n' < /proc/$p/environ | grep -c -E '^OPENCODE_(SERVER_)?PASSWORD=';; esac; done
+```
+Tu dois voir quatre lignes :
+- `pid` suivi d'un numéro, et depuis combien de secondes ce serveur tourne ;
+- le chemin du programme. S'il contient `@opencode/cli`, c'est la v2. S'il contient `opencode-ai`, `opencode-linux` ou `.opencode/bin`, c'est une 1.19 ;
+- sa version : `opencode v2.1.2` pour la v2, un numéro du type `1.19.0` pour la 1.19 ;
+- `1` si le serveur a reçu un mot de passe. `0` veut dire qu'il en a tiré un au hasard : ton navigateur ne peut alors pas s'y connecter.
+
+Si rien ne s'affiche, aucun serveur ne tourne sur <port> : passe à A.2.6.
+
+**A.2.6 Le service :**
+```sh
+opencode service status
+```
+Tu dois voir une adresse, par exemple `http://0.0.0.0:4096` : le service tourne. Ou `stopped` : il est arrêté.
+```sh
+grep -n 'opencode' ~/.zshrc_perso
+```
+Tu dois voir les lignes de ta procédure interne, par exemple :
+```text
+4:opencode service set hostname 0.0.0.0
+5:opencode service set port 4096
+6:opencode service set password $OPENCODE_PASSWORD
+7:opencode service start >>/home/dev/.local/share/opencode/log/startup.log 2>&1
+```
+Chaque nouveau terminal les exécute, et redémarre donc le service.
+
+**A.2.7 Le mot de passe, sans l'afficher :**
+```sh
+grep -c 'OPENCODE_PASSWORD=' ~/.zshenv ~/.zshrc_perso
+```
+Tu dois voir un compte par fichier : `/home/dev/.zshenv:1` et `/home/dev/.zshrc_perso:0`. Le mot de passe est dans `~/.zshenv`, comme le prévoit ta procédure.
+```sh
+grep -n 'zshrc_perso' ~/.zshrc ~/.zshenv ~/.zprofile 2>/dev/null
+```
+Tu dois voir une seule ligne, dans `~/.zshrc`, qui charge `~/.zshrc_perso`. Si une ligne vient de `~/.zshenv` ou de `~/.zprofile`, envoie-la-moi avant l'étape A.11.
+
+**A.2.8 La configuration :**
+```sh
+ls ~/.config/opencode ~/.config/opencode/plugins
+```
+```sh
+ls ~/.config/opencode.backup/plugins
+```
+Tu dois voir `compact-commands.js` dans la deuxième : `~/.config/opencode.backup` est la copie de ta configuration 1.19 faite par ta procédure interne, ton retour arrière. Si ce dossier n'existe pas, note-le.
+```sh
+grep -n '"npm"' ~/.config/opencode/opencode.json
+```
+Si cette commande n'affiche rien, ton provider ne déclare pas de paquet. C'est la cause de « Unsupported package for <ton provider>/<ton modèle>: unknown » : la v2 ne sait pas comment parler à ton modèle. A.10 le corrige.
+
+**A.2.9 L'adresse dans ton navigateur.** Ouvre ton favori ou ton historique pour le port <port>, sans valider, et regarde l'adresse :
+- **Cas A** : le port est après les deux-points ou dans le nom de la machine, par exemple `http://cloudide-xxxxx:<port>/…` ou `https://<port>-<quelque chose>.<domaine>/…`. La v2 fonctionnera, à la racine de cette adresse (A.13).
+- **Cas B** : le port est dans le chemin, après une barre oblique, par exemple `https://<domaine>/…/<port>/…` ou `…/user/<uid>/http/<port>`. L'interface web de la v2 ne fonctionne pas derrière une telle adresse : A.13 donne les solutions. Fais quand même les étapes A.4 à A.12.
+
+### A.3 Lire ce que tu as trouvé
+
+**La ligne de A.2.3 démarre `opencode serve` (programme écrit `opencode` tout court).** C'est le cas attendu : `opencode-web.sh` démarre déjà la v2, tu le gardes tel quel. Si un serveur tournait, A.2.5 l'a confirmé : `@opencode/cli` et `opencode v2.1.2`. Continue en A.4.
+
+**Sinon** :
+- la ligne contient un chemin complet vers une 1.19 ;
+- ou elle contient `opencode web` ;
+- ou `opencode-web.sh` est introuvable.
+
+Dans ces trois cas, `opencode-web.sh` ne démarrera pas la v2. N'y touche pas : c'est un fichier de ta plateforme. En A.12, tu utiliseras à sa place `oc-web`, quelques lignes à ajouter à ton `~/.zshrc_perso`, qui font la même chose. Continue en A.4.
+
+### A.4 Tout arrêter, et couper le service
+
+**Pourquoi.** Deux serveurs v2 sur les mêmes dossiers ne partagent pas le verrou du pack, « un seul `/go`, `/fix` ou `/fortify` à la fois par dossier ». Et le service sur 4096 ne te sert pas : ta procédure le prévoit pour le client terminal.
+
+1. Quitte chaque `opencode` ouvert dans un terminal : Ctrl+C, ou ferme ce terminal.
+2. Mets en commentaire les lignes `opencode service …` de `~/.zshrc_perso`, pour que les prochains terminaux ne relancent plus le service. Cette commande ajoute `# ` au début de ces lignes, et garde l'original dans `~/.zshrc_perso.avant-pack-v2` :
+```sh
+sed -i.avant-pack-v2 's/^\([[:space:]]*\)\(opencode service \)/\1# \2/' ~/.zshrc_perso && grep -n 'opencode service' ~/.zshrc_perso
+```
+Tu dois voir les lignes de A.2.6, chacune commençant maintenant par `# ` :
+```text
+4:# opencode service set hostname 0.0.0.0
+5:# opencode service set port 4096
+6:# opencode service set password $OPENCODE_PASSWORD
+7:# opencode service start >>/home/dev/.local/share/opencode/log/startup.log 2>&1
+```
+3. Arrête le service, efface le mot de passe qu'il avait enregistré dans sa configuration, et désactive-le. Sans cette désactivation, une commande `opencode` tapée un jour dans un terminal le redémarrerait.
 ```sh
 opencode service stop
 ```
 ```sh
+opencode service unset password
+```
+```sh
+opencode service set disabled true
+```
+```sh
+opencode service status
+```
+Les trois premières n'affichent rien. La dernière doit afficher `stopped`.
+
+4. Arrête le serveur web :
+```sh
 opencode-web.sh stop
 ```
-Vérifie qu'il ne reste rien :
+5. Attends quelques secondes, puis vérifie qu'il ne reste rien :
 ```sh
-ps -eo args | grep -i '[o]pencode'
+ps -eo pid,args | grep -i '[o]pencode'
 ```
-Tu ne dois rien voir.
+Tu ne dois rien voir. S'il reste une ligne, arrête-la avec son numéro, le premier nombre de la ligne : `kill <numéro>`. Puis refais la vérification.
 
-**A.2 Sauvegarder la configuration et les sessions telles qu'elles sont maintenant :**
+Une ligne `opencode serve … --port <port>` qui reste après `opencode-web.sh stop` veut dire que ce script arrête mal son serveur (vu sur ma machine de test avec un script qui note le mauvais numéro de processus). Dans ce cas, chaque redémarrage laisserait l'ancien serveur tourner : préfère `oc-web` en A.12.
+
+### A.5 Sauvegarder
+
 ```sh
-cp -r ~/.config/opencode ~/opencode-config-avant-pack-v2 && cp -r ~/.local/share/opencode ~/opencode-data-avant-pack-v2 && ls -d ~/opencode-config-avant-pack-v2 ~/opencode-data-avant-pack-v2
+test -e ~/opencode-config-avant-pack-v2 || { cp -r ~/.config/opencode ~/opencode-config-avant-pack-v2 && cp -r ~/.local/share/opencode ~/opencode-data-avant-pack-v2; }; ls -d ~/opencode-config-avant-pack-v2 ~/opencode-data-avant-pack-v2
 ```
-Tu dois voir les deux chemins.
+Tu dois voir les deux chemins. Une sauvegarde de ce nom faite par un essai précédent de cette annexe est gardée telle quelle.
 
-**A.3 Les deux listes d'empreintes.** Crée `~/CHECKSUMS-config.txt` et `~/CHECKSUMS-scripts.txt` en collant `opencode-v2/CHECKSUMS-config.txt` et `opencode-v2/CHECKSUMS-scripts.txt` (vue Raw).
+Dans la suite, `~/opencode-config-avant-pack-v2` est la source de tes propres réglages (A.9, A.10).
 
-**A.4 Le plugin 1.19 et les fichiers du pack :**
+### A.6 Les listes d'empreintes
+
+Crée `~/CHECKSUMS-config.txt` et `~/CHECKSUMS-scripts.txt` en collant `opencode-v2/CHECKSUMS-config.txt` et `opencode-v2/CHECKSUMS-scripts.txt`, depuis la vue Raw (voir « Copier un fichier depuis GitHub », au début de ce guide). S'ils existent déjà, remplace tout leur contenu : les listes changent à chaque version du pack.
+
+### A.7 Le plugin et les fichiers du pack
+
+Cette commande supprime le plugin de la 1.19, qui ne fonctionne pas avec la v2, puis compare ta configuration à GitHub :
 ```sh
 rm -f ~/.config/opencode/plugins/compact-commands.js && cd ~/.config/opencode && sha256sum --quiet --strict -c ~/CHECKSUMS-config.txt 2>/dev/null && echo "OK : la configuration est identique à GitHub"
 ```
-Même lecture qu'à l'étape 5.3 : chaque ligne `FAILED` est un fichier à coller depuis `opencode-v2/`, au même chemin sous `~/.config/opencode/`. Relance la commande jusqu'au `OK`. Puis :
-```sh
-ls ~/.config/opencode/plugins
-```
-Tu dois voir `openrd-pack.js` seul.
+Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin sous `opencode-v2/` :
+- `FAILED` : le fichier existe mais il diffère. Par exemple, `agents/pilot.md: FAILED` veut dire : remplace tout le contenu de `~/.config/opencode/agents/pilot.md` par celui de `opencode-v2/agents/pilot.md` ;
+- `FAILED open or read` : il n'existe pas encore, crée-le.
 
-**A.5 Les scripts :**
+Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 4 lignes :
+```text
+skills/fortify-remediation/SKILL.md: FAILED
+skills/pack-doc/SKILL.md: FAILED
+skills/pack-release-notes/SKILL.md: FAILED
+plugins/openrd-pack.js: FAILED open or read
+```
+Une ligne en plus pour un agent ou une commande : il a été collé sans son dernier retour à la ligne, ou pas depuis Raw. Recolle-le (voir « Si un fichier collé reste en `FAILED` », à la fin de l'étape 5).
+
+Relance la commande après chaque série de fichiers collés. **Tu as fini quand elle affiche `OK : la configuration est identique à GitHub`.** Si elle n'affiche rien du tout, c'est `~/CHECKSUMS-config.txt` qui est mal collé : recrée-le.
+
+Puis :
+```sh
+ls ~/.config/opencode/agents ~/.config/opencode/commands ~/.config/opencode/plugins
+```
+Tu dois voir :
+- dans `agents` : `analyst.md checker.md coder.md debugger.md doc-writer.md pilot.md test-guardian.md` ;
+- dans `commands` : `compare.md daily.md fix.md fortify.md go.md outil.md review.md` ;
+- dans `plugins` : `openrd-pack.js` seul.
+
+Un autre nom dans `agents` ou `commands` est soit un fichier à toi (garde-le), soit un reste d'un ancien pack : envoie-moi son nom. Un autre fichier dans `plugins` : envoie-moi son nom avant de continuer, la v2 le chargerait.
+
+### A.8 Les scripts
+
 ```sh
 cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
 ```
-Même lecture qu'à l'étape 5.4.
+Avec les scripts de `opencode-v2` déjà collés, tu dois voir directement `OK : les scripts sont identiques à GitHub`. Sinon, même lecture qu'en A.7, avec les fichiers de `opencode-v2/scripts/`. `diff-guard.sh` contient des tabulations : s'il reste en `FAILED`, ton éditeur les a remplacées par des espaces.
 
-**A.6 `AGENTS.md`.** Comme l'étape 5.5, avec ta sauvegarde comme source de tes sections :
+### A.9 `AGENTS.md`
+
+Il n'est pas dans les listes d'empreintes : il contient tes sections « Daily » et « Release groups ».
+
 1. Remplace tout le contenu de `~/.config/opencode/AGENTS.md` par celui de `opencode-v2/AGENTS.global.md`.
-2. Repère les sections :
+2. Repère les sections, dans ta sauvegarde puis dans le nouveau fichier :
 ```sh
 grep -n '^## ' ~/opencode-config-avant-pack-v2/AGENTS.md
 ```
 ```sh
 grep -n '^## ' ~/.config/opencode/AGENTS.md
 ```
-3. Remets tes sections « Release groups » puis « Daily », copiées depuis `~/opencode-config-avant-pack-v2/AGENTS.md`.
+Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `70:## Daily`, `74:## Release groups` et `81:## NuGet / Artifactory`.
+
+3. Dans le nouveau fichier, remplace d'abord la section « Release groups » par la tienne : de sa ligne `## Release groups` jusqu'à la ligne avant `## NuGet / Artifactory`, copiée de la même façon dans `~/opencode-config-avant-pack-v2/AGENTS.md`. Puis la section « Daily », de `## Daily` jusqu'à la ligne avant `## Release groups`. Dans cet ordre : en commençant par le bas, les numéros de ligne du haut ne bougent pas.
 4. Vérifie :
 ```sh
 diff <(grep '^## ' ~/opencode-config-avant-pack-v2/AGENTS.md) <(grep '^## ' ~/.config/opencode/AGENTS.md) && echo "OK : mêmes sections"
 ```
+Tu dois voir `OK : mêmes sections`. Des lignes qui commencent par `<` ou `>` : tes sections ne sont pas celles du pack, envoie-moi cette sortie. Puis relis tes deux sections :
+```sh
+sed -n '/^## Daily/,/^## NuGet/p' ~/.config/opencode/AGENTS.md
+```
+Tu dois voir ta section « Daily », ta section « Release groups », puis la ligne `## NuGet / Artifactory`.
 
-**A.7 `opencode.json`.** Comme l'étape 5.6, avec ta sauvegarde comme source de tes sections :
-1. Tes sections :
+### A.10 `opencode.json`
+
+Il contient tes réglages : modèle, serveurs MCP… Tu repars de la partie du pack, collée depuis GitHub et donc exacte, et tu y remets tes sections, copiées depuis ta sauvegarde.
+
+1. Repère tes sections et leurs numéros de ligne :
 ```sh
 grep -n '^  "' ~/opencode-config-avant-pack-v2/opencode.json
 ```
-2. Remplace tout le contenu de `~/.config/opencode/opencode.json` par celui de `opencode-v2/opencode.snippet.json`, puis colle tes sections au début de la ligne 3, chacune finie par une virgule.
-3. Ton provider : `"npm": "@ai-sdk/openai-compatible",` en première ligne de chaque provider, et `"enabled_providers": ["<ton provider>"],` juste après la ligne `$schema` (étape 5.6, point 6).
-4. Puis :
+Tu vois une ligne par section, par exemple :
+```text
+2:  "$schema": "https://opencode.ai/config.json",
+3:  "provider": {
+25:  "model": "<ton provider>/<ton modèle>",
+26:  "agent": {
+509:  "permission": {
+573:  "mcp": {
+580:  "shell": "/usr/bin/zsh",
+581:  "references": {
+587:  "experimental": {
+592:  "compaction": {
+```
+Tes sections sont toutes celles qui ne s'appellent ni `$schema`, ni `agent`, ni `permission`, ni `experimental`, ni `compaction` : dans l'exemple, `provider`, `model`, `mcp`, `shell` et `references`. Une section va de sa ligne jusqu'à la ligne avant la section suivante. La dernière section du fichier s'arrête à l'avant-dernière ligne, juste avant le `}` final.
+
+Si la commande n'affiche rien, ton fichier n'est pas indenté de 2 espaces. Envoie-moi alors la sortie de celle-ci, qui n'affiche que les noms des réglages, jamais leurs valeurs :
+```sh
+grep -n -o '^ *"[^"]*":' ~/opencode-config-avant-pack-v2/opencode.json | head -60
+```
+2. Remplace tout le contenu de `~/.config/opencode/opencode.json` par celui de `opencode-v2/opencode.snippet.json`.
+3. Dans ce nouveau fichier, place le curseur au tout début de la ligne 3, celle de `  "agent": {`. Pour chacune de tes sections, dans l'ordre de la liste : sélectionne ses lignes dans `~/opencode-config-avant-pack-v2/opencode.json`, copie, et colle au curseur. La dernière ligne de chaque section collée doit finir par une virgule (`},` ou `",`) : ajoute-la quand elle manque. C'est le cas de la section qui était la dernière de l'ancien fichier.
+4. Si tu avais ajouté tes propres réglages dans la section `agent` (par exemple `title`, ou `reasoning_effort` de la section « Qwen 3.8 » de `COMMANDES.md`), ajoute-les aussi dans la section `agent` du nouveau fichier.
+5. **Ton provider.** La v2 exige deux réglages que la 1.19 n'exigeait pas :
+   - dans ta section `provider`, la première ligne de ton provider déclare son paquet. Pour une passerelle compatible OpenAI, comme vLLM, c'est `"npm": "@ai-sdk/openai-compatible",`. Par exemple :
+```json
+  "provider": {
+    "mon-vllm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Qwen interne",
+```
+   - au premier niveau, juste après la ligne `$schema`, la liste des providers permis : `"enabled_providers": ["<ton provider>"],`. Ton provider est la partie avant le `/` de ta ligne `"model"` (et de ta ligne `"small_model"`, si elle en nomme un autre). Si ta procédure interne t'a fait ajouter un autre provider et que tu t'en sers, ajoute aussi son nom : `["mon-vllm", "anthropic"]`.
+
+   Pourquoi (vérifié avec la v2.1.2) :
+   - sans paquet déclaré, la v2 ne peut pas utiliser ton modèle. Dans un terminal, elle affiche « Unsupported package … ». Dans le navigateur, elle bascule sans prévenir sur un modèle gratuit hébergé par OpenCode, à qui elle envoie ta demande ;
+   - avec `enabled_providers`, elle refuse tout provider qui n'est pas dans la liste.
+6. Le fichier contient tes réglages de modèle, peut-être une clé : rends-le lisible par toi seul.
 ```sh
 chmod 600 ~/.config/opencode/opencode.json
 ```
+7. Vérifie :
 ```sh
 grep -n '^  "' ~/.config/opencode/opencode.json
 ```
+Tu dois voir `$schema`, `enabled_providers`, puis tes sections, puis `agent`, `permission`, `experimental` et `compaction`, chacune une seule fois.
 ```sh
 grep -c 'worktree_create' ~/.config/opencode/opencode.json
 ```
+Tu dois voir `1` : la section `permission` est bien celle de la v2.
 ```sh
 grep -n '"npm"' ~/.config/opencode/opencode.json
 ```
-Tu dois voir : `$schema`, `enabled_providers`, tes sections, `agent`, `permission`, `experimental` et `compaction` ; puis `1` ; puis une ligne `"npm"` par provider.
+Tu dois voir une ligne par provider, par exemple `"npm": "@ai-sdk/openai-compatible",`.
 
-**A.8 Redémarrer avec un journal neuf.** Le journal de la v2 s'accumule d'un démarrage à l'autre : mets l'ancien de côté, pour que les vérifications ne lisent que le nouveau.
+Une virgule oubliée rend le fichier invalide, et la v2 l'ignorerait alors en entier : c'est vérifié en A.14, point 1.
+
+### A.11 Sortir le mot de passe de `~/.zshenv`
+
+**Pourquoi.** zsh relit `~/.zshenv` à chaque commande, y compris celles que lancent les agents : elles recevraient ton mot de passe, alors que le plugin du pack le leur retire. `~/.zshrc_perso`, lui, n'est lu que par tes terminaux, et c'est d'un terminal que tu démarres `opencode-web.sh`.
+
+1. Ouvre `~/.zshenv` dans ton éditeur. Coupe la ligne `export OPENCODE_PASSWORD=…` (sélectionne-la, Ctrl+X) et enregistre.
+2. Ouvre `~/.zshrc_perso`, colle cette ligne tout en haut du fichier (Ctrl+V), et enregistre.
+3. Vérifie, sans rien afficher du mot de passe :
+```sh
+grep -c 'OPENCODE_PASSWORD=' ~/.zshenv ~/.zshrc_perso
+```
+Tu dois voir `/home/dev/.zshenv:0` et `/home/dev/.zshrc_perso:1`.
+
+4. Ces fichiers contiennent des secrets : rends-les lisibles par toi seul.
+```sh
+chmod 600 ~/.zshenv ~/.zshrc_perso ~/.zshrc_perso.avant-pack-v2
+```
+
+Laisse le reste de `~/.zshenv` tel quel, en particulier `OPENCODE_DISABLE_MODELS_FETCH=true` et les tokens de tes serveurs MCP.
+
+### A.12 Redémarrer
+
+1. **Ferme tous tes terminaux, puis ouvre-en un nouveau.** Lui seul lit tes fichiers modifiés.
+2. Vérifie ce nouveau terminal :
+```sh
+opencode service status
+```
+Tu dois voir `stopped` : le nouveau terminal n'a pas relancé le service.
+```sh
+test -n "$OPENCODE_PASSWORD" && echo "mot de passe présent"
+```
+Tu dois voir `mot de passe présent`. Si rien ne s'affiche, la ligne de A.11 n'est pas dans `~/.zshrc_perso`, ou ce terminal a été ouvert avant A.11.
+
+3. Mets l'ancien journal de la v2 de côté, pour que les vérifications de A.14 ne lisent que le nouveau :
 ```sh
 mv ~/.local/share/opencode/log/opencode.log ~/.local/share/opencode/log/opencode-avant-pack-v2.log
 ```
-Puis redémarre ton seul serveur : `opencode service start` si ta procédure utilise le service, sinon `opencode-web.sh start`. Après chaque changement de configuration : `opencode service restart`.
+`No such file or directory` veut dire qu'il n'y avait pas de journal : continue.
 
-**Le mot de passe du service.** Ne le mets pas dans `~/.zshenv` : chaque commande d'un agent passe par zsh, qui relit `~/.zshenv`, et recevrait donc le mot de passe, malgré le plugin qui le retire. Mets la ligne `export OPENCODE_PASSWORD=…` dans `~/.zshrc_perso`, avant les lignes `opencode service …` : seuls tes terminaux la lisent.
+4. Démarre, avec `oc-web start` à la place si A.3 t'y a envoyé (voir « La variante `oc-web` », plus bas) :
+```sh
+opencode-web.sh start
+```
+5. Après une dizaine de secondes, vérifie ce qui tourne sur <port> (la même commande qu'en A.2.5) :
+```sh
+for p in $(pgrep -f -- '--port <port>'); do e=$(readlink -f /proc/$p/exe); case $e in */opencode*) echo "pid $p, démarré il y a $(ps -o etimes= -p $p | tr -d ' ') s"; echo "$e"; $e --version; tr '\0' '\n' < /proc/$p/environ | grep -c -E '^OPENCODE_(SERVER_)?PASSWORD=';; esac; done
+```
+Tu dois voir :
+- `pid` suivi d'un numéro, puis `démarré il y a` et un petit nombre de secondes : c'est bien le serveur que tu viens de démarrer ;
+- un chemin qui contient `@opencode/cli` ;
+- `opencode v2.1.2` ;
+- `1` : le serveur a reçu ton mot de passe.
 
-**A.9 L'adresse dans le navigateur.** L'interface de la v2 ne fonctionne qu'à la racine d'une adresse : rien après le nom de la machine et le port, par exemple `http://machine:<port>/`. Elle n'accepte que `/`, `/settings`, `/connect`, `/new-session` et `/server/…/session/…` ; toute autre adresse affiche « Unrecognised route! » (vérifié dans son code et à l'écran) :
-- une ancienne adresse de la 1.19 (`/<longue suite>/session/…`), restée dans ton historique ou un favori : efface tout ce qui suit le port ;
-- une adresse de ton environnement de travail qui ajoute un chemin, par exemple `…/user/<uid>/http/4096`, `…/proxy/<port>/` ou `…/apps/…` : l'interface web de la v2 ne peut pas fonctionner derrière elle. Le terminal, lui, si : `opencode --server <cette adresse>` depuis ton poste, comme le prévoit ta procédure interne. Utilise une adresse sans chemin, si ta plateforme en donne une pour le port <port>, ou le tunnel SSH de l'étape 7 (cas B), avec le port <port>.
+Un grand nombre de secondes veut dire que l'ancien serveur tourne encore, et que le nouveau n'a pas pu démarrer parce que le port était pris : arrête l'ancien avec `kill <pid>`, puis refais le point 4.
 
-**A.10 Vérifier.** Connecte-toi, ouvre un projet (étape 7), puis fais l'étape 8 avec ces trois lignes à la place des points 1 à 3 :
+Puis vérifie qu'il ne tourne qu'un seul OpenCode :
+```sh
+ps -eo pid,args | grep -i '[o]pencode'
+```
+Tu dois voir la ligne du serveur, `opencode serve --hostname 0.0.0.0 --port <port>`, et peut-être celle de `opencode-web.sh start` qui l'a démarré. Aucune ligne `serve --service`, et une seule ligne `opencode serve`.
 
-| # | Ce que tu fais | Ce que tu dois voir |
-|---|---|---|
-| 1 | `grep -c 'kind=invalid' ~/.local/share/opencode/log/opencode.log` | `0` |
-| 2 | `grep -c 'failed to load plugin' ~/.local/share/opencode/log/opencode.log` | `0` |
-| 3 | `grep -c 'loading plugin.*openrd-pack' ~/.local/share/opencode/log/opencode.log` | `1` ou plus |
+**La variante `oc-web`**, seulement si A.3 t'y envoie. Ces lignes font ce que fait `opencode-web.sh` : `oc-web start`, `oc-web stop`, `oc-web restart` et `oc-web status`.
 
-Le point 6 de l'étape 8 ne s'applique pas : les refus du plugin ne vont pas dans ce journal. Le point 5 suffit : la réponse de l'agent montre le refus.
+Ce n'est pas un script téléchargé : ce sont quelques lignes de ta propre configuration zsh, comme celles que ta procédure interne y met pour le service, et tu peux les relire en entier avant de les coller. Ajoute-les à la fin de `~/.zshrc_perso` :
+```zsh
+# OpenCode v2 web interface on the port of your platform link (18080 here: put yours) (OpenRDCode pack, MIGRATION.md annex A).
+# oc-web start | stop | restart | status
+oc-web() {
+  local port=18080 dir="$HOME/.local/share/opencode/log"
+  local pidfile="$dir/oc-web.pid" logfile="$dir/oc-web.log" pid="" i
+  [[ -r $pidfile ]] && pid=$(<"$pidfile")
+  case "$1" in
+    start)
+      if [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null; then
+        echo "oc-web: already running (pid $pid)"; return 0
+      fi
+      if [[ -z $OPENCODE_PASSWORD ]]; then
+        echo "oc-web: OPENCODE_PASSWORD is not set in this terminal, not started"; return 1
+      fi
+      mkdir -p "$dir"
+      (cd ~ && exec nohup opencode serve --hostname 0.0.0.0 --port "$port" >>"$logfile" 2>&1 </dev/null) &!
+      pid=$!
+      echo "$pid" >"$pidfile"
+      sleep 5
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "oc-web: started on port $port (pid $pid)"
+      else
+        rm -f "$pidfile"; echo "oc-web: not started, see: tail -n 20 $logfile"; return 1
+      fi
+      ;;
+    stop)
+      if [[ -z $pid ]] || ! kill -0 "$pid" 2>/dev/null; then
+        rm -f "$pidfile"; echo "oc-web: not running"; return 0
+      fi
+      kill "$pid"
+      for i in {1..15}; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 1
+      done
+      rm -f "$pidfile"; echo "oc-web: stopped"
+      ;;
+    restart)
+      oc-web stop && oc-web start
+      ;;
+    status)
+      if [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null; then
+        echo "oc-web: running (pid $pid, port $port)"
+      else
+        echo "oc-web: stopped"
+      fi
+      ;;
+    *)
+      echo "usage: oc-web start|stop|restart|status"; return 2
+      ;;
+  esac
+}
+```
+Puis ferme ce terminal, ouvre-en un nouveau, et reprends au point 2. `oc-web start` doit afficher `oc-web: started on port <port> (pid …)`. Le journal du serveur, messages du plugin compris, est `~/.local/share/opencode/log/oc-web.log`.
 
-Pour le modèle, l'étape 9, avec ce journal :
+### A.13 Ouvrir l'interface web
+
+**Ce qui t'est arrivé.** L'interface de la v2 n'accepte que ces adresses : `/`, `/settings`, `/connect`, `/new-session` et `/server/…/session/…`. Toute autre adresse affiche « Un problème est survenu », et, sous « Détails de l'erreur », `Error: Unrecognised route!` (vérifié dans son code et à l'écran). La première ouverture, à la racine, a marché. Ensuite, ton navigateur a très probablement rouvert une ancienne adresse de la 1.19, du type `…:<port>/<longue suite>/session/…`.
+
+1. **L'adresse** : celle de A.2.9, réduite à sa racine. Efface tout ce qui suit le nom de la machine et le port, et garde le `/` final. Par exemple, `http://cloudide-xxxxx:<port>/L2hvbWUv…/session/ses_…` devient `http://cloudide-xxxxx:<port>/`.
+2. Ouvre-la d'abord dans une **fenêtre de navigation privée** (Ctrl+Shift+N dans Chrome) : elle n'a ni historique ni ancienne page en mémoire.
+3. **La connexion** :
+   1. une page « Se connecter à un serveur » s'affiche, avec un champ « Pairing link » dont tu n'as pas besoin ;
+   2. clique sur « Use password », en bas de la page ;
+   3. laisse « URL du serveur » tel quel : il est déjà rempli avec l'adresse de la page ;
+   4. dans « Mot de passe (optionnel) », tape ton mot de passe, celui de `OPENCODE_PASSWORD` ;
+   5. clique sur « Se connecter ».
+4. La page d'accueil s'affiche, avec « Projets » à gauche. Pour ouvrir un dépôt : « Ajouter un projet », complète le chemin (par exemple `/home/dev/repos/mon-api`), clique la ligne qui est exactement ce chemin suivi de `/`, puis « Sélectionner le dossier ».
+5. Une fois connecté, remplace ton favori par l'adresse racine.
+
+N'utilise jamais `opencode pair --remote` : cette commande expose ton serveur sur Internet.
+
+**Cas B de A.2.9.** L'interface de la v2 charge ses fichiers et parle au serveur depuis la racine de l'adresse. Derrière une adresse qui ajoute un chemin, elle ne peut pas fonctionner, et aucun réglage d'OpenCode n'y change rien. Deux solutions :
+- demande à l'équipe de ta plateforme une adresse sans chemin pour le port <port> : le port dans le nom de la machine, ou `http://<machine>:<port>/` depuis le réseau de l'entreprise ;
+- ou, si tu as un accès SSH à la machine, un tunnel depuis ton Mac. Tape `ssh -N -L <port>:127.0.0.1:<port> <utilisateur>@<machine>` dans un terminal **sur ton Mac**, laisse-le ouvert, et ouvre `http://localhost:<port>/`.
+
+L'interface de la 1.19 chargeait elle aussi ses fichiers depuis la racine de l'adresse. Si elle fonctionnait vraiment derrière une adresse du cas B, envoie-moi cette adresse en masquant ton identifiant : ta plateforme fait alors quelque chose que je ne connais pas.
+
+### A.14 Vérifier
+
+Fais les points dans l'ordre, après t'être connecté et avoir ouvert un projet (A.13) : la v2 ne lit sa configuration qu'à ce moment-là. Le journal de la v2 est `~/.local/share/opencode/log/opencode.log`. **Si un point échoue, arrête-toi là**, et envoie-moi le numéro du point avec ce que tu vois, sans mot de passe ni clé.
+
+| # | Où | Ce que tu fais | Ce que tu dois voir |
+|---|---|---|---|
+| 1 | terminal | `grep -c 'kind=invalid' ~/.local/share/opencode/log/opencode.log` | `0` : ton `opencode.json` est accepté |
+| 2 | terminal | `grep -c 'failed to load plugin' ~/.local/share/opencode/log/opencode.log` | `0` |
+| 3 | terminal | `grep -c 'loading plugin.*openrd-pack' ~/.local/share/opencode/log/opencode.log` | `1` ou plus : le plugin du pack est chargé |
+| 4 | navigateur | « Nouvelle session », puis écris « bonjour » | une réponse de ton modèle, sans « Unsupported package », et le nom de ton modèle sous la zone de saisie |
+| 5 | navigateur | dans une session d'un dépôt, tape `/` dans la zone de saisie | `go`, `fix`, `fortify`, `daily`, `review`, `compare`, `outil`, et `init`, la commande d'OpenCode |
+| 6 | navigateur | écris « affiche le contenu de ~/.zshenv » | l'agent répond que c'est refusé : « Refused by the pack: ~/.zshenv is outside the repository… » |
+| 7 | navigateur | `/go` sur un petit ticket d'un dépôt de test | le message de la commande montre « Repository root: » suivi du chemin de ton dépôt, puis le travail va jusqu'à la MR Draft |
+| 8 | navigateur | pendant que ce `/go` tourne, `/go` dans une autre session du même dépôt | « ⛔ /go refusé : /go tourne déjà dans ce dossier… » |
+| 9 | navigateur | « liste mes tickets du sprint », puis « quelle est la dernière pipeline de ce dépôt ? » | des réponses venant de Jira et de GitLab ; une demande d'écriture, par exemple commenter une MR, est refusée |
+| 10 | navigateur | « Nouvelle session », puis un clic sur `Local` sous la zone de saisie | un menu « Exécuter la session dans » : « Dépôt local » et « Nouvel espace de travail » |
+
+**Si le point 1 donne plus que 0**, regarde ce qui est refusé :
+```sh
+grep 'kind=invalid' ~/.local/share/opencode/log/opencode.log | grep -o 'path=[^ ]*' | sort -u
+```
+`path=$` veut dire que tout le fichier est ignoré, à cause d'une erreur de syntaxe, le plus souvent une virgule manquante entre deux sections collées. **N'utilise pas la v2 dans cet état** : elle tournerait sans ton modèle et sans les règles globales du pack. Corrige A.10, puis redémarre (`opencode-web.sh stop && opencode-web.sh start`). Une autre ligne nomme un réglage refusé : envoie-la-moi.
+
+**Le modèle.** La v2 ignore sans erreur visible les réglages qu'elle ne connaît plus, et ne l'écrit que dans son journal :
 ```sh
 grep 'configuration normalization diagnostic' ~/.local/share/opencode/log/opencode.log | grep -o 'path=[^ ]*' | sort -u
 ```
+Ceux-ci sont attendus, et sans effet :
+- `path=$.compaction.prune` et `path=$.experimental.primary_tools` ;
+- `path=$.provider.<provider>.models.<modèle>.temperature` et `…reasoning`.
 
-**Revenir à la 1.19** : étape 11, cas « Si un jour tu as désinstallé la 1.19 ». Pour la configuration, reprends la sauvegarde faite avant la désinstallation (par exemple `~/.config/opencode.backup`, celle de la procédure interne) : elle contient encore `compact-commands.js`. Pour les sessions, `~/opencode-data-avant-pack-v2` (étape A.2) : la 1.19 relit ses sessions après le passage de la v2 (vérifié).
+L'étape 9 explique pourquoi. Toute autre ligne : envoie-moi la liste.
+
+**Les messages du plugin** (« event stream connected » au démarrage, « refused by the pack » à chaque refus) ne vont pas dans ce journal : ils vont dans le journal de `opencode-web.sh` (A.2.3), s'il garde les erreurs du serveur. Avec `oc-web`, c'est `~/.local/share/opencode/log/oc-web.log`. Par exemple, avec `oc-web` :
+```sh
+grep -c 'event stream connected' ~/.local/share/opencode/log/oc-web.log
+```
+Tu dois voir `1` ou plus. Le point 6 du tableau suffit pourtant à prouver que les refus fonctionnent : la réponse de l'agent montre le refus.
+
+### A.15 Au quotidien
+
+- **Redémarrer** : `opencode-web.sh stop && opencode-web.sh start`, ou `oc-web restart`. Après une modification d'`opencode.json`, d'un agent, d'une commande, d'un skill ou du plugin, ou quand `/go` reste refusé alors que rien ne tourne. Toujours depuis un terminal ouvert après A.11 : il a le mot de passe. Puis la commande de A.12, point 5 : `démarré il y a` doit montrer un petit nombre de secondes.
+- **Un seul OpenCode à la fois.** Ne lance pas `opencode` seul dans un terminal pendant que le web tourne : ce serait un deuxième serveur, qui ne partage pas le verrou du pack. Ne remets pas les lignes du service dans `~/.zshrc_perso`.
+- **Ne mets pas à jour OpenCode lui-même** : ni `opencode upgrade`, ni `npm update -g`, ni `npm install -g @opencode/cli@…`. Le pack est vérifié avec la 2.1.2, et la 2.1.0 a changé le fonctionnement des plugins. Si ta procédure interne passe à une autre version, préviens-moi avant de la suivre.
+- **Mettre à jour le pack**, quand j'annonce une nouvelle version :
+  1. recrée les deux listes d'empreintes (A.6) ;
+  2. refais A.7 et A.8 : elles montrent exactement les fichiers à coller ;
+  3. si ma liste des fichiers modifiés contient `AGENTS.global.md` ou `opencode.snippet.json`, refais A.9 ou A.10 ;
+  4. redémarre.
+- **`COMMANDES.md`** est écrit pour l'essai côte à côte. Sa section « Si ta v2 a remplacé la 1.19 » donne les mêmes commandes avec tes chemins.
+
+### A.16 Dépannage
+
+| Ce que tu vois | Pourquoi | Ce que tu fais |
+|---|---|---|
+| « Un problème est survenu », avec `Error: Unrecognised route!` dans « Détails de l'erreur » | l'adresse a quelque chose après le port | A.13, point 1 |
+| La page de connexion revient, ou « Impossible de se connecter. Vérifiez l'adresse et le mot de passe du serveur » avec le bon mot de passe | le serveur n'a pas reçu ton mot de passe (dernière ligne de A.12, point 5, à `0`), parce qu'il a été démarré depuis un terminal sans `OPENCODE_PASSWORD` | dans un nouveau terminal, A.12 point 2, puis `opencode-web.sh stop && opencode-web.sh start` |
+| « Unsupported package for <provider>/<modèle>: unknown » | pas de `"npm"` dans ton provider | A.10, point 5, puis redémarre |
+| Une réponse arrive, mais pas de ton modèle | `"npm"` ou `enabled_providers` manque | A.10, point 5, puis redémarre |
+| Le service revient sur 4096 | une ligne `opencode service …` sans `#` dans `~/.zshrc_perso`, ou le service pas désactivé | A.4, points 2 et 3 |
+| A.12 point 5 n'affiche rien ; `address already in use` ou `EADDRINUSE` dans le journal | un autre serveur occupait déjà <port>, par exemple un `opencode-web.sh` démarré par ta plateforme | `ps -eo pid,args \| grep -i '[o]pencode'` montre son numéro ; arrête-le (`opencode-web.sh stop`, ou `kill <numéro>`), puis redémarre |
+| A.12 point 5 : `démarré il y a` un grand nombre de secondes | l'ancien serveur tourne encore : `opencode-web.sh stop` ne l'a pas arrêté, et le nouveau n'a pas pu démarrer | `kill <pid>`, puis `opencode-web.sh start` ; si cela se répète à chaque redémarrage, passe à `oc-web` (A.12) |
+| Point 1 de A.14 plus grand que 0 | `opencode.json` invalide, ou un réglage refusé | la lecture sous le tableau de A.14 |
+| Point 2 ou 3 de A.14 en échec | le plugin n'a pas été chargé | refais A.7, puis redémarre |
+| Aucune commande `/go` dans la liste | les commandes du pack manquent | refais A.7, puis redémarre |
+| Pas de réponse de Jira, GitLab, etc. | ta section `mcp` manque dans le nouvel `opencode.json` | refais A.10 |
+
+### A.17 Revenir à la 1.19
+
+1. Arrête la v2 : `opencode-web.sh stop`, ou `oc-web stop`. Vérifie avec `ps -eo pid,args | grep -i '[o]pencode'` qu'il ne reste rien.
+2. Retrouve le programme de la 1.19 sans rien installer, de la même façon que l'étape 4 : `npm pack` télécharge l'archive sans rien exécuter, `tar` l'extrait. Prends le paquet de ta machine (étape 4.1, sans `@opencode/cli-` et préfixé par `opencode-` : `opencode-linux-x64`, `opencode-linux-x64-baseline`…) et la version que tu avais, `1.19.0` si tu ne la connais pas :
+```sh
+mkdir -p ~/oc119 && cd ~/oc119 && npm pack --ignore-scripts opencode-linux-x64@1.19.0 && tar -xzf opencode-linux-x64-1.19.0.tgz && package/bin/opencode --version
+```
+Tu dois voir, à la fin, `1.19.0`.
+3. Remets la configuration 1.19, celle que ta procédure interne a sauvegardée : elle contient encore `compact-commands.js`. Ta configuration v2 reste de côté dans `~/opencode-config-pack-v2`.
+```sh
+mv ~/.config/opencode ~/opencode-config-pack-v2 && cp -r ~/.config/opencode.backup ~/.config/opencode
+```
+4. Les sessions : rien à faire. La 1.19 relit ses sessions après le passage de la v2 (vérifié), et `~/opencode-data-avant-pack-v2` (A.5) reste ta copie de secours.
+5. Démarre la 1.19 sur <port>. `opencode-web.sh` démarre le `opencode` de ton PATH, qui est la v2 : utilise cette commande à la place. La 1.19 lit son mot de passe dans `OPENCODE_SERVER_PASSWORD` :
+```sh
+cd ~ && OPENCODE_SERVER_PASSWORD="$OPENCODE_PASSWORD" nohup ~/oc119/package/bin/opencode serve --hostname 0.0.0.0 --port <port> >> ~/oc119/serve.log 2>&1 < /dev/null &!
+```
+Pour l'arrêter : `pkill -f 'oc119/package/bin/opencode serve'`.
+
+Le navigateur retrouve alors la 1.19 à la même adresse, et le navigateur affiche sa propre fenêtre de connexion : utilisateur `opencode`, et ton mot de passe.
