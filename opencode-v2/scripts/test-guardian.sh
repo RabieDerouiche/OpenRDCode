@@ -1,0 +1,481 @@
+#!/bin/sh
+# Measures and proofs of the unit tests, for the test-guardian and the coder of /fortify, /go and /fix: no agent judges
+# a coverage or a test result by reading code. Run from the repository (.NET projects that build on this machine).
+#   deps <file.cs>                 the module of a file: its classes, the types its constructors receive (classic or
+#                                  primary constructor) and the files that implement them (two levels): "MODULE:",
+#                                  "DEPENDS:", "UNRESOLVED:" lines
+#   coverage <label> <test project> <file.cs>...
+#                                  runs the tests of the project with coverlet and prints the line and branch coverage
+#                                  of each file, with its uncovered lines; kept as <label> in the measures folder
+#   compare <label before> <label after>
+#                                  coverage after a change, file by file: "STOP:" when a file lost coverage
+#   red <test project> <filter>    the new tests must FAIL on the current code (and compile), the same way twice
+#   green <test project> <filter>  the same tests must PASS, twice: a test whose result changes is FLAKY
+#   tests-only                     the uncommitted changes touch only test projects
+#   seal <label> <test file>...    keeps a copy of the test files of a proof, before the fix: "SEALED: <n> test files"
+#   sealed <label>                 the sealed test files are unchanged ("SEAL: OK"), or "STOP:" with the changed ones
+#   restore <label>                puts the sealed test files back as they were sealed: "RESTORED: <files>"
+#   changes <base> [<solution, project or folder>]
+#                                  the whole suite once, with coverlet (the BUILD, TESTS and FAILED TESTS lines of
+#                                  build-test.sh), then the lines the branch changed since <base> that no test runs:
+#                                  "CHANGED:" lines per source file, then one "COVERAGE OF THE CHANGES:" line
+#   folder                         creates and prints the measures folder ("FOLDER: <path>")
+# The measures folder: <git folder>/opencode-tickets/<KEY>.tests (KEY from the branch, NOKEY otherwise), shared by the
+# worktrees, never committed; the test runs write nothing in the repository. Output lines are for the agents: exit 1
+# with one "STOP: <reason>" line when a check fails, "ENVIRONMENT PROBLEM:" when this machine cannot build or run the
+# tests (the agent stops and tells the developer). A test that runs more than 5 minutes is stopped and named.
+# A seal is the proof of the test-guardian: the coder makes the sealed tests pass as they are, and the test-guardian
+# checks them before its proof after the fix. Only the test-guardian may seal or restore (permission rules).
+# Usage: test-guardian.sh deps <file> | coverage <label> <proj> <file>... | compare <a> <b> | red|green <proj> <filter>
+#        | tests-only | seal <label> <file>... | sealed <label> | restore <label> | changes <base> [<target>] | folder
+
+LC_ALL=C
+export LC_ALL
+DOTNET_CLI_UI_LANGUAGE=en DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1
+export DOTNET_CLI_UI_LANGUAGE DOTNET_NOLOGO DOTNET_CLI_TELEMETRY_OPTOUT
+# the longest a single test may run before the test host is stopped (VSTest blame); a test of the pack never needs it
+HANG=${TEST_GUARDIAN_HANG:-5m}
+
+stop() {
+  echo "STOP: $1"
+  exit 1
+}
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || stop "not in a git repository"
+here=$(pwd -P)
+root=$(git rev-parse --show-toplevel)
+cd "$root" || exit 1
+root=$(pwd -P)
+common=$(git rev-parse --git-common-dir) && common=$(cd "$common" && pwd)
+key=$(git branch --show-current 2>/dev/null | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -n 1)
+folder="$common/opencode-tickets/${key:-NOKEY}.tests"
+
+need_dotnet() {
+  command -v dotnet >/dev/null 2>&1 && return 0
+  echo "ENVIRONMENT PROBLEM: dotnet is not on the PATH of this machine. Stop and tell the developer in one line (COMMANDES.md, « Environnement »)."
+  exit 1
+}
+
+# An output of dotnet that says the machine, not the code, is the problem
+environment() {
+  if grep -q -E 'NU1301|Response status code does not indicate success: 40[13]|\((Unauthorized|Forbidden)\)' "$1"; then
+    echo "ENVIRONMENT PROBLEM: the package feed (Artifactory) refused access or cannot be reached (NU1301, 401 or 403). Stop and tell the developer in one line. Never read nuget.config or environment variables, never retry with other options."
+    exit 1
+  fi
+  if grep -q -E 'You must install (or update )?\.NET to run this application' "$1"; then
+    echo "ENVIRONMENT PROBLEM: the test host does not find the .NET runtime (DOTNET_ROOT is missing). Stop and tell the developer in one line."
+    exit 1
+  fi
+}
+
+# The unit test projects: .csproj files that reference a test SDK, say they are test projects, or are named so
+test_projects() {
+  git ls-files '*.csproj' | while read -r p; do
+    if grep -qi 'Microsoft.NET.Test.Sdk\|MSTest.Sdk\|xunit.v3\|<IsTestProject>[[:space:]]*true' "$p" 2>/dev/null ||
+      printf '%s\n' "$p" | grep -qE '\.(Unit|Integration)?Tests?\.csproj$'; then
+      echo "$p"
+    fi
+  done
+}
+
+# The folders of the test projects, one per line ("." for a test project at the root of the repository)
+test_dirs() {
+  test_projects | while read -r p; do dirname "$p"; done
+}
+
+# Whether a path of the repository is in a test project
+in_tests() {
+  test_dirs | while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    if [ "$d" = . ]; then echo yes; break; fi
+    case "$1" in "$d"/*) echo yes; break ;; esac
+  done | grep -q yes
+}
+
+# A file named by an agent (from where it ran the script, from the root of the repository, or absolute) as a path of
+# the repository; nothing, and a failure, for a missing file or a file outside the repository
+repo_path() {
+  case "$1" in
+    /*) set -- "$1" ;;
+    *) if [ -f "$here/$1" ]; then set -- "$here/$1"; else set -- "$root/$1"; fi ;;
+  esac
+  [ -f "$1" ] || return 1
+  dir=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P) || return 1
+  case "$dir/" in
+    "$root"/*) p="${dir#"$root"}/$(basename "$1")"; printf '%s\n' "${p#/}" ;;
+    *) return 1 ;;
+  esac
+}
+
+# "Passed: n" and "Failed: n" of a dotnet test output, summed over the test assemblies (VSTest summaries, minimal or
+# normal, or Microsoft.Testing.Platform)
+counts() {
+  awk '/(Passed|Failed)!/ || /Total tests:/ || /^ *(Passed|Failed):/ {
+         line = $0
+         if (match(line, /Failed: *[0-9]+/)) { s = substr(line, RSTART, RLENGTH); gsub(/[^0-9]/, "", s); f += s }
+         if (match(line, /Passed: *[0-9]+/)) { s = substr(line, RSTART, RLENGTH); gsub(/[^0-9]/, "", s); p += s }
+       }
+       /^ *succeeded: *[0-9]+/ { s = $0; gsub(/[^0-9]/, "", s); p += s }
+       /^ *failed: *[0-9]+/ { s = $0; gsub(/[^0-9]/, "", s); f += s }
+       END { printf "%d %d\n", p, f }' "$1"
+}
+
+# "<Passed|Failed|Skipped> <test name>" per test of a run (console logger, normal verbosity); a name may hold spaces
+# (the cases of a theory)
+outcomes() {
+  sed -n -e 's/^[[:space:]]*\(Passed\)[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}\[[^]]*\][[:space:]]*$/\1 \2/p' \
+    -e 's/^[[:space:]]*\(Failed\)[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}\[[^]]*\][[:space:]]*$/\1 \2/p' \
+    -e 's/^[[:space:]]*\(Skipped\)[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}\[[^]]*\][[:space:]]*$/\1 \2/p' "$1" | sort -u
+}
+
+# "  <test>: <error message>" for each failed test of a run (its first lines, joined), 8 tests at most
+reasons() {
+  awk 'function flush() { if (name != "" && msg != "") print "  " name ": " substr(msg, 1, 240); name = ""; msg = "" }
+       /^ *(Failed|Passed|Skipped) [^:]/ { flush(); if ($1 == "Failed") { name = $0; sub(/^ *Failed +/, "", name); sub(/ +\[[^]]*\] *$/, "", name) } inmsg = 0; next }
+       /^ *Error Message:/ { inmsg = 1; next }
+       /^ *Stack Trace:/ { inmsg = 0; next }
+       inmsg && NF { line = $0; sub(/^ +/, "", line); msg = (msg == "" ? line : msg " · " line); next }
+       END { flush() }' "$1" | head -n 8
+}
+
+# A test host that hung or crashed: says which test ran, and stops
+aborted() {
+  grep -q 'test run was aborted\|Test Run Aborted' "$1" || return 0
+  running=$(awk '/The test running when the crash occurred:/ { on = 1; next } on && NF { print; n++ } on && !NF && n { exit }' "$1" | head -n 3 | tr '\n' ' ')
+  if grep -q 'inactivity time of' "$1"; then
+    stop "a test ran more than $HANG and was stopped (it hangs: an endless loop, a wait without timeout, a real network or clock): ${running:-unknown test}. A test of the pack bounds its own time and never waits for something outside."
+  fi
+  stop "the test host crashed (a stack overflow or an exit of the process) during: ${running:-unknown test}"
+}
+
+# One run of the tests of a filter, with the results outside the repository; $4: --no-build for a second run
+run_tests() {
+  dotnet test "$1" --filter "$2" --nologo -v q --logger "console;verbosity=normal" ${4:+"$4"} \
+    --results-directory "$folder/results-run" --blame-hang-timeout "$HANG" --blame-hang-dump-type none > "$3" 2>&1
+}
+
+case "$1" in
+  folder)
+    mkdir -p "$folder" || stop "cannot create $folder"
+    echo "FOLDER: $folder"
+    exit 0 ;;
+
+  deps)
+    file=$2
+    [ -f "$file" ] || stop "no file $file"
+    # Type names given to the constructors of the classes of the file (classic and primary constructors)
+    types=$(awk '
+      { text = text " " $0 }
+      END {
+        n = split(text, chunks, /class[ \t]+/)
+        for (i = 2; i <= n; i++) {
+          if (!match(chunks[i], /^[A-Za-z_][A-Za-z0-9_]*/)) continue
+          cls = substr(chunks[i], RSTART, RLENGTH)
+          print "CLASS " cls
+          body = chunks[i]
+          # primary constructor: class Name(params) or class Name<T>(params)
+          rest = substr(body, RLENGTH + 1)
+          sub(/^<[^>]*>/, "", rest)
+          if (rest ~ /^[ \t]*\(/) { params = rest; sub(/^[ \t]*\(/, "", params); sub(/\).*/, "", params); emit(params) }
+          # classic constructors: Name(params) {
+          while (match(body, cls "[ \t]*\\([^)]*\\)[ \t]*(:[^{]*)?\\{")) {
+            ctor = substr(body, RSTART, RLENGTH); body = substr(body, RSTART + RLENGTH)
+            params = ctor; sub(/^[^(]*\(/, "", params); sub(/\).*/, "", params); emit(params)
+          }
+        }
+      }
+      function emit(params,   k, m, parts, t) {
+        m = split(params, parts, ",")
+        for (k = 1; k <= m; k++) {
+          t = parts[k]; gsub(/\[[^]]*\]/, "", t); gsub(/^[ \t]+|[ \t]+$/, "", t)
+          sub(/[ \t]+[A-Za-z_][A-Za-z0-9_]*([ \t]*=.*)?$/, "", t)
+          sub(/<.*/, "", t); sub(/\?$/, "", t); sub(/.*\./, "", t)
+          if (t ~ /^[A-Z][A-Za-z0-9_]*$/) print "TYPE " t
+        }
+      }' "$file" | sort -u)
+    echo "MODULE: $file"
+    printf '%s\n' "$types" | sed -n 's/^CLASS /  class /p'
+    resolve() {
+      # the files that declare the type, or a class that implements the interface (test projects excluded)
+      { git grep -lE "(class|record|struct)[[:space:]]+$1([^A-Za-z0-9_]|\$)" -- '*.cs'
+        git grep -lE "(class|record)[[:space:]]+[A-Za-z0-9_]+[^{;]*:[^{;]*[^A-Za-z0-9_]$1([^A-Za-z0-9_]|\$)" -- '*.cs'; } 2>/dev/null |
+        grep -viE '(^|/)[^/]*tests?[^/]*/|/(bin|obj)/' | grep -vxF "$file" | sort -u
+    }
+    level2=""
+    for t in $(printf '%s\n' "$types" | sed -n 's/^TYPE //p'); do
+      found=$(resolve "$t")
+      if [ -n "$found" ]; then
+        for f in $found; do echo "DEPENDS: $t -> $f"; level2="$level2 $f"; done
+      else
+        echo "UNRESOLVED: $t (outside this repository: framework or package)"
+      fi
+    done
+    # second level, once: what the dependencies receive
+    for f in $level2; do
+      sh "$0" deps-one "$f" 2>/dev/null | sed -n 's/^DEPENDS: /DEPENDS (level 2): /p'
+    done | sort -u
+    exit 0 ;;
+
+  deps-one)
+    # first level only (used by deps for the second level)
+    sh "$0" deps "$2" | grep '^DEPENDS: ' | grep -v ' (level 2)'
+    exit 0 ;;
+
+  coverage)
+    [ $# -ge 4 ] || stop "usage: test-guardian.sh coverage <label> <test project> <file.cs>..."
+    label=$2 project=$3
+    shift 3
+    [ -f "$project" ] || stop "no test project $project"
+    printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
+    need_dotnet
+    mkdir -p "$folder" || stop "cannot create $folder"
+    results="$folder/results-$label"
+    rm -rf "$results"
+    dotnet test "$project" --collect:"XPlat Code Coverage" --results-directory "$results" --nologo -v q \
+      --blame-hang-timeout "$HANG" --blame-hang-dump-type none > "$folder/test-$label.log" 2>&1
+    environment "$folder/test-$label.log"
+    aborted "$folder/test-$label.log"
+    report=$(find "$results" -name 'coverage.cobertura.xml' 2>/dev/null | head -n 1)
+    if [ -z "$report" ]; then
+      grep -m 3 'error CS\|error MSB' "$folder/test-$label.log"
+      stop "no coverage report: the build failed or coverlet.collector is missing in $project (fortify.sh prereq)"
+    fi
+    pf=$(counts "$folder/test-$label.log")
+    echo "TESTS: ${pf% *} passed, ${pf#* } failed"
+    # One line per file asked: "<file> lines <covered>/<total> (<pct>%) branches <covered>/<total> uncovered <ranges>"
+    for f in "$@"; do echo "WANT $f"; done | cat - "$report" | awk '
+      /^WANT / { want[++w] = substr($0, 6); next }
+      /<class / {
+        cur = ""
+        if (match($0, /filename="[^"]*"/)) { fn = substr($0, RSTART + 10, RLENGTH - 11); gsub(/\\/, "/", fn)
+          for (i = 1; i <= w; i++) if (ends(fn, want[i]) || ends(want[i], fn)) cur = want[i] }
+        next
+      }
+      cur != "" && /<line / {
+        if (!match($0, /number="[0-9]+"/)) next
+        num = substr($0, RSTART + 8, RLENGTH - 9) + 0
+        match($0, /hits="[0-9]+"/); hits = substr($0, RSTART + 6, RLENGTH - 7) + 0
+        key = cur SUBSEP num
+        # coverlet lists each line twice (in its method and in its class): counted once, branches from either
+        if (!(key in seen)) { seen[key] = 1; total[cur]++; if (hits > 0) cov[cur]++; else miss[cur] = miss[cur] " " num }
+        if (!(key in bseen) && match($0, /condition-coverage="[0-9]+% \([0-9]+\/[0-9]+\)"/)) {
+          bseen[key] = 1
+          c = substr($0, RSTART, RLENGTH); sub(/.*\(/, "", c); sub(/\).*/, "", c); split(c, bc, "/")
+          bcov[cur] += bc[1]; btot[cur] += bc[2]
+        }
+      }
+      END {
+        for (i = 1; i <= w; i++) {
+          f = want[i]
+          if (!(f in total)) { printf "%s lines 0/0 (not in the report: no test reaches this file)\n", f; continue }
+          printf "%s lines %d/%d (%d%%) branches %d/%d uncovered%s\n", f, cov[f], total[f], int(100 * cov[f] / total[f]), bcov[f], btot[f], ranges(miss[f])
+        }
+      }
+      function ends(a, b) { return length(a) >= length(b) && substr(a, length(a) - length(b) + 1) == b && (length(a) == length(b) || substr(a, length(a) - length(b), 1) == "/") }
+      function ranges(s,   a, n, i, out, start, prev) {
+        n = split(s, a, " "); if (n == 0) return " none"
+        out = ""; start = a[1]; prev = a[1]
+        for (i = 2; i <= n + 1; i++) {
+          if (i <= n && a[i] == prev + 1) { prev = a[i]; continue }
+          out = out " " (start == prev ? start : start "-" prev)
+          if (i <= n) { start = a[i]; prev = a[i] }
+        }
+        return out
+      }' | tee "$folder/coverage-$label.txt"
+    exit 0 ;;
+
+  compare)
+    a="$folder/coverage-$2.txt" b="$folder/coverage-$3.txt"
+    [ -f "$a" ] && [ -f "$b" ] || stop "missing coverage $2 or $3 (test-guardian.sh coverage first)"
+    awk 'FNR == NR { before[$1] = $3; next }
+         { split(before[$1], x, "/"); split($3, y, "/")
+           pb = x[2] ? x[1] / x[2] : 0; pa = y[2] ? y[1] / y[2] : 0
+           status = pa + 0.0001 < pb ? "LOST" : "ok"; if (status == "LOST") lost = lost " " $1
+           was = (before[$1] == "") ? "new" : before[$1]; printf "%s %s -> %s %s\n", $1, was, $3, status }
+         END { if (lost != "") { print "STOP: coverage lost after the change in" lost; exit 1 } print "COVERAGE: no file lost coverage" }' "$a" "$b"
+    exit $? ;;
+
+  red|green)
+    project=$2 filter=$3
+    [ -f "$project" ] && [ -n "$filter" ] || stop "usage: test-guardian.sh $1 <test project> <filter>"
+    need_dotnet
+    mkdir -p "$folder"
+    stamp=$(date +%H%M%S)
+    one="$folder/$1-$stamp-1.log" two="$folder/$1-$stamp-2.log"
+    run_tests "$project" "$filter" "$one"
+    environment "$one"
+    if grep -q 'error CS\|error MSB' "$one"; then
+      grep 'error CS\|error MSB' "$one" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 3
+      stop "the tests do not build: $([ "$1" = red ] && echo "a red test must compile against the current code (call what exists)" || echo "fix the build first")"
+    fi
+    aborted "$one"
+    pf=$(counts "$one")
+    passed=${pf% *} failed=${pf#* }
+    [ $((passed + failed)) -gt 0 ] || stop "no test matched the filter $filter"
+    # the same tests once more, without building: a test whose result changes is FLAKY (time, order, shared state,
+    # randomness), and a flaky test is never committed
+    run_tests "$project" "$filter" "$two" --no-build
+    aborted "$two"
+    outcomes "$one" > "$one.outcomes"
+    outcomes "$two" > "$two.outcomes"
+    flaky=$(awk 'FNR == NR { o = $1; sub(/^[^ ]+ /, ""); first[$0] = o; next }
+                 { o = $1; sub(/^[^ ]+ /, ""); if (($0 in first) && first[$0] != o) print $0 }' "$one.outcomes" "$two.outcomes")
+    pf2=$(counts "$two")
+    if [ -n "$flaky" ] || [ "$pf2" != "$pf" ]; then
+      echo "FLAKY: $(printf '%s\n' "$flaky" | grep . | head -n 5 | tr '\n' ' ')(first run: $passed passed, $failed failed; second run: ${pf2% *} passed, ${pf2#* } failed)"
+      stop "a test changed its result between two runs of the same code: it depends on time, order, shared state or randomness. Make it deterministic before anything else."
+    fi
+    if [ "$1" = red ]; then
+      if [ "$passed" -ne 0 ]; then
+        sed -n 's/^Passed /  passes now: /p' "$one.outcomes" | head -n 5
+        stop "$passed of these tests PASS on the current code: they do not show the problem"
+      fi
+      echo "RED: $failed tests fail on the current code, twice the same way, as expected"
+      # the reason of each failure: the message of the assertion, never a build error or a missing set-up
+      reasons "$one"
+      if grep -q 'NullReferenceException\|Object reference not set' "$one"; then
+        echo "WARNING: a test fails with a NullReferenceException: is that the problem itself, or a test that does not set up its objects? A red test fails for the reason of the problem."
+      fi
+    else
+      if [ "$failed" -ne 0 ]; then
+        reasons "$one"
+        stop "$failed of these tests FAIL, twice the same way"
+      fi
+      echo "GREEN: $passed tests pass, twice"
+    fi
+    exit 0 ;;
+
+  tests-only)
+    dirs=$(test_dirs)
+    bad=$(git status --porcelain | cut -c4- | while read -r f; do
+      ok=0
+      for d in $dirs; do case "$f" in "$d"/*) ok=1 ;; esac; done
+      [ "$ok" = 1 ] || echo "$f"
+    done)
+    [ -z "$bad" ] || stop "changes outside the test projects: $(printf '%s' "$bad" | tr '\n' ' ')"
+    echo "TESTS-ONLY: OK"
+    exit 0 ;;
+
+  seal)
+    [ $# -ge 3 ] || stop "usage: test-guardian.sh seal <label> <test file>..."
+    label=$2
+    shift 2
+    printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
+    # every file first: a seal is all the files of the proof or nothing
+    list=""
+    for f in "$@"; do
+      p=$(repo_path "$f") || stop "no file $f in this repository"
+      in_tests "$p" || stop "$p is not in a test project: only the test files of a proof are sealed"
+      list="$list$p
+"
+    done
+    seal="$folder/seal-$label"
+    rm -rf "$seal"
+    mkdir -p "$seal/files" || stop "cannot create $seal"
+    printf '%s' "$list" | sort -u > "$seal/list"
+    while IFS= read -r p; do
+      { mkdir -p "$seal/files/$(dirname "$p")" && cp "$p" "$seal/files/$p"; } || stop "cannot copy $p"
+    done < "$seal/list"
+    echo "SEALED: $(wc -l < "$seal/list" | tr -d ' ') test files ($(tr '\n' ' ' < "$seal/list" | sed 's/ $//')): the fix must make them pass as they are"
+    exit 0 ;;
+
+  sealed|restore)
+    label=$2
+    [ -n "$label" ] || stop "usage: test-guardian.sh $1 <label>"
+    seal="$folder/seal-$label"
+    [ -f "$seal/list" ] || stop "no seal $label (test-guardian.sh seal $label <test files> before the fix)"
+    changed=""
+    while IFS= read -r p; do
+      if [ ! -f "$p" ]; then changed="$changed, $p (deleted)"
+      elif ! cmp -s "$p" "$seal/files/$p"; then changed="$changed, $p"
+      fi
+    done < "$seal/list"
+    changed=${changed#, }
+    if [ "$1" = sealed ]; then
+      [ -z "$changed" ] || stop "the test files of the proof $label changed since they were sealed: $changed. The fix must make the sealed tests pass as they are: test-guardian.sh restore $label puts them back"
+      echo "SEAL: OK, $(wc -l < "$seal/list" | tr -d ' ') test files as sealed"
+      exit 0
+    fi
+    while IFS= read -r p; do
+      if [ ! -f "$p" ] || ! cmp -s "$p" "$seal/files/$p"; then
+        { mkdir -p "$(dirname "$p")" && cp "$seal/files/$p" "$p"; } || stop "cannot put back $p"
+      fi
+    done < "$seal/list"
+    echo "RESTORED: ${changed:-nothing (the test files were as sealed)}"
+    exit 0 ;;
+
+  changes)
+    base=$2 target=$3
+    [ -n "$base" ] || stop "usage: test-guardian.sh changes <base branch> [<solution, project or folder>]"
+    git rev-parse --verify -q "$base^{commit}" >/dev/null || stop "unknown base $base"
+    need_dotnet
+    mkdir -p "$folder" || stop "cannot create $folder"
+    results="$folder/results-changes"
+    rm -rf "$results"
+    # the whole suite once, with coverlet: build-test.sh prints its usual BUILD, TESTS and FAILED TESTS lines
+    sh "$(dirname "$0")/build-test.sh" ${target:+"$target"} --collect:"XPlat Code Coverage" --results-directory "$results" \
+      --blame-hang-timeout "$HANG" --blame-hang-dump-type none
+    status=$?
+    # the source files the branch changed (committed or not), outside the test projects and the generated code
+    fork=$(git merge-base "$base" HEAD) || stop "no common history with $base"
+    tests=$(test_projects | while read -r p; do dirname "$p"; done)
+    git diff -U0 --no-color "$fork" -- '*.cs' > "$folder/changes.diff" 2>/dev/null
+    reports=$(find "$results" -name 'coverage.cobertura.xml' 2>/dev/null)
+    if [ -z "$reports" ]; then
+      echo "COVERAGE OF THE CHANGES: not measured (no coverage report: the build failed, or coverlet.collector is missing in the test projects)"
+      exit "$status"
+    fi
+    # "FILE <path>" and "LINE <n>" for each changed line; then each report: "REPORT", "CLASS <file>", "HIT <n> <hits>"
+    { awk '/^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); print "FILE " f; next }
+           /^@@ / { if (match($0, /\+[0-9]+(,[0-9]+)?/)) { s = substr($0, RSTART + 1, RLENGTH - 1); n = split(s, p, ",");
+                    start = p[1] + 0; count = (n > 1) ? p[2] + 0 : 1; for (i = 0; i < count; i++) print "LINE " start + i } }' "$folder/changes.diff"
+      for r in $reports; do
+        echo "REPORT"
+        awk '/<class / { if (match($0, /filename="[^"]*"/)) { fn = substr($0, RSTART + 10, RLENGTH - 11); gsub(/\\/, "/", fn); print "CLASS " fn } next }
+             /<line / { if (match($0, /number="[0-9]+"/)) { n = substr($0, RSTART + 8, RLENGTH - 9); match($0, /hits="[0-9]+"/); print "HIT " n " " substr($0, RSTART + 6, RLENGTH - 7) } }' "$r"
+      done
+      for d in $tests; do echo "TESTDIR $d"; done
+    } | awk '
+      $1 == "FILE" { cur = substr($0, 6); files[++nf] = cur; next }
+      $1 == "LINE" { changed[cur, $2] = 1; next }
+      $1 == "TESTDIR" { testdir[++nt] = substr($0, 9); next }
+      $1 == "REPORT" { next }
+      $1 == "CLASS" { name = substr($0, 7); cls = ""; for (i = 1; i <= nf; i++) if (ends(files[i], name) || ends(name, files[i])) cls = files[i]; next }
+      $1 == "HIT" && cls != "" { coverable[cls, $2] = 1; if ($3 > 0) hit[cls, $2] = 1; next }
+      END {
+        for (i = 1; i <= nf; i++) {
+          f = files[i]
+          if (f ~ /(^|\/)(bin|obj|Migrations)\// || f ~ /\.(Designer|g|g\.i)\.cs$/ || f ~ /ModelSnapshot\.cs$/) continue
+          skip = 0; for (t = 1; t <= nt; t++) if (index(f, testdir[t] "/") == 1) skip = 1
+          if (skip) continue
+          c = 0; n = 0; miss = ""
+          for (key in changed) { split(key, k, SUBSEP); if (k[1] != f) continue
+            if ((f, k[2]) in coverable) { n++; if ((f, k[2]) in hit) c++; else miss = miss " " k[2] } }
+          if (n == 0) continue
+          sorted = sortnum(miss)
+          printf "CHANGED: %s %d/%d changed lines covered%s\n", f, c, n, (c < n ? "; not covered:" ranges(sorted) : "")
+          tc += c; tn += n; files_n++
+        }
+        if (tn == 0) { print "COVERAGE OF THE CHANGES: no changed line that a test could run (no source change, or only declarations)"; exit }
+        printf "COVERAGE OF THE CHANGES: %d/%d changed lines covered (%d%%) in %d files; %d not covered\n", tc, tn, int(100 * tc / tn), files_n, tn - tc
+      }
+      function ends(a, b) { return length(a) >= length(b) && substr(a, length(a) - length(b) + 1) == b && (length(a) == length(b) || substr(a, length(a) - length(b), 1) == "/") }
+      function sortnum(s,   a, n, i, j, t, out) {
+        n = split(s, a, " ")
+        for (i = 2; i <= n; i++) { t = a[i] + 0; j = i - 1; while (j >= 1 && a[j] + 0 > t) { a[j + 1] = a[j]; j-- } a[j + 1] = t }
+        out = ""; for (i = 1; i <= n; i++) out = out " " a[i]; return out
+      }
+      function ranges(s,   a, n, i, out, start, prev) {
+        n = split(s, a, " "); if (n == 0) return ""
+        out = ""; start = a[1]; prev = a[1]
+        for (i = 2; i <= n + 1; i++) {
+          if (i <= n && a[i] == prev + 1) { prev = a[i]; continue }
+          out = out " " (start == prev ? start : start "-" prev)
+          if (i <= n) { start = a[i]; prev = a[i] }
+        }
+        return out
+      }'
+    exit "$status" ;;
+
+  *) stop "usage: test-guardian.sh deps <file> | coverage <label> <project> <file>... | compare <a> <b> | red|green <project> <filter> | tests-only | seal <label> <file>... | sealed <label> | restore <label> | changes <base> [<target>] | folder" ;;
+esac

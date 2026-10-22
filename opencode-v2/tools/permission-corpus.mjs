@@ -116,17 +116,31 @@ const PILOT_DENY = [
   "sh -c \"git push --force\"", "bash -c \"git push\"", "cat ~/.git-credentials | " + S + "ship.sh x",
 ]
 add(["pilot"], PILOT_DENY, "deny")
-// /fortify: the measures and proofs of the test-guardian; putting work aside (git stash) is the pilot's
-add(["test-guardian"], [S + "fortify.sh deps src/Api/Services/ExportService.cs",
-  S + "fortify.sh coverage V1-before tests/Api.Tests/Api.Tests.csproj src/Api/Services/ExportService.cs src/Api/Storage/FileStore.cs",
-  S + "fortify.sh red tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_PathTraversal_V1",
-  S + "fortify.sh green tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_PathTraversal_V1",
-  S + "fortify.sh compare V1-before V1-after", S + "fortify.sh tests-only", S + "fortify.sh prereq",
+// /fortify, /go and /fix: the measures and proofs of the test-guardian; putting work aside (git stash) is the pilot's
+add(["test-guardian"], [S + "test-guardian.sh deps src/Api/Services/ExportService.cs",
+  S + "test-guardian.sh coverage V1-before tests/Api.Tests/Api.Tests.csproj src/Api/Services/ExportService.cs src/Api/Storage/FileStore.cs",
+  S + "test-guardian.sh red tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_PathTraversal_V1",
+  S + "test-guardian.sh green tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_PathTraversal_V1",
+  S + "test-guardian.sh red tests/Api.Tests/Api.Tests.csproj \"FullyQualifiedName~InvoiceServiceTests.Total_NegativeDiscount|FullyQualifiedName~InvoiceServiceTests.Total_ZeroLines\"",
+  S + "test-guardian.sh compare V1-before V1-after", S + "test-guardian.sh tests-only", S + "test-guardian.sh folder", S + "fortify.sh prereq",
   "dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60", "git status --short", "git diff --stat"], "allow")
+add(["coder"], [S + "test-guardian.sh green tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_PathTraversal_V1"], "allow")
+// the seal of a proof: the test-guardian seals its tests before the fix and checks them after; the coder never seals
+// its own version of them nor puts them back, and no other agent of the pack writes a test file through it. Checking
+// a seal is open: the pilot does it before each commit, the coder may look
+add(["test-guardian"], [S + "test-guardian.sh seal V1 tests/Api.Tests/Security/PathTraversalV1Tests.cs tests/Api.Tests/Services/ExportServiceTests.cs",
+  S + "test-guardian.sh sealed V1", S + "test-guardian.sh restore V1", S + "test-guardian.sh seal S2 \"tests/Api.Tests/Invoice Tests.cs\""], "allow")
+add(["coder", "pilot", ...RO], [S + "test-guardian.sh seal V1 tests/Api.Tests/Security/PathTraversalV1Tests.cs",
+  S + "test-guardian.sh restore V1", "bash ~/.config/opencode/scripts/test-guardian.sh seal V1 tests/Api.Tests/X.cs",
+  "cd tests && " + S + "test-guardian.sh restore V1"], "deny")
+add(["coder", "pilot", "test-guardian"], [S + "test-guardian.sh sealed V1"], "allow")
+add(["pilot"], [S + "test-guardian.sh sealed V2 && " + S + "ship.sh --no-push \"fix(security): path traversal in FileStore.cs (V2, ABC-123)\" \"- Fortify 4F2A\" \"- tests: 3 context, 2 vulnerability (red before, green after, twice each)\" && " + S + "ticket-sheet.sh tick 2 \"/fortify V2 - corrigée - tests 3+2 - couverture sans perte\"",
+  S + "test-guardian.sh sealed S3 && " + S + "ship.sh --no-push \"fix(invoices): reject a negative discount (ABC-123)\" \"- InvoiceService: discount validated\" && " + S + "ticket-sheet.sh tick 3 \"/go étape 3 - 2 fichiers - build ok, tests 41/41\""], "allow")
 add(["test-guardian", "coder", ...RO], [S + "fortify.sh discard V1", S + "ship.sh --no-push \"test: x (ABC-1)\""], "deny")
 add(["test-guardian"], ["git commit -m x", "git push", "git stash", S + "workspace.sh new ABC-1", "rm -rf tests"], "deny")
 add(["pilot"], [S + "fortify.sh prereq", S + "fortify.sh discard V2", S + "fortify.sh discard V3-interrupted", S + "fortify.sh batch",
-  S + "branch.sh LOCAL bugfix \"Fortify Path Manipulation lot 2026-10-21\" && " + S + "workflow-state.sh --no-fetch --sheet && " + S + "fortify.sh batch"], "allow")
+  S + "branch.sh LOCAL bugfix \"Fortify Path Manipulation lot 2026-10-21\" && " + S + "workflow-state.sh --no-fetch --sheet && " + S + "fortify.sh batch",
+  S + "test-guardian.sh changes origin/develop src/Api.sln", S + "test-guardian.sh changes origin/develop"], "allow")
 // worktree folders are made and removed by the developer only (workspace.sh), never by an agent
 add(ALL, [S + "workspace.sh new ABC-124", S + "workspace.sh remove ABC-124", S + "workspace.sh list",
   "sh $HOME/.config/opencode/scripts/workspace.sh new ABC-124"], "deny")

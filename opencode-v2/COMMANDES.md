@@ -24,7 +24,7 @@ Les autres sections de ce guide sont écrites pour l'essai côte à côte. Si tu
 
 Les plus utilisées, déjà adaptées :
 
-Redémarrer OpenCode, depuis un terminal ouvert après l'annexe A.11 (il a le mot de passe et les tokens), puis rouvrir l'adresse : le lien de ta plateforme, puis la racine (annexe A.13). Avec le service :
+Redémarrer OpenCode, depuis un terminal ouvert après l'annexe A.11 (il a le mot de passe et les tokens), puis rouvrir l'adresse : le lien de ta plateforme et son rechargement forcé (Cmd+Maj+R), puis la racine (section « Ouvrir l'interface web », annexe A.13). Avec le service :
 ```sh
 opencode service restart
 ```
@@ -66,6 +66,9 @@ grep -c 'event stream connected' ~/.local/share/opencode/log/openrd-pack.log
 ```
 ```sh
 grep 'refused by the pack' ~/.local/share/opencode/log/openrd-pack.log | tail -20
+```
+```sh
+grep -E 'run resumed|run not resumed|resume cancelled|summarized|summary of a run failed' ~/.local/share/opencode/log/openrd-pack.log | tail -20
 ```
 ```sh
 grep 'configuration normalization diagnostic' ~/.local/share/opencode/log/opencode.log | grep -o 'path=[^ ]*' | sort -u
@@ -115,6 +118,14 @@ Après une modification d'`opencode.json`, du plugin, d'un agent, d'une commande
 Dans le terminal de la v2 : Ctrl+C, puis les étapes 6.1, 6.3 et 6.4 de `MIGRATION.md` (les dossiers, le mot de passe, le démarrage). Si la v2 a remplacé ta 1.19 : `opencode service restart` avec le service, `opencode-web.sh stop && opencode-web.sh start` (ou `oc-web restart`) sinon.
 
 Un `/go`, `/fix` ou `/fortify` qui tournait est coupé par le redémarrage. Avec le service, la v2 le reprend toute seule là où il en était, et le plugin lui garde son dossier ; sinon, relance la commande dans sa session : elle reprend à sa dernière étape faite.
+
+## Ouvrir l'interface web (plateforme `<plateforme>.<domaine>`)
+
+Après chaque démarrage de ton poste distant ou du serveur : le lien de ta plateforme qui choisit le port (`…?port=<port>`, celui qu'ouvre `opencode-web.sh`), puis, **dans cet onglet, un rechargement forcé : Cmd+Maj+R** (Ctrl+Maj+R sous Windows ou Linux), puis ton favori, la racine `https://<plateforme>.<domaine>/`. Ni cache à vider, ni mot de passe à retaper.
+
+Pourquoi : l'interface de la v2 s'installe dans le navigateur (un « service worker », pour toute l'adresse `https://<plateforme>.<domaine>/`) et répond elle-même au lien de la plateforme, qui est sur la même adresse. Sans rechargement forcé, le lien n'arrive pas à la plateforme : le port n'est pas transmis, et l'onglet affiche `Unrecognised route!`. Le rechargement forcé passe outre le service worker (vérifié avec une plateforme simulée et le vrai OpenCode v2.1.3). Les lancements suivants de la journée marchaient parce que la plateforme connaissait déjà le port.
+
+Après une mise à jour d'OpenCode : ferme une fois tous les onglets de l'adresse, puis rouvre la racine. Détails et dépannage : annexe A.13 et A.16 de `MIGRATION.md`.
 
 ## Trouver les chemins à mettre dans la config
 
@@ -212,7 +223,7 @@ grep -c 'Gateway Time-out' ~/oc2/serve.log
 ```sh
 grep 'Gateway Time-out' ~/oc2/serve.log | tail -5 | cut -c1-200
 ```
-OpenCode réessaie seul, et chaque essai repart de zéro : la v2 fait jusqu'à 10 nouveaux essais, de 2 à 10 s d'attente entre deux (environ 1 min 30 en tout), dont 3 au plus après un dépassement de délai (la 1.19 en faisait 5, de 2 à 30 s). Pendant ce temps, le titre de la session dit « nouvel essai <n> (serveur du modèle) ». À demander à l'équipe qui héberge le modèle, avec ces chiffres : le délai de la passerelle devant vLLM pour `/v1/chat/completions` (une réponse avec réflexion peut durer plusieurs minutes : 10 minutes laisse de la marge), et des réponses en streaming transmises sans mise en tampon (nginx : `proxy_read_timeout 600s` et `proxy_buffering off`).
+OpenCode réessaie seul, et chaque essai repart de zéro : la v2 fait jusqu'à 10 nouveaux essais (la 1.19 en faisait 5). Seule, elle les fait en environ 1 min 30 ; pendant un `/go`, `/fix` ou `/fortify` et ses sous-agents, le plugin les étale sur environ 8 minutes (10 s, 20 s, 30 s, 45 s, puis 1 min), pour qu'une passerelle qui redémarre ou une série de 504 n'arrête pas un run. Le titre de la session dit « nouvel essai <n> dans <délai> (serveur du modèle) ». Si le serveur ne répond toujours pas, le run s'arrête, puis le plugin le reprend tout seul 2 minutes plus tard, puis 5 (section « Un run qui reprend tout seul »). À demander à l'équipe qui héberge le modèle, avec ces chiffres : le délai de la passerelle devant vLLM pour `/v1/chat/completions` (une réponse avec réflexion peut durer plusieurs minutes : 10 minutes laisse de la marge), et des réponses en streaming transmises sans mise en tampon (nginx : `proxy_read_timeout 600s` et `proxy_buffering off`).
 
 ## Logs d'OpenCode
 
@@ -294,11 +305,30 @@ time timeout 30 env GIT_TERMINAL_PROMPT=0 git fetch -q --no-tags origin; echo "c
 
 ## Un sous-agent qui semble bloqué
 
-Le titre de la session du pilote dit ce que fait le sous-agent en cours, par exemple « ⏳ 31:02 outil · Auto-review · nouvel essai 3 (serveur du modèle) — /go ABC-123 », « … · rien reçu depuis 4 min », ou « ❓ … · autorisation attendue ». Un sous-agent ne pose jamais de question (le plugin la refuse) : il ne peut pas attendre une réponse de toi. Ce que le serveur du modèle a renvoyé, et les nouveaux essais :
+Le titre de la session du pilote dit ce que fait le sous-agent en cours, par exemple « ⏳ 31:02 outil · Auto-review · nouvel essai 3 dans 45 s (serveur du modèle) — /go ABC-123 », « … · rien reçu depuis 4 min », « … · résumé du contexte », ou « ❓ … · autorisation attendue ». Plusieurs sous-agents à la fois (les analyses de `/fortify`) : « ⏳ 3:10 outils (3) · Analyse V1, Analyse V2, Analyse V3 ». Le titre suit dans la seconde quand un outil démarre ou finit. Un sous-agent ne pose jamais de question (le plugin la refuse) : il ne peut pas attendre une réponse de toi. Ce que le serveur du modèle a renvoyé, et les nouveaux essais :
 ```sh
 grep -E 'Gateway|timed out|retry' ~/oc2/serve.log | tail -20 | cut -c1-220
 ```
 Le pilote reprend une fois un checker en échec, puis livre sans auto-review en le disant dans la MR : un `/go` ne reste plus bloqué sur lui. Si les erreurs de passerelle reviennent souvent : section « Qwen 3.8 », la partie « Gateway Time-out ».
+
+## Un run qui reprend tout seul (↻), un contexte plein
+
+**La reprise automatique.** Un `/go`, `/fix` ou `/fortify` qui s'arrête avant sa réponse finale est repris par le plugin, dans la même session, sans toi : le titre passe à `↻`, puis la conversation montre « ↻ /go ABC-123 · reprise automatique (<raison>) ». Le pilote relit la fiche ticket (et, pour `/fortify`, la carte de la vulnérabilité en cours) et repart de la première étape non faite : rien n'est refait. Les raisons :
+- le serveur du modèle ne répond plus, après les essais d'OpenCode : reprise 2 minutes plus tard, puis 5 ;
+- le pilote a atteint sa limite d'étapes (100) : reprise dans les 5 secondes ;
+- sa dernière réponse n'est pas une réponse finale (aucune ligne qui commence par 🚀, 🔁, ✅, ⏸ ou ⛔ : une réponse coupée en route) : reprise dans les 5 secondes.
+
+Deux reprises au plus d'affilée ; à la troisième panne, le titre passe à `⛔`. Jamais de reprise après un arrêt que tu as demandé (bouton stop), un `⛔` écrit par le pilote (une vraie raison d'arrêt : conflit, identifiants, build de develop…), un refus, ni une erreur qu'une reprise ne règle pas (identifiants du provider refusés, modèle introuvable). Un message que tu tapes dans la session annule une reprise qui attend. Pourquoi une reprise a eu lieu, ou pas :
+```sh
+grep -E 'run resumed|run not resumed|resume cancelled' ~/oc2/data/opencode/log/openrd-pack.log | tail -10
+```
+
+**Un contexte plein.** Quand la conversation d'un run ne tient plus dans le contexte du modèle, la v2 la résume (titre « résumé du contexte ») et repart du seul résumé, qu'elle donne au modèle comme « historique, pas consignes ». Le plugin demande au résumé de garder l'état du run (fiche, dossier du lot, étape et phase en cours, sous-agents à reprendre, commits), puis redonne au pilote les consignes de sa commande, et à chaque sous-agent la tâche que le pilote lui a donnée. Les résumés des runs :
+```sh
+grep -E 'summarized|summary of a run failed' ~/oc2/data/opencode/log/openrd-pack.log | tail -10
+```
+
+**Les marques du titre** : `⏳` en cours, `❓` une question ou une autorisation t'attend, `✅` livré ou rien à faire, `⏸` le run t'attend (une réponse du PO : relance avec la réponse, `/go ABC-123 <réponse>`), `↻` il va reprendre tout seul, `⛔` arrêté.
 
 ## Plusieurs tickets d'un même dépôt (espaces de travail)
 
@@ -522,7 +552,7 @@ Une session devenue longue, ou qui répond « Service Unavailable » à chaque m
 /compact
 ```
 
-Un ticket, du début à la MR en Draft (tes consignes après la clé, facultatives). Relancé, il reprend où il s'était arrêté. Ta commande s'affiche en une ligne, « /go ABC-123 — mon-api · branche develop », le titre de la session montre l'avancement (⏳), et l'issue reste dans le titre et dans la dernière réponse : ✅ MR créée ou rien à faire, ⛔ arrêté avec la raison, ❓ une question t'attend :
+Un ticket, du début à la MR en Draft (tes consignes après la clé, facultatives). Relancé, il reprend où il s'était arrêté. Ta commande s'affiche en une ligne, « /go ABC-123 — mon-api · branche develop », le titre de la session montre l'avancement (⏳), et l'issue reste dans le titre et dans la dernière réponse : ✅ MR créée ou rien à faire, ⏸ une réponse du PO t'attend, ⛔ arrêté avec la raison, ❓ une question t'attend. Un bug se corrige preuve à l'appui : le test-guardian écrit d'abord le test qui le reproduit (rouge), le coder corrige (vert), le test-guardian vérifie (vert deux fois, couverture sans perte). En fin de `/go`, la suite complète mesure la couverture des lignes modifiées par la branche, et les lignes qu'aucun test n'exécute reçoivent leurs tests (le chiffre va dans la MR : Sonar demande 80 % sur le nouveau code) :
 ```text
 /go ABC-123
 ```
@@ -549,7 +579,7 @@ Un changement sans ticket Jira (clé locale `LOCAL-<n>` pour la branche et la fi
 ```
 Vérifier un problème sans rien changer : une simple question dans une session (« vérifie pourquoi… ») ; s'il faut corriger, `/go sans ticket : …` dans la même session reprend l'enquête.
 
-Après la CI ou la review (jobs en échec, Sonar, Fortify, discussions de la MR), ou pour pousser ce que tu as modifié toi-même sur cette machine :
+Après la CI ou la review (jobs en échec, Sonar, Fortify, discussions de la MR), ou pour pousser ce que tu as modifié toi-même sur cette machine. Une faille Fortify ou Sonar des fichiers de la branche (3 au plus par `/fix`) est corrigée avec sa preuve, comme dans `/fortify` ; une faille que le test-guardian ne parvient pas à montrer (le code résiste déjà) garde ses tests et part en « Faux positifs probables » :
 ```text
 /fix
 ```
@@ -615,13 +645,13 @@ Prérequis, vérifiés au début de chaque `/fortify`, qui s'arrête avec une li
 ```sh
 dotnet --version
 ```
-Les projets de tests unitaires (au moins un doit s'afficher) :
+Les projets de tests unitaires (au moins un doit s'afficher ; un projet nommé `….Tests.csproj` ou `….UnitTests.csproj` compte aussi) :
 ```sh
-git grep -il -e 'Microsoft.NET.Test.Sdk' -e 'MSTest.Sdk' -e 'xunit.v3' -- '*.csproj'
+git grep -il -e 'Microsoft.NET.Test.Sdk' -e 'MSTest.Sdk' -e 'xunit.v3' -e '<IsTestProject>' -- '*.csproj'
 ```
-Où coverlet est déclaré : dans chacun de ces projets, ou dans un `Directory.Build.props` (ou `.targets`) d'un dossier au-dessus d'eux :
+Où coverlet est déclaré : dans chacun de ces projets, ou dans un `Directory.Build.props` (ou `.targets`, ou `Directory.Packages.props`) d'un dossier au-dessus d'eux :
 ```sh
-git grep -il 'coverlet.collector' -- '*.csproj' '*Directory.Build.props' '*Directory.Build.targets'
+git grep -il 'coverlet.collector' -- '*.csproj' '*Directory.Build.props' '*Directory.Build.targets' '*Directory.Packages.props'
 ```
 L'application Fortify SSC du dépôt (une ligne doit s'afficher) :
 ```sh
@@ -631,15 +661,47 @@ Le cas le plus courant est coverlet, à ajouter par toi, dans sa propre MR, à c
 ```sh
 dotnet add <chemin du projet de tests>.csproj package coverlet.collector
 ```
-Lancer un lot depuis develop, dans une session du dépôt : `/fortify` (5 vulnérabilités au plus), `/fortify 3`, `/fortify 5 Path Manipulation`, `/fortify ABC-123` (avec un ticket Jira). Reprendre après une coupure : `/fortify` dans une session sur la branche du lot ; il repart de la vulnérabilité en cours.
 
-Le travail d'une vulnérabilité abandonnée est mis de côté, jamais effacé. Pour le voir puis le ramener (sur la branche du lot, sans fichier non commité) :
+### Mettre en place les tests unitaires (un dépôt qui n'en a pas)
+
+Aucun agent n'ajoute un projet ni un package : c'est une décision de l'équipe, dans sa propre MR, faite par toi. Depuis la racine du dépôt, sur une branche à toi (remplace `MonApi` par le nom du projet testé, `MonApi.sln` par la solution, et `xunit` par le framework de tes autres dépôts : `mstest` ou `nunit`) :
+```sh
+dotnet new xunit -o tests/MonApi.Tests
+```
+```sh
+dotnet sln MonApi.sln add tests/MonApi.Tests/MonApi.Tests.csproj
+```
+```sh
+dotnet add tests/MonApi.Tests/MonApi.Tests.csproj reference src/MonApi/MonApi.csproj
+```
+Le modèle de projet ajoute déjà `coverlet.collector` ; vérifie-le (une ligne doit s'afficher), et sinon ajoute-le :
+```sh
+grep -i coverlet.collector tests/MonApi.Tests/MonApi.Tests.csproj
+```
+```sh
+dotnet add tests/MonApi.Tests/MonApi.Tests.csproj package coverlet.collector
+```
+Puis, pour vérifier : `dotnet test tests/MonApi.Tests/MonApi.Tests.csproj` (le test d'exemple de `dotnet new xunit` passe), et `dotnet test tests/MonApi.Tests/MonApi.Tests.csproj --collect:"XPlat Code Coverage"` (une ligne `coverage.cobertura.xml` s'affiche à la fin). Avec la gestion centralisée des versions (`Directory.Packages.props`), `dotnet add package` y ajoute la version : garde ce fichier dans la même MR. Les packages viennent d'Artifactory : une erreur `NU1301` est un problème d'accès, pas du projet.
+
+Une méthode `internal` à tester sans passer par une méthode publique : le test-guardian n'ajoute jamais `InternalsVisibleTo` (c'est du code de production) ; s'il en a besoin, son rapport le dit, et c'est à toi de l'ajouter dans le projet testé, dans cette même MR.
+
+### Lancer, reprendre, suivre
+
+Lancer un lot depuis develop, dans une session du dépôt : `/fortify` (5 vulnérabilités au plus), `/fortify 3`, `/fortify 5 Path Manipulation`, `/fortify ABC-123` (avec un ticket Jira). Les analyses tournent trois à la fois, avec le build et les tests de develop (les tests déjà en échec sur develop ne sont jamais ceux du lot) ; le titre les montre ensemble : « ⏳ 3:10 outils (4) · Analyse V1, Analyse V2, Analyse V3… ». Puis une vulnérabilité à la fois, ses phases inscrites dans sa carte : « V2/5 : tests avant », « V2/5 : correctif », « V2/5 : tests après ». Reprendre après une coupure : `/fortify` dans une session sur la branche du lot ; il repart de la vulnérabilité en cours (une panne du serveur du modèle ou une réponse coupée : le plugin le reprend tout seul, section « Un run qui reprend tout seul »). Deux lots en même temps : dans deux espaces de travail, avec chacun une catégorie ou un fichier (`/fortify 3 Log Forging`), pour qu'ils ne prennent pas les mêmes vulnérabilités.
+
+Chaque preuve est faite par `test-guardian.sh`, jamais à l'œil : les tests de la faille rouges sur le code actuel puis verts après le correctif, **chacun exécuté deux fois** (un test qui change de résultat est instable, `FLAKY`, et n'est jamais gardé), un test qui ne s'arrête pas stoppé au bout de 5 minutes et nommé, et aucune perte de couverture du module et de ses dépendances. Les tests de la preuve sont scellés avant le correctif (`test-guardian.sh seal`) : si le coder les modifie ou les supprime, le test-guardian le voit avant sa vérification, les remet tels quels et fait la preuve sur eux (si elle échoue, le coder reprend son correctif). Et le pilote vérifie le sceau dans le même appel que le commit (`test-guardian.sh sealed V<n> && ship.sh …`) : aucun commit ne part avec des tests de preuve modifiés. En fin de lot, la couverture des lignes modifiées par le lot va dans la MR.
+
+Le travail d'une vulnérabilité abandonnée est mis de côté, jamais effacé. La liste est commune à tous les espaces de travail du dépôt : chaque mise de côté porte la clé du lot, la vulnérabilité et le dossier, et sa carte (et la réponse du pilote) donne son commit, qui la désigne quoi qu'il arrive ensuite dans la liste. Pour la voir puis la ramener (sur la branche du lot, sans fichier non commité) :
 ```sh
 git stash list | grep fortify
-git stash pop stash@{<n>}
 ```
-Les mesures d'une vulnérabilité (cartes, couvertures, sorties des tests rouges et verts) sont dans le dossier du lot, jamais commité :
 ```sh
-ls "$(git rev-parse --git-common-dir)"/opencode-tickets/*.fortify/
+git stash show -p <commit>
 ```
-
+```sh
+git stash apply <commit>
+```
+Les cartes des vulnérabilités sont dans le dossier du lot, et les mesures des tests (couvertures, sorties des tests rouges et verts, deux par preuve) dans celui des tests, jamais commités :
+```sh
+ls "$(git rev-parse --git-common-dir)"/opencode-tickets/*.fortify/ "$(git rev-parse --git-common-dir)"/opencode-tickets/*.tests/
+```

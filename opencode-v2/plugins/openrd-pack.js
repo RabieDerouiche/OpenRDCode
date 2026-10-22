@@ -1,5 +1,6 @@
 // OpenCode v2 plugin of the pack: ~/.config/opencode/plugins/openrd-pack.js (restart OpenCode after a change).
-// Written for OpenCode v2.1.2 (Plugin.define, hooks by domain, the v2 event stream). What it does:
+// Written for OpenCode v2.1.3 (Plugin.define, hooks by domain, the v2 event stream), tested with v2.1.2 and v2.1.3.
+// What it does:
 //
 // 1. Runs the "[[run <script> <arguments>]]" lines of the pack's commands with the pack's scripts, in the git root of
 //    the folder of the session, before the prompt reaches the model. Each script runs without a terminal (git or ssh
@@ -21,11 +22,14 @@
 //    that turn failed or was stopped, and never in a subagent's session. Agents cannot run a command.
 // 5. Shows the progress of the agent in the session title while it works, for example
 //    "⏳ 1:42 réflexion 2,3k tokens — <title>", and while a subagent works, what it waits for ("⏳ 31:02 outil ·
-//    Auto-review · nouvel essai 3 (serveur du modèle)", "… · rien reçu depuis 4 min", "❓ … · autorisation attendue").
-//    Phases: préparation (the scripts of the command), attente du modèle, réflexion, rédaction, outil (with its
-//    description), réponse or autorisation attendue (a question or an approval waits for me), nouvel essai (error of
-//    the model server, OpenCode retries), and "rien reçu depuis <n> s" when the model has sent nothing for 30 s. The
-//    title comes back as it was when the turn ends. Never in a subagent's session, never on a session OpenCode has not
+//    Auto-review · nouvel essai 3 dans 45 s (serveur du modèle)", "… · rien reçu depuis 4 min", "❓ … · autorisation
+//    attendue"). Several tools or subagents at once (the analyses of /fortify): "⏳ 3:10 outils (3) · Analyse V1,
+//    Analyse V2, Analyse V3", and what the first of them that waits waits for. Phases: préparation (the scripts of the
+//    command), attente du modèle, réflexion, rédaction, outil (with its description), réponse or autorisation attendue
+//    (a question or an approval waits for me), nouvel essai (error of the model server, OpenCode retries), résumé du
+//    contexte (the conversation is summarized, 17), and "rien reçu depuis <n> s" when the model has sent nothing for
+//    30 s. The title follows every 10 s, and within a second when a tool starts or ends, a retry or a summary begins.
+//    It comes back as it was when the turn ends. Never in a subagent's session, never on a session OpenCode has not
 //    named yet (its title generation would be lost).
 // 6. Refuses an agent's shell command that sets PATH or DOTNET_ROOT, or that writes a credential (an assignment or an
 //    export of a password, token, secret or Artifactory variable, a password in a URL, in curl -u or in a NuGet source):
@@ -60,7 +64,8 @@
 //    the turn a restart interrupted, and the plugin keeps the folder for that resumed run (freed after 2 minutes if
 //    the run does not start again).
 // 10. Leaves the outcome of a /go, /fix or /fortify in the session title once it ends: "✅ " (merge request created
-//    or updated, nothing left to do) or "⛔ " (stopped: its answer holds ⛔, or the run failed or was stopped). The mark
+//    or updated, nothing left to do), "⏸ " (waits for me: an answer of the product owner), "↻ " (resumes by itself
+//    soon, 19) or "⛔ " (stopped: its answer holds ⛔, or the run failed or was stopped and is not resumed). The mark
 //    goes away when the next turn of the session starts.
 // 11. Runs a build tool called by its full path (`~/.bin/dotnet build`, `/usr/bin/git log`) by its name (`dotnet
 //    build`): the permission rules of the agents name the tools, and the folder of the tool is outside the repository.
@@ -87,10 +92,25 @@
 // 16. Refuses the third identical tool call (same tool, same input) of one answer of the model, as 1.19 did with its
 //    "doom_loop" rule (v2 no longer detects it): a model stuck in a loop gets an error and changes its approach, or
 //    its subagent ends with an error the pilot handles, instead of running the same call again and again.
+// 17. Keeps a run of /go, /fix or /fortify on its procedure when its context is full. OpenCode v2 then summarizes the
+//    conversation and goes on from the summary alone, which it gives the model as "historical context, not new
+//    instructions": the instructions of the command and the task of a subagent would be lost. The summary is asked to
+//    keep the state of the run (ticket, sheet, batch folder, current step and phase, sessionIDs of the subagents,
+//    commits), then every request that follows gets back, as instructions, the procedure of the command (the pilot,
+//    who first reads the ticket sheet again) or the task the pilot gave (a subagent).
+// 18. Gives the model server more time on a run of /go, /fix or /fortify and its subagents: OpenCode retries a failed
+//    request 10 times within about 1.5 minutes, then the run fails; the same 10 retries are spread over about 8
+//    minutes (a gateway that restarts, a 504 storm). A conversation keeps OpenCode's own timing.
+// 19. Resumes a run of /go, /fix or /fortify that ended before its final answer, without me: after a failure of the
+//    model server (once its retries are spent: 2 minutes later, then 5), or when the pilot ended its turn without its
+//    final report (its step limit, or a model that stops halfway). The pilot gets, in the same session, a message that
+//    tells it to read the ticket sheet again and to go on from the first step not done: nothing is redone. Two
+//    automatic resumes at most in a row; never after a stop I asked for, a ⛔ of the run, or a refusal; a message I
+//    type cancels a resume that waits.
 // Every refusal of 6, 7, 9, 12 and 16 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
-// the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". Any error
-// leaves the prompt or the call as it is.
+// the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
+// the summaries of a run (17) and its automatic resumes (19). Any error leaves the prompt or the call as it is.
 import { execFile, execFileSync, spawn } from "node:child_process"
 import { Plugin } from "@opencode/plugin"
 import {
@@ -147,11 +167,12 @@ const RECOMMENDED = /\s*\((?:recommandé|recommended)\)\s*$/i
 const CHOICE = /^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?$/i
 // Progress in the title
 const PROGRESS = /^(?:⏳|❓) [^—]*— /
-// Outcome of the last /go, /fix or /fortify of a session (10)
-const OUTCOME = /^(?:✅|⛔) /
+// Outcome of the last /go, /fix or /fortify of a session (10): delivered, waits for me, resumes by itself, stopped
+const OUTCOME = /^(?:✅|⏸|↻|⛔) /
 // The title of a session OpenCode has not named yet
 const DEFAULT_TITLE = /^(New session - |Child session - )\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 const TICK_MS = 10000
+const NUDGE_MS = 1000
 const SILENCE_MS = 30000
 // Shell commands that set the environment or write a credential (point 6). An assignment starts a command (start of
 // the text, after ; & | ( ` or a new line), possibly after export/declare/typeset/readonly/local/env and other
@@ -162,7 +183,7 @@ const SETS_ENVIRONMENT = new RegExp(ASSIGN + String.raw`(?:PATH|DOTNET_ROOT\w*)=
 const SETS_SECRET = new RegExp(ASSIGN + String.raw`(?:\w*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_?KEY|CREDENTIALS?)\w*|ARTIFACTORY\w*)=`, "i")
 const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
 // Commands that take minutes (8): a build or tests, a restore, the front-end tooling; the pack's git scripts
-const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*fortify\.sh\s+(?:prereq|coverage|red|green)|dotnet\s+(?:build|test|restore|format|ef|clean)|npm\s+(?:test|ci|install|i|run\s+(?:test|build|lint))|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint))|yarn\s+(?:test|install|build|lint)|pnpm\s+(?:test|install|build|lint))(?=\s|$|[;&|)])/
+const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*fortify\.sh\s+prereq|\S*test-guardian\.sh\s+(?:coverage|red|green|changes)|dotnet\s+(?:build|test|restore|format|ef|clean)|npm\s+(?:test|ci|install|i|run\s+(?:test|build|lint))|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint))|yarn\s+(?:test|install|build|lint)|pnpm\s+(?:test|install|build|lint))(?=\s|$|[;&|)])/
 const GIT_SCRIPT = /(?:^|[\s;&|(])\S*(?:ship|branch)\.sh(?=\s|$)/
 // A build tool called by its full path at the start of a command (11): ~/.bin/dotnet, $HOME/.dotnet/dotnet, /usr/bin/git
 const TOOL_PATH = /(^\s*|[;&|(`\n]\s*)((?:~|\$\{HOME\}|\$HOME)?\/(?:[^\s;&|()<>'"`]*\/)?)(dotnet|node|npm|npx|yarn|pnpm|git)(?=$|[\s;&|)`])/g
@@ -554,23 +575,49 @@ const tokens = (chars) => {
 // "4 min" or "45 s"
 const since = (ms) => (ms >= 120000 ? Math.floor(ms / 60000) + " min" : Math.round(ms / 1000) + " s")
 
-// "⏳ 1:42 réflexion 2,3k tokens" for a run of a session; while a subagent works, what it waits for
-function progressLabel(state, now, child) {
+// " dans 45 s" before a retry that OpenCode scheduled for later (18), "" when it is due
+const retryIn = (item, now) => {
+  const at = Number(item && item.at)
+  return at && at - now >= 2000 ? " dans " + since(at - now) : ""
+}
+
+// The descriptions of the tools that run at once, in one short text: "Analyse V1, Analyse V2, Analyse V3"
+function toolList(texts) {
+  let out = ""
+  for (const text of texts) {
+    const next = out ? out + ", " + text : text
+    if (next.length > 70) return out ? out + "…" : text.slice(0, 69) + "…"
+    out = next
+  }
+  return out
+}
+
+// "⏳ 1:42 réflexion 2,3k tokens" for a run of a session; while tools or subagents work, what they do and what the
+// first of them that waits waits for. `subagents` gives the state of a subagent session.
+function progressLabel(state, now, subagents = new Map()) {
   const elapsed = clock(now - state.start)
   if (state.phase === "question") return "❓ " + elapsed + " réponse attendue"
   if (state.phase === "permission") return "❓ " + elapsed + " autorisation attendue"
   if (state.phase === "preparing") return "⏳ " + elapsed + " préparation"
+  if (state.phase === "compaction") return "⏳ " + elapsed + " résumé du contexte (conversation trop longue)"
   if (state.phase === "tool") {
-    const base = "⏳ " + elapsed + " outil · " + state.tool
-    if (!child) return base
-    if (child.phase === "question") return "❓ " + elapsed + " " + state.tool + " · réponse attendue"
-    if (child.phase === "permission") return "❓ " + elapsed + " " + state.tool + " · autorisation attendue"
-    if (child.phase === "retry") return base + " · nouvel essai " + child.attempt + " (serveur du modèle)"
-    const quiet = now - child.last
-    if (child.phase !== "tool" && quiet > SILENCE_MS) return base + " · rien reçu depuis " + since(quiet)
+    const running = [...(state.running || new Map()).values()]
+    const texts = running.length ? running.map((entry) => entry.text) : [state.tool]
+    const base = "⏳ " + elapsed + (texts.length > 1 ? " outils (" + texts.length + ") · " + toolList(texts) : " outil · " + texts[0])
+    const children = running.filter((entry) => entry.child && subagents.has(entry.child)).map((entry) => ({ text: entry.text, child: subagents.get(entry.child) }))
+    const asking = children.find((entry) => entry.child.phase === "question" || entry.child.phase === "permission")
+    if (asking) return "❓ " + elapsed + " " + asking.text + " · " + (asking.child.phase === "question" ? "réponse attendue" : "autorisation attendue")
+    const retrying = children.find((entry) => entry.child.phase === "retry")
+    if (retrying) return base + " · nouvel essai " + retrying.child.attempt + retryIn(retrying.child, now) + " (serveur du modèle)"
+    if (children.some((entry) => entry.child.phase === "compaction")) return base + " · résumé du contexte"
+    // silence: only when every subagent that runs has sent nothing for 30 s
+    if (children.length && children.every((entry) => entry.child.phase !== "tool")) {
+      const quiet = Math.min(...children.map((entry) => now - entry.child.last))
+      if (quiet > SILENCE_MS) return base + " · rien reçu depuis " + since(quiet)
+    }
     return base
   }
-  if (state.phase === "retry") return "⏳ " + elapsed + " nouvel essai " + state.attempt + " (serveur du modèle)"
+  if (state.phase === "retry") return "⏳ " + elapsed + " nouvel essai " + state.attempt + retryIn(state, now) + " (serveur du modèle)"
   const quiet = now - state.last
   if (quiet > SILENCE_MS) return "⏳ " + elapsed + " rien reçu depuis " + Math.round(quiet / 1000) + " s"
   if (state.phase === "reasoning") return "⏳ " + elapsed + " réflexion " + tokens(state.chars) + " tokens"
@@ -854,6 +901,27 @@ const PRUNE_PROTECTED_TOOLS = new Set(["skill"])
 const PRUNED = "[Old tool result content cleared]"
 // the end of a turn in v2 (durable execution events), and the status events of older shapes
 const TURN_END = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
+// 17. the first text of the message that replaces a summarized conversation (OpenCode v2.1.3)
+const CHECKPOINT = "<conversation-checkpoint>"
+// 17. what is kept of a procedure or of a task, and of how many sessions
+const PROCEDURE_MAX = 40000
+const TASK_MAX = 12000
+const REMEMBERED_SESSIONS = 200
+// 18. the least wait before each retry of a request of a run of the pack (OpenCode's attempts 2 to 11): about 8
+// minutes in all, against about 1.5 by default. Longer would only delay the resume of 19 when the server is down for
+// good, or when a gateway answers 503 to a request too long for the model (a wrong limit.context)
+const PATIENCE_MS = [0, 0, 10000, 20000, 30000, 45000, 60000, 60000, 60000, 60000, 60000, 60000]
+// 19. automatic resumes: how many in a row, and the wait before each one after a failure of the model server
+const RESUMES_MAX = 2
+const RESUME_AFTER_FAILURE_MS = [2 * 60000, 5 * 60000]
+const RESUME_AFTER_UNFINISHED_MS = 5000
+// 19. failures that a resume cannot solve (OpenCode v2.1.3 error types): the provider refuses the credentials, the
+// quota, the content or the request itself, the model is not configured, a permission was refused
+const FINAL_ERRORS = new Set(["provider.auth", "provider.quota", "provider.free-limit", "provider.content-filter",
+  "provider.invalid-request", "provider.unsupported-operation", "provider.no-route", "permission.rejected", "aborted"])
+const FINAL_STATUS = new Set([401, 402, 403])
+// 19. the line after [[command]] of a resume the plugin sends: "[[resume <reason, in French>]]"
+const RESUME_LINE = /^[ \t]*\[\[resume(?:[ \t]+([^\]\n]*))?\]\][ \t]*(?:\r?\n|$)/
 
 // JSON with comments and trailing commas, as OpenCode reads its configuration (strings kept as they are)
 const STRING = String.raw`"(?:\\.|[^"\\])*"`
@@ -924,14 +992,110 @@ export function prune(messages) {
 // The metadata of a user message that the web interface shows instead of its text
 const presentation = (metadata, displayText) => ({ ...(metadata && typeof metadata === "object" ? metadata : {}), displayText, comments: [], attachments: [] })
 
+// ---------- 17. a run that goes on after a summary of its conversation ----------
+// The text of a message of a request (a string, or parts)
+function messageText(message) {
+  const content = message && message.content
+  if (typeof content === "string") return content
+  if (!Array.isArray(content)) return ""
+  return content.map((part) => (part && typeof part.text === "string" ? part.text : "")).join("\n")
+}
+// Whether the messages of a request start from a summary of the conversation
+const summarized = (messages) =>
+  Array.isArray(messages) && messages.slice(0, 3).some((message) => message && message.role === "user" && messageText(message).trimStart().startsWith(CHECKPOINT))
+
+// The instructions of a pilot command as they reach the model, without the outputs of its scripts: they were true when
+// the run started, and the ticket sheet is newer
+function procedureOf(text) {
+  return String(text || "")
+    .replace(RUN, (match, script, args) => "(output of " + script + (args || "") + ": printed when the run started)")
+    .replace(VISIBLE, "\n")
+    .trim()
+    .slice(0, PROCEDURE_MAX)
+}
+
+// The instructions of a pilot command from its file, when this instance of the plugin did not see the run start (a
+// run resumed by OpenCode's background service after a restart, or the plugin loaded again during the run)
+function commandFile(command, args) {
+  const dir = process.env.OPENCODE_CONFIG_DIR || join(process.env.XDG_CONFIG_HOME || join(HOME, ".config"), "opencode")
+  try {
+    const body = readFileSync(join(dir, "commands", command + ".md"), "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "")
+    return procedureOf(body.replace(COMMAND_LINE, "").replaceAll("$ARGUMENTS", args || ""))
+  } catch {
+    return ""
+  }
+}
+
+const runName = (run) => "/" + run.command + (run.args ? " " + run.args : "")
+
+// What the summary of a run must keep (asked of the model that writes it)
+const keepRunNote = (run) =>
+  "## Summary of a run of the pack\n" +
+  "This session runs " + runName(run) + " of the pack, which goes on after this summary. Keep in the summary, " +
+  "exactly (in « Work State » and « Important Context »): the ticket key and the branch, the path of the ticket sheet " +
+  "and of the batch folder, the step or the vulnerability under way and its phase, the sessionID and the role of each " +
+  "subagent that may be taken up again (for example the test-guardian of V2, the coder of step 3), the commits made " +
+  "(hash and message), the merge request link, the tests that already failed on develop, the decisions recorded, and " +
+  "the failures met with the rounds already spent on them. The instructions of the command are given again after the " +
+  "summary: do not copy them."
+
+// What every request of a run gets after a summary: its procedure, as instructions
+const procedureNote = (run, text) =>
+  "## The run of /" + run.command + " goes on after a summary\n" +
+  "The conversation of this run was summarized to fit the context of the model (the conversation checkpoint). The " +
+  "instructions of /" + run.command + " still apply, unchanged: they are below, as the run started; the outputs of " +
+  "its scripts were printed at that time, and the ticket sheet, git and the batch folder are newer. If you have not " +
+  "done it since the checkpoint, first run `sh ~/.config/opencode/scripts/workflow-state.sh --no-fetch --sheet` (for " +
+  "/fortify, also read the card of the vulnerability under way), then go on from the first step that is not done. " +
+  "Never redo a step whose commit or tick exists; take up a subagent again with its sessionID when the checkpoint " +
+  "gives it.\n\n<instructions of /" + run.command + ">\n" + text + "\n</instructions of /" + run.command + ">"
+
+// What the summary of a subagent must keep
+const KEEP_TASK_NOTE =
+  "## Summary of the work of a subagent\n" +
+  "This session is a subagent of the pack working on ONE task for the pilot, and it goes on after this summary. Keep " +
+  "in the summary, exactly: the files read and changed (paths), the commands run with their result lines (BUILD, " +
+  "TESTS, RED, GREEN, FLAKY, COVERAGE, STOP), the decisions taken with their reasons, what remains to do, and the " +
+  "report the task must end with. The task itself is given again after the summary: do not copy it."
+
+// What every request of a subagent gets after a summary: its task, as instructions
+const taskNote = (texts) =>
+  "## Your task goes on after a summary\n" +
+  "Your conversation was summarized to fit the context of the model (the conversation checkpoint). Your task, as the " +
+  "pilot gave it, still applies unchanged; it is below. What you already did is in the checkpoint and in the files: " +
+  "look at them (git status, the files you changed) before going on, never redo what is done, and end with your " +
+  "report in the format of your instructions.\n\n<task>\n" + texts.join("\n\n(Then the pilot wrote:)\n") + "\n</task>"
+
+// ---------- 19. automatic resumes ----------
+// A mark of the final answer of a pilot run, at the start of one of its lines (a ✅ in a table cell is no outcome)
+const MARK_LINE = /^[\s>*_#|-]*(🚀|🔁|✅|⏸|⛔)/u
+// The answer the model writes when OpenCode stops its tools at the step limit of the agent
+const STEP_LIMIT = /maximum (?:number of )?steps|step limit|nombre max(?:imum|imal) d'étapes|max(?:imum)? d'étapes|limite d'étapes/i
+
+// The text OpenCode gives the pilot when the plugin resumes its run
+const resumeText = (run, why) =>
+  "The run of " + runName(run) + " stopped before its end: " + why.en + ". Continue it now, in this session, without " +
+  "asking anything:\n" +
+  "1. `sh ~/.config/opencode/scripts/workflow-state.sh --no-fetch --sheet`: the ticket sheet says what is done (its " +
+  "ticked steps and its « ## Suivi » lines), git what is committed" +
+  (run.command === "fortify" ? "; the card of the vulnerability under way, in the batch folder that `sh ~/.config/opencode/scripts/fortify.sh batch` prints, says which of its phases are done" : "") +
+  (run.command === "fix" ? "; `git log` shows the fixes this run already committed" : "") +
+  ".\n2. Go on with the instructions of /" + run.command + " from the first step that is not done. Never redo a step " +
+  "whose commit or tick exists; a subagent whose report you have is not called again, and one that failed is taken up " +
+  "again with its sessionID.\n3. End with the final answer of /" + run.command + ", in its format."
+
 export default Plugin.define({
   id: "openrd-pack",
   setup: async (ctx) => {
     const options = (ctx && ctx.options) || {}
     const tickMs = Number(options.tickMs) > 0 ? Number(options.tickMs) : TICK_MS
+    const nudgeMs = Math.min(NUDGE_MS, tickMs)
     const mcpWaitMs = Number(options.mcpWaitMs) >= 0 ? Number(options.mcpWaitMs) : MCP_WAIT_MS
     const mcpBootMs = Number(options.mcpBootMs) >= 0 ? Number(options.mcpBootMs) : MCP_BOOT_MS
     const adoptMs = Number(options.adoptMs) > 0 ? Number(options.adoptMs) : ADOPT_MS
+    const resumeFailureMs = Array.isArray(options.resumeFailureMs) ? options.resumeFailureMs.map(Number) : RESUME_AFTER_FAILURE_MS
+    const resumeUnfinishedMs = Number(options.resumeUnfinishedMs) >= 0 ? Number(options.resumeUnfinishedMs) : RESUME_AFTER_UNFINISHED_MS
+    const patienceMs = Array.isArray(options.patienceMs) ? options.patienceMs.map(Number) : PATIENCE_MS
     const directory = String((ctx && ctx.location && ctx.location.directory) || process.cwd())
     const git = (args, cwd) => {
       try {
@@ -1045,9 +1209,23 @@ export default Plugin.define({
       entry.calls.set(signature, count)
       return count >= LOOP_CALLS
     }
-    // 5. session id -> progress of its current turn; subagent session -> { phase, attempt, last }
+    // 5. session id -> progress of its current turn; subagent session -> { phase, attempt, at, last }
     const runs = new Map()
     const subagents = new Map()
+    // 17. session id -> the instructions of the pilot command it runs { command, args, text }; subagent session id ->
+    // its task (the first prompt of the pilot, then the last ones that took it up again)
+    const procedures = new Map()
+    const tasks = new Map()
+    const remember = (map, key, value) => {
+      map.delete(key)
+      map.set(key, value)
+      if (map.size > REMEMBERED_SESSIONS) map.delete(map.keys().next().value)
+    }
+    // 19. session id -> automatic resumes in a row; session id -> the timer of the resume that waits
+    const resumes = new Map()
+    const resumeTimers = new Map()
+    // 19. the sessions whose last request was the one OpenCode sends at the step limit of the agent (tools disabled)
+    const stepLimited = new Set()
     // tool call id -> tool name (the v2 events give it once); session id -> the texts of its last answer (10)
     const toolNames = new Map()
     const answers = new Map()
@@ -1073,9 +1251,9 @@ export default Plugin.define({
         return !!error && error.code === "EPERM"
       }
     }
-    const writeLock = (sessionID, command, since) => {
+    const writeLock = (sessionID, command, since, args = "") => {
       if (!lockFile) return true
-      const data = JSON.stringify({ session: sessionID, command, since, pid: process.pid, host: hostname() })
+      const data = JSON.stringify({ session: sessionID, command, args, since, pid: process.pid, host: hostname() })
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           const fd = openSync(lockFile, "wx", 0o600)
@@ -1104,12 +1282,12 @@ export default Plugin.define({
       return false
     }
     // the run that holds the folder, or undefined when this session may run
-    const acquire = (sessionID, command) => {
+    const acquire = (sessionID, command, args) => {
       const now = Date.now()
       for (const [id, item] of runningPilots) if (now - item.since > LOCK_MS) runningPilots.delete(id)
       const other = [...runningPilots.entries()].find(([id]) => id !== sessionID)
       if (other) return other[1]
-      if (!writeLock(sessionID, command, now)) {
+      if (!writeLock(sessionID, command, now, args)) {
         const lock = readLock() || {}
         return { command: "/" + (lock.command || "go"), since: lock.since || now, elsewhere: true }
       }
@@ -1142,10 +1320,11 @@ export default Plugin.define({
         if (!lock || typeof lock.since !== "number" || Date.now() - lock.since > LOCK_MS) return
         if (lock.host !== hostname() || lock.pid === process.pid || held(lock)) return
         if (typeof lock.session !== "string" || !lock.session || !PILOT_COMMANDS.has(lock.command)) return
+        const args = typeof lock.args === "string" ? lock.args : ""
         unlinkSync(lockFile)
-        if (!writeLock(lock.session, lock.command, lock.since)) return
+        if (!writeLock(lock.session, lock.command, lock.since, args)) return
         runningPilots.set(lock.session, { command: "/" + lock.command, since: lock.since })
-        commandRuns.set(lock.session, { command: lock.command, args: "", pilot: true })
+        commandRuns.set(lock.session, { command: lock.command, args, pilot: true })
         mine.add(lock.session)
         adopted = { session: lock.session, started: false }
         const timer = setTimeout(() => {
@@ -1189,7 +1368,8 @@ export default Plugin.define({
       let state = runs.get(sessionID)
       if (!state) {
         const now = Date.now()
-        state = { start: now, last: now, chars: 0, phase: "waiting", tool: "", attempt: 0 }
+        // running: tool call id -> { text, child } of each tool that runs (several at once: 5)
+        state = { start: now, last: now, chars: 0, phase: "waiting", tool: "", attempt: 0, running: new Map() }
         runs.set(sessionID, state)
         if (!ticker) {
           ticker = setInterval(() => {
@@ -1205,6 +1385,17 @@ export default Plugin.define({
       }
       if (phase) state.phase = phase
       return state
+    }
+
+    // A change worth showing now (tools that start or end, a retry, a summary): the title within a second, once for
+    // the changes of that second, instead of at the next tick
+    function nudge(sessionID, state) {
+      if (!state || state.nudged || state.done) return
+      state.nudged = setTimeout(() => {
+        state.nudged = undefined
+        void show(sessionID, state)
+      }, nudgeMs)
+      if (state.nudged && typeof state.nudged.unref === "function") state.nudged.unref()
     }
 
     async function show(sessionID, state) {
@@ -1223,7 +1414,7 @@ export default Plugin.define({
         if (current !== state.written) state.original = current.replace(PROGRESS, "").replace(OUTCOME, "")
         // never on a session OpenCode has not named yet: its title generation would be thrown away
         if (!state.original || DEFAULT_TITLE.test(state.original)) return
-        const title = progressLabel(state, Date.now(), state.child && subagents.get(state.child)) + " — " + tagged(state.original)
+        const title = progressLabel(state, Date.now(), subagents) + " — " + tagged(state.original)
         if (title === current) return
         await rename(sessionID, title)
         state.written = title
@@ -1256,7 +1447,8 @@ export default Plugin.define({
       if (!state) return
       runs.delete(sessionID)
       state.done = true
-      if (state.child) subagents.delete(state.child)
+      if (state.nudged) clearTimeout(state.nudged)
+      for (const entry of state.running.values()) if (entry.child) subagents.delete(entry.child)
       await restore(sessionID, state)
     }
 
@@ -1273,27 +1465,100 @@ export default Plugin.define({
         // the title stays as it is
       }
     }
+    // The mark of the last answer of a pilot run: "⛔ " (stopped), "⏸ " (waits for me), "✅ " (delivered, or nothing
+    // left to do), "" (no final answer: 19). The marks of the final answers start a line (a ✅ in a table cell is no
+    // outcome); a ⛔ anywhere is a stop.
     const outcomeOf = (sessionID) => {
       const text = ((answers.get(sessionID) || {}).texts || []).join("\n")
+      const marks = text.split("\n").map((line) => (MARK_LINE.exec(line) || [])[1]).filter(Boolean)
       // a stop wins over everything else of the answer (a table of done steps may hold ✅ before it)
       if (text.includes("⛔")) return "⛔ "
-      if (/🚀|🔁|✅/u.test(text)) return "✅ "
+      if (marks.includes("⏸")) return "⏸ "
+      if (marks.length) return "✅ "
       return ""
     }
 
-    // The end of a turn: the title without progress, the outcome of a pilot run, the folder free, the command chosen
-    // in a question started
+    // ---------- 19. a run that ended before its final answer resumes by itself ----------
+    // Why a pilot run that just ended is resumed, as { fr, en, failure }, or undefined. `limited`: its last request
+    // was the one OpenCode sends at the step limit of the agent, tools disabled.
+    function resumeReason(type, data, mark, limited) {
+      if (type === "session.execution.failed") {
+        const error = (data && data.error) || {}
+        if (FINAL_ERRORS.has(error.type) || FINAL_STATUS.has(Number(error.status))) return undefined
+        const what = String(error.message || error.type || "error").replace(/\s+/g, " ").slice(0, 160)
+        if (String(error.type || "").startsWith("compaction")) {
+          return { fr: "résumé du contexte en échec", en: "OpenCode could not summarize the conversation (" + what + ")", failure: true }
+        }
+        return { fr: "panne du serveur du modèle", en: "the model server failed after OpenCode's retries (" + what + ")", failure: true }
+      }
+      if (type === "session.execution.interrupted") {
+        if (data && data.reason === "inactivity") return { fr: "tour interrompu par OpenCode", en: "OpenCode interrupted the turn (inactivity)", failure: true }
+        return undefined
+      }
+      if (type !== "session.execution.succeeded") return undefined
+      if (limited) return { fr: "limite d'étapes du pilote atteinte", en: "you reached the step limit of your agent and OpenCode disabled your tools", failure: false }
+      if (!mark) return { fr: "réponse finale manquante", en: "your last answer did not end the run (it has no final report line starting with 🚀, 🔁, ✅, ⏸ or ⛔)", failure: false }
+      return undefined
+    }
+
+    // Plans the resume of a run; false when two resumes in a row were already made
+    function scheduleResume(sessionID, run, why) {
+      const done = resumes.get(sessionID) || 0
+      if (typeof api.prompt !== "function") return false
+      if (done >= RESUMES_MAX) {
+        log("run not resumed: " + RESUMES_MAX + " automatic resumes in a row already", { command: "/" + run.command, reason: why.en })
+        return false
+      }
+      resumes.set(sessionID, done + 1)
+      const delay = why.failure ? resumeFailureMs[Math.min(done, resumeFailureMs.length - 1)] || 0 : resumeUnfinishedMs
+      const previous = resumeTimers.get(sessionID)
+      if (previous) clearTimeout(previous)
+      const timer = setTimeout(() => {
+        resumeTimers.delete(sessionID)
+        resumeRun(sessionID, run, why).catch(() => {})
+      }, delay)
+      if (timer && typeof timer.unref === "function") timer.unref()
+      resumeTimers.set(sessionID, timer)
+      log("run resumed in " + Math.round(delay / 1000) + " s", { command: "/" + run.command, resume: done + 1, reason: why.en })
+      return true
+    }
+
+    // The resume itself: a message to the pilot, in its session, that the plugin handles as a run of the command
+    async function resumeRun(sessionID, run, why) {
+      // a turn that started meanwhile (a message I typed) replaces the resume
+      if (runs.has(sessionID)) return
+      const info = await sessionInfo(sessionID)
+      if (!info || info.parentID) return
+      // another agent was chosen in the session since the run: I am there, nothing to resume
+      if (info.agent !== undefined && info.agent !== "pilot") {
+        log("run not resumed: the session is on another agent now", { command: "/" + run.command })
+        await markOutcome(sessionID, "⛔ ")
+        return
+      }
+      await api.prompt({ sessionID, text: "[[command " + run.command + (run.args ? " " + run.args : "") + "]]\n[[resume " + why.fr + "]]\n" + resumeText(run, why) })
+    }
+
+    // The end of a turn: the title without progress, the outcome of a pilot run (or its resume, 19), the folder free,
+    // the command chosen in a question started
     function end(sessionID, type, data) {
       const run = commandRuns.get(sessionID)
       commandRuns.delete(sessionID)
       release(sessionID)
       const next = chosen.get(sessionID)
       chosen.delete(sessionID)
+      const limited = stepLimited.delete(sessionID)
       const reason = data && data.reason
       const stopped = type === "session.execution.failed" || (type === "session.execution.interrupted" && reason !== "superseded")
       void (async () => {
         await finish(sessionID)
-        if (run && run.pilot && reason !== "superseded") await markOutcome(sessionID, stopped ? "⛔ " : outcomeOf(sessionID))
+        if (run && run.pilot && reason !== "superseded") {
+          let mark = stopped ? "⛔ " : outcomeOf(sessionID)
+          const why = next ? undefined : resumeReason(type, data, mark, limited)
+          if (why) mark = scheduleResume(sessionID, run, why) ? "↻ " : "⛔ "
+          // a final answer of the run: the next failure may be resumed again
+          else if (!stopped) resumes.delete(sessionID)
+          await markOutcome(sessionID, mark)
+        }
         if (next && type === "session.execution.succeeded" && typeof api.command === "function") {
           chained.add(sessionID)
           try {
@@ -1314,7 +1579,9 @@ export default Plugin.define({
         case "session.retry.scheduled":
           child.phase = "retry"
           child.attempt = data.attempt || child.attempt + 1
+          child.at = data.at
           child.last = now
+          nudge(parents.get(sessionID), runs.get(parents.get(sessionID)))
           return
         case "session.step.started":
         case "session.reasoning.started":
@@ -1330,8 +1597,15 @@ export default Plugin.define({
           return
         case "session.tool.success":
         case "session.tool.failed":
+        case "session.compaction.ended":
+        case "session.compaction.failed":
           child.phase = "waiting"
           child.last = now
+          return
+        case "session.compaction.started":
+          child.phase = "compaction"
+          child.last = now
+          nudge(parents.get(sessionID), runs.get(parents.get(sessionID)))
           return
         case "form.created":
         case "permission.asked": {
@@ -1383,17 +1657,25 @@ export default Plugin.define({
         case "session.tool.input.started":
           toolNames.set(data.id, data.name)
           if (state && data.name !== "question") {
+            const entry = state.running.get(data.id) || {}
+            entry.text = toolText(data.name, {})
+            state.running.set(data.id, entry)
             state.phase = "tool"
-            state.tool = toolText(data.name, {})
+            state.tool = entry.text
             state.last = now
+            nudge(sessionID, state)
           }
           return
         case "session.tool.called": {
           const name = toolNames.get(data.id) || ""
           if (state && name !== "question") {
+            const entry = state.running.get(data.id) || {}
+            entry.text = toolText(name, data.input)
+            state.running.set(data.id, entry)
             state.phase = "tool"
-            state.tool = toolText(name, data.input)
+            state.tool = entry.text
             state.last = now
+            nudge(sessionID, state)
           }
           return
         }
@@ -1404,28 +1686,59 @@ export default Plugin.define({
           parents.set(child, sessionID)
           subagentSessions.add(child)
           mine.add(child)
-          if (state && state.child !== child) {
-            state.child = child
-            if (!subagents.has(child)) subagents.set(child, { phase: "waiting", attempt: 0, last: now })
+          if (state) {
+            const entry = state.running.get(data.id) || { text: toolText(toolNames.get(data.id) || "subagent", {}) }
+            if (entry.child !== child) {
+              entry.child = child
+              if (!subagents.has(child)) subagents.set(child, { phase: "waiting", attempt: 0, last: now })
+            }
+            state.running.set(data.id, entry)
           }
           return
         }
         case "session.tool.success":
-        case "session.tool.failed":
+        case "session.tool.failed": {
           toolNames.delete(data.id)
           if (!state) return
-          if (state.phase === "tool") state.phase = "waiting"
-          if (state.child && data.metadata && data.metadata.sessionID === state.child) {
-            subagents.delete(state.child)
-            state.child = undefined
-          }
+          const entry = state.running.get(data.id)
+          if (entry && entry.child) subagents.delete(entry.child)
+          state.running.delete(data.id)
+          // the other tools of the answer may still run (several subagents at once)
+          if (state.running.size === 0) {
+            if (state.phase === "tool") state.phase = "waiting"
+          } else state.tool = [...state.running.values()].at(-1).text
           state.last = now
+          nudge(sessionID, state)
           return
+        }
         case "session.retry.scheduled":
           if (!state) return
           state.phase = "retry"
           state.attempt = data.attempt || state.attempt + 1
+          state.at = data.at
           state.last = now
+          nudge(sessionID, state)
+          return
+        case "session.compaction.started": {
+          if (state) {
+            state.phase = "compaction"
+            state.last = now
+            nudge(sessionID, state)
+          }
+          const run = commandRuns.get(sessionID)
+          if (run && run.pilot) log("the conversation of a run is summarized (context full)", { command: "/" + run.command })
+          return
+        }
+        case "session.compaction.ended":
+        case "session.compaction.failed":
+          if (state && state.phase === "compaction") {
+            state.phase = "waiting"
+            state.last = now
+            nudge(sessionID, state)
+          }
+          if (type === "session.compaction.failed" && commandRuns.has(sessionID)) {
+            log("the summary of a run failed", { command: "/" + commandRuns.get(sessionID).command, error: String((data.error && data.error.type) || "") })
+          }
           return
         case "form.created":
         case "permission.asked":
@@ -1588,7 +1901,24 @@ export default Plugin.define({
       guards.env(invocation.env)
     })
 
-    // 12 and 13. what each request to the model carries
+    // 18. the sessions of a run of /go, /fix or /fortify: the pilot's, and those of its subagents
+    const inPilotRun = async (sessionID) => {
+      let id = sessionID
+      for (let depth = 0; depth < 4 && id; depth++) {
+        const run = commandRuns.get(id)
+        if (run && run.pilot) return true
+        let parent = parents.get(id)
+        if (parent === undefined && subagentSessions.has(id)) {
+          const info = await sessionInfo(id)
+          parent = (info && info.parentID) || ""
+          if (parent) parents.set(id, parent)
+        }
+        id = parent
+      }
+      return false
+    }
+
+    // 12, 13, 17 and 19. what each request to the model carries
     if (typeof api.hook === "function") {
       await api.hook("context", async (event) => {
         try {
@@ -1598,8 +1928,47 @@ export default Plugin.define({
             if (event.tools.question && (await isSubagent(event.sessionID))) delete event.tools.question
           }
           if (pruning) prune(event.messages)
+          // 19. the request OpenCode sends at the step limit of the agent ends with its instruction
+          const last = Array.isArray(event.messages) ? event.messages[event.messages.length - 1] : undefined
+          if (last && last.role === "assistant" && messageText(last).trimStart().startsWith("CRITICAL - MAXIMUM STEPS REACHED")) {
+            stepLimited.add(event.sessionID)
+          }
+          // 17. after a summary: the procedure of the run, or the task of the subagent, as instructions again
+          if (Array.isArray(event.system) && summarized(event.messages)) {
+            const run = commandRuns.get(event.sessionID)
+            if (run && run.pilot) {
+              const kept = procedures.get(event.sessionID)
+              const text = kept && kept.command === run.command ? kept.text : commandFile(run.command, run.args)
+              if (text) event.system.push({ type: "text", text: procedureNote(run, text) })
+            } else if (tasks.has(event.sessionID)) {
+              event.system.push({ type: "text", text: taskNote(tasks.get(event.sessionID)) })
+            }
+          }
         } catch {
           // the request goes as it is
+        }
+      })
+
+      // 17. the summary of a run, or of the work of a subagent, keeps what the next requests need
+      await api.hook("compaction", async (event) => {
+        try {
+          if (!event || !Array.isArray(event.system)) return
+          const run = commandRuns.get(event.sessionID)
+          if (run && run.pilot) event.system.push({ type: "text", text: keepRunNote(run) })
+          else if (tasks.has(event.sessionID)) event.system.push({ type: "text", text: KEEP_TASK_NOTE })
+        } catch {
+          // the summary is written as OpenCode asks it
+        }
+      })
+
+      // 18. more time for the model server during a run of the pack: the same retries, spread over about 8 minutes
+      await api.hook("retry", async (event) => {
+        try {
+          if (!event || !event.decision || event.decision.retry !== true || !(await inPilotRun(event.sessionID))) return
+          const least = patienceMs[Math.min(Math.max(Number(event.attempt) || 0, 0), patienceMs.length - 1)] || 0
+          if (least > (Number(event.decision.delay) || 0)) event.decision.delay = least
+        } catch {
+          // OpenCode's own timing
         }
       })
     }
@@ -1619,17 +1988,41 @@ export default Plugin.define({
       const sessionID = event.sessionID
       if (sessionID) mine.add(sessionID)
       const subagent = await isSubagent(sessionID, prompt.text)
+      // 17. the task the pilot gives a subagent: its first prompt, then the last ones that take it up again
+      if (subagent) {
+        const first = prompt.text.startsWith(SUBAGENT_PROMPT)
+        const list = first ? [] : [...(tasks.get(sessionID) || [])]
+        list.push((first ? prompt.text.slice(SUBAGENT_PROMPT.length) : prompt.text).trim().slice(0, TASK_MAX))
+        remember(tasks, sessionID, list.length > 3 ? [list[0], ...list.slice(-2)] : list)
+      }
       // the command of the pack this prompt runs: its [[command]] line, or the first sentence of an older pilot command
       let command = ""
       let args = ""
+      // 19. the reason of a resume the plugin sent ("[[resume <reason>]]" after the [[command]] line)
+      let resume = ""
       const line = subagent ? null : COMMAND_LINE.exec(prompt.text)
       if (line) {
         command = line[1]
         args = (line[2] || "").trim()
         prompt.text = prompt.text.slice(line[0].length)
+        const again = RESUME_LINE.exec(prompt.text)
+        if (again) {
+          resume = (again[1] || "").trim() || "reprise"
+          prompt.text = prompt.text.slice(again[0].length)
+        }
       } else if (!subagent) {
         const run = PILOT_RUNS.find(([, sentence]) => prompt.text.includes(sentence))
         if (run) command = run[0]
+      }
+      // 19. a message I type replaces a resume that waits, and the next failure may be resumed again
+      if (!subagent && !resume) {
+        const pending = resumeTimers.get(sessionID)
+        if (pending) {
+          clearTimeout(pending)
+          resumeTimers.delete(sessionID)
+          log("automatic resume cancelled: a new message in the session")
+        }
+        resumes.delete(sessionID)
       }
       const label = command ? ("/" + command + " " + args).trim() : ""
       // 3. a session with no title yet takes the name of the command (OpenCode then asks no model for a title)
@@ -1643,7 +2036,7 @@ export default Plugin.define({
       }
       // 9. one /go, /fix or /fortify at a time per folder
       if (PILOT_COMMANDS.has(command)) {
-        const other = acquire(sessionID, command)
+        const other = acquire(sessionID, command, args)
         if (other) {
           refusedRuns.add(sessionID)
           const notice =
@@ -1659,8 +2052,11 @@ export default Plugin.define({
         refusedRuns.delete(sessionID)
       }
       if (command) commandRuns.set(sessionID, { command, args, pilot: PILOT_COMMANDS.has(command) })
+      // 17. the instructions of the run, for the requests that follow a summary of its conversation (a resume keeps
+      // those of the run it resumes)
+      if (PILOT_COMMANDS.has(command) && !resume) remember(procedures, sessionID, { command, args, text: procedureOf(prompt.text) })
       // 7. the folders I name, in a message or in the arguments of a command I type, in a top-level session
-      if (!subagent && !chained.has(sessionID)) await guards.named(sessionID, command ? args : prompt.text)
+      if (!subagent && !chained.has(sessionID) && !resume) await guards.named(sessionID, command ? args : prompt.text)
       // 5. the progress of the turn in the title, from the scripts of the command on
       let state
       if (command) {
@@ -1690,7 +2086,9 @@ export default Plugin.define({
         const place = await where(directory).catch(() => "")
         const due = reminders()
         const reminder = due > 0 ? " · ⏰ " + due + (due > 1 ? " rappels" : " rappel") : ""
-        event.metadata = presentation(event.metadata, (place ? label + " — " + place : label) + reminder)
+        // 19. a resume shows as such: "↻ /go ABC-1 · reprise automatique (panne du serveur du modèle) — api · branche …"
+        const shown = resume ? "↻ " + label + " · reprise automatique (" + resume + ")" : label
+        event.metadata = presentation(event.metadata, (place ? shown + " — " + place : shown) + reminder)
       } catch {
         // the expanded prompt is shown
       }
@@ -1699,6 +2097,7 @@ export default Plugin.define({
     // the lock file of a run that goes on stays until its turn ends (an instance loaded again frees it then)
     return () => {
       if (ticker) clearInterval(ticker)
+      for (const timer of resumeTimers.values()) clearTimeout(timer)
     }
   },
 })

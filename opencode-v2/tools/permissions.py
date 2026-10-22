@@ -116,6 +116,11 @@ RM_RECURSIVE = ["rm -r*", "rm -R*", "rm -fr*", "rm -fR*", "rm -f -r*", "rm -f -R
 DEVELOPER_SCRIPTS = ["*scripts/workspace.sh*"]
 # fortify.sh discard puts work aside (git stash): the pilot only
 WRITE_SCRIPTS = ["*ship.sh*", "*branch.sh*", "*ticket-sheet.sh*", "*fortify.sh discard*"] + DEVELOPER_SCRIPTS
+# The seal of a proof (test-guardian.sh seal and restore): the test-guardian's only. The coder never seals its own
+# version of the tests it is checked against, nor puts them back; a read-only agent never writes a test file. Checking
+# a seal (test-guardian.sh sealed) stays open: the pilot does it before each commit. The conversation agents keep it
+# all (the developer's own runs): opencode.snippet.json does not change.
+SEAL_SCRIPTS = ["*test-guardian.sh seal *", "*test-guardian.sh restore*"]
 
 # The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS)
 SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
@@ -205,7 +210,7 @@ def pilot_bash():
     rules = [("*", "deny")]
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS)
     rules += REDIRECT
-    rules += deny(GIT_READ_GUARD + OTHER_DENY + SECRETS + PACKAGE_GUARD + DEVELOPER_SCRIPTS)
+    rules += deny(GIT_READ_GUARD + OTHER_DENY + SECRETS + PACKAGE_GUARD + DEVELOPER_SCRIPTS + SEAL_SCRIPTS)
     rules += allow([SSC_NAME] + TEXT_SCRIPTS)
     rules += deny(SUBST)
     return rules
@@ -235,13 +240,15 @@ CODER_RM_GUARD = RM_RECURSIVE + ["rm *..*"]
 CODER_OTHER_DENY = [p for p in OTHER_DENY if p not in ("*--fix*", "*--write*")]
 
 
-def coder_bash():
+def coder_bash(guardian=False):
     rules = [("*", "deny")]
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + DOTNET_RUN + CODER_BUILD + FRONT_TEST + FRONT_BUILD
                    + CODER_FRONT + CODER_FILES)
     rules += REDIRECT
     # (the commands of CREDENTIAL_STORES and DECOMPILE are not in the allowlist; their paths are outside the repository)
-    rules += deny(GIT_READ_GUARD + CODER_OTHER_DENY + CODER_RM_GUARD + SECRETS + WRITE_SCRIPTS + PACKAGE_GUARD
+    # the test-guardian seals its proofs and puts them back; the coder never does
+    rules += deny(GIT_READ_GUARD + CODER_OTHER_DENY + CODER_RM_GUARD + SECRETS + WRITE_SCRIPTS
+                  + ([] if guardian else SEAL_SCRIPTS) + PACKAGE_GUARD
                   + ["* /tmp/*", "* /tmp", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*"] + SUBST)
     return rules
 
@@ -251,24 +258,26 @@ AGENTS = {
     "pilot": SHEET + BASE + [("task", only(["analyst", "coder", "checker", "debugger", "test-guardian"]))]
     + [("bash", pilot_bash())] + MCP_WRITE_DENY + [("*create_merge_request", "allow")]
     + mcp_only(["jira", "confluence", "gitlab", "sonar", "fortify"]),
-    "analyst": SHEET + SILENT + NO_TASK + [("bash", read_only_bash())] + MCP_WRITE_DENY
+    "analyst": SHEET + SILENT + NO_TASK + [("bash", read_only_bash() + deny(SEAL_SCRIPTS))] + MCP_WRITE_DENY
     + mcp_only(["jira", "confluence", "gitlab"]),
     # code and tests anywhere in the repository except .git (the ticket sheet is the pilot's), no MCP
     "coder": [("edit", [("*", "allow"), ("../*", "deny"), (".git/**", "deny"), ("*/.git/**", "deny")])] + SILENT
     + NO_TASK + [("bash", coder_bash())] + mcp_only([]),
-    # /fortify: the tests of one vulnerability, in the test projects only (fortify.sh tests-only checks it again), no MCP
+    # /fortify, /go and /fix: the tests of one vulnerability, bug or change, in the test projects only (test-guardian.sh
+    # tests-only checks it again), no MCP
     "test-guardian": [("edit", only(["*Tests/**", "*Test/**", "tests/**", "test/**", "*/tests/**", "*/test/**"]))] + SILENT
-    + NO_TASK + [("bash", coder_bash())] + mcp_only([]),
+    + NO_TASK + [("bash", coder_bash(guardian=True))] + mcp_only([]),
     "checker": NO_EDIT + SILENT + NO_TASK
-    + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS))] + MCP_WRITE_DENY + mcp_only(["jira"]),
+    + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS) + deny(SEAL_SCRIPTS))] + MCP_WRITE_DENY
+    + mcp_only(["jira"]),
     # /compare asks me which check I make when the cause is not confirmed (as the agent of the command); as a subagent
     # of /go or /fix it cannot ask (experimental.primary_tools in opencode.json)
     "debugger": NO_EDIT + BASE + NO_TASK
-    + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD, package_guard=False))]
+    + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD, package_guard=False) + deny(SEAL_SCRIPTS))]
     + MCP_WRITE_DENY + mcp_only(["kibana"]),
     # /outil doc: writes docs/ and the root README.md only, never opens a configuration file, never publishes
     "doc-writer": [("edit", only(["docs/**", "README.md"])), ("read", deny(CONFIG_FILES_READ))] + SILENT
-    + NO_TASK + [("bash", read_only_bash() + deny(CONFIG_FILES_BASH))] + MCP_WRITE_DENY + mcp_only([]),
+    + NO_TASK + [("bash", read_only_bash() + deny(CONFIG_FILES_BASH + SEAL_SCRIPTS))] + MCP_WRITE_DENY + mcp_only([]),
 }
 
 TOOL_KEYS = {"edit", "read", "bash", "webfetch", "websearch", "question", "task", "doom_loop"}

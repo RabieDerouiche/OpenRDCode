@@ -261,6 +261,15 @@ await check("npm test gets 20 min", async () => assert.equal(await timeout("npm 
 await check("ship.sh gets 5 min", async () => assert.equal(await tool("pilot-1", "bash", { command: S + "ship.sh --no-push \"feat: x (ABC-1)\"" }).then((a) => a.timeout), 300000))
 await check("git status keeps the default", async () => assert.equal(await timeout("git status"), undefined))
 await check("a longer timeout is kept", async () => assert.equal(await timeout(S + "build-test.sh", 3600000), 3600000))
+for (const command of [S + "test-guardian.sh red tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_X_V1",
+  S + "test-guardian.sh green tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_X_V1",
+  S + "test-guardian.sh coverage V1-before tests/Api.Tests/Api.Tests.csproj src/A.cs", S + "test-guardian.sh changes origin/develop",
+  S + "fortify.sh prereq"]) {
+  await check("the tests of the test-guardian get 20 min: " + command.split("/").pop(), async () => assert.equal(await timeout(command), 1200000))
+}
+for (const command of [S + "test-guardian.sh deps src/A.cs", S + "test-guardian.sh compare V1-before V1-after", S + "fortify.sh batch"]) {
+  await check("a quick measure keeps the default: " + command.split("/").pop(), async () => assert.equal(await timeout(command), undefined))
+}
 
 // ---------- 7. the patch tool (offered by OpenCode v2 to some models instead of edit and write) ----------
 const patchOf = (path) => "*** Begin Patch\n*** Update File: " + path + "\n@@\n-a\n+b\n*** End Patch"
@@ -308,8 +317,8 @@ const ensure = (dir) => (mkdirSync(dir, { recursive: true }), dir)
 const configDir = ensure(join(home, ".config", "opencode"))
 writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ compaction: { prune: true }, references: { legacy: { path: "~/repos/legacy" } } }))
 writeFileSync(join(home, ".config", "opencode", "scripts", "hello.sh"), 'echo "hello from $(basename "$PWD")"\n')
-function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcpWaitMs: 600 } } = {}) {
-  const fake = { runCommands: false }
+function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcpWaitMs: 600, resumeFailureMs: [600000], resumeUnfinishedMs: 600000 } } = {}) {
+  const fake = { runCommands: false, runPrompts: false }
   const hooks = {}
   const queue = []
   let wake
@@ -321,7 +330,7 @@ function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcp
     }),
   }
   const push = (type, data) => { queue.push({ type, data }); if (wake) { const w = wake; wake = undefined; w() } }
-  const calls = { update: [], command: [] }
+  const calls = { update: [], command: [], prompt: [] }
   const servers = [["gitlab", { type: "local", command: ["node", "x"] }], ["jira", { type: "remote", url: "https://jira.invalid/mcp", codemode: true }]]
   const mcpState = { status: "connected" }
   const domain = (name) => ({ hook: async (hook, fn) => { hooks[name + "." + hook] = fn } })
@@ -348,6 +357,12 @@ function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcp
         if (fake.runCommands) {
           await hooks["session.prompt"]({ sessionID: input.sessionID, messageID: "cmd", prompt: { text: "[[command " + input.name + " " + input.text + "]]\nRun." }, delivery: "steer" })
         }
+      },
+      // a prompt sent by the plugin (19): it goes through the prompt hook (only when a test asks for it)
+      prompt: async (input) => {
+        const event = { sessionID: input.sessionID, messageID: "auto", prompt: { text: input.text }, delivery: "steer" }
+        calls.prompt.push({ ...input, event })
+        if (fake.runPrompts) await hooks["session.prompt"](event)
       },
     },
     event: stream,
@@ -381,7 +396,7 @@ const context = async (sessionID, tools, agent = "build", messages = []) => {
 const TOOLS = ["edit", "glob", "grep", "question", "read", "shell", "skill", "subagent", "webfetch", "websearch", "write", "execute"]
 
 await check("[v2] the setup registers its hooks", () => assert.deepEqual(Object.keys(v2.hooks).sort(),
-  ["session.context", "session.prompt", "shell.create.before", "tool.execute.after", "tool.execute.before"]))
+  ["session.compaction", "session.context", "session.prompt", "session.retry", "shell.create.before", "tool.execute.after", "tool.execute.before"]))
 await check("[v2 12] the MCP servers are plain tools, never code mode", () => assert.deepEqual(v2.servers.map(([, s]) => s.codemode), [false, false]))
 
 // ---------- 12. what v2 opens that the pack closes ----------
@@ -817,9 +832,9 @@ await check("[v2 10] a stop after a table of done steps: ⛔", () => assert.equa
 top("run-2")
 await prompt("run-2", "[[command fix]]\nBring the branch to a green, review-ready state.")
 v2.push("session.execution.started", { sessionID: "run-2" })
-v2.push("session.execution.failed", { sessionID: "run-2", error: { type: "provider", message: "x" } })
+v2.push("session.execution.failed", { sessionID: "run-2", error: { type: "provider.auth", message: "Unauthorized", status: 401 } })
 await wait(150)
-await check("[v2 10] a failed run: ⛔", () => assert.equal(title("run-2"), "⛔ /fix"))
+await check("[v2 10] a run that failed for good (the provider refuses the credentials): ⛔", () => assert.equal(title("run-2"), "⛔ /fix"))
 top("run-3")
 await prompt("run-3", "[[command fortify]]\nFix a batch of Fortify vulnerabilities.")
 v2.push("session.execution.started", { sessionID: "run-3" })
@@ -965,6 +980,315 @@ await check("[v2] the references of opencode.json in OPENCODE_CONFIG_DIR are rea
   } finally {
     delete process.env.OPENCODE_CONFIG_DIR
   }
+})
+
+// ---------- 5. several tools at once, the time before a retry, the summary of the context ----------
+const quick = { tickMs: 25, mcpWaitMs: 600, resumeFailureMs: [600000], resumeUnfinishedMs: 600000 }
+const par = fakeV2(repo, { options: quick })
+await v2Plugin.setup(par.ctx)
+const parPrompt = (sessionID, text) => par.hooks["session.prompt"]({ sessionID, messageID: "m", prompt: { text }, delivery: "steer" })
+const parTitle = () => par.sessions.get("par-1").title
+par.sessions.set("par-1", { id: "par-1", agent: "pilot" })
+await parPrompt("par-1", "[[command fortify 3]]\nFix a batch of Fortify vulnerabilities.")
+par.push("session.execution.started", { sessionID: "par-1" })
+par.push("session.step.started", { sessionID: "par-1", assistantMessageID: "p1" })
+for (const [id, description] of [["a1", "Analyse V1"], ["a2", "Analyse V2"], ["a3", "Analyse V3"]]) {
+  par.push("session.tool.input.started", { sessionID: "par-1", assistantMessageID: "p1", id, name: "subagent" })
+  par.push("session.tool.called", { sessionID: "par-1", assistantMessageID: "p1", id, input: { agent: "analyst", description, prompt: "x" } })
+  par.push("session.tool.progress", { sessionID: "par-1", assistantMessageID: "p1", id, metadata: { sessionID: "par-1-" + id, status: "running" } })
+}
+await wait()
+await check("[v2 5] several subagents at once: all of them in the title", () => assert.match(parTitle(), /^⏳ \d+:\d\d outils \(3\) · Analyse V1, Analyse V2, Analyse V3 — \/fortify 3$/))
+par.push("session.retry.scheduled", { sessionID: "par-1-a2", assistantMessageID: "c", attempt: 4, at: Date.now() + 45000, error: { type: "provider.internal", message: "Gateway Time-out", status: 504 } })
+await wait()
+await check("[v2 5 and 18] the one that waits for a retry, and when it comes", () =>
+  assert.match(parTitle(), /^⏳ \d+:\d\d outils \(3\) · Analyse V1, Analyse V2, Analyse V3 · nouvel essai 4 dans 4\d s \(serveur du modèle\) — \/fortify 3$/))
+par.push("permission.asked", { sessionID: "par-1-a3", id: "per", action: "external_directory" })
+await wait()
+await check("[v2 5] the one that waits for me first", () => assert.match(parTitle(), /^❓ \d+:\d\d Analyse V3 · autorisation attendue — \/fortify 3$/))
+par.push("permission.replied", { sessionID: "par-1-a3", requestID: "per" })
+par.push("session.tool.success", { sessionID: "par-1", assistantMessageID: "p1", id: "a1", content: [], metadata: { sessionID: "par-1-a1", status: "completed" } })
+await wait()
+await check("[v2 5] one done: the others still run", () => assert.match(parTitle(), /^⏳ \d+:\d\d outils \(2\) · Analyse V2, Analyse V3 · nouvel essai 4 dans \d+ s \(serveur du modèle\) — \/fortify 3$/))
+par.push("session.tool.success", { sessionID: "par-1", assistantMessageID: "p1", id: "a2", content: [], metadata: { sessionID: "par-1-a2", status: "completed" } })
+await wait()
+await check("[v2 5] one left: the title of one tool", () => assert.match(parTitle(), /^⏳ \d+:\d\d outil · Analyse V3 — \/fortify 3$/))
+par.push("session.tool.failed", { sessionID: "par-1", assistantMessageID: "p1", id: "a3", error: { type: "tool.execution", message: "x" }, metadata: { sessionID: "par-1-a3" } })
+await wait()
+await check("[v2 5] all done: the pilot again", () => assert.match(parTitle(), /^⏳ \d+:\d\d attente du modèle — \/fortify 3$/))
+par.push("session.compaction.started", { sessionID: "par-1", reason: "auto" })
+await wait()
+await check("[v2 5 and 17] the summary of a full context", () => assert.match(parTitle(), /^⏳ \d+:\d\d résumé du contexte \(conversation trop longue\) — \/fortify 3$/))
+par.push("session.compaction.ended", { sessionID: "par-1", reason: "auto", text: "## Objective" })
+par.push("session.step.started", { sessionID: "par-1", assistantMessageID: "p2" })
+par.push("session.text.ended", { sessionID: "par-1", assistantMessageID: "p2", ordinal: 0, text: "🔒 Lot Fortify app / develop\n🚀 MR en Draft : https://gitlab/x/-/merge_requests/9\n| V1 | ✅ |" })
+par.push("session.execution.succeeded", { sessionID: "par-1" })
+await wait(150)
+await check("[v2 10] /fortify delivered: ✅", () => assert.equal(parTitle(), "✅ /fortify 3"))
+
+// ---------- 17. a run that goes on after a summary of its conversation ----------
+const sum = fakeV2(repo, { options: quick })
+await v2Plugin.setup(sum.ctx)
+const sumPrompt = async (sessionID, text) => {
+  const event = { sessionID, messageID: "m", prompt: { text }, delivery: "steer" }
+  await sum.hooks["session.prompt"](event)
+  return event
+}
+const sumHook = async (hook, sessionID, messages, agent = "pilot") => {
+  const event = { sessionID, agent, model: { id: "qwen", providerID: "fake" }, system: [{ type: "text", text: "agent prompt" }], messages, options: {}, tools: {} }
+  await sum.hooks["session." + hook](event)
+  return event
+}
+const checkpoint = [{ role: "user", content: [{ type: "text", text: "<conversation-checkpoint>\nThe following is a summary...\n<summary>\n## Objective\n- /go ABC-30\n</summary>\n</conversation-checkpoint>" }] },
+  { role: "assistant", content: [{ type: "text", text: "Étape 3/5…" }] }]
+const plain = [{ role: "user", content: [{ type: "text", text: "Request: « ABC-30 »" }] }, { role: "assistant", content: [{ type: "text", text: "ok" }] }]
+sum.sessions.set("sum-1", { id: "sum-1", title: "/go ABC-30", agent: "pilot" })
+const started = await sumPrompt("sum-1", "[[command go ABC-30]]\nRequest: « ABC-30 »\nWorkflow state:\n[[run hello.sh]]\nTake the ticket from its analysis to its Draft merge request, in this single run.\n## 5. Plan steps\nOne subagent each.")
+await check("[v2 1] the scripts of the command still run", () => assert.match(started.prompt.text, /hello from my-api/))
+await check("[v2 17] no instruction added before a summary", async () => assert.equal((await sumHook("context", "sum-1", plain)).system.length, 1))
+const after = await sumHook("context", "sum-1", checkpoint)
+await check("[v2 17] after a summary, the run gets its procedure back as instructions", () => {
+  assert.equal(after.system.length, 2)
+  const note = after.system[1].text
+  assert.match(note, /^## The run of \/go goes on after a summary\n/)
+  assert.match(note, /workflow-state\.sh --no-fetch --sheet/)
+  assert.match(note, /<instructions of \/go>\nRequest: « ABC-30 »\nWorkflow state:\n\(output of hello\.sh: printed when the run started\)\nTake the ticket/)
+  assert.match(note, /## 5\. Plan steps\nOne subagent each\.\n<\/instructions of \/go>$/)
+  assert.doesNotMatch(note, /hello from my-api/)
+})
+await check("[v2 17] the summary of a run is asked to keep its state", async () => {
+  const event = await sumHook("compaction", "sum-1", checkpoint)
+  assert.equal(event.system.length, 2)
+  assert.match(event.system[1].text, /^## Summary of a run of the pack\nThis session runs \/go ABC-30 of the pack/)
+  assert.match(event.system[1].text, /sessionID and the role of each subagent/)
+})
+sum.sessions.set("sum-sub", { id: "sum-sub", parentID: "sum-1", title: "Étape 3/5" })
+await sumPrompt("sum-sub", "You are a subagent spawned by another session.\nImplement step 3 of ticket ABC-30 in /repo. Report in your format.")
+await check("[v2 17] after a summary, a subagent gets its task back", async () => {
+  const event = await sumHook("context", "sum-sub", checkpoint, "coder")
+  assert.match(event.system[1].text, /^## Your task goes on after a summary\n/)
+  assert.match(event.system[1].text, /<task>\nImplement step 3 of ticket ABC-30 in \/repo\. Report in your format\.\n<\/task>$/)
+})
+await sumPrompt("sum-sub", "Diagnostic du debugger : la date est en UTC. Corrige l'étape 3.")
+await check("[v2 17] with what the pilot added when it took it up again", async () => {
+  const event = await sumHook("context", "sum-sub", checkpoint, "coder")
+  assert.match(event.system[1].text, /Report in your format\.\n\n\(Then the pilot wrote:\)\nDiagnostic du debugger : la date est en UTC\. Corrige l'étape 3\.\n<\/task>$/)
+})
+await check("[v2 17] the summary of a subagent is asked to keep its work", async () => {
+  const event = await sumHook("compaction", "sum-sub", checkpoint, "coder")
+  assert.match(event.system[1].text, /^## Summary of the work of a subagent\n/)
+})
+await check("[v2 18] a run gets more time from the model server: the retries are spread", async () => {
+  const event = { sessionID: "sum-1", agent: "pilot", attempt: 2, error: { type: "provider.transport", message: "x" }, decision: { retry: true, delay: 2100 } }
+  await sum.hooks["session.retry"](event)
+  assert.equal(event.decision.delay, 10000)
+  const later = { ...event, attempt: 7, decision: { retry: true, delay: 9800 } }
+  await sum.hooks["session.retry"](later)
+  assert.equal(later.decision.delay, 60000)
+})
+await check("[v2 18] and so do its subagents", async () => {
+  const event = { sessionID: "sum-sub", agent: "coder", attempt: 3, error: { type: "provider.internal", message: "504" }, decision: { retry: true, delay: 4000 } }
+  await sum.hooks["session.retry"](event)
+  assert.equal(event.decision.delay, 20000)
+})
+await check("[v2 18] a longer wait the provider asks for stays, and a retry OpenCode refuses stays refused", async () => {
+  const asked = { sessionID: "sum-1", agent: "pilot", attempt: 2, error: { type: "provider.rate-limit", message: "x" }, decision: { retry: true, delay: 600000 } }
+  await sum.hooks["session.retry"](asked)
+  assert.equal(asked.decision.delay, 600000)
+  const refused = { sessionID: "sum-1", agent: "pilot", attempt: 2, error: { type: "provider.auth", message: "x" }, decision: { retry: false } }
+  await sum.hooks["session.retry"](refused)
+  assert.deepEqual(refused.decision, { retry: false })
+})
+sum.sessions.set("sum-2", { id: "sum-2", title: "Question" })
+await sumPrompt("sum-2", "explique-moi ce service")
+await check("[v2 17 and 18] a conversation: nothing added, OpenCode's own retry timing", async () => {
+  assert.equal((await sumHook("context", "sum-2", checkpoint, "build")).system.length, 1)
+  assert.equal((await sumHook("compaction", "sum-2", checkpoint, "build")).system.length, 1)
+  const event = { sessionID: "sum-2", agent: "build", attempt: 2, error: { type: "provider.transport", message: "x" }, decision: { retry: true, delay: 2100 } }
+  await sum.hooks["session.retry"](event)
+  assert.equal(event.decision.delay, 2100)
+})
+sum.push("session.step.started", { sessionID: "sum-1", assistantMessageID: "s9" })
+sum.push("session.text.ended", { sessionID: "sum-1", assistantMessageID: "s9", ordinal: 0, text: "**[ABC-30](x) - Export**\n🚀 MR en Draft : https://gitlab/x/-/merge_requests/30" })
+sum.push("session.execution.succeeded", { sessionID: "sum-1" })
+await wait(150)
+await check("[v2 17] once the run is over, a later summary of the session brings nothing back", async () => {
+  await sumPrompt("sum-1", "et ce service, il fait quoi ?")
+  assert.equal((await sumHook("context", "sum-1", checkpoint)).system.length, 1)
+})
+await check("[v2 17] a run this instance did not see start (resumed by the service after a restart): the procedure of its command file", async () => {
+  const os = await import("node:os")
+  mkdirSync(join(configDir, "commands"), { recursive: true })
+  writeFileSync(join(configDir, "commands", "go.md"), "---\ndescription: \"x\"\nagent: pilot\n---\n[[command go $ARGUMENTS]]\nRequest: « $ARGUMENTS »\n[[run workflow-state.sh --fetch-all --sheet]]\nTake the ticket from its analysis to its Draft merge request, in this single run.\n")
+  writeFileSync(lockFile, JSON.stringify({ session: "ses-adopted", command: "go", args: "ABC-31 sans nouvelle lib", since: Date.now() - 60000, pid: 2147483646, host: os.hostname() }))
+  const svc = fakeV2(repo, { options: { ...quick, service: true, adoptMs: 5000 } })
+  await v2Plugin.setup(svc.ctx)
+  svc.sessions.set("ses-adopted", { id: "ses-adopted", title: "/go ABC-31", agent: "pilot" })
+  try {
+    const event = { sessionID: "ses-adopted", agent: "pilot", system: [], messages: checkpoint, tools: {} }
+    await svc.hooks["session.context"](event)
+    assert.match(event.system[0].text, /<instructions of \/go>\nRequest: « ABC-31 sans nouvelle lib »\n\(output of workflow-state\.sh --fetch-all --sheet: printed when the run started\)\nTake the ticket/)
+  } finally {
+    // the run ends: the folder is free for the next checks
+    svc.push("session.step.started", { sessionID: "ses-adopted", assistantMessageID: "ad" })
+    svc.push("session.text.ended", { sessionID: "ses-adopted", assistantMessageID: "ad", ordinal: 0, text: "✅ Déjà livré" })
+    svc.push("session.execution.succeeded", { sessionID: "ses-adopted" })
+    await wait(100)
+  }
+})
+await check("[v2 9] the lock file keeps the arguments of the run", async () => {
+  sum.sessions.set("sum-3", { id: "sum-3", title: "/fix", agent: "pilot" })
+  await sumPrompt("sum-3", "[[command fix seulement la review]]\nBring the branch to a green, review-ready state.")
+  assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).args, "seulement la review")
+  sum.push("session.step.started", { sessionID: "sum-3", assistantMessageID: "s3" })
+  sum.push("session.text.ended", { sessionID: "sum-3", assistantMessageID: "s3", ordinal: 0, text: "✅ Rien à corriger" })
+  sum.push("session.execution.succeeded", { sessionID: "sum-3" })
+  await wait(100)
+  assert.ok(!existsSync(lockFile))
+})
+
+// ---------- 19. a run that ended before its final answer resumes by itself ----------
+const res = fakeV2(repo, { options: { tickMs: 25, mcpWaitMs: 600, resumeFailureMs: [150, 300], resumeUnfinishedMs: 60 } })
+await v2Plugin.setup(res.ctx)
+res.runPrompts = true
+const resPrompt = async (sessionID, text) => {
+  const event = { sessionID, messageID: "m", prompt: { text }, delivery: "steer" }
+  await res.hooks["session.prompt"](event)
+  return event
+}
+const resTitle = (id) => res.sessions.get(id).title
+const answer = (sessionID, text) => {
+  res.push("session.step.started", { sessionID, assistantMessageID: "x-" + sessionID })
+  res.push("session.text.ended", { sessionID, assistantMessageID: "x-" + sessionID, ordinal: 0, text })
+}
+const pluginLog = () => readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8")
+res.sessions.set("res-1", { id: "res-1", title: "/fix", agent: "pilot" })
+await resPrompt("res-1", "[[command fix]]\nBring the branch to a green, review-ready state.")
+res.push("session.execution.started", { sessionID: "res-1" })
+res.push("session.execution.failed", { sessionID: "res-1", error: { type: "provider.transport", message: "connect ECONNREFUSED 10.0.0.5:443" } })
+await wait(60)
+await check("[v2 19] a run the model server stopped: ↻ while its resume waits", () => {
+  assert.equal(resTitle("res-1"), "↻ /fix")
+  assert.equal(res.calls.prompt.length, 0)
+})
+await wait(200)
+const resumed = res.calls.prompt[0]
+await check("[v2 19] then the pilot gets a message that resumes the run, in the same session", () => {
+  assert.equal(resumed.sessionID, "res-1")
+  assert.match(resumed.text, /^\[\[command fix\]\]\n\[\[resume panne du serveur du modèle\]\]\nThe run of \/fix stopped before its end: the model server failed after OpenCode's retries \(connect ECONNREFUSED 10\.0\.0\.5:443\)\. Continue it now/)
+  assert.match(resumed.text, /workflow-state\.sh --no-fetch --sheet/)
+  assert.match(resumed.text, /`git log` shows the fixes this run already committed/)
+})
+await check("[v2 19] the resume is a run of the command: shown as such, the folder held, the lines of the plugin removed", () => {
+  assert.match(resumed.event.metadata.displayText, /^↻ \/fix · reprise automatique \(panne du serveur du modèle\) — my-api · /)
+  assert.match(resumed.event.prompt.text, /^The run of \/fix stopped before its end/)
+  assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).session, "res-1")
+})
+res.push("session.execution.started", { sessionID: "res-1" })
+res.push("session.execution.failed", { sessionID: "res-1", error: { type: "provider.timeout", message: "timeout" } })
+await wait(400)
+await check("[v2 19] a second failure: a second resume, later", () => {
+  assert.equal(res.calls.prompt.length, 2)
+  assert.match(res.calls.prompt[1].text, /\(timeout\)/)
+})
+res.push("session.execution.started", { sessionID: "res-1" })
+res.push("session.execution.failed", { sessionID: "res-1", error: { type: "provider.internal", message: "Bad Gateway", status: 502 } })
+await wait(400)
+await check("[v2 19] a third failure in a row: stopped, ⛔, and the log says why", () => {
+  assert.equal(res.calls.prompt.length, 2)
+  assert.equal(resTitle("res-1"), "⛔ /fix")
+  assert.match(pluginLog(), /run not resumed: 2 automatic resumes in a row already \{"command":"\/fix"/)
+  assert.ok(!existsSync(lockFile))
+})
+await check("[v2 19] a message I type starts the count again, and replaces a resume that waits", async () => {
+  await resPrompt("res-1", "[[command fix]]\nBring the branch to a green, review-ready state.")
+  res.push("session.execution.started", { sessionID: "res-1" })
+  res.push("session.execution.failed", { sessionID: "res-1", error: { type: "provider.transport", message: "reset" } })
+  await wait(60)
+  assert.equal(resTitle("res-1"), "↻ /fix")
+  await resPrompt("res-1", "laisse tomber, je regarde")
+  res.push("session.execution.started", { sessionID: "res-1" })
+  res.push("session.execution.succeeded", { sessionID: "res-1" })
+  await wait(300)
+  assert.equal(res.calls.prompt.length, 2)
+  assert.match(pluginLog(), /automatic resume cancelled: a new message in the session/)
+})
+res.sessions.set("res-2", { id: "res-2", title: "/go ABC-41", agent: "pilot" })
+await resPrompt("res-2", goText("ABC-41"))
+res.push("session.execution.started", { sessionID: "res-2" })
+answer("res-2", "Étape 3/5 : validation du montant (coder)…")
+res.push("session.execution.succeeded", { sessionID: "res-2" })
+await wait(150)
+await check("[v2 19] a turn that ended without the final answer: resumed at once", () => {
+  assert.equal(res.calls.prompt.length, 3)
+  assert.match(res.calls.prompt[2].text, /^\[\[command go ABC-41\]\]\n\[\[resume réponse finale manquante\]\]\nThe run of \/go ABC-41 stopped before its end: your last answer did not end the run/)
+})
+res.push("session.execution.started", { sessionID: "res-2" })
+await res.hooks["session.context"]({ sessionID: "res-2", agent: "pilot", system: [], tools: {}, messages: [...plain, { role: "assistant", content: [{ type: "text", text: "CRITICAL - MAXIMUM STEPS REACHED\n\nThe maximum number of steps..." }] }] })
+answer("res-2", "⛔ Nombre maximum d'étapes atteint : il reste les étapes 4 et 5.")
+res.push("session.execution.succeeded", { sessionID: "res-2" })
+await wait(150)
+await check("[v2 19] the step limit of the pilot reached: resumed, whatever its answer says", () => {
+  assert.equal(res.calls.prompt.length, 4)
+  assert.match(res.calls.prompt[3].text, /\[\[resume limite d'étapes du pilote atteinte\]\]\nThe run of \/go ABC-41 stopped before its end: you reached the step limit of your agent/)
+})
+res.push("session.execution.started", { sessionID: "res-2" })
+answer("res-2", "**[ABC-41](x) - Export**\n⏸ En attente du PO : le format du fichier d'export.")
+res.push("session.execution.succeeded", { sessionID: "res-2" })
+await wait(150)
+await check("[v2 10 and 19] a run that waits for the product owner: ⏸, not resumed", () => {
+  assert.equal(resTitle("res-2"), "⏸ /go ABC-41")
+  assert.equal(res.calls.prompt.length, 4)
+})
+for (const [id, text, why] of [
+  ["res-3", "**[ABC-42](x)**\n⛔ Contrôle avant push : rien n'a été poussé", "a stop of the run"],
+  ["res-4", "**[ABC-43](x)**\n✅ Déjà livré (MR https://gitlab/x/-/merge_requests/3) : /fix pour la CI ou la review", "a final answer"],
+]) {
+  res.sessions.set(id, { id, title: "/go", agent: "pilot" })
+  await resPrompt(id, goText(id))
+  res.push("session.execution.started", { sessionID: id })
+  answer(id, text)
+  res.push("session.execution.succeeded", { sessionID: id })
+  await wait(150)
+  await check(`[v2 19] never resumed: ${why}`, () => assert.equal(res.calls.prompt.length, 4))
+}
+res.sessions.set("res-5", { id: "res-5", title: "/go", agent: "pilot" })
+await resPrompt("res-5", goText("ABC-44"))
+res.push("session.execution.started", { sessionID: "res-5" })
+res.push("session.execution.interrupted", { sessionID: "res-5", reason: "user" })
+await wait(400)
+await check("[v2 19] never resumed: a run I stopped", () => {
+  assert.equal(res.calls.prompt.length, 4)
+  assert.equal(resTitle("res-5"), "⛔ /go")
+})
+res.sessions.set("res-6", { id: "res-6", title: "/go", agent: "pilot" })
+await resPrompt("res-6", goText("ABC-45"))
+res.push("session.execution.started", { sessionID: "res-6" })
+res.push("session.execution.failed", { sessionID: "res-6", error: { type: "provider.no-route", message: "Model not found: fake/qwen" } })
+await wait(400)
+await check("[v2 19] never resumed: a failure a resume cannot solve (no model)", () => {
+  assert.equal(res.calls.prompt.length, 4)
+  assert.equal(resTitle("res-6"), "⛔ /go")
+})
+res.sessions.set("res-7", { id: "res-7", title: "/go", agent: "pilot" })
+await resPrompt("res-7", goText("ABC-46"))
+res.push("session.execution.started", { sessionID: "res-7" })
+res.push("session.execution.failed", { sessionID: "res-7", error: { type: "provider.transport", message: "x" } })
+await wait(50)
+res.sessions.get("res-7").agent = "build"
+await wait(300)
+await check("[v2 19] never resumed: another agent was chosen in the session meanwhile (I am there)", () => {
+  assert.equal(res.calls.prompt.length, 4)
+  assert.equal(resTitle("res-7"), "⛔ /go")
+})
+await check("[v2 19] a conversation that ends without a mark is never resumed", async () => {
+  res.sessions.set("res-8", { id: "res-8", title: "Question", agent: "build" })
+  await resPrompt("res-8", "explique-moi le service")
+  res.push("session.execution.started", { sessionID: "res-8" })
+  res.push("session.execution.failed", { sessionID: "res-8", error: { type: "provider.transport", message: "x" } })
+  await wait(400)
+  assert.equal(res.calls.prompt.length, 4)
+  assert.equal(resTitle("res-8"), "Question")
 })
 
 console.log(`\n${count - failures}/${count} plugin checks as expected`)
