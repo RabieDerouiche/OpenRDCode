@@ -619,7 +619,7 @@ Pour toi si `opencode --version` affiche `opencode v2.1.2` et que ta 1.19 a ét�
 
 Cette annexe remplace les étapes 3 à 6. Les étapes 0 à 2, puis 7 à 15, restent valables, avec deux différences : ta configuration est dans `~/.config/opencode` (et non `~/oc2/config/opencode`), et le journal de la v2 est `~/.local/share/opencode/log/opencode.log`.
 
-**A.1 Un seul OpenCode à la fois.** Quitte les `opencode` ouverts dans un terminal (Ctrl+C), puis arrête le service d'arrière-plan de la v2 et ton serveur web :
+**A.1 Un seul OpenCode à la fois.** Si ta procédure interne démarre la v2 comme service (`opencode service start`, par exemple depuis `~/.zshrc_perso`), c'est ce service ton serveur : n'en lance pas un second avec `opencode-web.sh`. Pour l'instant, arrête tout : quitte les `opencode` ouverts dans un terminal (Ctrl+C), puis :
 ```sh
 opencode service stop
 ```
@@ -697,13 +697,13 @@ Tu dois voir : `$schema`, `enabled_providers`, tes sections, `agent`, `permissio
 ```sh
 mv ~/.local/share/opencode/log/opencode.log ~/.local/share/opencode/log/opencode-avant-pack-v2.log
 ```
-```sh
-opencode-web.sh start
-```
+Puis redémarre ton seul serveur : `opencode service start` si ta procédure utilise le service, sinon `opencode-web.sh start`. Après chaque changement de configuration : `opencode service restart`.
+
+**Le mot de passe du service.** Ne le mets pas dans `~/.zshenv` : chaque commande d'un agent passe par zsh, qui relit `~/.zshenv`, et recevrait donc le mot de passe, malgré le plugin qui le retire. Mets la ligne `export OPENCODE_PASSWORD=…` dans `~/.zshrc_perso`, avant les lignes `opencode service …` : seuls tes terminaux la lisent.
 
 **A.9 L'adresse dans le navigateur.** L'interface de la v2 ne fonctionne qu'à la racine d'une adresse : rien après le nom de la machine et le port, par exemple `http://machine:<port>/`. Elle n'accepte que `/`, `/settings`, `/connect`, `/new-session` et `/server/…/session/…` ; toute autre adresse affiche « Unrecognised route! » (vérifié dans son code et à l'écran) :
 - une ancienne adresse de la 1.19 (`/<longue suite>/session/…`), restée dans ton historique ou un favori : efface tout ce qui suit le port ;
-- une adresse de ton environnement de travail qui ajoute un chemin, par exemple `…/proxy/<port>/` ou `…/apps/…` : la v2 ne peut pas fonctionner derrière elle. Utilise une adresse sans chemin, si ta plateforme en donne une pour le port <port>, ou le tunnel SSH de l'étape 7 (cas B), avec le port <port>.
+- une adresse de ton environnement de travail qui ajoute un chemin, par exemple `…/user/<uid>/http/4096`, `…/proxy/<port>/` ou `…/apps/…` : l'interface web de la v2 ne peut pas fonctionner derrière elle. Le terminal, lui, si : `opencode --server <cette adresse>` depuis ton poste, comme le prévoit ta procédure interne. Utilise une adresse sans chemin, si ta plateforme en donne une pour le port <port>, ou le tunnel SSH de l'étape 7 (cas B), avec le port <port>.
 
 **A.10 Vérifier.** Connecte-toi, ouvre un projet (étape 7), puis fais l'étape 8 avec ces trois lignes à la place des points 1 à 3 :
 
