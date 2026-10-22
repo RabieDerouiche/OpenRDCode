@@ -4,6 +4,8 @@ Ce guide part de zéro. Chaque étape dit **pourquoi** on la fait, **quoi taper*
 
 Le principe : OpenCode v2 s'installe **à côté** de ta version 1.19, dans son propre dossier `~/oc2`, sur un autre port. La 1.19 continue de tourner comme avant pendant tout l'essai : la v2 n'écrit rien dans ses dossiers, à une exception près, le script `fortify.sh` que tu ajoutes toi-même au dossier des scripts du pack (étape 5.4). Revenir en arrière consiste à rouvrir l'adresse de la 1.19.
 
+**La v2 a déjà remplacé ta 1.19** (par exemple avec une procédure interne qui fait `npm install -g @opencode/cli`) ? Va directement à l'**annexe A**, à la fin de ce guide.
+
 Tout ce guide a été rejoué de bout en bout sur une machine de test, avec un utilisateur `coder`, zsh, une configuration 1.19 du pack, et le vrai OpenCode v2.1.2. Les résultats « Ce que tu dois voir » viennent de ce test.
 
 ## Les règles de ce guide
@@ -44,7 +46,7 @@ Durée : environ une heure la première fois, surtout pour coller les fichiers.
 | 11 | Revenir à la 1.19 | 1 min |
 | 12 | Dépannage | — |
 
-Les étapes 13 à 15 sont des annexes : ce qui change, ce qui n'est pas porté, et les fichiers du pack.
+Les étapes 13 à 15 sont des annexes : ce qui change, ce qui n'est pas porté, et les fichiers du pack. L'annexe A remplace les étapes 3 à 6 quand la v2 est déjà installée à la place de la 1.19.
 
 ## Étape 0 — Les mots utilisés
 
@@ -327,15 +329,24 @@ grep -n -o '^ *"[^"]*":' ~/.config/opencode/opencode.json | head -60
 ```sh
 chmod 600 ~/oc2/config/opencode/opencode.json
 ```
-6. Vérifie :
+6. **Ton provider.** La v2 exige deux réglages que la 1.19 n'exigeait pas :
+   - dans ta section `provider`, chaque provider déclare son paquet. Pour une passerelle compatible OpenAI, comme vLLM, sa première ligne est `"npm": "@ai-sdk/openai-compatible",` : ajoute-la si elle manque ;
+   - au premier niveau, juste après la ligne `$schema`, la liste des providers permis, avec le nom de ton provider (la partie avant le `/` de ta ligne `"model"`, et celui de ta ligne `"small_model"` s'il est différent) : `"enabled_providers": ["<ton provider>"],`.
+
+   Pourquoi (vérifié avec la v2.1.2) : sans paquet déclaré, la v2 ne peut pas utiliser ton modèle et bascule sans prévenir sur un modèle gratuit d'OpenCode, hébergé chez eux, à qui elle envoie ta demande. Avec `enabled_providers`, elle refuse tout autre provider que le tien.
+7. Vérifie :
 ```sh
 grep -n '^  "' ~/oc2/config/opencode/opencode.json
 ```
-Tu dois voir `$schema`, puis tes sections, puis `agent`, `permission`, `experimental` et `compaction`, chacune une seule fois.
+Tu dois voir `$schema`, `enabled_providers`, puis tes sections, puis `agent`, `permission`, `experimental` et `compaction`, chacune une seule fois.
 ```sh
 grep -c 'worktree_create' ~/oc2/config/opencode/opencode.json
 ```
 Tu dois voir `1` : la section `permission` est bien celle de la v2.
+```sh
+grep -n '"npm"' ~/oc2/config/opencode/opencode.json
+```
+Tu dois voir une ligne par provider, par exemple `"npm": "@ai-sdk/openai-compatible",`.
 
 Une virgule oubliée rend le fichier invalide, et la v2 l'ignorerait alors en entier : c'est vérifié à l'étape 8, point 1.
 
@@ -601,3 +612,112 @@ Les vérifications automatiques passent :
   - `COMMANDES.md` et `README.md`.
 - **Identiques** : les autres scripts et les autres skills.
 - **`tools/`** : mes outils de vérification. Ne les copie jamais dans ta configuration.
+
+## Annexe A — La v2 a déjà remplacé ta 1.19
+
+Pour toi si `opencode --version` affiche `opencode v2.1.2` et que ta 1.19 a été désinstallée, par exemple par une procédure interne. Tes dossiers sont alors ceux de la 1.19 : la configuration dans `~/.config/opencode`, les sessions dans `~/.local/share/opencode`. La v2 relit tes sessions 1.19 (vérifié). Mais tant que `~/.config/opencode` contient le pack 1.19, son plugin ne se charge pas dans la v2 : **aucun garde-fou du pack n'est actif. Ne lance ni `/go`, ni `/fix`, ni `/fortify` avant la fin de cette annexe.**
+
+Cette annexe remplace les étapes 3 à 6. Les étapes 0 à 2, puis 7 à 15, restent valables, avec deux différences : ta configuration est dans `~/.config/opencode` (et non `~/oc2/config/opencode`), et le journal de la v2 est `~/.local/share/opencode/log/opencode.log`.
+
+**A.1 Un seul OpenCode à la fois.** Quitte les `opencode` ouverts dans un terminal (Ctrl+C), puis arrête le service d'arrière-plan de la v2 et ton serveur web :
+```sh
+opencode service stop
+```
+```sh
+opencode-web.sh stop
+```
+Vérifie qu'il ne reste rien :
+```sh
+ps -eo args | grep -i '[o]pencode'
+```
+Tu ne dois rien voir.
+
+**A.2 Sauvegarder la configuration et les sessions telles qu'elles sont maintenant :**
+```sh
+cp -r ~/.config/opencode ~/opencode-config-avant-pack-v2 && cp -r ~/.local/share/opencode ~/opencode-data-avant-pack-v2 && ls -d ~/opencode-config-avant-pack-v2 ~/opencode-data-avant-pack-v2
+```
+Tu dois voir les deux chemins.
+
+**A.3 Les deux listes d'empreintes.** Crée `~/CHECKSUMS-config.txt` et `~/CHECKSUMS-scripts.txt` en collant `opencode-v2/CHECKSUMS-config.txt` et `opencode-v2/CHECKSUMS-scripts.txt` (vue Raw).
+
+**A.4 Le plugin 1.19 et les fichiers du pack :**
+```sh
+rm -f ~/.config/opencode/plugins/compact-commands.js && cd ~/.config/opencode && sha256sum --quiet --strict -c ~/CHECKSUMS-config.txt 2>/dev/null && echo "OK : la configuration est identique à GitHub"
+```
+Même lecture qu'à l'étape 5.3 : chaque ligne `FAILED` est un fichier à coller depuis `opencode-v2/`, au même chemin sous `~/.config/opencode/`. Relance la commande jusqu'au `OK`. Puis :
+```sh
+ls ~/.config/opencode/plugins
+```
+Tu dois voir `openrd-pack.js` seul.
+
+**A.5 Les scripts :**
+```sh
+cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
+```
+Même lecture qu'à l'étape 5.4.
+
+**A.6 `AGENTS.md`.** Comme l'étape 5.5, avec ta sauvegarde comme source de tes sections :
+1. Remplace tout le contenu de `~/.config/opencode/AGENTS.md` par celui de `opencode-v2/AGENTS.global.md`.
+2. Repère les sections :
+```sh
+grep -n '^## ' ~/opencode-config-avant-pack-v2/AGENTS.md
+```
+```sh
+grep -n '^## ' ~/.config/opencode/AGENTS.md
+```
+3. Remets tes sections « Release groups » puis « Daily », copiées depuis `~/opencode-config-avant-pack-v2/AGENTS.md`.
+4. Vérifie :
+```sh
+diff <(grep '^## ' ~/opencode-config-avant-pack-v2/AGENTS.md) <(grep '^## ' ~/.config/opencode/AGENTS.md) && echo "OK : mêmes sections"
+```
+
+**A.7 `opencode.json`.** Comme l'étape 5.6, avec ta sauvegarde comme source de tes sections :
+1. Tes sections :
+```sh
+grep -n '^  "' ~/opencode-config-avant-pack-v2/opencode.json
+```
+2. Remplace tout le contenu de `~/.config/opencode/opencode.json` par celui de `opencode-v2/opencode.snippet.json`, puis colle tes sections au début de la ligne 3, chacune finie par une virgule.
+3. Ton provider : `"npm": "@ai-sdk/openai-compatible",` en première ligne de chaque provider, et `"enabled_providers": ["<ton provider>"],` juste après la ligne `$schema` (étape 5.6, point 6).
+4. Puis :
+```sh
+chmod 600 ~/.config/opencode/opencode.json
+```
+```sh
+grep -n '^  "' ~/.config/opencode/opencode.json
+```
+```sh
+grep -c 'worktree_create' ~/.config/opencode/opencode.json
+```
+```sh
+grep -n '"npm"' ~/.config/opencode/opencode.json
+```
+Tu dois voir : `$schema`, `enabled_providers`, tes sections, `agent`, `permission`, `experimental` et `compaction` ; puis `1` ; puis une ligne `"npm"` par provider.
+
+**A.8 Redémarrer avec un journal neuf.** Le journal de la v2 s'accumule d'un démarrage à l'autre : mets l'ancien de côté, pour que les vérifications ne lisent que le nouveau.
+```sh
+mv ~/.local/share/opencode/log/opencode.log ~/.local/share/opencode/log/opencode-avant-pack-v2.log
+```
+```sh
+opencode-web.sh start
+```
+
+**A.9 L'adresse dans le navigateur.** L'interface de la v2 ne fonctionne qu'à la racine d'une adresse : rien après le nom de la machine et le port, par exemple `http://machine:<port>/`. Elle n'accepte que `/`, `/settings`, `/connect`, `/new-session` et `/server/…/session/…` ; toute autre adresse affiche « Unrecognised route! » (vérifié dans son code et à l'écran) :
+- une ancienne adresse de la 1.19 (`/<longue suite>/session/…`), restée dans ton historique ou un favori : efface tout ce qui suit le port ;
+- une adresse de ton environnement de travail qui ajoute un chemin, par exemple `…/proxy/<port>/` ou `…/apps/…` : la v2 ne peut pas fonctionner derrière elle. Utilise une adresse sans chemin, si ta plateforme en donne une pour le port <port>, ou le tunnel SSH de l'étape 7 (cas B), avec le port <port>.
+
+**A.10 Vérifier.** Connecte-toi, ouvre un projet (étape 7), puis fais l'étape 8 avec ces trois lignes à la place des points 1 à 3 :
+
+| # | Ce que tu fais | Ce que tu dois voir |
+|---|---|---|
+| 1 | `grep -c 'kind=invalid' ~/.local/share/opencode/log/opencode.log` | `0` |
+| 2 | `grep -c 'failed to load plugin' ~/.local/share/opencode/log/opencode.log` | `0` |
+| 3 | `grep -c 'loading plugin.*openrd-pack' ~/.local/share/opencode/log/opencode.log` | `1` ou plus |
+
+Le point 6 de l'étape 8 ne s'applique pas : les refus du plugin ne vont pas dans ce journal. Le point 5 suffit : la réponse de l'agent montre le refus.
+
+Pour le modèle, l'étape 9, avec ce journal :
+```sh
+grep 'configuration normalization diagnostic' ~/.local/share/opencode/log/opencode.log | grep -o 'path=[^ ]*' | sort -u
+```
+
+**Revenir à la 1.19** : étape 11, cas « Si un jour tu as désinstallé la 1.19 ». Pour la configuration, reprends la sauvegarde faite avant la désinstallation (par exemple `~/.config/opencode.backup`, celle de la procédure interne) : elle contient encore `compact-commands.js`. Pour les sessions, `~/opencode-data-avant-pack-v2` (étape A.2) : la 1.19 relit ses sessions après le passage de la v2 (vérifié).

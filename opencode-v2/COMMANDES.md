@@ -6,7 +6,7 @@ Les commandes du pack à taper toi-même, à copier-coller, quand OpenCode v2 to
 
 ## Installer
 
-Tout est dans `MIGRATION.md` : téléchargement de la v2 sans rien installer, configuration collée depuis GitHub et vérifiée par empreintes, démarrage, vérifications.
+Tout est dans `MIGRATION.md` : téléchargement de la v2 sans rien installer, configuration collée depuis GitHub et vérifiée par empreintes, démarrage, vérifications. Si la v2 a déjà remplacé ta 1.19 (procédure interne), c'est son annexe A : la configuration est alors dans `~/.config/opencode` et le journal dans `~/.local/share/opencode/log/opencode.log`, au lieu des chemins `~/oc2` de ce guide.
 
 ## Mettre à jour le pack
 
