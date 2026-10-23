@@ -1,13 +1,15 @@
 #!/bin/sh
 # Builds a .NET solution or project quietly, then runs its tests only if the build passed, in ONE call.
 # Ends with explicit "BUILD:" and "TESTS:" lines: OpenCode shows the output of a command to the model, not its exit code.
-# Usage: build-test.sh [--build-only | --no-build] [<solution, project or folder>] [<dotnet test options>...]
+# Usage: build-test.sh [--if-changed] [--build-only | --no-build] [<solution, project or folder>] [<dotnet test options>...]
 #   build-test.sh                                         the solution or project of the current folder
 #   build-test.sh src/App.sln                             a given solution (several solutions in the folder)
 #   build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~InvoiceServiceTests
 #                                                         only some tests (the test project and what it references)
 #   build-test.sh --build-only [<solution or project>]    the build only, to fix compilation errors
 #   build-test.sh --no-build <project> [<options>]        the tests only, of what was just built (test-guardian.sh)
+#   build-test.sh --if-changed [<target>] [<options>]     nothing when the same code passed this same run already
+#                                                         (/push after the conversation built and tested)
 # Output: the build errors (each once) and the build summary, then the end of the test output (failures and totals),
 # preceded by the summary line of the test assemblies that scrolled out of it; after a test failure, a line
 # "FAILED TESTS (<n>): <names>" with every failed test of the run. After a run of the whole solution
@@ -58,13 +60,15 @@ take_lock() {
 
 build_only=0
 no_build=0
-if [ "$1" = "--build-only" ]; then
-  build_only=1
-  shift
-elif [ "$1" = "--no-build" ]; then
-  no_build=1
-  shift
-fi
+if_changed=0
+while :; do
+  case "$1" in
+    --build-only) build_only=1; shift ;;
+    --no-build) no_build=1; shift ;;
+    --if-changed) if_changed=1; shift ;;
+    *) break ;;
+  esac
+done
 target=""
 case "$1" in
   ""|-*) ;;
@@ -86,7 +90,19 @@ if [ $# -eq 0 ] && [ "$build_only" -eq 0 ]; then
 fi
 # Fingerprint of the code before the build: the code that is built and tested
 fingerprint=""
-[ "$whole" -eq 1 ] && fingerprint=$(sh "$(dirname "$0")/state-fingerprint.sh" 2>/dev/null)
+{ [ "$whole" -eq 1 ] || [ "$if_changed" -eq 1 ]; } && fingerprint=$(sh "$(dirname "$0")/state-fingerprint.sh" 2>/dev/null)
+# The last run of this working tree that built and passed its tests: its code fingerprint and its target and options.
+# --if-changed: the same again is not run again
+green=${gitdir:+$gitdir/opencode-green}
+runkey=""
+if [ -n "$fingerprint" ] && [ -n "$green" ] && [ "$build_only" -eq 0 ] && [ "$no_build" -eq 0 ]; then
+  runkey="$fingerprint $(printf '%s\n' "$target" "$@" | cksum | cut -d' ' -f1)"
+fi
+if [ "$if_changed" -eq 1 ] && [ -n "$runkey" ] && [ "$(head -n 1 "$green" 2>/dev/null)" = "$runkey" ]; then
+  echo "BUILD: OK (not run again: this same code passed this build and its tests on $(sed -n 2p "$green"))"
+  echo "TESTS: OK (not run again: same code, same target and options)"
+  exit 0
+fi
 
 out=$(mktemp "${TMPDIR:-/tmp}/build-test.XXXXXX") || exit 1
 one="$out.one"
@@ -181,6 +197,7 @@ $mtp
 LIST
 }
 mixed=0
+tests_ok=0
 if [ -z "$mtp" ]; then
   vstest_run "$target" "$@" > "$out" 2>&1
   status=$?
@@ -257,13 +274,19 @@ elif [ "$mixed" -eq 1 ]; then
     echo "TESTS: NONE RUN (no test project for this target, or no test matches the filter)"
   else
     echo "TESTS: OK ($ran test$([ "$ran" -eq 1 ] || echo s))"
+    tests_ok=1
   fi
 elif ! grep -q '[^[:space:]]' "$out" || grep -q -E 'No test matches|No test is available|No test source files' "$out"; then
   echo "TESTS: NONE RUN (no test project for this target, or no test matches the filter)"
 else
   echo "TESTS: OK"
+  tests_ok=1
 fi
-if [ -n "$fingerprint" ]; then
+if [ -n "$fingerprint" ] && [ "$whole" -eq 1 ]; then
   echo "Code fingerprint of this run: $fingerprint (whole solution)"
+fi
+# a green run is remembered for --if-changed (a run with no test at all is not)
+if [ -n "$runkey" ] && [ "$status" -eq 0 ] && [ "$tests_ok" -eq 1 ]; then
+  printf '%s\n%s\n' "$runkey" "$(date '+%Y-%m-%d %H:%M')" > "$green" 2>/dev/null
 fi
 exit "$status"

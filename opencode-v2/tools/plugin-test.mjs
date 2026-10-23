@@ -1615,6 +1615,31 @@ await check("[v2 4] /push chosen in a question starts by itself", async () => {
   assert.deepEqual(ct.calls.command.at(-1), { sessionID: "ct-9", name: "push", text: "" })
 })
 
+await check("[v2 4] /tests chosen in a question starts by itself", async () => {
+  ct.sessions.set("ct-10", { id: "ct-10", title: "Conversation", agent: "build" })
+  await ctPrompt("ct-10", "ajoute des tests à InvoiceService")
+  await ct.hooks["tool.execute.after"]({ tool: "question", sessionID: "ct-10", status: "completed", result: { output: { answers: [["/tests InvoiceService (recommandé)"]] } } })
+  ct.push("session.execution.succeeded", { sessionID: "ct-10" })
+  await wait(100)
+  assert.deepEqual(ct.calls.command.at(-1), { sessionID: "ct-10", name: "tests", text: "InvoiceService" })
+})
+await check("[v2 9] /tests takes the folder like /go; « continue » after it stopped resumes it with the pilot", async () => {
+  ct.sessions.set("ct-11", { id: "ct-11", title: "Tests", agent: "pilot" })
+  const event = await ctPrompt("ct-11", "[[command tests InvoiceService]]\nWrite the missing unit tests of the code the request names.")
+  assert.match(event.metadata.displayText, /^\/tests InvoiceService — my-api · /)
+  assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).command, "tests")
+  ct.push("session.execution.started", { sessionID: "ct-11" })
+  ct.push("session.execution.succeeded", { sessionID: "ct-11" })
+  await wait(150)
+  ct.sessions.set("ct-12", { id: "ct-12", title: "⛔ /tests InvoiceService", agent: "build" })
+  const again = await ctPrompt("ct-12", "continue")
+  assert.equal(ct.calls.switch.at(-1).sessionID, "ct-12")
+  assert.match(again.prompt.text, /^The run of \/tests InvoiceService stopped before its end/, JSON.stringify(again.prompt.text).slice(0, 300))
+  assert.match(again.prompt.text, /there is no ticket sheet/)
+  ct.push("session.execution.succeeded", { sessionID: "ct-12" })
+  await wait(150)
+})
+
 // ---------- 23. dotnet run: a project of the repository that the last commit holds ----------
 const runRepo = join(home, "repos", "run-api")
 mkdirSync(join(runRepo, "src", "Api"), { recursive: true })

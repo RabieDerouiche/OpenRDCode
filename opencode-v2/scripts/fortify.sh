@@ -1,17 +1,19 @@
 #!/bin/sh
 # What /fortify needs besides the measures of the tests (test-guardian.sh). Run from the repository.
-#   prereq           dotnet, the Fortify SSC application line ("STOP:" when one lacks), then the unit test projects
+#   prereq [--tests] dotnet, the Fortify SSC application line ("STOP:" when one lacks; not with --tests, for /tests),
+#                    then the unit test projects
 #                    and the coverage collector of each of them (coverlet.collector with VSTest; with
 #                    Microsoft.Testing.Platform, Microsoft.Testing.Extensions.CodeCoverage or coverlet.MTP):
 #                    "PREREQ: NO TEST PROJECT" or "PREREQ: COVERLET MISSING", then "PREREQ: SETUP NEEDED"
 #                    (test-guardian.sh setup, once the developer agreed), or "PREREQ: OK"
 #   batch            creates the folder of the batch of this branch and prints it ("BATCH: <path>")
 #   discard <label>  puts the uncommitted work of a failed vulnerability aside (git stash, recoverable), on the branch
-#                    of a ticket only (/fortify, and a security finding of /fix): "DISCARDED:" with the commit of the
+#                    of a ticket or of a work without a ticket (/fortify, and a security finding of /fix; never on
+#                    develop, master, main or a detached HEAD): "DISCARDED:" with the commit of the
 #                    stash, which names it whatever other stashes the worktrees of the repository add after it
 # The batch folder: <git folder>/opencode-tickets/<KEY>.fortify (KEY from the branch): the vulnerability cards,
 # shared by the worktrees, never committed. Exit 1 with one "STOP: <reason>" line when a check fails.
-# Usage: fortify.sh prereq | batch | discard <label>
+# Usage: fortify.sh prereq [--tests] | batch | discard <label>
 
 LC_ALL=C
 export LC_ALL
@@ -28,14 +30,15 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(git rev-parse --show-toplevel)
 cd "$root" || exit 1
 common=$(git rev-parse --git-common-dir) && common=$(cd "$common" && pwd)
-key=$(git branch --show-current 2>/dev/null | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -n 1)
+branch=$(git branch --show-current 2>/dev/null)
+key=$(printf '%s\n' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -n 1)
 batch="$common/opencode-tickets/${key:-NOKEY}.fortify"
 
 # The unit test projects: .csproj files that reference a test SDK or the MSTest package, say they are test projects,
 # or are named so
 test_projects() {
   git ls-files '*.csproj' | while read -r p; do
-    if grep -qi 'Microsoft.NET.Test.Sdk\|MSTest.Sdk\|xunit.v3\|Include="MSTest"\|<IsTestProject>[[:space:]]*true' "$p" 2>/dev/null ||
+    if grep -qi 'Microsoft.NET.Test.Sdk\|MSTest.Sdk\|xunit.v3\|Include="MSTest"\|Include="TUnit\|<IsTestProject>[[:space:]]*true' "$p" 2>/dev/null ||
       printf '%s\n' "$p" | grep -qE '\.(Unit|Integration)?Tests?\.csproj$'; then
       echo "$p"
     fi
@@ -60,13 +63,15 @@ case "$1" in
   prereq)
     command -v dotnet >/dev/null 2>&1 || stop "dotnet is not on the PATH of this machine (ENVIRONMENT PROBLEM: COMMANDES.md, « Environnement »)"
     echo "PREREQ: dotnet $(dotnet --version 2>/dev/null | head -n 1)"
-    ssc=$(git grep -h '^APPSEC_PROJECT_NAME=' -- '*appsec-ci.env' 2>/dev/null | head -n 1)
-    [ -n "$ssc" ] || stop "no APPSEC_PROJECT_NAME line in appsec-ci.env: the Fortify SSC application of this repository is unknown"
-    echo "PREREQ: Fortify SSC application line found"
+    if [ "$2" != --tests ]; then
+      ssc=$(git grep -h '^APPSEC_PROJECT_NAME=' -- '*appsec-ci.env' 2>/dev/null | head -n 1)
+      [ -n "$ssc" ] || stop "no APPSEC_PROJECT_NAME line in appsec-ci.env: the Fortify SSC application of this repository is unknown"
+      echo "PREREQ: Fortify SSC application line found"
+    fi
     # what the proofs need and is not there: the pilot asks the developer, then test-guardian.sh setup does it
     projects=$(test_projects)
     if [ -z "$projects" ]; then
-      echo "PREREQ: NO TEST PROJECT: this repository has no unit test project, and /fortify proves each fix with unit tests. With the developer's agreement, test-guardian.sh setup xunit|mstest|nunit <the files of the batch> creates it (dotnet new template, coverlet.collector, solution), as the first commit of the batch"
+      echo "PREREQ: NO TEST PROJECT: this repository has no unit test project, and /fortify and /tests prove their work with unit tests. With the developer's agreement, test-guardian.sh setup xunit|mstest|nunit <the files to test> creates it (dotnet new template, coverage collector, solution), as the first commit"
       echo "PREREQ: SETUP NEEDED"
       exit 0
     fi
@@ -98,9 +103,13 @@ case "$1" in
 
   discard)
     # Puts aside the uncommitted work of one vulnerability that failed or was interrupted, recoverable (git stash),
-    # never on another branch than the branch of a ticket. The stash list is shared by every worktree of the
-    # repository: the message names the key, the label and the folder, and the commit of the stash names it for good.
-    [ -n "$key" ] || stop "not on the branch of a ticket (no key in the branch name): nothing put aside"
+    # on the branch of a ticket or of a work without a ticket (/fix on a branch of /push), never on develop, master,
+    # main or a detached HEAD. The stash list is shared by every worktree of the repository: the message names the
+    # key (or the branch), the label and the folder, and the commit of the stash names it for good.
+    case "$branch" in
+      ""|develop|master|main) stop "not on a branch of its own (${branch:-detached HEAD}): nothing put aside" ;;
+    esac
+    [ -n "$key" ] || key=$branch
     label=${2:-work}
     printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
     n=$(git status --porcelain | wc -l | tr -d ' ')

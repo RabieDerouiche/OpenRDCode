@@ -18,7 +18,7 @@ Bring the branch to a green, review-ready state in this single run. The develope
 - On develop, master or main: say « ⛔ /fix travaille sur la branche d'un ticket : /go <KEY> pour en démarrer un, /push pour pousser un travail sans ticket sur une branche à lui » and stop. On a detached HEAD (an OpenCode workspace starts so): « ⛔ HEAD détachée : /push crée une branche pour ce travail et la pousse ; /go <KEY> pour un ticket. » and stop.
 - "Fetch:" AUTH FAILED: stop (your stop conditions).
 - "Merge in progress: yes": stop with « ⛔ Une fusion est en cours sur la branche : termine-la dans Rider (ou git merge --abort), puis relance /fix. »
-- A branch without a Jira key (no ticket sheet): the same work; commit messages without a key; nothing is written to a sheet (no ticket-sheet.sh call).
+- A branch without a Jira key (pushed with /push, or a teammate's branch: no ticket sheet): the same work; commit messages without a key; nothing is written to a sheet (no ticket-sheet.sh call); « Tests that already fail on develop » are « aucun connu ».
 - A directive « merge <branch> » (« intègre », « fusionne avec »): `sh ~/.config/opencode/scripts/ship.sh --sync-only --base --merge <branch>` first; it fetches, merges and lists the conflicts (never look at the branches yourself); a "STOP:" line: stop with it. What it merged is then built and tested in step 5, even when nothing else needs a fix.
 - "Upstream: none": nothing was pushed, so there is no CI and no merge request yet: say « ⛔ Rien de poussé : /go <KEY> livre d'abord la branche du ticket ; /push pousse un travail sans ticket » and stop.
 - The branch is behind its remote copy, or the base branch has new commits: `sh ~/.config/opencode/scripts/ship.sh --sync-only --base`. A conflict: stop with its line. Local changes that block the merge: go on, they are merged at the end (step 6).
@@ -54,7 +54,7 @@ When something was fixed: the full suite in one call. .NET that builds here: `sh
 
 ## 6. Deliver
 1. `sh ~/.config/opencode/scripts/ship.sh --base "fix(<scope>): address the CI, scan and review feedback (<KEY>)"` (it also commits the local changes made by the developer on this machine, and checks the changes before the push). "GUARD: STOP": stop with « ⛔ Contrôle avant push : rien n'a été poussé », its lines, and « COMMANDES.md, section « Contrôle avant push » ». Another "STOP:" line: stop with it. The WARNING and PACKAGES lines go to « Points d'attention » of the answer.
-2. No open merge request (it was closed or never created): create it as Draft, as your rules say.
+2. No open merge request (it was closed or never created): create it as Draft, as your rules say; on a branch `poc/…` or `wip/…` (a trial pushed with /push, without a merge request on purpose), never: the answer gives the "MR LINK" line of ship.sh instead.
 3. `sh ~/.config/opencode/scripts/ticket-sheet.sh suivi "/fix - <n> corrigés, <n> réponses, <n> hors périmètre - build ok - tests <passed>/<total>"`.
 
 ## Answer, in French

@@ -33,7 +33,8 @@
 #                                  build-test.sh), then the lines the branch changed since <base> that no test runs:
 #                                  "CHANGED:" lines per source file, then one "COVERAGE OF THE CHANGES:" line
 #   folder                         creates and prints the measures folder ("FOLDER: <path>")
-# The measures folder: <git folder>/opencode-tickets/<KEY>.tests (KEY from the branch, NOKEY otherwise), shared by the
+# The measures folder: <git folder>/opencode-tickets/<KEY>.tests (KEY from the branch; a branch without a Jira key, of
+# /push, /tests or /fix without a ticket: its name, / as -; a detached HEAD: NOKEY), shared by the
 # worktrees, never committed; the test runs write nothing in the repository. Output lines are for the agents: exit 1
 # with one "STOP: <reason>" line when a check fails, "ENVIRONMENT PROBLEM:" when this machine cannot build or run the
 # tests (the agent stops and tells the developer). A test that runs more than 5 minutes is stopped and named.
@@ -69,7 +70,10 @@ root=$(git rev-parse --show-toplevel)
 cd "$root" || exit 1
 root=$(pwd -P)
 common=$(git rev-parse --git-common-dir) && common=$(cd "$common" && pwd)
-key=$(git branch --show-current 2>/dev/null | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -n 1)
+branch=$(git branch --show-current 2>/dev/null)
+key=$(printf '%s\n' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -n 1)
+# a branch without a key has a folder of its own: the labels of two branches without a ticket (F1, T1…) never meet
+[ -n "$key" ] || key=$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-')
 folder="$common/opencode-tickets/${key:-NOKEY}.tests"
 
 # One dotnet build or test run at a time in this working tree: the test-guardians of a wave work in parallel, and two
@@ -136,7 +140,7 @@ environment() {
 # or are named so
 test_projects() {
   git ls-files '*.csproj' | while read -r p; do
-    if grep -qi 'Microsoft.NET.Test.Sdk\|MSTest.Sdk\|xunit.v3\|Include="MSTest"\|<IsTestProject>[[:space:]]*true' "$p" 2>/dev/null ||
+    if grep -qi 'Microsoft.NET.Test.Sdk\|MSTest.Sdk\|xunit.v3\|Include="MSTest"\|Include="TUnit\|<IsTestProject>[[:space:]]*true' "$p" 2>/dev/null ||
       printf '%s\n' "$p" | grep -qE '\.(Unit|Integration)?Tests?\.csproj$'; then
       echo "$p"
     fi

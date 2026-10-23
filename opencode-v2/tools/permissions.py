@@ -41,7 +41,12 @@ SCRIPTS = ["sh ~/.config/opencode/scripts/*", "sh $HOME/.config/opencode/scripts
 READ = ["ls*", "pwd", "cd *", "cat *", "head*", "tail*", "wc*", "sort*", "uniq*", "comm *", "paste *", "column *",
         "nl *", "tac *", "cut *", "tr *", "find *", "grep *",
         "egrep *", "rg *", "tree*", "file *", "stat *", "which *", "command -v *", "realpath *", "basename *",
-        "dirname *", "date*", "echo *", "printf *", "sed -n*", "jq *", "diff *", "test *", "[ *", "true"]
+        "dirname *", "date*", "echo *", "printf *", "sed -n*", "jq *", "diff *", "test *", "[ *", "true",
+        # awk to read a range or a column (its forms that run a command or write a file are refused below: AWK_GUARD),
+        # du, and xargs feeding a search (find … | xargs grep -l …): Qwen reaches for them, and a refusal costs a turn
+        "awk *", "du *",
+        "xargs grep *", "xargs -0 grep *", "xargs -r grep *", "xargs -0r grep *", "xargs -r0 grep *",
+        "xargs wc *", "xargs -0 wc *", "xargs ls *"]
 GIT_READ = ["git status*", "git log*", "git diff*", "git show*", "git branch*", "git fetch*", "git rev-parse*",
             "git ls-files*", "git ls-tree*", "git grep*", "git blame*", "git describe*", "git tag", "git tag -l*",
             "git tag --list*", "git merge-base*", "git shortlog*", "git cat-file*", "git for-each-ref*",
@@ -74,6 +79,11 @@ REDIRECT = [("* >*", "deny"), ("* >>*", "deny")]
 OTHER_DENY = ["find *-exec*", "find *-execdir*", "find *-delete*", "find *-ok*", "find *-fprint*", "find *-fls*",
               "sed *-i*", "sed *--in-place*", "sort -o *", "sort * -o *", "sort *--output*", "tree -o *",
               "tree * -o *", "*--fix*", "*--write*"]
+# awk runs a command (system, a pipe or getline from a command), writes a file (print > "file"), reads the environment
+# (ENVIRON) or runs a program file (-f): refused, its reading forms stay allowed
+AWK_GUARD = ["awk *system*", "awk *getline*", "awk *ENVIRON*", "awk *-f *", "awk *| \"*", "awk *|\"*", "awk *> \"*",
+             "awk *>\"*", "awk *>> \"*", "awk *>>\"*"]
+OTHER_DENY += AWK_GUARD
 SUBST = ["*$(*", "*${*", "*`*"]
 
 # ---------- secrets: refused for every agent, build and dev included ----------
@@ -239,9 +249,7 @@ CODER_BUILD = ["dotnet clean*", "dotnet format*", "dotnet build-server shutdown*
 CODER_FRONT = ["npm run lint*", "npm run format*", "npx eslint *", "npx prettier *", "npx ng lint*", "npx ng generate *",
                "npx ng g *", "npm ci*", "npm install", "npm i", "yarn install --frozen-lockfile*",
                "yarn install --immutable*", "pnpm install --frozen-lockfile*"]
-CODER_FILES = ["mkdir *", "touch *", "cp *", "mv *", "rm *", "chmod +x *",
-               "xargs grep *", "xargs -0 grep *", "xargs -r grep *", "xargs -0r grep *", "xargs -r0 grep *",
-               "xargs wc *", "xargs -0 wc *", "xargs ls *"]
+CODER_FILES = ["mkdir *", "touch *", "cp *", "mv *", "rm *", "chmod +x *"]
 # One file removed at a time, never a folder (the plugin refuses a path outside the repository)
 CODER_RM_GUARD = RM_RECURSIVE + ["rm *..*"]
 # find and sed forms that write or run commands; the fixing forms of the linters stay allowed for the coder

@@ -10,10 +10,12 @@
 #   its merge request. The branch must be on origin (a merge request targets a branch of origin).
 # - A change without a Jira ticket: the key LOCAL becomes the next free local key, LOCAL-<n> (branches here and on
 #   origin, ticket sheets), printed on a "KEY:" line.
-# Here mode (/push of work done outside a ticket): branch.sh --here <poc|feature|bugfix|hotfix|wip> "<summary>"
+# Here mode (/push and /tests, work done outside a ticket):
+#   branch.sh --here <feature|bugfix|hotfix|test|docs|refactor|chore|poc|wip> "<summary>"   or   branch.sh --here --name <branch>
 # - On develop, master, main, a detached HEAD (an OpenCode workspace starts detached) or an OpenCode workspace branch:
-#   a new branch <type>/<words of the summary> at the current commit, with the uncommitted changes; a name already
-#   taken gets -2, -3…; on any other branch: that branch is kept.
+#   a new branch <type>/<words of the summary> (or the name given) at the current commit, with the uncommitted
+#   changes; a name already taken gets -2, -3… (a name given and taken stops: choose another); on any other branch:
+#   that branch is kept.
 # Uncommitted changes never travel silently: they go to a NEW branch only when they were made on the base branch, on
 # a detached HEAD or on a workspace branch (work started there before /go or /push); in every other case the script
 # stops and lists them. A new ticket branch that cannot start from the base with them (they touch files the base
@@ -43,7 +45,10 @@ if [ "$mode" = ticket ]; then
   key=$1 type=${2:-feature} summary=$3
   if [ $# -ge 3 ]; then shift 3; else shift $#; fi
 else
-  key="" type=${1:-poc} summary=$2
+  key="" type=${1:-poc} summary=$2 given=""
+  if [ "$1" = --name ]; then
+    given=$2 type=""
+  fi
   if [ $# -ge 2 ]; then shift 2; else shift $#; fi
 fi
 from=""
@@ -65,9 +70,15 @@ if [ "$mode" = ticket ]; then
     feature|bugfix|hotfix) ;;
     *) type=feature ;;
   esac
+elif [ -n "$given" ] || [ "$type" = "" ]; then
+  given=${given#origin/}
+  [ -n "$given" ] && git check-ref-format --branch "$given" >/dev/null 2>&1 || stop "\"$given\" is not a branch name"
+  case "$given" in
+    develop|master|main|opencode/*) stop "$given is not a branch for this work: give the name of a branch of its own" ;;
+  esac
 else
   case "$type" in
-    poc|feature|bugfix|hotfix|wip) ;;
+    feature|bugfix|hotfix|test|docs|refactor|chore|poc|wip) ;;
     *) type=poc ;;
   esac
 fi
@@ -122,15 +133,23 @@ if [ "$mode" = here ]; then
       echo "BRANCH: $current (kept: the work is committed on it)"
       exit 0 ;;
   esac
-  words=$(slug "$summary")
-  [ -n "$words" ] || words=$(date '+%Y%m%d-%H%M')
-  name="$type/$words"
-  n=1
-  while git rev-parse -q --verify "refs/heads/$name" >/dev/null || git rev-parse -q --verify "refs/remotes/origin/$name" >/dev/null; do
-    n=$((n + 1))
-    [ "$n" -le 9 ] || stop "the branches $type/$words to $type/$words-9 exist already: give another summary"
-    name="$type/$words-$n"
-  done
+  taken() {
+    git rev-parse -q --verify "refs/heads/$1" >/dev/null || git rev-parse -q --verify "refs/remotes/origin/$1" >/dev/null
+  }
+  if [ -n "$given" ]; then
+    name=$given
+    taken "$name" && stop "the branch $name exists already (here or on origin): give another name"
+  else
+    words=$(slug "$summary")
+    [ -n "$words" ] || words=$(date '+%Y%m%d-%H%M')
+    name="$type/$words"
+    n=1
+    while taken "$name"; do
+      n=$((n + 1))
+      [ "$n" -le 9 ] || stop "the branches $type/$words to $type/$words-9 exist already: give another summary"
+      name="$type/$words-$n"
+    done
+  fi
   git switch -q -c "$name" 2>/dev/null || stop "git could not create $name"
   echo "BRANCH: $name (created from ${current:-the detached HEAD $detached}, at $(git log -1 --format='%h, %cs'))"
   [ -n "$dirty" ] && echo "CARRIED: the uncommitted changes came along: $dirty"

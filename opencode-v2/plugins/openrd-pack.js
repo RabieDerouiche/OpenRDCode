@@ -57,7 +57,7 @@
 //    2 minutes unless the agent asks for more, and a stopped full test suite is run again from the start), ship.sh
 //    and branch.sh 5 minutes. The agents of the pack never run a shell command or a subagent in the background: /go,
 //    /fix and /fortify wait for each result, and the folder lock (9) ends with the turn.
-// 9. Starts only one /go, /fix, /fortify, /push or /sync at a time per folder: two pilots in one working tree would
+// 9. Starts only one /go, /fix, /fortify, /tests, /push or /sync at a time per folder: two pilots in one working tree would
 //    commit each other's changes. The second one gets a one-line answer and no tool runs in its turn. The lock is also a file in
 //    the git folder of the working tree, so that a second OpenCode of the machine (the terminal client) sees it too;
 //    a lock left by an OpenCode that stopped is ignored, except by OpenCode run as its background service: it resumes
@@ -119,7 +119,7 @@
 //    then 1.5, until an answer ends normally: the sampling of the model card everywhere else. Every request also gets
 //    the loops of its history (answers of an earlier loop, of a version without this guard) kept once. After three
 //    cuts in a row OpenCode stops the turn, and a run is resumed (19).
-// 22. Resumes a run of /go, /fix or /fortify that stopped before its end when I write « continue » (« reprends »,
+// 22. Resumes a run of /go, /fix, /fortify or /tests that stopped before its end when I write « continue » (« reprends »,
 //    « vas-y »…) in its session: the web interface switches the session to the agent selected under the prompt with
 //    every message, so « continue » went to build, which carried on the pilot's work with none of its rules. The
 //    session goes back to the pilot, and the message becomes the resume of 19 (never after ✅ or ⏸).
@@ -180,7 +180,7 @@ function cleanEnv(env) {
 }
 const MAX_OUTPUT = 32 * 1024 * 1024
 // Commands of the pack that a multiple-choice answer may start (built-in OpenCode commands are never started)
-const CHAINABLE = new Set(["go", "fix", "fortify", "push", "sync", "daily", "review", "compare", "outil"])
+const CHAINABLE = new Set(["go", "fix", "fortify", "tests", "push", "sync", "daily", "review", "compare", "outil"])
 // An option that names a command: "/go ABC-123", "/daily (recommandé)" (the mark of the recommended option is no argument)
 const RECOMMENDED = /\s*\((?:recommandé|recommended)\)\s*$/i
 const CHOICE = /^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?$/i
@@ -954,7 +954,8 @@ const V2_HIDDEN = ["execute", "websearch"]
 const SUBAGENT_PROMPT = "You are a subagent spawned by another session."
 // 3. the first line of every command of the pack: "[[command <name> <arguments>]]"
 const COMMAND_LINE = /^\s*\[\[command ([a-z][a-z0-9-]*)(?:[ \t]+([\s\S]*?))?\]\][ \t]*(?:\r?\n|$)/
-const PILOT_COMMANDS = new Set(["go", "fix", "fortify"])
+// (/tests: the unit tests of a code without a ticket, a run of the pilot like the others)
+const PILOT_COMMANDS = new Set(["go", "fix", "fortify", "tests"])
 // 9. the commands that write to git: one at a time per folder (/push and /sync are not resumed: 19)
 const LOCKING_COMMANDS = new Set([...PILOT_COMMANDS, "push", "sync"])
 // a command file of an older pack, without its [[command]] line: the first sentence of the body of each pilot command
@@ -1181,6 +1182,7 @@ const resumeText = (run, why) =>
   "ticked steps and its « ## Suivi » lines), git what is committed" +
   (run.command === "fortify" ? "; the card of the vulnerability under way, in the batch folder that `sh ~/.config/opencode/scripts/fortify.sh batch` prints, says which of its phases are done" : "") +
   (run.command === "fix" ? "; `git log` shows the fixes this run already committed" : "") +
+  (run.command === "tests" ? "; `git status` and `git log` show the tests this run already wrote or committed (there is no ticket sheet)" : "") +
   ".\n2. Go on with the instructions of /" + run.command + " from the first step that is not done. Never redo a step " +
   "whose commit or tick exists; a subagent whose report you have is not called again, and one that failed is taken up " +
   "again with its sessionID.\n3. End with the final answer of /" + run.command + ", in its format."
@@ -2439,7 +2441,7 @@ export default Plugin.define({
       const known = procedures.get(sessionID)
       if (known && PILOT_COMMANDS.has(known.command)) return { command: known.command, args: known.args }
       const rest = title.replace(OUTCOME, "").replace(/^\[[^\]]*\] /, "").trim()
-      const named = /^\/(go|fix|fortify)(?:\s+([\s\S]*))?$/.exec(rest)
+      const named = /^\/(go|fix|fortify|tests)(?:\s+([\s\S]*))?$/.exec(rest)
       return named ? { command: named[1], args: (named[2] || "").trim() } : undefined
     }
 
@@ -2516,7 +2518,7 @@ export default Plugin.define({
           // OpenCode names it
         }
       }
-      // 9. one /go, /fix, /fortify, /push or /sync at a time per folder
+      // 9. one /go, /fix, /fortify, /tests, /push or /sync at a time per folder
       if (LOCKING_COMMANDS.has(command)) {
         const other = acquire(sessionID, command, args)
         if (other) {

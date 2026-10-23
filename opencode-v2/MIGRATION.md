@@ -237,7 +237,7 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère : remplace tout son contenu ;
 - `FAILED open or read` : il n'existe pas encore : crée-le.
 
-La première fois, avec un pack 1.19 à jour, tu dois voir ces 21 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les neuf commandes) :
+La première fois, avec un pack 1.19 à jour, tu dois voir ces 22 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
 ```text
 agents/analyst.md: FAILED
 agents/checker.md: FAILED
@@ -255,6 +255,7 @@ commands/outil.md: FAILED
 commands/push.md: FAILED open or read
 commands/review.md: FAILED
 commands/sync.md: FAILED open or read
+commands/tests.md: FAILED open or read
 skills/fortify-remediation/SKILL.md: FAILED
 skills/pack-doc/SKILL.md: FAILED
 skills/pack-release-notes/SKILL.md: FAILED
@@ -269,7 +270,7 @@ Relance la commande après chaque série de fichiers collés. **Tu as fini quand
 ```sh
 ls ~/oc2/config/opencode/agents ~/oc2/config/opencode/commands
 ```
-Tu dois voir, pour les agents : `analyst.md checker.md coder.md debugger.md doc-writer.md pilot.md test-guardian.md` ; pour les commandes : `compare.md daily.md fix.md fortify.md go.md outil.md push.md review.md sync.md`. Un autre nom est soit un fichier à toi (garde-le), soit un reste d'un ancien pack : envoie-moi son nom. Dans `skills`, tes skills `pattern-…` sont à toi : ils restent.
+Tu dois voir, pour les agents : `analyst.md checker.md coder.md debugger.md doc-writer.md pilot.md test-guardian.md` ; pour les commandes : `compare.md daily.md fix.md fortify.md go.md outil.md push.md review.md sync.md tests.md`. Un autre nom est soit un fichier à toi (garde-le), soit un reste d'un ancien pack : envoie-moi son nom. Dans `skills`, tes skills `pattern-…` sont à toi : ils restent.
 
 **5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `fortify.sh`, `test-guardian.sh`, `base.sh` et `test-platform.sh` ; sept d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `diff-guard.sh`, `outil.sh`, `package-refs.sh`, `ship.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public).
 ```sh
@@ -635,13 +636,13 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
 | un sous-agent repris par son identifiant | son message n'a plus la ligne qui dit « sous-agent » | reconnu par sa session parente : toujours sans question |
 
 **Les vérifications automatiques passent** :
-- plugin : 684 sur 684 (651 à cette étape), dont le contenu `null` des messages d'appels d'outils remplacé par `""` (rejoué sur le vrai v2.1.3 contre un serveur qui refuse `null` comme la passerelle de la plateforme), puis la coupure des réponses qui bouclent, « continue » repris par le pilote et `dotnet run` limité aux projets commités ;
-- permissions : 1 970 cas sur 1 970 (1 933 à cette étape) ;
-- scripts git hors ticket (`/push`, `/sync`, `/go … depuis`, espace de travail en HEAD détachée) : 49 contrôles sur 49 contre un dépôt distant de test (`tools/scripts-test.sh`, dash et bash) ;
-- scripts .NET avec un `dotnet` simulé, VSTest et Microsoft.Testing.Platform : 100 contrôles sur 100 (`tools/dotnet-test.sh`, dash et bash) ;
+- plugin : 686 sur 686 (651 à cette étape), dont le contenu `null` des messages d'appels d'outils remplacé par `""` (rejoué sur le vrai v2.1.3 contre un serveur qui refuse `null` comme la passerelle de la plateforme), puis la coupure des réponses qui bouclent, « continue » repris par le pilote et `dotnet run` limité aux projets commités, `/tests` ;
+- permissions : 2 070 cas sur 2 070 (1 933 à cette étape) ;
+- scripts git hors ticket (`/push`, `/sync`, `/go … depuis`, espace de travail en HEAD détachée) : 55 contrôles sur 55 contre un dépôt distant de test (`tools/scripts-test.sh`, dash et bash) ;
+- scripts .NET avec un `dotnet` simulé, VSTest et Microsoft.Testing.Platform : 113 contrôles sur 113 (`tools/dotnet-test.sh`, dash et bash) ;
 - de bout en bout avec le vrai v2.1.3, son interface web et un modèle simulé : 71 contrôles sur 71, dont la reprise d'un `/go` après un redémarrage du service, trois espaces de travail en parallèle, et les reprises automatiques (panne du serveur du modèle, limite d'étapes, réponse coupée), les retries étalés et les résumés de contexte ;
 - les scripts de mesure des tests (`test-guardian.sh`, `fortify.sh`) avec un vrai `dotnet test` et coverlet : 98 scénarios sur 98 (rouge, vert, test instable, test bloqué, tests de la preuve scellés puis remis quand le correctif les modifie, perte de couverture, couverture des lignes modifiées, travail mis de côté entre deux espaces de travail ; le verrou qui sérialise les builds d'une vague écrite en parallèle, la sous-commande `build`, un build qui ne s'arrête pas stoppé et nommé, la mise de côté puis le retour d'une preuve ; et la mise en place d'un projet de tests — xUnit, MSTest, NUnit, l'ajout de coverlet, les versions centralisées, un projet .NET Framework ou Microsoft.Testing.Platform laissé de côté) ;
-- 32 fichiers d'agents, de commandes et de skills validés (30 à cette étape) ;
+- 33 fichiers d'agents, de commandes et de skills validés (30 à cette étape) ;
 - `shellcheck` sur tous les scripts ;
 - ce guide, rejoué de bout en bout sur une machine de test : 57 contrôles pour le parcours principal, 47 pour l'annexe A avec le service, 47 avec `opencode-web.sh`.
 
@@ -650,7 +651,7 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
 - **Nouveaux par rapport à `v2/`** :
   - `plugins/openrd-pack.js`, qui remplace `compact-commands.js` ;
   - `commands/fortify.md`, `agents/test-guardian.md`, `scripts/fortify.sh`, `scripts/test-guardian.sh` ;
-  - `commands/push.md`, `commands/sync.md` (le travail hors ticket), `scripts/base.sh` (la base d'une branche), `scripts/test-platform.sh` (les tests Microsoft.Testing.Platform), `AGENTS.repo-template.md` ;
+  - `commands/push.md`, `commands/sync.md`, `commands/tests.md` (le travail hors ticket), `scripts/base.sh` (la base d'une branche), `scripts/test-platform.sh` (les tests Microsoft.Testing.Platform), `AGENTS.repo-template.md` ;
   - `CHECKSUMS-config.txt` et `CHECKSUMS-scripts.txt`, les listes d'empreintes de l'étape 5 ;
   - ce guide et `ANALYSE.md`.
 - **Modifiés** :
@@ -945,7 +946,7 @@ ls ~/.config/opencode/agents ~/.config/opencode/commands ~/.config/opencode/plug
 ```
 Tu dois voir :
 - dans `agents` : `analyst.md checker.md coder.md debugger.md doc-writer.md pilot.md test-guardian.md` ;
-- dans `commands` : `compare.md daily.md fix.md fortify.md go.md outil.md push.md review.md sync.md` ;
+- dans `commands` : `compare.md daily.md fix.md fortify.md go.md outil.md push.md review.md sync.md tests.md` ;
 - dans `plugins` : `openrd-pack.js` seul.
 
 Un autre nom dans `agents` ou `commands` est soit un fichier à toi (garde-le), soit un reste d'un ancien pack : envoie-moi son nom. Un autre fichier dans `plugins` : envoie-moi son nom avant de continuer, la v2 le chargerait.

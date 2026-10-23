@@ -606,7 +606,12 @@ Un POC, un essai, sans ticket : demande-le dans une session (« fais un POC de c
 
 Un run de `/go`, `/fix` ou `/fortify` qui s'est arrêté avant sa fin, ou sur un ⛔ dont tu as réglé la cause (un conflit résolu dans Rider, par exemple) : « continue » (ou « reprends », « vas-y ») dans sa session le reprend avec le pilote, depuis la fiche, quel que soit l'agent choisi sous la zone de saisie. Après ✅ ou ⏸, « continue » est un message ordinaire.
 
-Pousser ton travail, avec ou sans ticket : `/push` commite tout ce qui est modifié dans ce dossier, fusionne d'abord ce que tu as poussé sur la branche depuis ton autre poste, passe le contrôle avant push, et pousse. Sur develop, main ou une HEAD détachée, il crée d'abord une branche `poc/<résumé>` (jamais de commit sur develop). Le message de commit est le tien s'il est donné, sinon écrit d'après les changements. Pas de MR sauf « avec MR » (en Draft) ; « avec develop » fusionne aussi la base ; « avec les tests » lance build et tests avant :
+Pousser ton travail, avec ou sans ticket : `/push` lit tes changements et te pose UNE question (trois au plus dedans, un clic ou ton propre texte pour chacune) :
+- **Branche**, seulement s'il en faut une (sur develop, main ou une HEAD détachée ; jamais de commit sur develop) : la recommandée d'après la nature du travail (`test/…` pour des tests seuls, `docs/…` pour de la doc, `bugfix/…`, `feature/…`, `refactor/…`, `chore/…`, `poc/…` pour un essai), puis une ou deux autres ;
+- **Commit** : deux ou trois messages au format conventional commit (`feat(export): add the CSV export`), le recommandé d'abord ;
+- **MR** : en Draft vers la base (recommandée, sauf pour un POC) ou pas de MR. Pas posée si la branche a déjà sa MR : le push la met à jour.
+
+Ce que tu dis dans ta commande n'est pas redemandé ; `vite` prend les choix recommandés sans question. Avant le commit, le code modifié est buildé et testé (`build-test.sh --if-changed` : pas relancé si ce même code vient de passer au vert dans la conversation) ; un échec arrête tout, rien n'est poussé (`sans les tests` pour pousser quand même un travail en cours). Puis il fusionne ce que tu as poussé sur la branche depuis ton autre poste, passe le contrôle avant push, et pousse ; « avec develop » fusionne aussi la base :
 ```text
 /push
 ```
@@ -614,7 +619,16 @@ Pousser ton travail, avec ou sans ticket : `/push` commite tout ce qui est modif
 /push fix(export): keep the decimal separator avec MR
 ```
 ```text
-/push branche essai-cache-redis avec develop
+/push branche poc/essai-cache-redis sans MR vite
+```
+Après la CI d'une branche poussée par `/push` : `/fix`, comme pour un ticket (jobs en échec, Sonar, Fortify, discussions de la MR). Sans ticket, il ne remplit pas de fiche et ses commits n'ont pas de clé ; sur une branche `poc/…` ou `wip/…`, il ne crée pas de MR.
+
+Des tests unitaires sans ticket : `/tests` avec une classe, un fichier ou un dossier. Le test-guardian mesure la couverture, écrit les tests du comportement actuel dans le style des tests existants, les prouve (verts deux fois, aucun test instable), et mesure la couverture après. Un test qui révèle un bug n'est pas gardé : le bug est dans la réponse, à corriger avec `/go sans ticket : …`. Le tout est commité sur une branche `test/…` (ou sur ta branche si tu en as une), rien n'est poussé : la réponse te propose `/push`. Sans projet de tests, il propose de le créer en premier commit :
+```text
+/tests InvoiceService
+```
+```text
+/tests src/Billing seulement les cas d'erreur
 ```
 Récupérer ce que tu as poussé depuis ton Mac (Rider), sans rien commiter ni pousser : tes modifications non commitées restent là. Avec « develop », les nouveaux commits de la base aussi ; « merge <branche> » pour une autre branche. Sur develop lui-même : une avance rapide sur origin, jamais une fusion. Un conflit : la fusion est annulée et les fichiers listés, tu la fais dans Rider :
 ```text

@@ -156,6 +156,24 @@ check "develop: pushed" 0 'PUSH: OK, origin/poc/essai-cache-redis-2'
 run branch.sh --here poc "anything"
 check "here: a normal branch is kept" 0 '^BRANCH: poc/essai-cache-redis-2 \(kept'
 
+# ---------- /push: the branch the developer chose, its name given as is ----------
+git switch -q develop
+printf 'tests\n' > tests.txt
+run branch.sh --here --name develop
+check "name: develop refused" 1 'STOP: develop is not a branch for this work'
+run branch.sh --here --name "bad name"
+check "name: an invalid name refused" 1 'is not a branch name'
+run branch.sh --here --name poc/essai-cache-redis
+check "name: a name taken on origin stops" 1 'STOP: the branch poc/essai-cache-redis exists already'
+run branch.sh --here --name feature/export-csv-par-mail
+check "name: the branch of the given name" 0 '^BRANCH: feature/export-csv-par-mail \(created from develop'
+check "name: the changes come along" 0 'CARRIED: .*tests.txt'
+git switch -q develop
+run branch.sh --here test "Tests unitaires du calcul de la TVA"
+check "here: a test branch" 0 '^BRANCH: test/tests-unitaires-calcul-tva \(created from develop'
+git switch -q develop
+rm -f tests.txt
+
 # ---------- what must still stop ----------
 git switch -q -c feature/OTHER-1-x origin/develop 2>/dev/null
 printf 'dirty\n' > dirty.txt

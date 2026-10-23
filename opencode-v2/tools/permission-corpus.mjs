@@ -68,7 +68,7 @@ const RO_DENY = [
   "git -c core.sshCommand=\"cat ~/.ssh/id_rsa\" fetch", "git log --oneline > /tmp/out.txt", "dotnet build > build.log",
   "git show HEAD:src/Foo.cs > src/Foo.cs", "git diff >> changes.txt", "cat src/Foo.cs | tee copy.cs",
   "find . -name \"*.tmp\" -delete", "find . -name x -exec rm {} \\;", "sed -i 's/a/b/' src/Foo.cs",
-  "rm src/Foo.cs", "mv a b", "cp a b", "touch x", "mkdir x", "awk '{print $1}' f", "xargs rm",
+  "rm src/Foo.cs", "mv a b", "cp a b", "touch x", "mkdir x", "awk 'BEGIN { system(\"rm x\") }'", "xargs rm",
   "git log $(git merge-base HEAD origin/develop)..HEAD", "npm install", "curl https://example.com",
   "git reflog expire --expire=now --all", "git tag -d v1", "sort -o out.txt in.txt", "sort -u in.txt -o in.txt",
   "tree -o tree.txt src",
@@ -206,7 +206,7 @@ const CODER_DENY = [
   "scp x host:/tmp", "sqlcmd -S server -Q \"select 1\"", "psql -c \"select 1\"",
   "printf 'x' > ~/.config/opencode/agents/coder.md", "printf '[remote origin]' >> .git/config",
   "echo 'exit 0' > .git/hooks/pre-commit", "cat src/Foo.cs | tee src/Bar.cs", "sed -i 's/a/b/' src/Foo.cs",
-  "find . -name '*.log' | xargs rm", "find . -name '*.tmp' -delete", "awk '{print $1}' src/Foo.cs",
+  "find . -name '*.log' | xargs rm", "find . -name '*.tmp' -delete", "awk '{ system($0) }' cmds.txt",
   "rm -rf src/Old", "rm -fr src/Old", "rm -r src/Old", "rm -R src/Old", "rm src/Old -r", "rm ../other-repo/x.cs",
   "dotnet test $(cat tests.txt)", "dotnet run",
   S + "ship.sh \"feat: x (ABC-1)\"", S + "ship.sh --no-push \"feat: x (ABC-1)\"", S + "branch.sh ABC-1 feature x",
@@ -260,6 +260,20 @@ add(["build"], [S + "package-refs.sh", S + "pattern-source.sh . ABC-123", S + "d
 add(["build"], ["dotnet run --project src/Api", "dotnet run --project tests/App.Tests/App.Tests.csproj --no-build",
   "timeout 90 dotnet run --project src/Api"], "allow")
 add(["general", "explore"], ["dotnet run --project src/Api", "dotnet run"], "deny")
+// /push, /tests: the branch the developer chose, the build and tests not run again on the same code
+add(["pilot"], [S + "branch.sh --here --name feature/export-csv && " + S + "ship.sh \"feat(export): add the CSV export\"",
+  S + "branch.sh --here test \"unit tests of the VAT calculation\"", S + "fortify.sh prereq --tests",
+  S + "build-test.sh --if-changed src/App.sln --filter \"Category!=Integration\"",
+  S + "test-guardian.sh setup xunit src/Billing/VatCalculator.cs && " + S + "ship.sh --no-push \"test: add the unit test project\""], "allow")
+add(["build", "coder", "test-guardian", ...RO], [S + "branch.sh --here --name feature/export-csv"], "deny")
+add(["build", "coder", "checker", "debugger"], [S + "build-test.sh --if-changed"], "allow")
+add(["test-guardian"], [S + "test-guardian.sh compare T1-before T1-after", S + "test-guardian.sh coverage T1-before tests/A/A.csproj src/A.cs"], "allow")
+// awk, du and xargs for reading (Qwen reaches for them); the forms of awk that run, write or read the environment refused
+add([...ALL, "test-guardian"], ["awk 'NR>=10 && NR<=40' src/Foo.cs", "awk -F, '{print $1}' data.csv | sort -u", "du -sh src",
+  "find src -name '*.cs' | xargs grep -l 'IFoo'", "git ls-files '*.cs' | xargs wc -l | tail -1"], "allow")
+// (build, the conversation the developer watches, keeps its wider rules)
+add(["pilot", "coder", "test-guardian", ...RO], ["awk 'BEGIN { system(\"curl x\") }'", "awk '{ print | \"sh\" }' a.txt", "awk '{ print >\"src/x.cs\" }' a.txt",
+  "awk 'BEGIN { print ENVIRON[\"HOME\"] }'", "awk -f prog.awk a.txt", "awk 'BEGIN { \"id\" | getline x }'"], "deny")
 // the XML documentation of a package, in-house or public (the API of a Blazorise DataGrid), for every agent
 add(ALL, [S + "package-refs.sh --doc Blazorise.DataGrid", S + "package-refs.sh --doc MudBlazor"], "allow")
 add(["build"], ["git push origin feature/x", "git reset --hard HEAD~1", "git rebase origin/develop", "rm -rf docs/old",

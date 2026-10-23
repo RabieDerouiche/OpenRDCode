@@ -117,10 +117,25 @@ run build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~I
 check "VSTest: a filter" 0 '^TESTS: OK$'
 called "VSTest: the filter as given" '^dotnet test tests/App.Tests/App.Tests.csproj --no-build .*--filter FullyQualifiedName~InvoiceTests'
 
+# --if-changed (/push): the code that already passed is not built and tested again
+run build-test.sh --if-changed
+check "if-changed: the same code is not run again" 0 '^TESTS: OK \(not run again: same code'
+truth "if-changed: no dotnet call" '[ -z "$calls" ]'
+printf '// changed\n' >> src/App/Invoice.cs
+run build-test.sh --if-changed
+check "if-changed: a change runs it" 0 '^TESTS: OK$' 'not run again'
+run build-test.sh --if-changed
+check "if-changed: and remembers it" 0 'not run again'
+run build-test.sh --if-changed --filter FullyQualifiedName~InvoiceTests
+check "if-changed: other options run" 0 '^TESTS: OK$' 'not run again'
+git checkout -q -- .
+
 sed -i 's/InvoiceTests.Tax pass/InvoiceTests.Tax fail Assert.Equal() Failure: Expected 2, Actual 3/' tests/App.Tests/App.Tests.csproj
 run build-test.sh
 check "VSTest: a failure is named" 1 '^FAILED TESTS \(1\): App.Tests.InvoiceTests.Tax$'
 check "VSTest: TESTS: FAILED" 1 '^TESTS: FAILED \(exit 1\)$'
+run build-test.sh --if-changed
+check "if-changed: a red run is never remembered" 1 '^TESTS: FAILED' 'not run again'
 
 run test-guardian.sh red tests/App.Tests/App.Tests.csproj FullyQualifiedName~InvoiceTests.Tax
 check "VSTest red: the failing test, twice" 0 '^RED: 1 tests fail on the current code'
@@ -307,6 +322,29 @@ run fortify.sh prereq
 check "MTP prereq after setup" 0 '^PREREQ: OK$'
 git checkout -q -- .
 
+# a branch without a Jira key (/push, /tests, /fix without a ticket): its own measures folder; its work put aside
+git switch -q -c poc/essai-cache
+run test-guardian.sh folder
+check "no key: a measures folder of its own" 0 'FOLDER: .*/opencode-tickets/poc-essai-cache.tests$'
+printf 'class Extra { }\n' > src/Core/Extra.cs
+run fortify.sh discard F1
+check "no key: a failed proof put aside" 0 '^DISCARDED: 1 files put aside in git stash « fortify poc/essai-cache F1'
+git switch -q develop
+git branch -q -D poc/essai-cache
+printf 'class Extra { }\n' > src/Core/Extra.cs
+run fortify.sh discard F1
+check "develop: nothing put aside" 1 'STOP: not on a branch of its own \(develop\)'
+rm -f src/Core/Extra.cs
+git switch -q -c feature/CORE-9-x
+run test-guardian.sh folder
+check "a Jira key: the folder of the key" 0 'FOLDER: .*/opencode-tickets/CORE-9.tests$'
+git switch -q develop
+git branch -q -D feature/CORE-9-x
+project tests/Ui.Specs/Ui.Specs.csproj Microsoft.NET.Sdk '<ItemGroup>' '  <PackageReference Include="TUnit" Version="0.57.24" />' '</ItemGroup>'
+git add -A && git commit -q -m specs
+run fortify.sh prereq --tests
+check "TUnit without Tests in its name: a test project" 0 'tests/Ui.Specs/Ui.Specs.csproj'
+
 # a project that the scripts take for VSTest, and that dotnet test of the .NET 10 SDK refuses: run as its application
 project tests/Hidden.Tests/Hidden.Tests.csproj Microsoft.NET.Sdk \
   '<ItemGroup>' '  <PackageReference Include="xunit.v3.mtp-v2" Version="3.1.0" />' '</ItemGroup>' \
@@ -329,6 +367,10 @@ project src/Api/Api.csproj Microsoft.NET.Sdk
 printf 'namespace Api;\npublic class Orders { }\n' > src/Api/Orders.cs
 printf 'bin/\nobj/\n' > .gitignore
 git add -A && git commit -q -m init
+run fortify.sh prereq --tests
+check "prereq for /tests: no Fortify application needed" 0 '^PREREQ: NO TEST PROJECT' 'STOP'
+run fortify.sh prereq
+check "prereq for /fortify: the Fortify application is needed" 1 '^STOP: no APPSEC_PROJECT_NAME line'
 FAKE_TEMPLATE=mtp
 export FAKE_TEMPLATE
 run test-guardian.sh setup mstest src/Api/Orders.cs
