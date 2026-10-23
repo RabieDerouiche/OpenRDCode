@@ -30,7 +30,6 @@
           "rm * -R*": "deny",
           "rm * -fr*": "deny",
           "rm * -fR*": "deny",
-          "dotnet run*": "deny",
           "dotnet tool install*": "deny",
           "dotnet tool update*": "deny",
           "*ship.sh*": "deny",

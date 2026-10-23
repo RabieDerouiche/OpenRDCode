@@ -15,12 +15,12 @@ Project detection:
 Bring the branch to a green, review-ready state in this single run. The developer is not watching: follow your autonomy contract. Read-only on GitLab (except the Draft merge request if none exists yet), Jira, Sonar and Fortify: never comment, resolve, change a status or mark a false positive.
 
 ## 1. Before any work
-- On develop, master or main: say « ⛔ /fix travaille sur la branche d'un ticket : /go <KEY> pour en démarrer un » and stop.
+- On develop, master or main: say « ⛔ /fix travaille sur la branche d'un ticket : /go <KEY> pour en démarrer un, /push pour pousser un travail sans ticket sur une branche à lui » and stop. On a detached HEAD (an OpenCode workspace starts so): « ⛔ HEAD détachée : /push crée une branche pour ce travail et la pousse ; /go <KEY> pour un ticket. » and stop.
 - "Fetch:" AUTH FAILED: stop (your stop conditions).
 - "Merge in progress: yes": stop with « ⛔ Une fusion est en cours sur la branche : termine-la dans Rider (ou git merge --abort), puis relance /fix. »
 - A branch without a Jira key (no ticket sheet): the same work; commit messages without a key; nothing is written to a sheet (no ticket-sheet.sh call).
 - A directive « merge <branch> » (« intègre », « fusionne avec »): `sh ~/.config/opencode/scripts/ship.sh --sync-only --base --merge <branch>` first; it fetches, merges and lists the conflicts (never look at the branches yourself); a "STOP:" line: stop with it. What it merged is then built and tested in step 5, even when nothing else needs a fix.
-- "Upstream: none": nothing was pushed, so there is no CI and no merge request yet: say « ⛔ Rien de poussé : /go <KEY> livre d'abord la branche » and stop.
+- "Upstream: none": nothing was pushed, so there is no CI and no merge request yet: say « ⛔ Rien de poussé : /go <KEY> livre d'abord la branche du ticket ; /push pousse un travail sans ticket » and stop.
 - The branch is behind its remote copy, or the base branch has new commits: `sh ~/.config/opencode/scripts/ship.sh --sync-only --base`. A conflict: stop with its line. Local changes that block the merge: go on, they are merged at the end (step 6).
 
 ## 2. Gather, in two turns

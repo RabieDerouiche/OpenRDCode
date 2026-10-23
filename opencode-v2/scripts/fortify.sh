@@ -1,9 +1,10 @@
 #!/bin/sh
 # What /fortify needs besides the measures of the tests (test-guardian.sh). Run from the repository.
-#   prereq           dotnet, VSTest, the Fortify SSC application line ("STOP:" when one lacks), then the unit test
-#                    projects and coverlet.collector in each of them: "PREREQ: NO TEST PROJECT" or "PREREQ: COVERLET
-#                    MISSING", then "PREREQ: SETUP NEEDED" (test-guardian.sh setup, once the developer agreed), or
-#                    "PREREQ: OK"
+#   prereq           dotnet, the Fortify SSC application line ("STOP:" when one lacks), then the unit test projects
+#                    and the coverage collector of each of them (coverlet.collector with VSTest; with
+#                    Microsoft.Testing.Platform, Microsoft.Testing.Extensions.CodeCoverage or coverlet.MTP):
+#                    "PREREQ: NO TEST PROJECT" or "PREREQ: COVERLET MISSING", then "PREREQ: SETUP NEEDED"
+#                    (test-guardian.sh setup, once the developer agreed), or "PREREQ: OK"
 #   batch            creates the folder of the batch of this branch and prints it ("BATCH: <path>")
 #   discard <label>  puts the uncommitted work of a failed vulnerability aside (git stash, recoverable), on the branch
 #                    of a ticket only (/fortify, and a security finding of /fix): "DISCARDED:" with the commit of the
@@ -23,6 +24,7 @@ stop() {
 }
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || stop "not in a git repository"
+here=$(cd "$(dirname "$0")" && pwd)
 root=$(git rev-parse --show-toplevel)
 cd "$root" || exit 1
 common=$(git rev-parse --git-common-dir) && common=$(cd "$common" && pwd)
@@ -58,9 +60,6 @@ case "$1" in
   prereq)
     command -v dotnet >/dev/null 2>&1 || stop "dotnet is not on the PATH of this machine (ENVIRONMENT PROBLEM: COMMANDES.md, « Environnement »)"
     echo "PREREQ: dotnet $(dotnet --version 2>/dev/null | head -n 1)"
-    if grep -qs '"runner"[[:space:]]*:[[:space:]]*"Microsoft.Testing.Platform"' global.json; then
-      stop "this repository runs its tests with Microsoft.Testing.Platform (global.json): the measures of /fortify read VSTest runs only"
-    fi
     ssc=$(git grep -h '^APPSEC_PROJECT_NAME=' -- '*appsec-ci.env' 2>/dev/null | head -n 1)
     [ -n "$ssc" ] || stop "no APPSEC_PROJECT_NAME line in appsec-ci.env: the Fortify SSC application of this repository is unknown"
     echo "PREREQ: Fortify SSC application line found"
@@ -73,10 +72,17 @@ case "$1" in
     fi
     missing=""
     for p in $projects; do
-      if has_coverlet "$p"; then echo "PREREQ: test project $p (coverlet.collector)"; else missing="$missing $p"; fi
+      kind=$(sh "$here/test-platform.sh" kind "$p")
+      if [ "${kind%% *}" = mtp ]; then
+        if [ "${kind##* }" != none ]; then echo "PREREQ: test project $p (Microsoft.Testing.Platform, coverage: ${kind##* })"; else missing="$missing $p"; fi
+      elif has_coverlet "$p"; then
+        echo "PREREQ: test project $p (coverlet.collector)"
+      else
+        missing="$missing $p"
+      fi
     done
     if [ -n "$missing" ]; then
-      echo "PREREQ: COVERLET MISSING in:$missing (it measures the coverage). With the developer's agreement, test-guardian.sh setup adds it, as the first commit of the batch"
+      echo "PREREQ: COVERLET MISSING in:$missing (the coverage collector: coverlet.collector, or Microsoft.Testing.Extensions.CodeCoverage for a Microsoft.Testing.Platform project). With the developer's agreement, test-guardian.sh setup adds it, as the first commit of the batch"
       echo "PREREQ: SETUP NEEDED"
       exit 0
     fi

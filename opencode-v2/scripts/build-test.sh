@@ -1,12 +1,13 @@
 #!/bin/sh
 # Builds a .NET solution or project quietly, then runs its tests only if the build passed, in ONE call.
 # Ends with explicit "BUILD:" and "TESTS:" lines: OpenCode shows the output of a command to the model, not its exit code.
-# Usage: build-test.sh [--build-only] [<solution, project or folder>] [<dotnet test options>...]
+# Usage: build-test.sh [--build-only | --no-build] [<solution, project or folder>] [<dotnet test options>...]
 #   build-test.sh                                         the solution or project of the current folder
 #   build-test.sh src/App.sln                             a given solution (several solutions in the folder)
 #   build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~InvoiceServiceTests
 #                                                         only some tests (the test project and what it references)
 #   build-test.sh --build-only [<solution or project>]    the build only, to fix compilation errors
+#   build-test.sh --no-build <project> [<options>]        the tests only, of what was just built (test-guardian.sh)
 # Output: the build errors (each once) and the build summary, then the end of the test output (failures and totals),
 # preceded by the summary line of the test assemblies that scrolled out of it; after a test failure, a line
 # "FAILED TESTS (<n>): <names>" with every failed test of the run. After a run of the whole solution
@@ -16,6 +17,11 @@
 # test host) ends with an "ENVIRONMENT PROBLEM" line: the agent stops and tells the user instead of investigating.
 # A test that runs more than 5 minutes is stopped and named ("HANG:"), with VSTest, the default runner of dotnet test;
 # its run files go to the git folder, never to the repository.
+# Microsoft.Testing.Platform (MSTest.Sdk, the MSTest, NUnit or xUnit v3 runners, TUnit, or global.json): on the .NET 10
+# SDK, `dotnet test` refuses these projects in its default mode, and takes other options in its MTP mode. Their tests
+# run as the applications they are (test-platform.sh: `dotnet exec` of the test project's output, the options of the
+# pack translated: the filter, the coverage, a time limit), the other test projects with dotnet test as before; a
+# project that dotnet test refuses for this reason is run that way at once. Never `dotnet run`.
 # One dotnet build or test run at a time in a working tree, shared with test-guardian.sh: a run that waits says
 # "WAIT:" once (the test-guardians of a wave of /fortify or /fix work in parallel).
 
@@ -51,8 +57,12 @@ take_lock() {
 }
 
 build_only=0
+no_build=0
 if [ "$1" = "--build-only" ]; then
   build_only=1
+  shift
+elif [ "$1" = "--no-build" ]; then
+  no_build=1
   shift
 fi
 target=""
@@ -79,19 +89,24 @@ fingerprint=""
 [ "$whole" -eq 1 ] && fingerprint=$(sh "$(dirname "$0")/state-fingerprint.sh" 2>/dev/null)
 
 out=$(mktemp "${TMPDIR:-/tmp}/build-test.XXXXXX") || exit 1
+one="$out.one"
+# the output files go even when the wait for the lock gives up; the lock is released only by the run that took it
+trap 'rm -f "$out" "$one"' EXIT
+trap 'exit 1' INT TERM HUP
 mine=""
 [ "${OPENCODE_DOTNET_LOCK:-}" = "$lockdir" ] || mine=1
 take_lock
-# the lock is released only by the run that took it
 if [ -n "$mine" ] && [ -n "$lockdir" ]; then
-  trap 'rm -f "$out"; rm -rf "$lockdir"' EXIT
-else
-  trap 'rm -f "$out"' EXIT
+  trap 'rm -f "$out" "$one"; rm -rf "$lockdir"' EXIT
 fi
-trap 'exit 1' INT TERM HUP
 
-dotnet build ${target:+"$target"} -nologo -v q -clp:ErrorsOnly > "$out" 2>&1
-status=$?
+if [ "$no_build" -eq 1 ]; then
+  : > "$out"
+  status=0
+else
+  dotnet build ${target:+"$target"} -nologo -v q -clp:ErrorsOnly > "$out" 2>&1
+  status=$?
+fi
 tail -n 60 "$out"
 if [ "$status" -ne 0 ]; then
   # Distinct errors: MSBuild may print the same error once per project that builds the file
@@ -108,7 +123,7 @@ if [ "$status" -ne 0 ]; then
   fi
   exit "$status"
 fi
-echo "BUILD: OK"
+if [ "$no_build" -eq 1 ]; then echo "BUILD: NOT RUN (--no-build: the tests of the last build)"; else echo "BUILD: OK"; fi
 [ "$build_only" -eq 1 ] && exit 0
 
 # A hanging test is stopped and named (VSTest blame): unless the caller set it, or the repository runs
@@ -120,13 +135,84 @@ grep -qs '"runner"[[:space:]]*:[[:space:]]*"Microsoft.Testing.Platform"' "$(git 
 results=""
 case " $* " in *" --results-directory"*) ;; *) [ -n "$blame" ] && results="$gitdir/opencode-test-results" ;; esac
 [ -n "$results" ] && rm -rf "$results"
-if [ -n "$blame" ]; then
-  dotnet test ${target:+"$target"} --no-build -nologo --blame-hang-timeout "$HANG" --blame-hang-dump-type none \
-    ${results:+--results-directory "$results"} "$@" > "$out" 2>&1
+# dotnet test in its default mode (VSTest), for a target
+vstest_run() {
+  run_target=$1
+  shift
+  if [ -n "$blame" ]; then
+    dotnet test ${run_target:+"$run_target"} --no-build -nologo --blame-hang-timeout "$HANG" --blame-hang-dump-type none \
+      ${results:+--results-directory "$results"} "$@"
+  else
+    dotnet test ${run_target:+"$run_target"} --no-build -nologo "$@"
+  fi
+}
+# The test projects of the target and how each one runs (test-platform.sh): VSTest or Microsoft.Testing.Platform
+platform="$(dirname "$0")/test-platform.sh"
+scope=$(sh "$platform" scope ${target:+"$target"})
+mtp=$(printf '%s\n' "$scope" | awk -F '\t' '$1 == "mtp" { print $2 }')
+vst=$(printf '%s\n' "$scope" | awk -F '\t' '$1 == "vstest" { print $2 }')
+MTP_REFUSAL='no longer supported by M\(icrosoft\.Testing\.Platform\|TP\)\|aka\.ms/dotnet-test-mtp-error'
+# Each project on its own: dotnet test for the VSTest ones (a project that it refuses for Microsoft.Testing.Platform:
+# its test application), the test application for the MTP ones
+per_project() {
+  : > "$out"
+  status=0
+  if [ -n "$vst" ]; then
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      if vstest_run "$p" "$@" > "$one" 2>&1; then
+        cat "$one" >> "$out"
+      elif grep -q "$MTP_REFUSAL" "$one"; then
+        echo "NOTE: $p runs on Microsoft.Testing.Platform, refused by dotnet test in its default mode on this SDK: run as its test application (test-platform.sh)" >> "$out"
+        sh "$platform" run "$p" "$@" >> "$out" 2>&1 || status=1
+      else
+        cat "$one" >> "$out"
+        status=1
+      fi
+    done <<LIST
+$vst
+LIST
+  fi
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    sh "$platform" run "$p" "$@" >> "$out" 2>&1 || status=1
+  done <<LIST
+$mtp
+LIST
+}
+mixed=0
+if [ -z "$mtp" ]; then
+  vstest_run "$target" "$@" > "$out" 2>&1
+  status=$?
+  # dotnet test of the .NET 10 SDK refuses a Microsoft.Testing.Platform v2 project in its default mode: those run as
+  # applications, the others as before
+  if grep -q "$MTP_REFUSAL" "$out"; then
+    refused=$(grep "$MTP_REFUSAL" "$out" | grep -oE '[^] ["]+\.[cf]sproj' | sed 's#\\#/#g' | sort -u)
+    all=$(printf '%s\n' "$scope" | cut -f2)
+    [ -n "$all" ] || all=$refused
+    [ -n "$refused" ] || refused=$all
+    mtp="" vst=""
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      pattern=$(printf '%s' "${p#./}" | sed 's/[].[*^$\\]/\\&/g')
+      if printf '%s\n' "$refused" | grep -qE "(^|/)$pattern\$"; then
+        mtp="$mtp$p
+"
+      else
+        vst="$vst$p
+"
+      fi
+    done <<LIST
+$all
+LIST
+    echo "NOTE: $(printf '%s' "$mtp" | grep -c .) test project(s) on Microsoft.Testing.Platform, refused by dotnet test in its default mode on this SDK: run as test applications (test-platform.sh)"
+    mixed=1
+    per_project "$@"
+  fi
 else
-  dotnet test ${target:+"$target"} --no-build -nologo "$@" > "$out" 2>&1
+  mixed=1
+  per_project "$@"
 fi
-status=$?
 total=$(wc -l < "$out" | tr -d ' ')
 if [ "$total" -gt 80 ]; then
   # Per-assembly results printed before the last 80 lines
@@ -161,6 +247,16 @@ if [ "$status" -ne 0 ]; then
   echo "TESTS: FAILED (exit $status)"
   if grep -q -E 'You must install (or update )?\.NET to run this application' "$out"; then
     echo "ENVIRONMENT PROBLEM: the test host does not find the .NET runtime (DOTNET_ROOT is missing). Stop and tell the user in one line: add DOTNET_ROOT to ~/.zshenv (see the README of the pack), then restart OpenCode."
+  fi
+elif [ "$mixed" -eq 1 ]; then
+  # several runs: the tests that ran, summed over the VSTest summaries and the Microsoft.Testing.Platform ones
+  ran=$(awk '/(Passed|Failed)!/ { if (match($0, /Total: *[0-9]+/)) { s = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", s); n += s } }
+             /^ *total: *[0-9]+/ { s = $0; gsub(/[^0-9]/, "", s); n += s }
+             END { print n + 0 }' "$out")
+  if [ "$ran" -eq 0 ]; then
+    echo "TESTS: NONE RUN (no test project for this target, or no test matches the filter)"
+  else
+    echo "TESTS: OK ($ran test$([ "$ran" -eq 1 ] || echo s))"
   fi
 elif ! grep -q '[^[:space:]]' "$out" || grep -q -E 'No test matches|No test is available|No test source files' "$out"; then
   echo "TESTS: NONE RUN (no test project for this target, or no test matches the filter)"

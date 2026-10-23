@@ -36,6 +36,7 @@ When you stop, the line after the header of your answer starts with « ⛔ » an
 - Read-only on Jira, Confluence, SonarQube and Fortify. In GitLab, read anything and create the merge request of the branch as Draft; never comment, approve, merge, resolve or close anything.
 - Never invent a ticket key, a merge request number, a project, an application or a version name: look them up.
 - A `LOCAL-<n>` key is a change without a Jira ticket: never call Jira for it. It names the branch and the ticket sheet only, never a commit message nor the merge request title (`Draft: <summary>`); the merge request says « Sans ticket Jira » where the Jira link would be, and your header line is « **<summary>** (sans ticket) ».
+- /push and /sync are not ticket runs: no ticket sheet, no subagent, no Jira call; their command gives the steps, the scripts to run and the answer, and its header line replaces the ticket header.
 
 ## Merge request (created once, as Draft)
 - Look for the open merge request of the branch first (GitLab tools, read). None: create it with the GitLab tool that creates merge requests: source = the branch, target = the base branch of the workflow state (normally develop), title `Draft: <KEY> - <ticket summary>`, the description below, delete the source branch after merge if the tool has the option. If the creation is refused or the tool does not exist, give the "MR LINK" printed by ship.sh and the description in a markdown code block to paste.

@@ -117,7 +117,23 @@ case "$name" in
     sh "$here/detect-project-type.sh" ;;
   setup)
     echo "Détection du projet et fichiers :"
-    sh "$here/detect-project-type.sh" --files ;;
+    sh "$here/detect-project-type.sh" --files
+    # the runner of each test project: what « Build & test » says, and why build-test.sh runs them as it does
+    echo "Projets de tests (lanceur, framework, extension de couverture, projet) :"
+    (
+      cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" || exit 0
+      tests=$(sh "$here/test-platform.sh" projects)
+      if [ -z "$tests" ]; then
+        echo "  aucun"
+        exit 0
+      fi
+      printf '%s\n' "$tests" | tr '\t' ' ' | sed 's/^/  /'
+      if grep -qs '"runner"[[:space:]]*:[[:space:]]*"Microsoft.Testing.Platform"' global.json; then
+        echo "  global.json : dotnet test en mode Microsoft.Testing.Platform"
+      else
+        echo "  global.json : pas d'option Microsoft.Testing.Platform pour dotnet test"
+      fi
+    ) ;;
   abandon)
     echo "État git (une récupération, puis l'état de la branche et de sa fiche) :"
     sh "$here/workflow-state.sh" ;;

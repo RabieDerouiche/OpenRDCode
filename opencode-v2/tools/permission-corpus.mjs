@@ -214,6 +214,14 @@ const CODER_DENY = [
 ]
 add(["coder"], CODER_DENY, "deny")
 
+// ---------- pilot: /push and /sync (work outside a ticket, the commits of another computer) ----------
+add(["pilot"], [S + "branch.sh --here poc \"Essai cache Redis\"", S + "branch.sh ABC-1 feature \"x\" --from feature/TEAM-9-socle",
+  S + "ship.sh \"feat: try a redis cache\"", S + "ship.sh --base \"feat: try a redis cache\"", S + "ship.sh --sync-only",
+  S + "ship.sh --sync-only --base", S + "ship.sh --sync-only --merge hotfix/x", S + "base.sh --why",
+  "git diff --stat HEAD", "git diff HEAD -- src/Foo.cs", "git log --oneline origin/develop..HEAD"], "allow")
+add(["pilot"], ["git push", "git commit -m x", "git switch -c poc/x", "git checkout -b poc/x", "git merge origin/develop",
+  "git pull"], "deny")
+
 // A path outside the repository: the pack plugin refuses the command before OpenCode would ask (tools/plugin-test.mjs);
 // without the plugin, OpenCode asks (the run waits, nothing is done silently)
 add(["coder"], ["rm /home/dev/notes.txt", "rm ~/notes.txt", "cp src/Foo.cs /home/dev/Foo.cs", "mkdir ~/x"], "ask",
@@ -247,8 +255,15 @@ add(["build"], BUILD_ALLOW, "allow")
 add(["build"], [S + "package-refs.sh", S + "pattern-source.sh . ABC-123", S + "doc-inventory.sh", S + "api-routes.sh",
   S + "config-keys.sh", S + "diff-guard.sh", S + "build-test.sh --build-only"], "allow")
 // they used to ask: refused now, since an "always" answer would have allowed them to every agent
+// build may run a project of the repository (a POC, the tests of a Microsoft.Testing.Platform project); the pack
+// plugin refuses a project the last commit does not hold (tools/plugin-test.mjs)
+add(["build"], ["dotnet run --project src/Api", "dotnet run --project tests/App.Tests/App.Tests.csproj --no-build",
+  "timeout 90 dotnet run --project src/Api"], "allow")
+add(["general", "explore"], ["dotnet run --project src/Api", "dotnet run"], "deny")
+// the XML documentation of a package, in-house or public (the API of a Blazorise DataGrid), for every agent
+add(ALL, [S + "package-refs.sh --doc Blazorise.DataGrid", S + "package-refs.sh --doc MudBlazor"], "allow")
 add(["build"], ["git push origin feature/x", "git reset --hard HEAD~1", "git rebase origin/develop", "rm -rf docs/old",
-  "rm -rf ~/.nuget/packages/inhouse.lib/1.2.0", "dotnet run --project src/Api", "dotnet tool install -g dotnet-ef",
+  "rm -rf ~/.nuget/packages/inhouse.lib/1.2.0", "dotnet tool install -g dotnet-ef",
   "git commit -m \"docs: x\"", "git merge origin/develop", "git pull", "rm -r docs/old", "rm docs/old -rf"], "deny")
 // git history is written by /go and /fix only, through their scripts
 add(["build", "analyst", "checker", "debugger", "doc-writer", "coder"], [S + "ship.sh \"feat: x (ABC-1)\"",

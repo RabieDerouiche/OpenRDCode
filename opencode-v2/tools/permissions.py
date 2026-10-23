@@ -104,6 +104,10 @@ DECOMPILE = ["* /tmp/*", "* /tmp", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*", "mktemp*
 # Running a program or installing a tool (a reflection program is run with dotnet run): refused for every agent. They
 # used to ask, but an "always" answer would have allowed "dotnet *" to every agent.
 RUN_DENY = ["dotnet run*", "dotnet tool install*", "dotnet tool update*"]
+# build, the free conversation the developer watches: it may run a project of the repository to try a POC or run the
+# tests of a Microsoft.Testing.Platform project (`dotnet run --project <tests>`). The pack plugin lets it run only a
+# project that the last commit holds: never a probe or reflection project made for the occasion.
+BUILD_RUN_DENY = [p for p in RUN_DENY if p != "dotnet run*"]
 # History-changing git commands and recursive deletions: refused for the conversation agents too (they used to ask, and
 # "always" would have allowed "git push *" or "rm *" to every agent). Git history is written by /go and /fix only.
 HISTORY_DENY = ["git push*", "git reset*", "git rebase*", "git commit*", "git merge", "git merge *", "git pull*",
@@ -333,12 +337,13 @@ SAMPLING = [("temperature", 1.0), ("top_p", 0.95)]
 # of the pack have complete shell rules of their own (starting with "*": deny), and OpenCode repeats every rule that
 # applies to an agent in the message of each refusal (5 KB more per refusal for nothing).
 CONVERSATION_BASH = deny(HISTORY_DENY + RM_RECURSIVE + RUN_DENY + WRITE_SCRIPTS + SECRETS + CREDENTIAL_STORES + DECOMPILE)
+BUILD_BASH = deny(HISTORY_DENY + RM_RECURSIVE + BUILD_RUN_DENY + WRITE_SCRIPTS + SECRETS + CREDENTIAL_STORES + DECOMPILE)
 SNIPPET = as_dict([
     ("$schema", "https://opencode.ai/config.json"),
     ("agent", [
         # build runs /outil and the free conversation: it may publish a Confluence page of /outil doc or
         # /outil release-notes, each write asked first; never in Jira
-        ("build", SAMPLING + [("permission", [("task", [("*", "allow")]), ("bash", CONVERSATION_BASH)]
+        ("build", SAMPLING + [("permission", [("task", [("*", "allow")]), ("bash", BUILD_BASH)]
                                          + CONFLUENCE_WRITE)]),
         ("general", SAMPLING + [("permission", [("bash", CONVERSATION_BASH)])]),
         ("explore", SAMPLING + [("permission", [("bash", CONVERSATION_BASH)])]),

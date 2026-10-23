@@ -7,11 +7,20 @@
 # package versions are managed centrally.
 # Used by /extract-pattern (source repository) and /apply-pattern (current repository): everything an agent would
 # otherwise look for in ~/.nuget, which the agents never list or search themselves.
-# Usage: package-refs.sh [repository path]
+# --doc <package id>: the XML documentation of one package, in-house or public (Blazorise.DataGrid, MudBlazor…), for
+# the framework closest to the projects: the file where the agents look up a member of its API (grep tool on the
+# member name) instead of guessing it, probing the assembly or searching the web.
+# Usage: package-refs.sh [repository path] | package-refs.sh --doc <package id> [repository path]
 
 LC_ALL=C
 export LC_ALL
 
+doc=""
+if [ "$1" = --doc ]; then
+  doc=$2
+  shift 2
+  [ -n "$doc" ] || { echo "usage: package-refs.sh --doc <package id> [repository path]"; exit 0; }
+fi
 repo=$1
 # A leading ~ typed by the user arrives quoted, so the shell does not expand it.
 # shellcheck disable=SC2088 # a literal ~/ is matched on purpose
@@ -232,6 +241,58 @@ done < "$tmp/files"
 [ -f "$tmp/parsed" ] || : > "$tmp/parsed"
 awk -f "$tmp/group.awk" "$tmp/parsed" > "$tmp/packages"
 
+# --doc: the XML documentation of one package (the version the repository references, otherwise the highest version
+# in the cache), in the lib folder of the framework of the projects, or else the most recent one
+if [ -n "$doc" ]; then
+  lid=$(printf '%s' "$doc" | tr '[:upper:]' '[:lower:]')
+  line=$(awk -F '|' -v id="$lid" 'tolower($1) == id { print; exit }' "$tmp/packages")
+  nver=$(printf '%s' "$line" | cut -d'|' -f3)
+  how="the version referenced by $(printf '%s' "$line" | cut -d'|' -f4)"
+  dir="$cache/$lid"
+  if [ -z "$nver" ] || [ ! -d "$dir/$nver" ]; then
+    # a dependency of a package: the version the last restore of a project resolved (obj/project.assets.json)
+    resolved=""
+    if [ -z "$line" ]; then
+      resolved=$(git ls-files -o -- '*obj/project.assets.json' 2>/dev/null | head -n 20 |
+        while IFS= read -r a; do grep -oi "\"$lid/[^\"]*\": *{" "$a" 2>/dev/null; done |
+        sed 's#^"[^/]*/\([^"]*\)".*#\1#' | tr '[:upper:]' '[:lower:]' | sort | uniq -c | sort -rn | awk 'NR == 1 { print $2 }')
+    fi
+    if [ -n "$resolved" ] && [ -d "$dir/$resolved" ]; then
+      nver=$resolved how="a dependency of a package of this repository, the version its last restore resolved"
+    else
+      # the highest stable version in the cache (a prerelease only when there is no stable one)
+      nver=$(for d in "$dir"/*/; do [ -d "$d" ] && { d=${d%/}; echo "${d##*/}"; }; done |
+        awk -F '[.-]' '{ printf "%d%09d%09d%09d%09d %s\n", ($0 ~ /-/) ? 0 : 1, $1, $2, $3, $4, $0 }' | sort | tail -n 1 | cut -d' ' -f2)
+      if [ -n "$line" ]; then how="its version is not in the cache: the highest one there"; else how="not referenced by a project of this repository: the highest version in the cache"; fi
+    fi
+  fi
+  if [ -z "$nver" ]; then
+    echo "XML documentation of $doc: not in the package cache of this machine (never restored here: build the solution once). Its API then comes from its existing calls in this repository only: never guess it, never probe it."
+    exit 0
+  fi
+  frameworks=$(sed -n 's/^T|[^|]*|//p' "$tmp/parsed" | tr ';' '\n' | grep . | sort -u)
+  best=$(for d in "$dir/$nver"/lib/*/; do [ -d "$d" ] && { d=${d%/}; echo "${d##*/}"; }; done |
+    awk -v want="$(printf '%s' "$frameworks" | tr '\n' ' ')" '
+      BEGIN { n = split(want, W, " "); for (i = 1; i <= n; i++) mine[tolower(W[i])] = 1 }
+      { f = tolower($0); s = 0
+        if (match(f, /^net[0-9]+\.[0-9]+/)) { split(substr(f, 4), v, "."); s = (v[1] >= 5) ? 3000 + v[1] * 10 + v[2] : 0 }
+        else if (match(f, /^netcoreapp[0-9]+\.[0-9]+/)) { split(substr(f, 11), v, "."); s = 2000 + v[1] * 10 + v[2] }
+        else if (match(f, /^netstandard[0-9]+\.[0-9]+/)) { split(substr(f, 12), v, "."); s = 1000 + v[1] * 10 + v[2] }
+        if (f in mine) s += 100000
+        if (s > top || best == "") { top = s; best = $0 } }
+      END { print best }')
+  files=""
+  [ -n "$best" ] && for x in "$dir/$nver/lib/$best"/*.xml; do [ -f "$x" ] && files="$files$x
+"; done
+  if [ -z "$files" ]; then
+    echo "XML documentation of $doc $nver: none (the package ships no XML documentation${best:+ in lib/$best}). Its API comes from its existing calls in this repository: never guess it, never probe the assembly; say what is missing."
+    exit 0
+  fi
+  echo "XML documentation of $doc $nver (lib/$best; $how): look up a member with the grep tool on its name in:"
+  printf '%s' "$files" | sed 's/^/- /'
+  exit 0
+fi
+
 : > "$tmp/inhouse"
 : > "$tmp/unknown"
 : > "$tmp/public"
@@ -346,7 +407,7 @@ if [ -s "$tmp/unknown" ]; then
   cat "$tmp/unknown"
 fi
 if [ -s "$tmp/public" ]; then
-  echo "nuget.org packages:"
+  echo "nuget.org packages (the XML documentation of one: package-refs.sh --doc <id>):"
   cat "$tmp/public"
 fi
 exit 0

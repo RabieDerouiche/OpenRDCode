@@ -250,6 +250,15 @@ Les refus du plugin du pack (chemin hors du dépôt, dossier en lecture seule, c
 grep 'refused by the pack' ~/oc2/data/opencode/log/openrd-pack.log | tail -20
 ```
 
+Les réponses du modèle coupées parce qu'elles bouclaient (la même phrase répétée pendant la réflexion), avec la session et l'agent ; puis les « continue » repris par le pilote :
+```sh
+grep 'repeated itself was cut' ~/oc2/data/opencode/log/openrd-pack.log | tail -20
+```
+```sh
+grep "resumed at the developer's request" ~/oc2/data/opencode/log/openrd-pack.log | tail -10
+```
+Une coupure de temps en temps est normale (le modèle repart, sans la boucle, avec une pénalité de présence). Plusieurs par heure sur le même agent : envoie-moi ces lignes.
+
 Les réglages de ta configuration que la v2 ignore ou refuse (`MIGRATION.md`, étapes 8 et 9) :
 ```sh
 grep 'configuration normalization diagnostic' ~/oc2/serve.log | grep -o 'path=[^ ]*' | sort -u
@@ -274,6 +283,8 @@ Ce qu'il a laissé dans le dépôt (fichiers modifiés ou créés) :
 ```sh
 git status --short
 ```
+
+Un fichier « sonde » laissé dans le dépôt pour deviner l'API d'un package (un `Probe.cs`, un projet console, un test qui fait de la réflexion sur un assembly) : il apparaît dans la liste ci-dessus ; supprime-le avant `/push`. L'API d'un package se lit dans sa documentation XML : dans une session, « lance `sh ~/.config/opencode/scripts/package-refs.sh --doc Blazorise.DataGrid` », puis demande-lui de chercher le membre dans ce fichier.
 
 Ce qu'il a créé dans `/tmp` depuis 2 heures (à relire avant d'effacer quoi que ce soit) :
 ```sh
@@ -343,6 +354,8 @@ Un espace de travail est un deuxième dossier du même dépôt (un worktree git)
 **1. Créer le dossier d'un ticket.** Sur le projet, « Nouvelle session ». Sous la zone de saisie, clique sur `Local` : un menu « Exécuter la session dans » propose « Dépôt local » et **« Nouvel espace de travail »**. Choisis ce dernier, puis tape `/go ABC-124`. À ce premier message, la v2 crée le dossier dans `~/oc2/data/opencode/worktree/` (`~/.local/share/opencode/worktree/` si la v2 a remplacé ta 1.19), à partir de la branche affichée (develop), et la session y travaille. Ta commande s'affiche « /go ABC-124 — mon-api · worktree <dossier> · … » : c'est la preuve que la session travaille dans le bon dossier. Le titre de la session commence par `[<dossier>]`, pour la retrouver sur l'accueil, qui liste ensemble les sessions de tous les dossiers.
 
 Les fichiers ignorés par git du dépôt principal (un `.env`, des réglages locaux) ne sont pas dans le nouveau dossier : copie ceux dont le build ou les tests ont besoin.
+
+Un espace de travail démarre sur une HEAD détachée (c'est ainsi que la v2 crée ses worktrees). `/go` y crée la branche du ticket ; un travail sans ticket (un POC, un essai) se pousse avec `/push`, qui lui crée d'abord une branche `poc/<résumé>` à partir de ce qui est là (`/push branche essai-cache` pour choisir le nom, `/push feature …` pour un autre préfixe).
 
 **2. Le lendemain.** Les sessions du dossier sont listées avec celles du projet. Pour reprendre : ouvre une de ses sessions, puis `/go` seul ; après la CI, `/fix` dans la même session.
 
@@ -583,9 +596,38 @@ Un changement sans ticket Jira (clé locale `LOCAL-<n>` pour la branche et la fi
 ```text
 /go sans ticket : l'export CSV perd le séparateur décimal quand la culture est fr-FR
 ```
+Un ticket qui part d'une autre branche que develop (la branche d'un collègue, une branche de release) : la branche du ticket part de `origin/<branche>`, qui devient sa base pour tout le run (mesure de départ, review, contrôle avant push, fusion de la base, cible de la MR). La branche doit être sur GitLab ; un nom inconnu arrête `/go` avec les noms proches. Une branche de ticket qui existe déjà garde ses commits et prend cette base :
+```text
+/go ABC-123 depuis feature/ABC-100-socle
+```
 Vérifier un problème sans rien changer : une simple question dans une session (« vérifie pourquoi… ») ; s'il faut corriger, `/go sans ticket : …` dans la même session reprend l'enquête.
 
-Après la CI ou la review (jobs en échec, Sonar, Fortify, discussions de la MR), ou pour pousser ce que tu as modifié toi-même sur cette machine. Une faille Fortify ou Sonar des fichiers de la branche (3 au plus par `/fix`) est corrigée avec sa preuve, comme dans `/fortify` ; une faille que le test-guardian ne parvient pas à montrer (le code résiste déjà) garde ses tests et part en « Faux positifs probables » :
+Un POC, un essai, sans ticket : demande-le dans une session (« fais un POC de cache Redis sur GET /orders »). L'agent code et teste dans la conversation, sans branche ni fiche ; il peut lancer un projet du dépôt déjà commité, borné dans le temps (`timeout 60 dotnet run --project src/Api`), jamais un projet ou un fichier créé pour l'occasion. Pour le garder ou le partager : `/push`.
+
+Un run de `/go`, `/fix` ou `/fortify` qui s'est arrêté avant sa fin, ou sur un ⛔ dont tu as réglé la cause (un conflit résolu dans Rider, par exemple) : « continue » (ou « reprends », « vas-y ») dans sa session le reprend avec le pilote, depuis la fiche, quel que soit l'agent choisi sous la zone de saisie. Après ✅ ou ⏸, « continue » est un message ordinaire.
+
+Pousser ton travail, avec ou sans ticket : `/push` commite tout ce qui est modifié dans ce dossier, fusionne d'abord ce que tu as poussé sur la branche depuis ton autre poste, passe le contrôle avant push, et pousse. Sur develop, main ou une HEAD détachée, il crée d'abord une branche `poc/<résumé>` (jamais de commit sur develop). Le message de commit est le tien s'il est donné, sinon écrit d'après les changements. Pas de MR sauf « avec MR » (en Draft) ; « avec develop » fusionne aussi la base ; « avec les tests » lance build et tests avant :
+```text
+/push
+```
+```text
+/push fix(export): keep the decimal separator avec MR
+```
+```text
+/push branche essai-cache-redis avec develop
+```
+Récupérer ce que tu as poussé depuis ton Mac (Rider), sans rien commiter ni pousser : tes modifications non commitées restent là. Avec « develop », les nouveaux commits de la base aussi ; « merge <branche> » pour une autre branche. Sur develop lui-même : une avance rapide sur origin, jamais une fusion. Un conflit : la fusion est annulée et les fichiers listés, tu la fais dans Rider :
+```text
+/sync
+```
+```text
+/sync develop
+```
+```text
+/sync merge hotfix/ABC-130-urgent
+```
+
+Après la CI ou la review (jobs en échec, Sonar, Fortify, discussions de la MR), sur la branche d'un ticket (pour simplement pousser : `/push`). Une faille Fortify ou Sonar des fichiers de la branche (3 au plus par `/fix`) est corrigée avec sa preuve, comme dans `/fortify` ; une faille que le test-guardian ne parvient pas à montrer (le code résiste déjà) garde ses tests et part en « Faux positifs probables » :
 ```text
 /fix
 ```
@@ -697,7 +739,7 @@ Lancer un lot depuis develop, dans une session du dépôt : `/fortify` (5 vulné
 
 Chaque preuve est faite par `test-guardian.sh`, jamais à l'œil : les tests de la faille rouges sur le code actuel puis verts après le correctif, **chacun exécuté deux fois** (un test qui change de résultat est instable, `FLAKY`, et n'est jamais gardé), un test qui ne s'arrête pas stoppé au bout de 5 minutes et nommé, et aucune perte de couverture du module et de ses dépendances. Une faille dont les tests passent **déjà** sur le code actuel (le code résiste : un correctif précédent du lot l'a close, ou c'est un faux positif) garde ses tests et part en un commit « test(security): show that … is not exploitable », sans correctif. Les tests de la preuve sont scellés avant le correctif (`test-guardian.sh seal`) : si le coder les modifie ou les supprime, le test-guardian le voit avant sa vérification, les remet tels quels et fait la preuve sur eux (si elle échoue, le coder reprend son correctif). Et le pilote vérifie le sceau dans le même appel que le commit (`test-guardian.sh sealed V<n> && ship.sh …`) : aucun commit ne part avec des tests de preuve modifiés. À la fin, le build et les tests complets, la couverture des lignes modifiées et l'auto-review (le `checker`) tournent **dans le même tour** : la suite complète tourne en parallèle du checker, qui ne relance jamais ni build ni tests et revoit en lisant le diff. La couverture des lignes modifiées par le lot va dans la MR.
 
-Un repère technique : les mesures lisent les exécutions **VSTest** uniquement. Un dépôt qui lance ses tests avec Microsoft.Testing.Platform (`"runner": "Microsoft.Testing.Platform"` dans `global.json`) s'arrête avec une ligne qui te le dit — à signaler, ce cas n'est pas encore couvert.
+Un repère technique : les mesures lisent les exécutions **VSTest** (`dotnet test`) et **Microsoft.Testing.Platform** (MSTest.Sdk, xUnit v3, les lanceurs MSTest et NUnit, TUnit, ou `global.json` en mode MTP) : chaque projet de tests tourne avec son lanceur, un projet MTP comme l'application qu'il est (`dotnet exec` de sa sortie, par `test-platform.sh`), avec la couverture de son extension (Microsoft.Testing.Extensions.CodeCoverage, ou coverlet.MTP). Un projet MTP sans extension de couverture : `fortify.sh prereq` le signale, et `test-guardian.sh setup` ajoute Microsoft.Testing.Extensions.CodeCoverage. Pour lancer ces tests toi-même dans un terminal avec le SDK .NET 10, `dotnet test` demande `"test": { "runner": "Microsoft.Testing.Platform" }` dans `global.json` ; sinon, dans une session : « lance `sh ~/.config/opencode/scripts/build-test.sh` ».
 
 Le travail d'une vulnérabilité abandonnée est mis de côté, jamais effacé. La liste est commune à tous les espaces de travail du dépôt : chaque mise de côté porte la clé du lot, la vulnérabilité et le dossier, et sa carte (et la réponse du pilote) donne son commit, qui la désigne quoi qu'il arrive ensuite dans la liste. Utilise le **hash complet** (40 caractères) de la carte, pas une version raccourcie : un hash court tout en chiffres est lu par git comme `stash@{n}`. Pour la voir puis la ramener (sur la branche du lot, sans fichier non commité) :
 ```sh

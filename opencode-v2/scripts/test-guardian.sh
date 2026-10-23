@@ -25,7 +25,9 @@
 #                                  the dotnet new template of the SDK, coverlet.collector, the versions this machine's
 #                                  NuGet cache already holds (otherwise the template's), the central versions when the
 #                                  repository has them, the project references and the solution, then a build; or adds
-#                                  coverlet.collector to the test projects that lack it. A failure undoes everything
+#                                  the coverage collector to the test projects that lack it (coverlet.collector, or
+#                                  Microsoft.Testing.Extensions.CodeCoverage for a Microsoft.Testing.Platform project). A
+#                                  failure undoes everything
 #   changes <base> [<solution, project or folder>]
 #                                  the whole suite once, with coverlet (the BUILD, TESTS and FAILED TESTS lines of
 #                                  build-test.sh), then the lines the branch changed since <base> that no test runs:
@@ -36,8 +38,10 @@
 # with one "STOP: <reason>" line when a check fails, "ENVIRONMENT PROBLEM:" when this machine cannot build or run the
 # tests (the agent stops and tells the developer). A test that runs more than 5 minutes is stopped and named.
 # One dotnet build or test run at a time in a working tree (a lock shared with build-test.sh): the test-guardians of
-# a wave work in parallel, their builds wait for each other ("WAIT:"). VSTest only, the default runner of dotnet test:
-# a repository that runs Microsoft.Testing.Platform (global.json) gets a "STOP:".
+# a wave work in parallel, their builds wait for each other ("WAIT:"). VSTest (the default runner of dotnet test) and
+# Microsoft.Testing.Platform (MSTest.Sdk, the MSTest, NUnit or xUnit v3 runners, TUnit, global.json): the tests of an
+# MTP project run as the application they are, through build-test.sh and test-platform.sh, with the coverage of its
+# extension (Microsoft.Testing.Extensions.CodeCoverage or coverlet.MTP) instead of coverlet.collector.
 # A seal is the proof of the test-guardian: the coder makes the sealed tests pass as they are, and the test-guardian
 # checks them before its proof after the fix. Only the test-guardian may seal or restore, only the pilot may park,
 # unpark and set up (permission rules).
@@ -59,6 +63,8 @@ stop() {
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || stop "not in a git repository"
 here=$(pwd -P)
+# the folder of the pack's scripts (build-test.sh, test-platform.sh), found before the cd below
+scripts=$(cd "$(dirname "$0")" && pwd -P)
 root=$(git rev-parse --show-toplevel)
 cd "$root" || exit 1
 root=$(pwd -P)
@@ -93,11 +99,18 @@ take_lock() {
   trap 'exit 1' INT TERM HUP
 }
 
-# Microsoft.Testing.Platform (global.json: "test": { "runner": "Microsoft.Testing.Platform" }) takes other options and
-# prints other results than VSTest, the default runner of dotnet test, which every measure here reads
-vstest_only() {
-  if grep -qs '"runner"[[:space:]]*:[[:space:]]*"Microsoft.Testing.Platform"' global.json; then
-    stop "this repository runs its tests with Microsoft.Testing.Platform (global.json): the measures of the pack read VSTest runs only. Tell the developer in one line"
+# Microsoft.Testing.Platform takes other options and prints other results than VSTest, the default runner of dotnet
+# test: an MTP test project runs through build-test.sh and test-platform.sh (its test application), a VSTest one with
+# dotnet test as always
+is_mtp() {
+  [ "$(sh "$scripts/test-platform.sh" kind "$1" | cut -d' ' -f1)" = mtp ]
+}
+# the coverage of a test project: coverlet.collector (VSTest), or the coverage extension of an MTP project
+has_coverage() {
+  if is_mtp "$1"; then
+    [ "$(sh "$scripts/test-platform.sh" kind "$1" | cut -d' ' -f3)" != none ]
+  else
+    has_coverlet "$1"
   fi
 }
 
@@ -265,9 +278,12 @@ counts() {
 }
 
 # "<Passed|Failed|Skipped> <test name>" per test of a run (console logger, normal verbosity); a name may hold spaces
-# (the cases of a theory)
+# (the cases of a theory). Microsoft.Testing.Platform lists the failed and skipped tests only ("failed <name> (12ms)"):
+# with the counts, that is enough to compare two runs of the same tests
 outcomes() {
-  sed -n -e 's/^[[:space:]]*\(Passed\)[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}\[[^]]*\][[:space:]]*$/\1 \2/p' \
+  sed -n -e 's/^failed[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}([0-9][^)]*)[[:space:]]*$/Failed \1/p' \
+    -e 's/^skipped[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}([0-9][^)]*)[[:space:]]*$/Skipped \1/p' \
+    -e 's/^[[:space:]]*\(Passed\)[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}\[[^]]*\][[:space:]]*$/\1 \2/p' \
     -e 's/^[[:space:]]*\(Failed\)[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}\[[^]]*\][[:space:]]*$/\1 \2/p' \
     -e 's/^[[:space:]]*\(Skipped\)[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}\[[^]]*\][[:space:]]*$/\1 \2/p' "$1" | sort -u
 }
@@ -276,6 +292,10 @@ outcomes() {
 reasons() {
   awk 'function flush() { if (name != "" && msg != "") print "  " name ": " substr(msg, 1, 240); name = ""; msg = "" }
        /^ *(Failed|Passed|Skipped) [^:]/ { flush(); if ($1 == "Failed") { name = $0; sub(/^ *Failed +/, "", name); sub(/ +\[[^]]*\] *$/, "", name) } inmsg = 0; next }
+       # Microsoft.Testing.Platform: "failed <name> (12ms)", then its message indented, then the stack frames ("at …")
+       /^(failed|passed|skipped) .* \([0-9][^)]*\) *$/ { flush(); if ($1 == "failed") { name = $0; sub(/^failed +/, "", name); sub(/ +\([0-9][^)]*\) *$/, "", name); inmsg = 2 } else inmsg = 0; next }
+       inmsg == 2 && /^  +at / { inmsg = 0; next }
+       inmsg == 2 && /^[^ ]/ { inmsg = 0 }
        /^ *Error Message:/ { inmsg = 1; next }
        /^ *Stack Trace:/ { inmsg = 0; next }
        inmsg && NF { line = $0; sub(/^ +/, "", line); msg = (msg == "" ? line : msg " · " line); next }
@@ -284,6 +304,9 @@ reasons() {
 
 # A test host that hung or crashed: says which test ran, and stops
 aborted() {
+  if grep -q '^HANG: ' "$1"; then
+    stop "$(sed -n 's/^HANG: //p' "$1" | head -n 1)"
+  fi
   grep -q 'test run was aborted\|Test Run Aborted' "$1" || return 0
   running=$(awk '/The test running when the crash occurred:/ { on = 1; next } on && NF { print; n++ } on && !NF && n { exit }' "$1" | head -n 3 | tr '\n' ' ')
   if grep -q 'inactivity time of' "$1"; then
@@ -294,6 +317,10 @@ aborted() {
 
 # One run of the tests of a filter, with the results outside the repository; $4: --no-build for a second run
 run_tests() {
+  if is_mtp "$1"; then
+    sh "$scripts/build-test.sh" ${4:+"$4"} "$1" --filter "$2" > "$3" 2>&1
+    return
+  fi
   dotnet test "$1" --filter "$2" --nologo -v q --logger "console;verbosity=normal" ${4:+"$4"} \
     --results-directory "$folder/results-run" --blame-hang-timeout "$HANG" --blame-hang-dump-type none > "$3" 2>&1
 }
@@ -372,19 +399,23 @@ case "$1" in
     [ -f "$project" ] || stop "no test project $project"
     printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
     need_dotnet
-    vstest_only
     mkdir -p "$folder" || stop "cannot create $folder"
     take_lock
     results="$folder/results-$label"
     rm -rf "$results"
-    dotnet test "$project" --collect:"XPlat Code Coverage" --results-directory "$results" --nologo -v q \
-      --blame-hang-timeout "$HANG" --blame-hang-dump-type none > "$folder/test-$label.log" 2>&1
+    if is_mtp "$project"; then
+      sh "$scripts/build-test.sh" "$project" --collect:"XPlat Code Coverage" --results-directory "$results" > "$folder/test-$label.log" 2>&1
+    else
+      dotnet test "$project" --collect:"XPlat Code Coverage" --results-directory "$results" --nologo -v q \
+        --blame-hang-timeout "$HANG" --blame-hang-dump-type none > "$folder/test-$label.log" 2>&1
+    fi
     environment "$folder/test-$label.log"
     aborted "$folder/test-$label.log"
-    report=$(find "$results" -name 'coverage.cobertura.xml' 2>/dev/null | head -n 1)
+    report=$(find "$results" -name '*.cobertura.xml' 2>/dev/null | head -n 1)
     if [ -z "$report" ]; then
       grep -m 3 'error CS\|error MSB' "$folder/test-$label.log"
-      stop "no coverage report: the build failed or coverlet.collector is missing in $project (fortify.sh prereq)"
+      grep -m 1 '^COVERAGE: NOT MEASURED' "$folder/test-$label.log"
+      stop "no coverage report: the build failed, or the coverage collector is missing in $project (coverlet.collector, or Microsoft.Testing.Extensions.CodeCoverage for Microsoft.Testing.Platform: fortify.sh prereq)"
     fi
     pf=$(counts "$folder/test-$label.log")
     echo "TESTS: ${pf% *} passed, ${pf#* } failed"
@@ -445,7 +476,6 @@ case "$1" in
     project=$2 filter=$3
     [ -f "$project" ] && [ -n "$filter" ] || stop "usage: test-guardian.sh $1 <test project> <filter>"
     need_dotnet
-    vstest_only
     mkdir -p "$folder"
     take_lock
     stamp=$(date +%H%M%S)
@@ -627,7 +657,6 @@ case "$1" in
     shift 2
     [ $# -ge 1 ] || stop "usage: test-guardian.sh setup xunit|mstest|nunit <file.cs or project>..."
     need_dotnet
-    vstest_only
     [ -z "$(git status --porcelain)" ] || stop "uncommitted changes: setup runs on a clean working tree, so that a failure undoes all it did"
     # the production projects of the files
     prods=$(for f in "$@"; do
@@ -649,38 +678,44 @@ case "$1" in
       [ -n "$built" ] && rm -rf "$built"
       git checkout -q -- . 2>/dev/null
     }
-    # Test projects already there: coverlet.collector where it lacks, nothing else
+    # Test projects already there: the coverage collector where it lacks, nothing else (coverlet.collector for VSTest,
+    # Microsoft.Testing.Extensions.CodeCoverage for Microsoft.Testing.Platform)
     existing=$(test_projects)
     if [ -n "$existing" ]; then
-      v=$(cache_version coverlet.collector 6.0.4)
-      added="" props=""
+      added="" props="" ids=""
       while IFS= read -r t; do
-        has_coverlet "$t" && continue
+        has_coverage "$t" && continue
+        if is_mtp "$t"; then
+          id=Microsoft.Testing.Extensions.CodeCoverage v=$(cache_version Microsoft.Testing.Extensions.CodeCoverage 18.6.2)
+        else
+          id=coverlet.collector v=$(cache_version coverlet.collector 6.0.4)
+        fi
         props=$(central_props "$(dirname "$t")")
         if [ -n "$props" ]; then
-          add_package_version "$props" coverlet.collector "$v"
-          add_package_ref "$t" coverlet.collector ""
+          add_package_version "$props" "$id" "$v"
+          add_package_ref "$t" "$id" ""
         else
-          add_package_ref "$t" coverlet.collector "$v"
+          add_package_ref "$t" "$id" "$v"
         fi
         added="$added$t
 "
+        case " $ids " in *" $id $v "*) ;; *) ids="$ids $id $v," ;; esac
       done <<EOF
 $existing
 EOF
-      [ -n "$added" ] || { echo "SETUP: nothing to do, every test project has coverlet.collector"; exit 0; }
+      [ -n "$added" ] || { echo "SETUP: nothing to do, every test project has its coverage collector"; exit 0; }
       while IFS= read -r t; do
         [ -n "$t" ] || continue
         if ! dotnet build "$t" -nologo -v q > "$log" 2>&1; then
           undo
           environment "$log"
           grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5
-          stop "the build of $t fails with coverlet.collector: nothing changed"
+          stop "the build of $t fails with its coverage collector: nothing changed"
         fi
       done <<EOF
 $added
 EOF
-      echo "SETUP: coverlet.collector $v added to $(printf '%s' "$added" | tr '\n' ' ' | sed 's/ $//')${props:+ (version in $props)}; build OK"
+      echo "SETUP:${ids%,} added to $(printf '%s' "$added" | tr '\n' ' ' | sed 's/ $//')${props:+ (version in $props)}; build OK"
       exit 0
     fi
     # A new test project: named after the solution that builds these projects, in its tests folder
@@ -718,13 +753,17 @@ EOF
         "$dir/$name.csproj" > "$dir/$name.csproj.new" && mv "$dir/$name.csproj.new" "$dir/$name.csproj"
     fi
     csproj="$dir/$name.csproj"
-    if grep -q 'MSTest.Sdk\|EnableMSTestRunner\|TestingPlatformDotnetTestSupport' "$csproj"; then
-      undo
-      stop "the $framework template of this SDK runs Microsoft.Testing.Platform: the measures of the pack read VSTest runs only"
-    fi
+    # the template of this SDK may run Microsoft.Testing.Platform: its coverage is then the CodeCoverage extension
+    mtp_template=0
+    is_mtp "$csproj" && mtp_template=1
     # the example test of the template is not kept: the test-guardian writes the real ones
     rm -f "$dir/UnitTest1.cs" "$dir/Test1.cs"
-    grep -qi 'coverlet.collector' "$csproj" || add_package_ref "$csproj" coverlet.collector 6.0.4
+    if [ "$mtp_template" -eq 1 ]; then
+      grep -qi 'Microsoft.Testing.Extensions.CodeCoverage\|Sdk="MSTest.Sdk' "$csproj" ||
+        add_package_ref "$csproj" Microsoft.Testing.Extensions.CodeCoverage 18.6.2
+    else
+      grep -qi 'coverlet.collector' "$csproj" || add_package_ref "$csproj" coverlet.collector 6.0.4
+    fi
     # the versions this machine already uses, otherwise the template's; the central versions file when there is one
     props=$(central_props "$dir")
     versions=""
@@ -778,7 +817,6 @@ EOF
     [ -n "$base" ] || stop "usage: test-guardian.sh changes <base branch> [<solution, project or folder>]"
     git rev-parse --verify -q "$base^{commit}" >/dev/null || stop "unknown base $base"
     need_dotnet
-    vstest_only
     mkdir -p "$folder" || stop "cannot create $folder"
     take_lock
     results="$folder/results-changes"
@@ -791,9 +829,9 @@ EOF
     fork=$(git merge-base "$base" HEAD) || stop "no common history with $base"
     tests=$(test_projects | while read -r p; do dirname "$p"; done)
     git diff -U0 --no-color "$fork" -- '*.cs' > "$folder/changes.diff" 2>/dev/null
-    reports=$(find "$results" -name 'coverage.cobertura.xml' 2>/dev/null)
+    reports=$(find "$results" -name '*.cobertura.xml' 2>/dev/null)
     if [ -z "$reports" ]; then
-      echo "COVERAGE OF THE CHANGES: not measured (no coverage report: the build failed, or coverlet.collector is missing in the test projects)"
+      echo "COVERAGE OF THE CHANGES: not measured (no coverage report: the build failed, or the coverage collector is missing in the test projects: coverlet.collector, or Microsoft.Testing.Extensions.CodeCoverage for Microsoft.Testing.Platform)"
       exit "$status"
     fi
     # "FILE <path>" and "LINE <n>" for each changed line; then each report: "REPORT", "CLASS <file>", "HIT <n> <hits>"

@@ -54,15 +54,13 @@ root=$(git rev-parse --show-toplevel)
 branch=$(git branch --show-current)
 upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)
 
-# Base branch: origin/develop, otherwise origin/main or origin/master
+# Base branch: the one the branch was started from when /go recorded it (/go … depuis <branch>), otherwise
+# origin/develop, origin/main or origin/master (base.sh)
 find_base() {
-  base=""
-  for candidate in develop main master; do
-    if git rev-parse -q --verify "refs/remotes/origin/$candidate" >/dev/null; then
-      base="origin/$candidate"
-      return
-    fi
-  done
+  base_info=$(sh "$here/base.sh" --why "$branch")
+  base_name=$(printf '%s\n' "$base_info" | sed -n 1p)
+  base_why=$(printf '%s\n' "$base_info" | sed -n 2p)
+  base=${base_name:+origin/$base_name}
 }
 find_base
 
@@ -119,7 +117,12 @@ fi
 echo "Remote URL (credentials masked): ${remote_url:-none}"
 echo "Current branch: ${branch:-(detached HEAD)}"
 echo "Jira key from branch: ${key:-none}"
-echo "Base branch: ${base:-NONE (no origin/develop, origin/main or origin/master)}"
+case "$base_why" in
+  recorded) base_note=" (the base recorded for this branch when it started from it: its diff, its review, the check before the push and its merge request target it)" ;;
+  recorded*) base_note=" (the base recorded for this branch, origin/$(printf '%s' "$base_why" | sed 's/^recorded //; s/ gone.*//'), is no longer on origin)" ;;
+  *) base_note="" ;;
+esac
+echo "Base branch: ${base:-NONE (no origin/develop, origin/main or origin/master)}$base_note"
 echo "HEAD: $(git rev-parse --short HEAD 2>/dev/null)"
 echo "Code fingerprint: $(sh "$here/state-fingerprint.sh")"
 if [ "$appsec" -eq 1 ]; then

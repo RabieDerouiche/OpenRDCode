@@ -423,7 +423,7 @@ const context = async (sessionID, tools, agent = "build", messages = []) => {
 const TOOLS = ["edit", "glob", "grep", "question", "read", "shell", "skill", "subagent", "webfetch", "websearch", "write", "execute"]
 
 await check("[v2] the setup registers its hooks", () => assert.deepEqual(Object.keys(v2.hooks).sort(),
-  ["session.compaction", "session.context", "session.http.request", "session.prompt", "session.retry", "shell.create.before", "tool.execute.after", "tool.execute.before"]))
+  ["session.compaction", "session.context", "session.http.request", "session.http.response", "session.prompt", "session.retry", "shell.create.before", "tool.execute.after", "tool.execute.before"]))
 await check("[v2 12] the MCP servers are plain tools, never code mode", () => assert.deepEqual(v2.servers.map(([, s]) => s.codemode), [false, false]))
 
 // ---------- 20. an assistant message made only of tool calls: "" instead of null ----------
@@ -1350,6 +1350,300 @@ await check("[v2 19] a conversation that ends without a mark is never resumed", 
   assert.equal(res.calls.prompt.length, 4)
   assert.equal(resTitle("res-8"), "Question")
 })
+
+// ---------- 21. an answer that repeats itself ----------
+const pack21 = await import(join(stub, "openrd-pack.js"))
+const { segmentsOf, loopAtEnd, collapseRepeats, sanitizeLoops, watchStream, isContinue, dotnetRunTarget } = pack21
+const loopSentence = "Je vérifie l'API réelle de Blazorise.DataGrid 2.2.2 avant de trancher."
+const intro = "Le coder est BLOQUÉ : le mécanisme DataGridLocalization n'existe pas dans Blazorise.DataGrid 2.2.2. "
+const looping = intro + Array(20).fill(loopSentence).join(" ")
+// a long reasoning that repeats a line here and there: code drafted twice, eight tests with the same set-up line
+const drafted = ["Let me write the handler first.", "public async Task<Result> Handle(CreateOrder command, CancellationToken token)",
+  "{", "    var order = Order.Create(command.CustomerId, command.Lines);", "    await repository.AddAsync(order, token);", "}",
+  "Hmm, the validation must come first, let me rewrite it.",
+  "public async Task<Result> Handle(CreateOrder command, CancellationToken token)", "{",
+  "    var order = Order.Create(command.CustomerId, command.Lines);", "    await repository.AddAsync(order, token);", "}"].join("\n")
+const tests8 = Array.from({ length: 8 }, (_, i) => [
+  `[Fact] public async Task Handle_Case${i}_ReturnsExpected()`, "{",
+  "    var sut = new OrderService(repository.Object, logger.Object, clock.Object);",
+  `    var result = await sut.Handle(Command${i}(), CancellationToken.None);`, `    result.Value.Should().Be(${i});`, "}"].join("\n")).join("\n")
+const table = Array.from({ length: 12 }, (_, i) => `| C${i + 1} | implémenté src/Orders/Handler.cs:${10 + i} | testé Handle_Case${i} |`).join("\n")
+await check("[v2 21] a sentence repeated again and again: a loop", () => assert.ok(loopAtEnd(looping)))
+await check("[v2 21] a cycle of three sentences repeated: a loop", () => {
+  const cycle = "Je relis la fiche du ticket. Je vérifie la décision sur la pagination. Puis je relance le coder sur l'étape 1. "
+  assert.ok(loopAtEnd("Début. " + cycle.repeat(7)))
+})
+await check("[v2 21] a loop without any sentence boundary: a loop", () =>
+  assert.ok(loopAtEnd("x " + "verifier le parametre Localization de la grille puis ".repeat(30))))
+await check("[v2 21] a long reasoning with lines repeated here and there: no loop", () => {
+  assert.equal(loopAtEnd(drafted + "\n" + tests8 + "\nNow the table:\n" + table + "\nAll criteria are covered."), null)
+  assert.equal(collapseRepeats(drafted + "\n" + tests8 + "\n" + table), null)
+})
+await check("[v2 21] a sentence said three times is no loop", () =>
+  assert.equal(loopAtEnd(intro + Array(3).fill(loopSentence).join(" ")), null))
+await check("[v2 21] a stream: the last sentence, still being written, is left out", () => {
+  const segments = segmentsOf(looping + " Je vérif")
+  assert.equal(segments.at(-1), "je vérif")
+  assert.ok(loopAtEnd(looping + " Je vérif", true))
+})
+await check("[v2 21] a loop in the history is kept once, with a note", () => {
+  const text = "Analyse.\n" + Array(15).fill(loopSentence).join("\n") + "\nFin de l'analyse : je lance le coder."
+  const short = collapseRepeats(text)
+  assert.ok(short.startsWith("Analyse.\n" + loopSentence + "\n[the same sentence repeated 14 more times: removed by the pack]"))
+  assert.ok(short.endsWith("Fin de l'analyse : je lance le coder."))
+  assert.equal(short.split(loopSentence).length - 1, 1)
+})
+const NOTE = "Your last response hit the output token limit (stop reason: length). Do not apologize, recap, or repeat yourself. Break the remaining work into smaller pieces."
+await check("[v2 21] an answer cut in a loop and the note that followed it leave the request", () => {
+  const messages = [
+    { role: "system", content: [{ type: "text", text: "s" }] },
+    { role: "user", content: [{ type: "text", text: "/go ABC-1" }] },
+    { role: "assistant", content: [{ type: "reasoning", text: looping }] },
+    { role: "user", content: [{ type: "text", text: NOTE }] },
+    { role: "assistant", content: [{ type: "reasoning", text: looping + " " + loopSentence }] },
+    { role: "user", content: NOTE },
+  ]
+  const out = sanitizeLoops(messages)
+  assert.deepEqual(out, { dropped: 2, collapsed: 0 })
+  assert.deepEqual(messages.map((m) => m.role), ["system", "user"])
+})
+await check("[v2 21] a loop in an answer with tool calls stays, kept once", () => {
+  const messages = [
+    { role: "user", content: [{ type: "text", text: "/go ABC-1" }] },
+    { role: "assistant", content: [{ type: "reasoning", text: looping + " Je lance le coder." }, { type: "tool-call", id: "t", name: "subagent", input: {} }] },
+    { role: "tool", content: [{ type: "tool-result", id: "t", name: "subagent", result: { type: "text", value: looping } }] },
+  ]
+  const out = sanitizeLoops(messages)
+  assert.deepEqual(out, { dropped: 0, collapsed: 1 })
+  assert.equal(messages.length, 3)
+  assert.match(messages[1].content[0].text, /repeated 19 more times: removed by the pack\]\nJe lance le coder\.$/)
+  assert.equal(messages[2].content[0].result.value, looping)
+})
+await check("[v2 21] a note after an answer that did not loop stays (an answer that was only long)", () => {
+  const messages = [{ role: "assistant", content: [{ type: "text", text: drafted }] }, { role: "user", content: NOTE }]
+  assert.deepEqual(sanitizeLoops(messages), { dropped: 0, collapsed: 0 })
+  assert.equal(messages.length, 2)
+})
+// a fake model server stream
+const sse = (deltas, { finish = "stop", slow = false } = {}) => {
+  const enc = new TextEncoder()
+  const events = deltas.map((d, i) => "data: " + JSON.stringify({ id: "chatcmpl-1", model: "qwen", choices: [{ index: 0, delta: d, finish_reason: null }] }) + "\n\n")
+  events.push("data: " + JSON.stringify({ id: "chatcmpl-1", model: "qwen", choices: [{ index: 0, delta: {}, finish_reason: finish }], usage: { prompt_tokens: 10, completion_tokens: 20 } }) + "\n\n", "data: [DONE]\n\n")
+  const state = { sent: 0, cancelled: false }
+  const stream = new ReadableStream({
+    async pull(controller) {
+      if (state.sent >= events.length) return controller.close()
+      if (slow) await new Promise((r) => setTimeout(r, 1))
+      // split an event in two chunks now and then, as a network does
+      const event = events[state.sent++]
+      if (state.sent % 3 === 0) { controller.enqueue(enc.encode(event.slice(0, 7))); controller.enqueue(enc.encode(event.slice(7))) }
+      else controller.enqueue(enc.encode(event))
+    },
+    cancel() { state.cancelled = true },
+  })
+  return { stream, state, events }
+}
+const readAll = async (stream) => new Response(stream).text()
+const reasoningDeltas = (text, size = 37) => { const out = []; for (let i = 0; i < text.length; i += size) out.push({ reasoning_content: text.slice(i, i + size) }); return out }
+await check("[v2 21] a stream that loops ends at once as cut at the output limit, and the server request is cancelled", async () => {
+  const long = intro + Array(400).fill(loopSentence).join(" ")
+  const source = sse(reasoningDeltas(long))
+  let found
+  const text = await readAll(watchStream(source.stream, { onLoop: (f) => { found = f } }))
+  assert.ok(found && found.repeats >= 5, "loop found")
+  assert.ok(found.total < 4000, "cut early: " + found.total)
+  assert.ok(source.state.cancelled, "upstream cancelled")
+  assert.ok(source.state.sent < source.events.length / 2)
+  assert.match(text, /"finish_reason":"length"\}\]\}\n\ndata: \[DONE\]\n\n$/)
+  // every event sent before the cut is whole
+  for (const block of text.trim().split("\n\n")) assert.match(block, /^data: (\{.*\}|\[DONE\])$/)
+})
+await check("[v2 21] a stream without a loop goes through unchanged", async () => {
+  const source = sse([...reasoningDeltas(drafted + "\n" + tests8), { content: "RÉSULTAT : OK\n" + table }], { slow: true })
+  let ended = false, found = false
+  const text = await readAll(watchStream(source.stream, { onLoop: () => { found = true }, onEnd: () => { ended = true } }))
+  assert.equal(text, source.events.join(""))
+  assert.ok(ended && !found && !source.state.cancelled)
+})
+// the hooks, end to end: the cut, the penalty of the next requests, back to normal
+const lp = fakeV2(repo)
+await v2Plugin.setup(lp.ctx)
+lp.sessions.set("loop-1", { id: "loop-1", title: "Étape 1/6", parentID: "p" })
+const streamed = async (sessionID, source, kind = "primary") => {
+  const event = { sessionID, agent: "coder", kind, request: new Request("https://gw.example/v1/chat/completions"), response: new Response(source.stream, { status: 200, headers: { "content-type": "text/event-stream" } }) }
+  await lp.hooks["session.http.response"](event)
+  return readAll(event.response.body)
+}
+const lpContext = async (sessionID, messages = []) => {
+  const event = { sessionID, agent: "coder", model: { id: "qwen", providerID: "fake" }, system: [], messages, options: { maxTokens: 32000 }, tools: {} }
+  await lp.hooks["session.context"](event)
+  return event
+}
+await check("[v2 21] hooks: a looping answer is cut, the log says so", async () => {
+  const text = await streamed("loop-1", sse(reasoningDeltas(intro + Array(400).fill(loopSentence).join(" "))))
+  assert.match(text, /"finish_reason":"length"/)
+  assert.match(pluginLog(), /an answer that repeated itself was cut \{"agent":"coder","repeats":\d+,"block":\d+,"chars":\d+,"cut":1\}/)
+  assert.doesNotMatch(pluginLog(), /Blazorise/)
+})
+await check("[v2 21] hooks: the next request has presence penalty 1.0, and the cut answer is out", async () => {
+  const event = await lpContext("loop-1", [{ role: "user", content: "step" }, { role: "assistant", content: [{ type: "reasoning", text: looping }] }, { role: "user", content: NOTE }])
+  assert.equal(event.options.presencePenalty, 1.0)
+  assert.equal(event.options.maxTokens, 32000)
+  assert.equal(event.messages.length, 1)
+})
+await check("[v2 21] hooks: a second cut in a row: 1.5", async () => {
+  await streamed("loop-1", sse(reasoningDeltas(Array(400).fill(loopSentence).join(" "))))
+  assert.equal((await lpContext("loop-1")).options.presencePenalty, 1.5)
+})
+await check("[v2 21] hooks: an answer that ends normally: the model card's sampling again", async () => {
+  await streamed("loop-1", sse(reasoningDeltas(drafted)))
+  assert.equal((await lpContext("loop-1")).options.presencePenalty, undefined)
+})
+await check("[v2 21] hooks: other sessions, titles and summaries are never touched", async () => {
+  assert.equal((await lpContext("other")).options.presencePenalty, undefined)
+  const source = sse(reasoningDeltas(Array(400).fill(loopSentence).join(" ")))
+  const event = { sessionID: "loop-2", agent: "coder", kind: "compaction", request: new Request("https://gw.example/v1/chat/completions"), response: new Response(source.stream, { status: 200, headers: { "content-type": "text/event-stream" } }) }
+  await lp.hooks["session.http.response"](event)
+  assert.equal(event.response.body, source.stream)
+  const json = { sessionID: "loop-2", agent: "coder", kind: "primary", request: new Request("https://gw.example/v1/chat/completions"), response: new Response("{\"error\":\"x\"}", { status: 400, headers: { "content-type": "application/json" } }) }
+  const original = json.response
+  await lp.hooks["session.http.response"](json)
+  assert.equal(json.response, original)
+})
+await check("[v2 19 and 21] three cuts in a row stop the turn: the run resumes at once, the reason said", async () => {
+  const rl = fakeV2(repo, { options: { tickMs: 25, mcpWaitMs: 600, resumeFailureMs: [600000], resumeUnfinishedMs: 40 } })
+  await v2Plugin.setup(rl.ctx)
+  rl.sessions.set("rl-1", { id: "rl-1", title: "/go ABC-70", agent: "pilot" })
+  await rl.hooks["session.prompt"]({ sessionID: "rl-1", messageID: "m", prompt: { text: goText("ABC-70") }, delivery: "steer" })
+  rl.push("session.execution.started", { sessionID: "rl-1" })
+  rl.push("session.execution.failed", { sessionID: "rl-1", error: { type: "output-limit", message: "Response still truncated after two output token limit continuations" } })
+  await wait(200)
+  assert.equal(rl.calls.prompt.length, 1)
+  assert.match(rl.calls.prompt[0].text, /^\[\[command go ABC-70\]\]\n\[\[resume réponses coupées en boucle\]\]\nThe run of \/go ABC-70 stopped before its end: your answers were cut three times/)
+})
+
+// ---------- 22. « continue » after a run that stopped ----------
+await check("[v2 22] the words that ask to go on", () => {
+  for (const yes of ["continue", "Continue.", "continue stp", "ok continue", "vas-y", "Reprends", "go", "on continue !", "oui, continue", "poursuis"]) assert.ok(isContinue(yes), yes)
+  for (const no of ["continue avec un Result", "pourquoi ça plante", "go to the file", "continue la doc de l'API demain", ""]) assert.ok(!isContinue(no), no)
+})
+const ct = fakeV2(repo)
+ct.calls.switch = []
+ct.ctx.session.switchAgent = async (input) => { ct.calls.switch.push(input); const s = ct.sessions.get(input.sessionID); if (s) s.agent = input.agent }
+await v2Plugin.setup(ct.ctx)
+const ctPrompt = async (sessionID, text) => {
+  const event = { sessionID, messageID: "m", prompt: { text }, delivery: "steer" }
+  await ct.hooks["session.prompt"](event)
+  return event
+}
+await check("[v2 22] « continue » after a /go that stopped: back to the pilot, the run resumes", async () => {
+  ct.sessions.set("ct-1", { id: "ct-1", title: "/go ABC-80", agent: "pilot" })
+  await ctPrompt("ct-1", goText("ABC-80 avec un Result"))
+  ct.push("session.execution.started", { sessionID: "ct-1" })
+  ct.push("session.execution.interrupted", { sessionID: "ct-1", reason: "user" })
+  await wait(150)
+  assert.equal(ct.sessions.get("ct-1").title, "⛔ /go ABC-80")
+  ct.sessions.get("ct-1").agent = "build"
+  const event = await ctPrompt("ct-1", "continue")
+  assert.deepEqual(ct.calls.switch, [{ sessionID: "ct-1", agent: "pilot" }])
+  assert.match(event.prompt.text, /^The run of \/go ABC-80 avec un Result stopped before its end: it stopped before its end, and the developer asks you to continue it\. Continue it now/)
+  assert.match(event.metadata.displayText, /^↻ \/go ABC-80 avec un Result · reprise demandée — my-api · /)
+  assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).session, "ct-1")
+  assert.match(pluginLog(), /run resumed at the developer's request \{"command":"\/go"\}/)
+  ct.push("session.execution.started", { sessionID: "ct-1" })
+  ct.push("session.step.started", { sessionID: "ct-1", assistantMessageID: "c1" })
+  ct.push("session.text.ended", { sessionID: "ct-1", assistantMessageID: "c1", ordinal: 0, text: "**[ABC-80](x) - Export**\n🚀 MR en Draft : x" })
+  ct.push("session.execution.succeeded", { sessionID: "ct-1" })
+  await wait(150)
+})
+await check("[v2 22] « continue » after a delivered run: a message like any other", async () => {
+  assert.equal(ct.sessions.get("ct-1").title, "✅ /go ABC-80")
+  const event = await ctPrompt("ct-1", "continue")
+  assert.equal(event.prompt.text, "continue")
+  assert.equal(ct.calls.switch.length, 1)
+})
+await check("[v2 22] after a restart of OpenCode: the run named in the title", async () => {
+  ct.sessions.set("ct-2", { id: "ct-2", title: "↻ [crisp-river] /fix seulement la review", agent: "build" })
+  const event = await ctPrompt("ct-2", "vas-y")
+  assert.equal(ct.calls.switch.at(-1).sessionID, "ct-2")
+  assert.match(event.prompt.text, /^The run of \/fix seulement la review stopped before its end/)
+  ct.push("session.execution.succeeded", { sessionID: "ct-2" })
+  await wait(100)
+})
+await check("[v2 22] never: a run that waits for the PO, a conversation, a longer message, a subagent", async () => {
+  ct.sessions.set("ct-3", { id: "ct-3", title: "⏸ /go ABC-81", agent: "build" })
+  ct.sessions.set("ct-4", { id: "ct-4", title: "Question sur le cache", agent: "build" })
+  ct.sessions.set("ct-5", { id: "ct-5", title: "⛔ /go ABC-82", agent: "build" })
+  ct.sessions.set("ct-6", { id: "ct-6", title: "⛔ /go ABC-83", parentID: "ct-5" })
+  for (const [id, text] of [["ct-3", "continue"], ["ct-4", "continue"], ["ct-5", "continue mais avec un Result"], ["ct-6", "continue"]]) {
+    const event = await ctPrompt(id, text)
+    assert.equal(event.prompt.text, text, id)
+  }
+  assert.equal(ct.calls.switch.length, 2)
+})
+
+// ---------- 9. /push and /sync: one git command at a time per folder ----------
+await check("[v2 9] /push while a /go runs in the folder: refused, the /go goes on", async () => {
+  ct.sessions.set("ct-7", { id: "ct-7", title: "/go ABC-84", agent: "pilot" })
+  ct.sessions.set("ct-8", { id: "ct-8", title: "POC", agent: "pilot" })
+  await ctPrompt("ct-7", goText("ABC-84"))
+  ct.push("session.execution.started", { sessionID: "ct-7" })
+  const event = await ctPrompt("ct-8", "[[command push feat: try]]\nCommit and push the work of this folder now.")
+  assert.match(event.prompt.text, /^Answer exactly this sentence and nothing else, without any tool: « ⛔ \/push refusé : \/go tourne déjà dans ce dossier/)
+  ct.push("session.execution.succeeded", { sessionID: "ct-8" })
+  ct.push("session.step.started", { sessionID: "ct-7", assistantMessageID: "c7" })
+  ct.push("session.text.ended", { sessionID: "ct-7", assistantMessageID: "c7", ordinal: 0, text: "✅ Déjà livré" })
+  ct.push("session.execution.succeeded", { sessionID: "ct-7" })
+  await wait(150)
+})
+await check("[v2 9] /sync takes the folder, and frees it at its end; it is never resumed", async () => {
+  const event = await ctPrompt("ct-8", "[[command sync develop]]\nBring the branch up to date now.")
+  assert.match(event.metadata.displayText, /^\/sync develop — my-api · /)
+  assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).command, "sync")
+  ct.push("session.execution.started", { sessionID: "ct-8" })
+  ct.push("session.execution.failed", { sessionID: "ct-8", error: { type: "provider.transport", message: "x" } })
+  await wait(150)
+  assert.ok(!existsSync(lockFile))
+  assert.equal(ct.calls.prompt.length, 0)
+})
+await check("[v2 4] /push chosen in a question starts by itself", async () => {
+  ct.sessions.set("ct-9", { id: "ct-9", title: "Conversation", agent: "build" })
+  await ctPrompt("ct-9", "pousse mon POC")
+  await ct.hooks["tool.execute.after"]({ tool: "question", sessionID: "ct-9", status: "completed", result: { output: { answers: [["/push (recommandé)"]] } } })
+  ct.push("session.execution.succeeded", { sessionID: "ct-9" })
+  await wait(100)
+  assert.deepEqual(ct.calls.command.at(-1), { sessionID: "ct-9", name: "push", text: "" })
+})
+
+// ---------- 23. dotnet run: a project of the repository that the last commit holds ----------
+const runRepo = join(home, "repos", "run-api")
+mkdirSync(join(runRepo, "src", "Api"), { recursive: true })
+mkdirSync(join(runRepo, "tests", "Api.Tests"), { recursive: true })
+writeFileSync(join(runRepo, "src", "Api", "Api.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk.Web\" />\n")
+writeFileSync(join(runRepo, "tests", "Api.Tests", "Api.Tests.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\" />\n")
+execFileSync("git", ["init", "-q", runRepo])
+execFileSync("git", ["-C", runRepo, "add", "-A"])
+execFileSync("git", ["-C", runRepo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init"])
+mkdirSync(join(runRepo, "Probe"), { recursive: true })
+writeFileSync(join(runRepo, "Probe", "Probe.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\" />\n")
+writeFileSync(join(runRepo, "Probe.cs"), "System.Console.WriteLine(1);\n")
+await check("[23] which project a dotnet run starts", () => {
+  assert.deepEqual(dotnetRunTarget("dotnet run --project src/Api", runRepo, runRepo), { project: "src/Api", ok: true })
+  assert.deepEqual(dotnetRunTarget("timeout 90 dotnet run --project tests/Api.Tests/Api.Tests.csproj --no-build -- --filter-class *Foo*", runRepo, runRepo), { project: "tests/Api.Tests/Api.Tests.csproj", ok: true })
+  assert.deepEqual(dotnetRunTarget("dotnet run", join(runRepo, "src", "Api"), runRepo), { project: ".", ok: true })
+  assert.equal(dotnetRunTarget("dotnet build && dotnet test", runRepo, runRepo), "")
+  assert.equal(dotnetRunTarget("dotnet run --project Probe", runRepo, runRepo).ok, false)
+  assert.equal(dotnetRunTarget("dotnet run Probe.cs", runRepo, runRepo).ok, false)
+  assert.equal(dotnetRunTarget("dotnet run", runRepo, runRepo).ok, false)
+})
+const runGuards = await Guards({ client, directory: runRepo, worktree: runRepo })
+runGuards.agent("run-build", "build")
+const runTool = async (command) => { const output = { args: { command } }; await runGuards.before({ tool: "bash", sessionID: "run-build", agent: "build", callID: "r" }, output); return output.args }
+await check("[23] build runs a committed project", () => runTool("dotnet run --project src/Api"))
+await check("[23] build runs the tests of a committed test project", () => runTool("dotnet run --project tests/Api.Tests/Api.Tests.csproj --no-build"))
+for (const command of ["dotnet run --project Probe", "dotnet run --project Probe/Probe.csproj", "dotnet run Probe.cs", "cd Probe && dotnet run"]) {
+  await check(`[23] refused: ${command}`, () => assert.rejects(() => runTool(command), /dotnet run runs only a project of this repository that the last commit holds/))
+}
 
 console.log(`\n${count - failures}/${count} plugin checks as expected`)
 process.exit(failures ? 1 : 0)

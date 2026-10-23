@@ -11,7 +11,7 @@
 # WARNING (exit 0): the same findings in test files (fake tokens in fixtures), a binary or a file over 1 MB added.
 # PACKAGES (exit 0): every package added or changed, for the merge request.
 # A false positive: the comment "gitleaks:allow" (or "pragma: allowlist secret") on that line lets it through.
-# Usage: diff-guard.sh [<base ref>]     default: origin/develop, otherwise origin/main or origin/master
+# Usage: diff-guard.sh [<base ref>]     default: the base of the branch (base.sh), origin/develop when none is recorded
 
 LC_ALL=C
 export LC_ALL
@@ -26,12 +26,10 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 cd "$(git rev-parse --show-toplevel)" || exit 0
 if [ -z "$base" ]; then
-  for candidate in origin/develop origin/main origin/master; do
-    if git rev-parse -q --verify "$candidate" >/dev/null; then
-      base=$candidate
-      break
-    fi
-  done
+  # the base of the branch (base.sh: the one recorded when it started from another branch, otherwise develop, main or
+  # master)
+  name=$(sh "$here/base.sh")
+  [ -n "$name" ] && base="origin/$name"
 fi
 if [ -z "$base" ] || ! git rev-parse -q --verify "$base" >/dev/null; then
   echo "GUARD: no base branch to compare with: nothing checked"

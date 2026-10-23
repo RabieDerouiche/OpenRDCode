@@ -18,7 +18,7 @@
 //    The pack's commands start with a line "[[command <name> $ARGUMENTS]]" that tells the plugin which command runs.
 //    A command run in a session that has no title yet names it ("/go ABC-123"): no model request for the title.
 // 4. Starts the command I choose in a multiple-choice question: an option whose label is a command of the pack
-//    ("/go ABC-123", "/fix (recommandé)") runs by itself in the same session as soon as the agent's turn ends, unless
+//    ("/go ABC-123", "/fix (recommandé)", "/push") runs by itself in the same session as soon as the agent's turn ends, unless
 //    that turn failed or was stopped, and never in a subagent's session. Agents cannot run a command.
 // 5. Shows the progress of the agent in the session title while it works, for example
 //    "⏳ 1:42 réflexion 2,3k tokens — <title>", and while a subagent works, what it waits for ("⏳ 31:02 outil ·
@@ -57,8 +57,8 @@
 //    2 minutes unless the agent asks for more, and a stopped full test suite is run again from the start), ship.sh
 //    and branch.sh 5 minutes. The agents of the pack never run a shell command or a subagent in the background: /go,
 //    /fix and /fortify wait for each result, and the folder lock (9) ends with the turn.
-// 9. Starts only one /go, /fix or /fortify at a time per folder: two pilots in one working tree would commit each
-//    other's changes. The second one gets a one-line answer and no tool runs in its turn. The lock is also a file in
+// 9. Starts only one /go, /fix, /fortify, /push or /sync at a time per folder: two pilots in one working tree would
+//    commit each other's changes. The second one gets a one-line answer and no tool runs in its turn. The lock is also a file in
 //    the git folder of the working tree, so that a second OpenCode of the machine (the terminal client) sees it too;
 //    a lock left by an OpenCode that stopped is ignored, except by OpenCode run as its background service: it resumes
 //    the turn a restart interrupted, and the plugin keeps the folder for that resumed run (freed after 2 minutes if
@@ -111,10 +111,25 @@
 //    null there (the OpenAI format allows it); a model gateway that validates content as a string or an array refuses
 //    the whole request (HTTP 400 "Request doesn't match the schema", /messages/<n>/content), so every turn that calls a
 //    tool failed on its next request. Only the body of chat completions requests that hold such a message changes.
-// Every refusal of 6, 7, 9, 12 and 16 is written as "refused by the pack" to the log of the plugin,
+// 21. Cuts an answer of the model that repeats itself (the same sentence, or the same few sentences, again and again: a
+//    thinking model can loop until its output limit, half an hour or more of a shared server): the stream is watched
+//    as it comes, and once its text ends in a loop it ends at once as an answer cut at the output limit, and the request
+//    to the model server is cancelled. OpenCode then asks the model to go on; the plugin takes the cut answer and that
+//    note out of the next request (the model gets the request that looped once more), with a presence penalty of 1.0,
+//    then 1.5, until an answer ends normally: the sampling of the model card everywhere else. Every request also gets
+//    the loops of its history (answers of an earlier loop, of a version without this guard) kept once. After three
+//    cuts in a row OpenCode stops the turn, and a run is resumed (19).
+// 22. Resumes a run of /go, /fix or /fortify that stopped before its end when I write « continue » (« reprends »,
+//    « vas-y »…) in its session: the web interface switches the session to the agent selected under the prompt with
+//    every message, so « continue » went to build, which carried on the pilot's work with none of its rules. The
+//    session goes back to the pilot, and the message becomes the resume of 19 (never after ✅ or ⏸).
+// 23. Lets the free conversation run a project with `dotnet run` only when the last commit holds it: a POC or the tests
+//    of a Microsoft.Testing.Platform project, never a probe or reflection project made for the occasion, nor a C# file
+//    run as a program (.NET 10). The agents of the pack never run `dotnet run` (permission rules).
+// Every refusal of 6, 7, 9, 12, 16 and 23 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
-// the summaries of a run (17) and its automatic resumes (19). Any error leaves the prompt or the call as it is.
+// the summaries of a run (17), its automatic resumes (19), the loops cut (21) and the resumes I ask for (22). Any error leaves the prompt or the call as it is.
 import { execFile, execFileSync, spawn } from "node:child_process"
 import { Plugin } from "@opencode/plugin"
 import {
@@ -165,7 +180,7 @@ function cleanEnv(env) {
 }
 const MAX_OUTPUT = 32 * 1024 * 1024
 // Commands of the pack that a multiple-choice answer may start (built-in OpenCode commands are never started)
-const CHAINABLE = new Set(["go", "fix", "fortify", "daily", "review", "compare", "outil"])
+const CHAINABLE = new Set(["go", "fix", "fortify", "push", "sync", "daily", "review", "compare", "outil"])
 // An option that names a command: "/go ABC-123", "/daily (recommandé)" (the mark of the recommended option is no argument)
 const RECOMMENDED = /\s*\((?:recommandé|recommended)\)\s*$/i
 const CHOICE = /^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?$/i
@@ -826,6 +841,22 @@ export const Guards = async (input) => {
           )
         }
       }
+      // 23. dotnet run: only a project of the repository that the last commit holds
+      if (call.tool === "bash" && typeof output.args.command === "string" && /\bdotnet\b[^;&|\n]*\brun\b/.test(output.args.command)) {
+        const cwd = typeof output.args.workdir === "string" && output.args.workdir ? resolve(directory, output.args.workdir) : directory
+        const target = dotnetRunTarget(output.args.command, cwd, root)
+        if (target && !target.ok) {
+          logRefusal(call, "dotnet run of a project the last commit does not hold", target.project)
+          throw new Error(
+            "Refused by the pack: dotnet run runs only a project of this repository that the last commit holds (" +
+              target.project + " is new, not committed, outside the repository or a C# file): never a probe or " +
+              "reflection program. The API of a package is in its XML documentation (sh ~/.config/opencode/scripts/" +
+              "package-refs.sh --doc <package id> gives its file; grep tool on the member name) and in its existing " +
+              "calls. Never try " +
+              "another form of this command.",
+          )
+        }
+      }
       let outside = null
       try {
         outside = await escape(call.tool, call.sessionID, output.args)
@@ -924,6 +955,8 @@ const SUBAGENT_PROMPT = "You are a subagent spawned by another session."
 // 3. the first line of every command of the pack: "[[command <name> <arguments>]]"
 const COMMAND_LINE = /^\s*\[\[command ([a-z][a-z0-9-]*)(?:[ \t]+([\s\S]*?))?\]\][ \t]*(?:\r?\n|$)/
 const PILOT_COMMANDS = new Set(["go", "fix", "fortify"])
+// 9. the commands that write to git: one at a time per folder (/push and /sync are not resumed: 19)
+const LOCKING_COMMANDS = new Set([...PILOT_COMMANDS, "push", "sync"])
 // a command file of an older pack, without its [[command]] line: the first sentence of the body of each pilot command
 const PILOT_RUNS = [
   ["go", "Take the ticket from its analysis to its Draft merge request"],
@@ -1152,6 +1185,285 @@ const resumeText = (run, why) =>
   "whose commit or tick exists; a subagent whose report you have is not called again, and one that failed is taken up " +
   "again with its sessionID.\n3. End with the final answer of /" + run.command + ", in its format."
 
+// ---------- 21. a model that repeats itself ----------
+// A thinking model can fall into a loop: the same sentence, or the same few sentences, again and again until the output
+// limit (32k tokens: half an hour or more on a shared server), then OpenCode asks it to continue twice, with the loop
+// in its context, then the run fails and is resumed. These helpers find such a loop in a text: the end of a text is a
+// block of 1 to 8 sentences repeated back to back (exactly, apart from spaces and case), or a stretch of characters
+// repeated back to back when there is no sentence boundary. The thresholds are those of a real loop, never of a text
+// that repeats a line here and there (code drafted several times, a table): at least 600 repeated characters, and 4
+// to 8 repetitions in a row depending on the length of the block.
+const LOOP_BOUNDARY = /\n+|(?<=[.!?;…])\s+/
+const LOOP_MIN_CHARS = 600
+const LOOP_MAX_BLOCK = 8
+const loopNeed = (chars) => (chars >= 200 ? 4 : chars >= 80 ? 5 : 8)
+const normalizeSegment = (text) =>
+  text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^(?:[-*•>]|\d+[.)])\s+/, "")
+    .replace(/[.!?;:…,\s]+$/, "")
+    .toLowerCase()
+// The sentences (or lines) of a text, normalized; empty ones left out
+export function segmentsOf(text) {
+  const out = []
+  for (const raw of String(text || "").split(LOOP_BOUNDARY)) {
+    const segment = normalizeSegment(raw)
+    if (segment) out.push(segment)
+  }
+  return out
+}
+// The block of sentences repeated back to back at the end of `segments`, as { repeats, chars }, or null
+export function trailingLoop(segments) {
+  const n = segments.length
+  for (let size = 1; size <= LOOP_MAX_BLOCK && size * 4 <= n; size++) {
+    const block = segments.slice(n - size)
+    const chars = block.reduce((sum, segment) => sum + segment.length, 0)
+    if (chars < 24) continue
+    let repeats = 1
+    while ((repeats + 1) * size <= n) {
+      const start = n - (repeats + 1) * size
+      let same = true
+      for (let i = 0; i < size && same; i++) same = segments[start + i] === block[i]
+      if (!same) break
+      repeats++
+    }
+    if (repeats >= loopNeed(chars) && repeats * chars >= LOOP_MIN_CHARS) return { repeats, chars, size }
+  }
+  return null
+}
+// A stretch of 20 to 400 characters repeated back to back at the end of a text (a loop without sentence boundaries)
+export function periodicTail(text) {
+  const tail = String(text || "").replace(/\s+/g, " ").slice(-4000)
+  for (let period = 20; period <= 400; period++) {
+    const need = period >= 100 ? 5 : 8
+    if (tail.length < period * need) continue
+    const unit = tail.slice(tail.length - period)
+    let repeats = 1
+    while (repeats < need && tail.slice(tail.length - (repeats + 1) * period, tail.length - repeats * period) === unit) repeats++
+    if (repeats >= need && repeats * period >= LOOP_MIN_CHARS) return { repeats, chars: period, size: 0 }
+  }
+  return null
+}
+// Whether a text ends in a loop; `partial`: the last sentence may still be written (a stream), so it is left out
+export function loopAtEnd(text, partial = false) {
+  const segments = segmentsOf(text)
+  if (partial) segments.pop()
+  return trailingLoop(segments) || periodicTail(text)
+}
+
+// The text with each loop kept once: a block of sentences repeated back to back (same thresholds) is written once,
+// followed by a note; null when there is none. For the history sent to the model: a loop left in a message of the
+// conversation pulls the next answers into the same loop.
+export function collapseRepeats(text) {
+  const source = String(text || "")
+  if (source.length < LOOP_MIN_CHARS) return null
+  // the sentences with their separators, and their normalized form
+  const pieces = source.split(/(\n+|(?<=[.!?;…])\s+)/)
+  const raw = []
+  for (let i = 0; i < pieces.length; i += 2) raw.push(pieces[i] + (pieces[i + 1] || ""))
+  const norm = raw.map((piece) => normalizeSegment(piece))
+  let out = ""
+  let changed = false
+  let i = 0
+  while (i < raw.length) {
+    let done = false
+    for (let size = 1; size <= LOOP_MAX_BLOCK && i + size * 4 <= raw.length && !done; size++) {
+      const block = norm.slice(i, i + size)
+      if (block.some((segment) => !segment)) continue
+      const chars = block.reduce((sum, segment) => sum + segment.length, 0)
+      if (chars < 24) continue
+      let repeats = 1
+      while (i + (repeats + 1) * size <= raw.length) {
+        let same = true
+        for (let k = 0; k < size && same; k++) same = norm[i + repeats * size + k] === block[k]
+        if (!same) break
+        repeats++
+      }
+      if (repeats >= loopNeed(chars) && repeats * chars >= LOOP_MIN_CHARS) {
+        out += raw.slice(i, i + size).join("") + "[the same " + (size > 1 ? size + " sentences" : "sentence") + " repeated " +
+          (repeats - 1) + " more times: removed by the pack]\n"
+        i += repeats * size
+        changed = true
+        done = true
+      }
+    }
+    if (!done) {
+      out += raw[i]
+      i++
+    }
+  }
+  return changed ? out : null
+}
+
+// The text OpenCode v2 sends after an answer cut at the output limit
+const OUTPUT_LIMIT_NOTE = "Your last response hit the output token limit"
+const partsOf = (message) => (Array.isArray(message && message.content) ? message.content : [])
+const hasToolCall = (message) => partsOf(message).some((part) => part && (part.type === "tool-call" || part.type === "tool_call"))
+const spokenText = (message) =>
+  typeof (message && message.content) === "string"
+    ? message.content
+    : partsOf(message)
+        .filter((part) => part && (part.type === "text" || part.type === "reasoning") && typeof part.text === "string")
+        .map((part) => part.text)
+        .join("\n")
+// What a request carries of the loops of the conversation (messages of the context hook, changed in place): an answer
+// that ended in a loop and was cut at the output limit, with the note OpenCode added after it, is taken out (the
+// request is then the one that looped, sent again); any other loop in an answer is kept once. Returns what changed.
+export function sanitizeLoops(messages) {
+  let dropped = 0
+  let collapsed = 0
+  if (!Array.isArray(messages)) return { dropped, collapsed }
+  for (let i = messages.length - 1; i >= 1; i--) {
+    const note = messages[i]
+    if (!note || note.role !== "user" || !spokenText(note).trimStart().startsWith(OUTPUT_LIMIT_NOTE)) continue
+    const answer = messages[i - 1]
+    if (answer && answer.role === "assistant" && !hasToolCall(answer) && loopAtEnd(spokenText(answer))) {
+      messages.splice(i - 1, 2)
+      dropped++
+      i--
+    }
+  }
+  for (const message of messages) {
+    if (!message || message.role !== "assistant") continue
+    for (const part of partsOf(message)) {
+      if (!part || (part.type !== "text" && part.type !== "reasoning") || typeof part.text !== "string") continue
+      const shorter = collapseRepeats(part.text)
+      if (shorter === null) continue
+      part.text = shorter
+      collapsed++
+    }
+  }
+  return { dropped, collapsed }
+}
+
+// The text of the reasoning and of the answer in one data line of an OpenAI-compatible stream, and its finish reason
+function streamDelta(line) {
+  if (!line.startsWith("data:")) return undefined
+  const data = line.slice(5).trim()
+  if (!data || data === "[DONE]") return undefined
+  try {
+    const event = JSON.parse(data)
+    const choice = event && Array.isArray(event.choices) ? event.choices[0] : undefined
+    const delta = (choice && choice.delta) || {}
+    const text = [delta.reasoning_content, delta.reasoning, delta.content].filter((value) => typeof value === "string").join("")
+    return { text, finish: choice && choice.finish_reason, id: event.id, model: event.model }
+  } catch {
+    return undefined
+  }
+}
+// A streamed chat completion (SSE) watched for a loop: passed through event by event; once the text of the answer ends
+// in a loop, the stream ends at once as an answer cut at the output limit (finish_reason "length"), and the request to
+// the model server is cancelled (vLLM stops generating). `onLoop` is called with { repeats, chars, total }; `onEnd`
+// when the stream ends without a loop.
+export function watchStream(body, { onLoop, onEnd, checkEvery = 400 } = {}) {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  let pending = ""
+  let text = ""
+  let checked = 0
+  let last = { id: "chatcmpl-pack", model: "" }
+  let stopped = false
+  const finish = (controller, found) => {
+    stopped = true
+    const chunk = { id: last.id || "chatcmpl-pack", object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000),
+      model: last.model || "", choices: [{ index: 0, delta: {}, finish_reason: "length" }] }
+    controller.enqueue(encoder.encode("data: " + JSON.stringify(chunk) + "\n\ndata: [DONE]\n\n"))
+    controller.close()
+    reader.cancel().catch(() => {})
+    if (onLoop) onLoop({ ...found, total: text.length })
+  }
+  return new ReadableStream({
+    // each pull ends with something given to the reader (a stream calls pull again only after it got something)
+    async pull(controller) {
+      while (!stopped) {
+        const { value, done } = await reader.read()
+        if (done) {
+          pending += decoder.decode()
+          if (pending) controller.enqueue(encoder.encode(pending))
+          controller.close()
+          if (onEnd) onEnd()
+          return
+        }
+        pending += decoder.decode(value, { stream: true })
+        // complete events only (an event ends with a blank line)
+        const end = Math.max(pending.lastIndexOf("\n\n"), pending.lastIndexOf("\r\n\r\n"))
+        if (end < 0) continue
+        const cut = pending.charAt(end) === "\r" ? end + 4 : end + 2
+        const events = pending.slice(0, cut)
+        pending = pending.slice(cut)
+        let finished = false
+        for (const line of events.split(/\r?\n/)) {
+          const delta = streamDelta(line)
+          if (!delta) continue
+          if (delta.id) last = { id: delta.id, model: delta.model || last.model }
+          if (delta.text) text += delta.text
+          if (delta.finish) finished = true
+        }
+        if (!finished && text.length - checked >= checkEvery) {
+          checked = text.length
+          const found = loopAtEnd(text.slice(-24000), true)
+          if (found) return finish(controller, found)
+        }
+        controller.enqueue(encoder.encode(events))
+        return
+      }
+    },
+    cancel(reason) {
+      stopped = true
+      return reader.cancel(reason)
+    },
+  })
+}
+
+// ---------- 22. « continue » after a run that stopped ----------
+// A short message that asks to go on: the command of the run resumes, with its agent, instead of the agent the web
+// interface selected (it switches the session to it with every message, so « continue » after /go went to build,
+// which carried on with none of the rules of the pilot)
+const CONTINUE = /^(?:(?:ok|oui|bon|alors|allez|stp|svp|please|yes)[\s,.!]+)*(?:continue[sz]?|continuer|continu|on continue|reprends?|reprise|reprendre|poursuis|poursuivre|vas[- ]?y|go|la suite|suite|relance|termine|finis|keep going|resume|carry on)(?:[\s,.!]+(?:stp|svp|please|merci|thanks))*[\s.!]*$/i
+export const isContinue = (text) => CONTINUE.test(String(text || "").trim())
+
+// ---------- 23. dotnet run: a project of the repository only ----------
+// The free conversation may run a project of the repository (a POC, the tests of a Microsoft.Testing.Platform project),
+// never a project made for the occasion (a probe or reflection program that dumps an assembly) nor a C# file run as
+// a program (`dotnet run Probe.cs`, .NET 10): the project must be in the last commit. Returns "" when the command
+// runs no project, or { project, ok }.
+export function dotnetRunTarget(command, cwd, root) {
+  for (const words of commandWords(String(command || ""))) {
+    let i = words.findIndex((word, k) => word === "dotnet" && words[k + 1] === "run")
+    if (i < 0) continue
+    let project = ""
+    let file = ""
+    for (i += 2; i < words.length && words[i] !== "--"; i++) {
+      const word = words[i]
+      if (word === "--project" || word === "-p") project = words[++i] || ""
+      else if (word.startsWith("--project=")) project = word.slice(10)
+      else if (/\.cs$/i.test(word)) file = word
+    }
+    if (file) return { project: file, ok: false }
+    const target = resolve(cwd, project || ".")
+    let csproj = target
+    try {
+      if (statSync(target).isDirectory()) {
+        const found = execFileSync("git", ["ls-files", "--", "*.csproj", "*.fsproj"], { cwd: target, encoding: "utf8", timeout: 5000 })
+          .split("\n").filter((line) => line && !line.includes("/"))
+        csproj = found.length === 1 ? join(target, found[0]) : join(target, found[0] || "?.csproj")
+      }
+    } catch {
+      return { project: project || ".", ok: false }
+    }
+    if (!within(csproj, root)) return { project: project || ".", ok: false }
+    try {
+      execFileSync("git", ["cat-file", "-e", "HEAD:" + csproj.slice(root.length + 1).split(sep).join("/")], { cwd: root, timeout: 5000, stdio: "ignore" })
+      return { project: project || ".", ok: true }
+    } catch {
+      return { project: project || ".", ok: false }
+    }
+  }
+  return ""
+}
+
 export default Plugin.define({
   id: "openrd-pack",
   setup: async (ctx) => {
@@ -1294,6 +1606,10 @@ export default Plugin.define({
     const resumeTimers = new Map()
     // 19. the sessions whose last request was the one OpenCode sends at the step limit of the agent (tools disabled)
     const stepLimited = new Set()
+    // 21. session id -> { count } of its answers cut because they repeated themselves, until an answer ends normally;
+    // the sessions whose history had a loop taken out (logged once)
+    const loopCuts = new Map()
+    const loopLogged = new Set()
     // tool call id -> tool name (the v2 events give it once); session id -> the texts of its last answer (10)
     const toolNames = new Map()
     const answers = new Map()
@@ -1554,6 +1870,10 @@ export default Plugin.define({
         const error = (data && data.error) || {}
         if (FINAL_ERRORS.has(error.type) || FINAL_STATUS.has(Number(error.status))) return undefined
         const what = String(error.message || error.type || "error").replace(/\s+/g, " ").slice(0, 160)
+        // 21. OpenCode gave up after three answers cut at the output limit (loops the pack cut, or answers too long)
+        if (error.type === "output-limit") {
+          return { fr: "réponses coupées en boucle", en: "your answers were cut three times at the output limit (they repeated themselves): think briefly, then act", failure: false }
+        }
         if (String(error.type || "").startsWith("compaction")) {
           return { fr: "résumé du contexte en échec", en: "OpenCode could not summarize the conversation (" + what + ")", failure: true }
         }
@@ -1996,6 +2316,18 @@ export default Plugin.define({
             if (event.tools.question && (await isSubagent(event.sessionID))) delete event.tools.question
           }
           if (pruning) prune(event.messages)
+          // 21. the loops of the conversation are kept once (an answer cut in a loop is taken out, with the note that
+          // followed it), and after a cut the next answers are sampled with a presence penalty that breaks the loop
+          const cleaned = sanitizeLoops(event.messages)
+          if (cleaned.dropped || (cleaned.collapsed && !loopLogged.has(event.sessionID))) {
+            loopLogged.add(event.sessionID)
+            log("loops taken out of a request", { agent: event.agent || "", dropped: cleaned.dropped, collapsed: cleaned.collapsed })
+          }
+          const cut = loopCuts.get(event.sessionID)
+          if (cut && event.options && typeof event.options === "object") {
+            const penalty = cut.count >= 2 ? 1.5 : 1.0
+            if (!(Number(event.options.presencePenalty) >= penalty)) event.options.presencePenalty = penalty
+          }
           // 19. the request OpenCode sends at the step limit of the agent ends with its instruction
           const last = Array.isArray(event.messages) ? event.messages[event.messages.length - 1] : undefined
           if (last && last.role === "assistant" && messageText(last).trimStart().startsWith("CRITICAL - MAXIMUM STEPS REACHED")) {
@@ -2042,6 +2374,30 @@ export default Plugin.define({
 
       // 20. an assistant message made only of tool calls goes with "" as its content instead of null
       let filledLogged = false
+      // 21. a streamed answer that repeats itself is cut at once, as an answer cut at the output limit
+      await api.hook("http.response", async (event) => {
+        try {
+          const response = event && event.response
+          if (!response || event.kind !== "primary" || !response.body || response.status !== 200) return
+          if (!/event-stream/i.test(response.headers.get("content-type") || "")) return
+          const sessionID = event.sessionID
+          event.response = new Response(
+            watchStream(response.body, {
+              onLoop: (found) => {
+                const cut = loopCuts.get(sessionID) || { count: 0 }
+                cut.count++
+                loopCuts.set(sessionID, cut)
+                log("an answer that repeated itself was cut", { agent: event.agent || "", repeats: found.repeats, block: found.chars, chars: found.total, cut: cut.count })
+              },
+              onEnd: () => loopCuts.delete(sessionID),
+            }),
+            { status: response.status, statusText: response.statusText, headers: response.headers },
+          )
+        } catch {
+          // the answer goes as it is
+        }
+      })
+
       await api.hook("http.request", async (event) => {
         try {
           const request = event && event.request
@@ -2071,6 +2427,22 @@ export default Plugin.define({
       }
     })
 
+    // 22. the run of /go, /fix or /fortify that a session stopped before its end (no ✅ nor ⏸ in its title), or undefined:
+    // the one this instance saw start, otherwise the one its title names (after a restart of OpenCode)
+    async function stoppedRun(sessionID) {
+      if (!sessionID || runs.has(sessionID)) return undefined
+      const info = await sessionInfo(sessionID)
+      if (!info || info.parentID) return undefined
+      const title = String(info.title || "")
+      const mark = (OUTCOME.exec(title) || [""])[0]
+      if (mark.startsWith("✅") || mark.startsWith("⏸")) return undefined
+      const known = procedures.get(sessionID)
+      if (known && PILOT_COMMANDS.has(known.command)) return { command: known.command, args: known.args }
+      const rest = title.replace(OUTCOME, "").replace(/^\[[^\]]*\] /, "").trim()
+      const named = /^\/(go|fix|fortify)(?:\s+([\s\S]*))?$/.exec(rest)
+      return named ? { command: named[1], args: (named[2] || "").trim() } : undefined
+    }
+
     async function onPrompt(event) {
       const prompt = event && event.prompt
       if (!prompt || typeof prompt.text !== "string") return
@@ -2083,6 +2455,27 @@ export default Plugin.define({
         const list = first ? [] : [...(tasks.get(sessionID) || [])]
         list.push((first ? prompt.text.slice(SUBAGENT_PROMPT.length) : prompt.text).trim().slice(0, TASK_MAX))
         remember(tasks, sessionID, list.length > 3 ? [list[0], ...list.slice(-2)] : list)
+      }
+      // 22. « continue » after a run of /go, /fix or /fortify that stopped before its end: that run resumes, with the
+      // pilot, instead of the agent the web interface switched the session to
+      if (!subagent && !COMMAND_LINE.test(prompt.text) && isContinue(prompt.text)) {
+        const run = await stoppedRun(sessionID)
+        if (run) {
+          const pending = resumeTimers.get(sessionID)
+          if (pending) {
+            clearTimeout(pending)
+            resumeTimers.delete(sessionID)
+          }
+          resumes.delete(sessionID)
+          try {
+            if (typeof api.switchAgent === "function") await api.switchAgent({ sessionID, agent: "pilot" })
+          } catch {
+            // the session keeps its agent
+          }
+          log("run resumed at the developer's request", { command: "/" + run.command })
+          prompt.text = "[[command " + run.command + (run.args ? " " + run.args : "") + "]]\n[[resume reprise demandée]]\n" +
+            resumeText(run, { en: "it stopped before its end, and the developer asks you to continue it" })
+        }
       }
       // the command of the pack this prompt runs: its [[command]] line, or the first sentence of an older pilot command
       let command = ""
@@ -2123,8 +2516,8 @@ export default Plugin.define({
           // OpenCode names it
         }
       }
-      // 9. one /go, /fix or /fortify at a time per folder
-      if (PILOT_COMMANDS.has(command)) {
+      // 9. one /go, /fix, /fortify, /push or /sync at a time per folder
+      if (LOCKING_COMMANDS.has(command)) {
         const other = acquire(sessionID, command, args)
         if (other) {
           refusedRuns.add(sessionID)
@@ -2176,7 +2569,7 @@ export default Plugin.define({
         const due = reminders()
         const reminder = due > 0 ? " · ⏰ " + due + (due > 1 ? " rappels" : " rappel") : ""
         // 19. a resume shows as such: "↻ /go ABC-1 · reprise automatique (panne du serveur du modèle) — api · branche …"
-        const shown = resume ? "↻ " + label + " · reprise automatique (" + resume + ")" : label
+        const shown = resume ? "↻ " + label + " · " + (resume.startsWith("reprise") ? resume : "reprise automatique (" + resume + ")") : label
         event.metadata = presentation(event.metadata, (place ? shown + " — " + place : shown) + reminder)
       } catch {
         // the expanded prompt is shown

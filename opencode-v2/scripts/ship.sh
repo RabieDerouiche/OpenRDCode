@@ -1,8 +1,9 @@
 #!/bin/sh
-# For /go and /fix: the only way the agents write to git. In one call:
+# For /go, /fix, /push and /sync: the only way the agents write to git. In one call:
 # 1. commits everything of the working tree (git add -A) on the branch of the ticket;
 # 2. integrates the commits pushed meanwhile on its remote copy (for example from Rider on another computer);
-# 3. with --base, merges the new commits of the base branch (origin/develop, otherwise origin/main or origin/master);
+# 3. with --base, merges the new commits of the base branch (base.sh: the branch it was started from when /go recorded
+#    one, otherwise origin/develop, origin/main or origin/master);
 #    with --merge <branch>, merges another branch too (a hotfix, a teammate's branch), from origin when it is there;
 # 4. checks the changes of the branch (diff-guard.sh: a secret, a conflict marker or a paid package stops everything),
 #    then pushes, and sets the upstream on the first push.
@@ -16,7 +17,9 @@
 # Usage: ship.sh [--base] "<commit summary>" ["<body line>"...]
 #        ship.sh --no-push "<commit summary>" ["<body line>"...]
 #        ship.sh --sync-only [--base] [--merge <branch>]
-#                                          steps 2 and 3 only: no commit, no push, local changes left as they are
+#                                          steps 2 and 3 only: no commit, no push, local changes left as they are;
+#                                          on develop, master, main or the base branch, --sync-only alone: a
+#                                          fast-forward to origin, never a merge
 
 PUSH_TIMEOUT=${PUSH_TIMEOUT:-90}
 
@@ -68,18 +71,20 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || stop "not a git repositor
 cd "$(git rev-parse --show-toplevel)" || exit 0
 gitdir=$(git rev-parse --git-dir)
 branch=$(git branch --show-current)
-[ -n "$branch" ] || stop "detached HEAD: no branch to commit on"
-base=""
-for candidate in develop main master; do
-  if git rev-parse -q --verify "refs/remotes/origin/$candidate" >/dev/null; then
-    base=$candidate
-    break
-  fi
-done
+[ -n "$branch" ] || stop "detached HEAD (an OpenCode workspace starts so): no branch to commit on; /push creates one (branch.sh --here) before it commits"
+# The base: the branch it was started from when branch.sh recorded one (/go … depuis <branch>), otherwise develop,
+# main or master (base.sh)
+base=$(sh "$here/base.sh" "$branch")
+# develop, master, main and the base branch: never a commit, a merge or a push; only --sync-only alone, which brings
+# them up to date with origin by fast-forward (/sync on develop)
+protected=0
 case "$branch" in
-  develop|master|main) stop "$branch is a protected branch: commits and pushes go on the branch of a ticket only" ;;
+  develop|master|main) protected=1 ;;
 esac
-[ -n "$base" ] && [ "$branch" = "$base" ] && stop "$branch is the base branch: commits and pushes go on the branch of a ticket only"
+[ -n "$base" ] && [ "$branch" = "$base" ] && protected=1
+if [ "$protected" -eq 1 ] && { [ "$sync_only" -eq 0 ] || [ "$with_base" -eq 1 ] || [ -n "$merge_branch" ]; }; then
+  stop "$branch is a protected branch: commits, merges and pushes go on another branch (/push creates one for this work, /go one for a ticket)"
+fi
 [ -f "$gitdir/MERGE_HEAD" ] && stop "a merge is in progress on $branch: finish it in Rider (or git merge --abort), then run again"
 if [ -n "$merge_branch" ]; then
   git check-ref-format --branch "$merge_branch" >/dev/null 2>&1 || stop "\"$merge_branch\" is not a branch name"
@@ -147,6 +152,8 @@ if git rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null; then
     out=$(git merge -q --ff-only "origin/$branch" 2>&1) ||
       stop "git refused to bring the $behind commits of origin/$branch: $(printf '%s\n' "$out" | head -n 3 | join)"
     echo "REMOTE: $behind commits of origin/$branch brought in (pushed from another computer)"
+  elif [ "$protected" -eq 1 ] && [ "$ahead" -gt 0 ] && [ "$behind" -gt 0 ]; then
+    stop "the local $branch has $ahead commits that origin/$branch does not have: nothing was merged; put them on a branch (/push), then reset $branch in Rider"
   elif [ "$behind" -gt 0 ]; then
     merge "origin/$branch" "the $behind commits pushed on origin/$branch from another computer"
     echo "REMOTE: the $behind commits of origin/$branch merged (pushed from another computer)"
