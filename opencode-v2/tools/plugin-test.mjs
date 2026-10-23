@@ -30,7 +30,7 @@ mkdirSync(join(stub, "node_modules", "@opencode", "plugin"), { recursive: true }
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "package.json"), '{"name":"@opencode/plugin","type":"module","main":"index.js"}')
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "index.js"), "export const Plugin = { define: (definition) => definition }\n")
 writeFileSync(join(stub, "openrd-pack.js"), readFileSync(join(pack, "plugins", "openrd-pack.js"), "utf8"))
-const { Guards, prune, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
+const { Guards, prune, fillNullContent, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
 
 // ---------- fake OpenCode client ----------
 const sessions = new Map()
@@ -423,8 +423,41 @@ const context = async (sessionID, tools, agent = "build", messages = []) => {
 const TOOLS = ["edit", "glob", "grep", "question", "read", "shell", "skill", "subagent", "webfetch", "websearch", "write", "execute"]
 
 await check("[v2] the setup registers its hooks", () => assert.deepEqual(Object.keys(v2.hooks).sort(),
-  ["session.compaction", "session.context", "session.prompt", "session.retry", "shell.create.before", "tool.execute.after", "tool.execute.before"]))
+  ["session.compaction", "session.context", "session.http.request", "session.prompt", "session.retry", "shell.create.before", "tool.execute.after", "tool.execute.before"]))
 await check("[v2 12] the MCP servers are plain tools, never code mode", () => assert.deepEqual(v2.servers.map(([, s]) => s.codemode), [false, false]))
+
+// ---------- 20. an assistant message made only of tool calls: "" instead of null ----------
+const chatBody = (messages) => JSON.stringify({ model: "qwen", stream: true, messages })
+const toolTurn = [{ role: "system", content: "s" }, { role: "user", content: "/fix" },
+  { role: "assistant", content: null, tool_calls: [{ id: "a", type: "function", function: { name: "shell", arguments: "{}" } }] },
+  { role: "tool", tool_call_id: "a", content: "ok" }]
+await check("[v2 20] a null content of a tool-call message becomes \"\"", () => {
+  const out = JSON.parse(fillNullContent(chatBody(toolTurn)))
+  assert.equal(out.messages[2].content, "")
+  assert.deepEqual(out.messages[2].tool_calls, toolTurn[2].tool_calls)
+  assert.equal(out.messages[3].content, "ok")
+})
+await check("[v2 20] nothing to change: null returned", () => {
+  assert.equal(fillNullContent(chatBody([{ role: "user", content: "hi" }, { role: "assistant", content: "x" }])), null)
+  assert.equal(fillNullContent("not json, but \"content\":null"), null)
+  assert.equal(fillNullContent(JSON.stringify({ input: [{ content: null }] })), null)
+})
+await check("[v2 20] the hook rewrites the body of the request it gets", async () => {
+  const event = { sessionID: "t-1", agent: "pilot", kind: "primary", request: new Request("https://gateway.example/api/v1/chat/completions",
+    { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer x" }, body: chatBody(toolTurn) }) }
+  await v2.hooks["session.http.request"](event)
+  const sent = JSON.parse(await event.request.text())
+  assert.equal(sent.messages[2].content, "")
+  assert.equal(event.request.headers.get("authorization"), "Bearer x")
+  assert.equal(event.request.url, "https://gateway.example/api/v1/chat/completions")
+})
+await check("[v2 20] a request without null content is left as it is", async () => {
+  const original = new Request("https://gateway.example/api/v1/chat/completions",
+    { method: "POST", headers: { "content-type": "application/json" }, body: chatBody([{ role: "user", content: "hi" }]) })
+  const event = { sessionID: "t-1", agent: "pilot", kind: "primary", request: original }
+  await v2.hooks["session.http.request"](event)
+  assert.equal(event.request, original)
+})
 
 // ---------- 12. what v2 opens that the pack closes ----------
 top("t-1", "Conversation")

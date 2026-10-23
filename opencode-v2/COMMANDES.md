@@ -225,6 +225,12 @@ grep 'Gateway Time-out' ~/oc2/serve.log | tail -5 | cut -c1-200
 ```
 OpenCode réessaie seul, et chaque essai repart de zéro : la v2 fait jusqu'à 10 nouveaux essais (la 1.19 en faisait 5). Seule, elle les fait en environ 1 min 30 ; pendant un `/go`, `/fix` ou `/fortify` et ses sous-agents, le plugin les étale sur environ 8 minutes (10 s, 20 s, 30 s, 45 s, puis 1 min), pour qu'une passerelle qui redémarre ou une série de 504 n'arrête pas un run. Le titre de la session dit « nouvel essai <n> dans <délai> (serveur du modèle) ». Si le serveur ne répond toujours pas, le run s'arrête, puis le plugin le reprend tout seul 2 minutes plus tard, puis 5 (section « Un run qui reprend tout seul »). À demander à l'équipe qui héberge le modèle, avec ces chiffres : le délai de la passerelle devant vLLM pour `/v1/chat/completions` (une réponse avec réflexion peut durer plusieurs minutes : 10 minutes laisse de la marge), et des réponses en streaming transmises sans mise en tampon (nginx : `proxy_read_timeout 600s` et `proxy_buffering off`).
 
+**`Provider request failed with HTTP 400` … `Request doesn't match the schema` … `/messages/<n>/content` … `expected string, received null`**, sur toutes les commandes, dès que l'agent a appelé un outil. OpenCode v2 envoie un message de l'assistant qui ne contient que des appels d'outils avec un contenu `null` (le format OpenAI l'autorise) ; la passerelle de la plateforme exige une chaîne ou un tableau et refuse toute la requête. Le plugin du pack (point 20) envoie ces messages avec un contenu vide `""` : vérifie que tu as bien collé le `openrd-pack.js` de cette version (empreintes de l'étape 5), puis redémarre OpenCode. Une fois corrigé, le log du plugin contient une fois par démarrage :
+```sh
+grep 'empty content instead of null' ~/.local/share/opencode/log/openrd-pack.log | tail -1
+```
+Une session déjà en erreur repart avec un simple message (« continue ») : l'historique n'est pas abîmé, c'est la requête qui était refusée.
+
 ## Logs d'OpenCode
 
 Le journal de la v2 est `~/oc2/serve.log` (le même contenu va aussi dans `~/oc2/data/opencode/log/opencode.log`). Le plugin du pack a le sien, `~/oc2/data/opencode/log/openrd-pack.log` : ce qu'il a refusé et pourquoi, jamais une commande ni un texte de la conversation.

@@ -107,6 +107,10 @@
 //    tells it to read the ticket sheet again and to go on from the first step not done: nothing is redone. Two
 //    automatic resumes at most in a row; never after a stop I asked for, a ⛔ of the run, or a refusal; a message I
 //    type cancels a resume that waits.
+// 20. Sends an assistant message made only of tool calls with an empty content instead of null. OpenCode v2 writes
+//    null there (the OpenAI format allows it); a model gateway that validates content as a string or an array refuses
+//    the whole request (HTTP 400 "Request doesn't match the schema", /messages/<n>/content), so every turn that calls a
+//    tool failed on its next request. Only the body of chat completions requests that hold such a message changes.
 // Every refusal of 6, 7, 9, 12 and 16 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
@@ -1028,6 +1032,29 @@ export function prune(messages) {
   if (freed <= PRUNE_MINIMUM) return 0
   for (const part of parts) part.result = { type: "text", value: PRUNED }
   return parts.length
+}
+
+// 20. The JSON body of a chat completions request with "" instead of null as the content of an assistant message that
+// holds only tool calls (OpenCode v2 sends null there, as the OpenAI format allows; a gateway that validates content as
+// a string or an array answers HTTP 400 "Request doesn't match the schema" at /messages/<n>/content). Returns the new
+// body, or null when there is nothing to change (not JSON, no messages, no null content).
+export function fillNullContent(body) {
+  if (typeof body !== "string" || !/"content"\s*:\s*null/.test(body)) return null
+  let request
+  try {
+    request = JSON.parse(body)
+  } catch {
+    return null
+  }
+  if (!request || !Array.isArray(request.messages)) return null
+  let changed = 0
+  for (const message of request.messages) {
+    if (message && message.role === "assistant" && message.content === null) {
+      message.content = ""
+      changed++
+    }
+  }
+  return changed ? JSON.stringify(request) : null
 }
 
 // The metadata of a user message that the web interface shows instead of its text
@@ -2010,6 +2037,27 @@ export default Plugin.define({
           if (least > (Number(event.decision.delay) || 0)) event.decision.delay = least
         } catch {
           // OpenCode's own timing
+        }
+      })
+
+      // 20. an assistant message made only of tool calls goes with "" as its content instead of null
+      let filledLogged = false
+      await api.hook("http.request", async (event) => {
+        try {
+          const request = event && event.request
+          if (!request || request.method !== "POST" || !request.body) return
+          if (!/json/i.test(request.headers.get("content-type") || "")) return
+          const fixed = fillNullContent(await request.clone().text())
+          if (fixed === null) return
+          const headers = new Headers(request.headers)
+          headers.delete("content-length")
+          event.request = new Request(request.url, { method: request.method, headers, body: fixed, signal: request.signal })
+          if (!filledLogged) {
+            filledLogged = true
+            log("assistant messages made only of tool calls are sent with an empty content instead of null")
+          }
+        } catch {
+          // the request goes as it is
         }
       })
     }
