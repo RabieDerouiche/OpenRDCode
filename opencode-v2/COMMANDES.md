@@ -309,7 +309,7 @@ Le titre de la session du pilote dit ce que fait le sous-agent en cours, par exe
 ```sh
 grep -E 'Gateway|timed out|retry' ~/oc2/serve.log | tail -20 | cut -c1-220
 ```
-Le pilote reprend une fois un checker en échec, puis livre sans auto-review en le disant dans la MR : un `/go` ne reste plus bloqué sur lui. Si les erreurs de passerelle reviennent souvent : section « Qwen 3.8 », la partie « Gateway Time-out ».
+Le pilote reprend une fois un checker en échec, puis livre sans auto-review en le disant dans la MR : un `/go` ne reste plus bloqué sur lui. Pour gagner du temps en fin de run, `/go`, `/fix` et `/fortify` lancent le build et les tests complets **en parallèle** de l'auto-review : la suite tourne dans le même tour que le `checker`, qui ne relance jamais ni build ni tests et revoit en lisant le diff (`git diff <base>...HEAD`, tout est commité). Dans `/fix` et `/fortify`, les failles de sécurité de la branche sont prouvées comme dans `/fortify`, par vagues de test-guardians en parallèle. Un build qui ne s'arrête pas (test qui boucle) est stoppé par `build-test.sh` (`--blame-hang-timeout`) et sa ligne `HANG`/`CRASH` le dit, au lieu de faire attendre tout le run. Si les erreurs de passerelle reviennent souvent : section « Qwen 3.8 », la partie « Gateway Time-out ».
 
 ## Un run qui reprend tout seul (↻), un contexte plein
 
@@ -639,7 +639,7 @@ Ajouter un skill ou une référence à ton message : tape `@`, la liste s'affich
 
 ## Fortify (`/fortify`)
 
-Prérequis, vérifiés au début de chaque `/fortify`, qui s'arrête avec une ligne `STOP:` disant ce qui manque. Pour les voir avant, dans le dossier du dépôt, sans script :
+Prérequis, vérifiés au début de chaque `/fortify`. S'il manque `dotnet` ou l'application Fortify SSC, le run s'arrête avec une ligne `STOP:` disant ce qui manque. S'il manque **le projet de tests** (le dépôt n'en a aucun) ou **coverlet** dans un projet de tests, le run ne s'arrête plus : sa première action est une question (la seule du run) qui te propose de le mettre en place en premier commit du lot — xUnit, MSTest ou NUnit s'il n'y a pas de projet, l'ajout de coverlet sinon — ou d'arrêter. « Oui » : le pilote lance `test-guardian.sh setup`, qui crée le projet (modèle `dotnet new`, `coverlet.collector`, référence au projet testé, ajout à la solution) ou ajoute coverlet, le compile, et le commite (« test: add the unit test project (CLÉ) ») ; puis le lot continue. « Non » : le run s'arrête et renvoie à la mise en place manuelle ci-dessous. Pour voir les prérequis avant, dans le dossier du dépôt, sans script :
 
 `dotnet` (une version s'affiche) :
 ```sh
@@ -657,14 +657,14 @@ L'application Fortify SSC du dépôt (une ligne doit s'afficher) :
 ```sh
 git grep -h '^APPSEC_PROJECT_NAME=' -- '*appsec-ci.env'
 ```
-Le cas le plus courant est coverlet, à ajouter par toi, dans sa propre MR, à chaque projet de tests nommé :
+Le cas le plus courant est coverlet manquant : `/fortify` te propose de l'ajouter lui-même (voir ci-dessus). Pour le faire à la main, dans sa propre MR, à chaque projet de tests nommé :
 ```sh
 dotnet add <chemin du projet de tests>.csproj package coverlet.collector
 ```
 
 ### Mettre en place les tests unitaires (un dépôt qui n'en a pas)
 
-Aucun agent n'ajoute un projet ni un package : c'est une décision de l'équipe, dans sa propre MR, faite par toi. Depuis la racine du dépôt, sur une branche à toi (remplace `MonApi` par le nom du projet testé, `MonApi.sln` par la solution, et `xunit` par le framework de tes autres dépôts : `mstest` ou `nunit`) :
+Depuis la v2.1.3, `/fortify` te propose de le faire lui-même en premier commit du lot (la question du début), avec ton accord et le framework que tu choisis : tu n'as plus rien à taper. Ce qui suit est la méthode **manuelle**, si tu préfères la faire toi-même dans sa propre MR, ou pour comprendre ce que fait `test-guardian.sh setup`. Depuis la racine du dépôt, sur une branche à toi (remplace `MonApi` par le nom du projet testé, `MonApi.sln` par la solution, et `xunit` par le framework de tes autres dépôts : `mstest` ou `nunit`) :
 ```sh
 dotnet new xunit -o tests/MonApi.Tests
 ```
@@ -687,19 +687,21 @@ Une méthode `internal` à tester sans passer par une méthode publique : le tes
 
 ### Lancer, reprendre, suivre
 
-Lancer un lot depuis develop, dans une session du dépôt : `/fortify` (5 vulnérabilités au plus), `/fortify 3`, `/fortify 5 Path Manipulation`, `/fortify ABC-123` (avec un ticket Jira). Les analyses tournent trois à la fois, avec le build et les tests de develop (les tests déjà en échec sur develop ne sont jamais ceux du lot) ; le titre les montre ensemble : « ⏳ 3:10 outils (4) · Analyse V1, Analyse V2, Analyse V3… ». Puis une vulnérabilité à la fois, ses phases inscrites dans sa carte : « V2/5 : tests avant », « V2/5 : correctif », « V2/5 : tests après ». Reprendre après une coupure : `/fortify` dans une session sur la branche du lot ; il repart de la vulnérabilité en cours (une panne du serveur du modèle ou une réponse coupée : le plugin le reprend tout seul, section « Un run qui reprend tout seul »). Deux lots en même temps : dans deux espaces de travail, avec chacun une catégorie ou un fichier (`/fortify 3 Log Forging`), pour qu'ils ne prennent pas les mêmes vulnérabilités.
+Lancer un lot depuis develop, dans une session du dépôt : `/fortify` (5 vulnérabilités au plus), `/fortify 3`, `/fortify 5 Path Manipulation`, `/fortify ABC-123` (avec un ticket Jira). Les analyses tournent trois à la fois, avec le build et les tests de develop (les tests déjà en échec sur develop ne sont jamais ceux du lot) ; le titre les montre ensemble : « ⏳ 3:10 outils (4) · Analyse V1, Analyse V2, Analyse V3… ». Puis le lot avance par **vagues** : jusqu'à trois preuves (fichiers disjoints) écrites **en parallèle** par autant de test-guardians, puis les correctifs appliqués et commités un par un. Chaque test-guardian écrit ses tests et les lance par `test-guardian.sh` ; aucun ne lance `dotnet` lui-même, et les builds d'une même vague sont sérialisés par un verrou du dossier (un test-guardian qui attend affiche « WAIT: another build or test run of this folder is in progress »), pour qu'un build n'en casse pas un autre. Reprendre après une coupure : `/fortify` dans une session sur la branche du lot ; il repart de la vulnérabilité en cours — une preuve déjà rangée est reprise au correctif, une preuve en cours sans correctif est refaite (une panne du serveur du modèle ou une réponse coupée : le plugin le reprend tout seul, section « Un run qui reprend tout seul »). Deux lots en même temps : dans deux espaces de travail, avec chacun une catégorie ou un fichier (`/fortify 3 Log Forging`), pour qu'ils ne prennent pas les mêmes vulnérabilités.
 
-Chaque preuve est faite par `test-guardian.sh`, jamais à l'œil : les tests de la faille rouges sur le code actuel puis verts après le correctif, **chacun exécuté deux fois** (un test qui change de résultat est instable, `FLAKY`, et n'est jamais gardé), un test qui ne s'arrête pas stoppé au bout de 5 minutes et nommé, et aucune perte de couverture du module et de ses dépendances. Les tests de la preuve sont scellés avant le correctif (`test-guardian.sh seal`) : si le coder les modifie ou les supprime, le test-guardian le voit avant sa vérification, les remet tels quels et fait la preuve sur eux (si elle échoue, le coder reprend son correctif). Et le pilote vérifie le sceau dans le même appel que le commit (`test-guardian.sh sealed V<n> && ship.sh …`) : aucun commit ne part avec des tests de preuve modifiés. En fin de lot, la couverture des lignes modifiées par le lot va dans la MR.
+Chaque preuve est faite par `test-guardian.sh`, jamais à l'œil : les tests de la faille rouges sur le code actuel puis verts après le correctif, **chacun exécuté deux fois** (un test qui change de résultat est instable, `FLAKY`, et n'est jamais gardé), un test qui ne s'arrête pas stoppé au bout de 5 minutes et nommé, et aucune perte de couverture du module et de ses dépendances. Une faille dont les tests passent **déjà** sur le code actuel (le code résiste : un correctif précédent du lot l'a close, ou c'est un faux positif) garde ses tests et part en un commit « test(security): show that … is not exploitable », sans correctif. Les tests de la preuve sont scellés avant le correctif (`test-guardian.sh seal`) : si le coder les modifie ou les supprime, le test-guardian le voit avant sa vérification, les remet tels quels et fait la preuve sur eux (si elle échoue, le coder reprend son correctif). Et le pilote vérifie le sceau dans le même appel que le commit (`test-guardian.sh sealed V<n> && ship.sh …`) : aucun commit ne part avec des tests de preuve modifiés. À la fin, le build et les tests complets, la couverture des lignes modifiées et l'auto-review (le `checker`) tournent **dans le même tour** : la suite complète tourne en parallèle du checker, qui ne relance jamais ni build ni tests et revoit en lisant le diff. La couverture des lignes modifiées par le lot va dans la MR.
 
-Le travail d'une vulnérabilité abandonnée est mis de côté, jamais effacé. La liste est commune à tous les espaces de travail du dépôt : chaque mise de côté porte la clé du lot, la vulnérabilité et le dossier, et sa carte (et la réponse du pilote) donne son commit, qui la désigne quoi qu'il arrive ensuite dans la liste. Pour la voir puis la ramener (sur la branche du lot, sans fichier non commité) :
+Un repère technique : les mesures lisent les exécutions **VSTest** uniquement. Un dépôt qui lance ses tests avec Microsoft.Testing.Platform (`"runner": "Microsoft.Testing.Platform"` dans `global.json`) s'arrête avec une ligne qui te le dit — à signaler, ce cas n'est pas encore couvert.
+
+Le travail d'une vulnérabilité abandonnée est mis de côté, jamais effacé. La liste est commune à tous les espaces de travail du dépôt : chaque mise de côté porte la clé du lot, la vulnérabilité et le dossier, et sa carte (et la réponse du pilote) donne son commit, qui la désigne quoi qu'il arrive ensuite dans la liste. Utilise le **hash complet** (40 caractères) de la carte, pas une version raccourcie : un hash court tout en chiffres est lu par git comme `stash@{n}`. Pour la voir puis la ramener (sur la branche du lot, sans fichier non commité) :
 ```sh
 git stash list | grep fortify
 ```
 ```sh
-git stash show -p <commit>
+git stash show -p <hash complet>
 ```
 ```sh
-git stash apply <commit>
+git stash apply <hash complet>
 ```
 Les cartes des vulnérabilités sont dans le dossier du lot, et les mesures des tests (couvertures, sorties des tests rouges et verts, deux par preuve) dans celui des tests, jamais commités :
 ```sh

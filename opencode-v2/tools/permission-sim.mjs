@@ -96,6 +96,24 @@ function parts(node) {
   }
   return out
 }
+// The pack plugin removes the harmless redirections (2>&1, >/dev/null, 2>&-, &>/dev/null…) from a command before
+// OpenCode checks it (plugins/openrd-pack.js, stripNoise): mirror it here so the rules see what OpenCode sees. Only
+// unquoted occurrences; a real redirection to a file stays (and is refused by REDIRECT or the plugin).
+const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
+const NOISE_REDIRECT = /(?:^|\s)(?:\d*>&\d+|\d*>&-|(?:\d+|&)?>>?[ \t]*\/dev\/null)(?=$|[\s;&|)`])/
+function stripNoise(command) {
+  const text = String(command || "")
+  if (!text.includes(">")) return text
+  let masked = text.replace(QUOTED, (m) => " ".repeat(m.length))
+  let out = text
+  for (let guard = 0; guard < 64; guard++) {
+    const m = NOISE_REDIRECT.exec(masked)
+    if (!m) break
+    out = out.slice(0, m.index) + out.slice(m.index + m[0].length)
+    masked = masked.slice(0, m.index) + masked.slice(m.index + m[0].length)
+  }
+  return out
+}
 const source = (node) => (node.parent?.type === "redirected_statement" ? node.parent.text : node.text).trim()
 const unquote = (t) => (t.length >= 2 && (t[0] === '"' || t[0] === "'") && t[0] === t[t.length - 1] ? t.slice(1, -1) : t)
 const home = (t) => (t === "~" ? HOME : t.startsWith("~/") ? path.join(HOME, t.slice(2)) : t)
@@ -108,7 +126,7 @@ function prefix(t) {
 const dynamic = (t) => t.startsWith("(") || t.startsWith("@(") || t.includes("$(") || t.includes("${") || t.includes("`") || t.includes("$")
 const inside = (p) => p === PROJECT || p.startsWith(PROJECT + "/")
 function scan(command, cwd = PROJECT) {
-  const tree = parser.parse(command)
+  const tree = parser.parse(stripNoise(command))
   const dirs = new Set()
   const patterns = new Set()
   for (const node of tree.rootNode.descendantsOfType("command")) {

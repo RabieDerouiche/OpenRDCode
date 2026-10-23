@@ -1,7 +1,9 @@
 #!/bin/sh
 # What /fortify needs besides the measures of the tests (test-guardian.sh). Run from the repository.
-#   prereq           dotnet, unit test projects, coverlet.collector in each of them, the Fortify SSC application line:
-#                    "PREREQ: ..." lines, or one "STOP:" line telling what to set up
+#   prereq           dotnet, VSTest, the Fortify SSC application line ("STOP:" when one lacks), then the unit test
+#                    projects and coverlet.collector in each of them: "PREREQ: NO TEST PROJECT" or "PREREQ: COVERLET
+#                    MISSING", then "PREREQ: SETUP NEEDED" (test-guardian.sh setup, once the developer agreed), or
+#                    "PREREQ: OK"
 #   batch            creates the folder of the batch of this branch and prints it ("BATCH: <path>")
 #   discard <label>  puts the uncommitted work of a failed vulnerability aside (git stash, recoverable), on the branch
 #                    of a ticket only (/fortify, and a security finding of /fix): "DISCARDED:" with the commit of the
@@ -27,10 +29,11 @@ common=$(git rev-parse --git-common-dir) && common=$(cd "$common" && pwd)
 key=$(git branch --show-current 2>/dev/null | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -n 1)
 batch="$common/opencode-tickets/${key:-NOKEY}.fortify"
 
-# The unit test projects: .csproj files that reference a test SDK, say they are test projects, or are named so
+# The unit test projects: .csproj files that reference a test SDK or the MSTest package, say they are test projects,
+# or are named so
 test_projects() {
   git ls-files '*.csproj' | while read -r p; do
-    if grep -qi 'Microsoft.NET.Test.Sdk\|MSTest.Sdk\|xunit.v3\|<IsTestProject>[[:space:]]*true' "$p" 2>/dev/null ||
+    if grep -qi 'Microsoft.NET.Test.Sdk\|MSTest.Sdk\|xunit.v3\|Include="MSTest"\|<IsTestProject>[[:space:]]*true' "$p" 2>/dev/null ||
       printf '%s\n' "$p" | grep -qE '\.(Unit|Integration)?Tests?\.csproj$'; then
       echo "$p"
     fi
@@ -55,16 +58,28 @@ case "$1" in
   prereq)
     command -v dotnet >/dev/null 2>&1 || stop "dotnet is not on the PATH of this machine (ENVIRONMENT PROBLEM: COMMANDES.md, « Environnement »)"
     echo "PREREQ: dotnet $(dotnet --version 2>/dev/null | head -n 1)"
+    if grep -qs '"runner"[[:space:]]*:[[:space:]]*"Microsoft.Testing.Platform"' global.json; then
+      stop "this repository runs its tests with Microsoft.Testing.Platform (global.json): the measures of /fortify read VSTest runs only"
+    fi
+    ssc=$(git grep -h '^APPSEC_PROJECT_NAME=' -- '*appsec-ci.env' 2>/dev/null | head -n 1)
+    [ -n "$ssc" ] || stop "no APPSEC_PROJECT_NAME line in appsec-ci.env: the Fortify SSC application of this repository is unknown"
+    echo "PREREQ: Fortify SSC application line found"
+    # what the proofs need and is not there: the pilot asks the developer, then test-guardian.sh setup does it
     projects=$(test_projects)
-    [ -n "$projects" ] || stop "no unit test project in this repository (a .csproj that references Microsoft.NET.Test.Sdk): /fortify proves each fix with unit tests. To set one up: COMMANDES.md, « Fortify », « Mettre en place les tests unitaires » (a merge request of the developer, then /fortify again)"
+    if [ -z "$projects" ]; then
+      echo "PREREQ: NO TEST PROJECT: this repository has no unit test project, and /fortify proves each fix with unit tests. With the developer's agreement, test-guardian.sh setup xunit|mstest|nunit <the files of the batch> creates it (dotnet new template, coverlet.collector, solution), as the first commit of the batch"
+      echo "PREREQ: SETUP NEEDED"
+      exit 0
+    fi
     missing=""
     for p in $projects; do
       if has_coverlet "$p"; then echo "PREREQ: test project $p (coverlet.collector)"; else missing="$missing $p"; fi
     done
-    [ -z "$missing" ] || stop "coverlet.collector is missing in:$missing. To add by the developer, in its own merge request: dotnet add <project> package coverlet.collector (COMMANDES.md, « Fortify »), then /fortify again"
-    ssc=$(git grep -h '^APPSEC_PROJECT_NAME=' -- '*appsec-ci.env' 2>/dev/null | head -n 1)
-    [ -n "$ssc" ] || stop "no APPSEC_PROJECT_NAME line in appsec-ci.env: the Fortify SSC application of this repository is unknown"
-    echo "PREREQ: Fortify SSC application line found"
+    if [ -n "$missing" ]; then
+      echo "PREREQ: COVERLET MISSING in:$missing (it measures the coverage). With the developer's agreement, test-guardian.sh setup adds it, as the first commit of the batch"
+      echo "PREREQ: SETUP NEEDED"
+      exit 0
+    fi
     echo "PREREQ: OK"
     exit 0 ;;
 
@@ -86,7 +101,8 @@ case "$1" in
     [ "$n" -gt 0 ] || { echo "DISCARDED: nothing to put aside"; exit 0; }
     git stash push -q --include-untracked -m "fortify $key $label ($(basename "$root"))" || stop "git could not put the changes aside"
     [ -z "$(git status --porcelain)" ] || stop "git put the changes aside, but files remain: $(git status --porcelain | head -n 3 | cut -c4- | tr '\n' ' ')"
-    stash=$(git rev-parse --short "stash@{0}")
+    # the full commit: git stash reads a short one made of digits only as a position in the list (stash@{n})
+    stash=$(git rev-parse "stash@{0}")
     echo "DISCARDED: $n files put aside in git stash « fortify $key $label ($(basename "$root")) », commit $stash. To look at them: git stash show -p $stash; to bring them back on this branch: git stash apply $stash"
     exit 0 ;;
 

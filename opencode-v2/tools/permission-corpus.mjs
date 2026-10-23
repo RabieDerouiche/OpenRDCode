@@ -123,8 +123,26 @@ add(["test-guardian"], [S + "test-guardian.sh deps src/Api/Services/ExportServic
   S + "test-guardian.sh green tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_PathTraversal_V1",
   S + "test-guardian.sh red tests/Api.Tests/Api.Tests.csproj \"FullyQualifiedName~InvoiceServiceTests.Total_NegativeDiscount|FullyQualifiedName~InvoiceServiceTests.Total_ZeroLines\"",
   S + "test-guardian.sh compare V1-before V1-after", S + "test-guardian.sh tests-only", S + "test-guardian.sh folder", S + "fortify.sh prereq",
-  "dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60", "git status --short", "git diff --stat"], "allow")
-add(["coder"], [S + "test-guardian.sh green tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_PathTraversal_V1"], "allow")
+  S + "test-guardian.sh build tests/Api.Tests/Api.Tests.csproj", S + "test-guardian.sh build tests/Api.Tests/Api.Tests.csproj 2>&1 | tail -40",
+  "git status --short", "git diff --stat"], "allow")
+// the test-guardians of a wave build at the same time: only through the scripts, which run one build at a time. A
+// harmless redirection (2>&1, >/dev/null) never re-opens a command the agent may not run: the plugin removes it, so
+// the base command is what the rules see (an earlier version re-allowed anything containing "2>&1").
+add(["test-guardian"], ["dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60", "dotnet build tests/Api.Tests/Api.Tests.csproj",
+  "dotnet test tests/Api.Tests/Api.Tests.csproj --filter FullyQualifiedName~Security_PathTraversal_V1", "dotnet restore",
+  "dotnet clean", "dotnet build >/dev/null 2>&1", "dotnet build -nologo >/dev/null", "dotnet restore 2>&1 | tail -20",
+  "dotnet test tests/Api.Tests/Api.Tests.csproj >/dev/null 2>&1"], "deny")
+add(["coder"], [S + "test-guardian.sh green tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_PathTraversal_V1",
+  S + "test-guardian.sh build src/Api/Api.csproj", "dotnet build -nologo -v q -clp:ErrorsOnly 2>&1 | tail -60",
+  "dotnet build >/dev/null 2>&1", "dotnet build -nologo -v q -clp:ErrorsOnly >/dev/null"], "allow")
+// the unit test project of a repository that has none, and the proofs of a wave put away until their turn: the pilot only
+add(["pilot"], [S + "test-guardian.sh setup xunit src/Api/Services/ExportService.cs src/Api/Storage/FileStore.cs && " + S + "ship.sh --no-push \"test: add the unit test project (ABC-123)\" \"- tests/Api.UnitTests/Api.UnitTests.csproj (xunit, net10.0)\"",
+  S + "test-guardian.sh setup mstest src/Api/Services/ExportService.cs", S + "test-guardian.sh park V1 && " + S + "test-guardian.sh park V2 && " + S + "test-guardian.sh park V3",
+  S + "test-guardian.sh unpark V2 && " + S + "test-guardian.sh red tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_PathTraversal_V2",
+  S + "test-guardian.sh unpark F1 && " + S + "ship.sh --no-push \"test(security): show that path traversal in FileStore.cs is not exploitable (ABC-123)\"",
+  S + "fortify.sh discard V2-V3", S + "fortify.sh discard reprise"], "allow")
+add(["test-guardian", "coder", ...RO], [S + "test-guardian.sh setup xunit src/Api/Services/ExportService.cs", S + "test-guardian.sh park V1",
+  S + "test-guardian.sh unpark V1", "bash ~/.config/opencode/scripts/test-guardian.sh setup nunit src/Api/Api.csproj"], "deny")
 // the seal of a proof: the test-guardian seals its tests before the fix and checks them after; the coder never seals
 // its own version of them nor puts them back, and no other agent of the pack writes a test file through it. Checking
 // a seal is open: the pilot does it before each commit, the coder may look

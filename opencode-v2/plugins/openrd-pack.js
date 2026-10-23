@@ -183,10 +183,32 @@ const SETS_ENVIRONMENT = new RegExp(ASSIGN + String.raw`(?:PATH|DOTNET_ROOT\w*)=
 const SETS_SECRET = new RegExp(ASSIGN + String.raw`(?:\w*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_?KEY|CREDENTIALS?)\w*|ARTIFACTORY\w*)=`, "i")
 const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
 // Commands that take minutes (8): a build or tests, a restore, the front-end tooling; the pack's git scripts
-const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*fortify\.sh\s+prereq|\S*test-guardian\.sh\s+(?:coverage|red|green|changes)|dotnet\s+(?:build|test|restore|format|ef|clean)|npm\s+(?:test|ci|install|i|run\s+(?:test|build|lint))|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint))|yarn\s+(?:test|install|build|lint)|pnpm\s+(?:test|install|build|lint))(?=\s|$|[;&|)])/
+const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*fortify\.sh\s+prereq|\S*test-guardian\.sh\s+(?:coverage|red|green|changes|build|setup)|dotnet\s+(?:build|test|restore|format|ef|clean)|npm\s+(?:test|ci|install|i|run\s+(?:test|build|lint))|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint))|yarn\s+(?:test|install|build|lint)|pnpm\s+(?:test|install|build|lint))(?=\s|$|[;&|)])/
 const GIT_SCRIPT = /(?:^|[\s;&|(])\S*(?:ship|branch)\.sh(?=\s|$)/
 // A build tool called by its full path at the start of a command (11): ~/.bin/dotnet, $HOME/.dotnet/dotnet, /usr/bin/git
 const TOOL_PATH = /(^\s*|[;&|(`\n]\s*)((?:~|\$\{HOME\}|\$HOME)?\/(?:[^\s;&|()<>'"`]*\/)?)(dotnet|node|npm|npx|yarn|pnpm|git)(?=$|[\s;&|)`])/g
+
+// 6/7. Harmless redirections an agent reaches for, removed before a command is checked and run: merging stderr into
+// stdout (`2>&1`, `>&2`, `1>&2`, `2>&-`) or discarding output into /dev/null (`>/dev/null`, `&>/dev/null`,
+// `2>>/dev/null`…), with or without a space. OpenCode already streams the two channels together, so dropping these
+// does not change what the model sees; it stops the permission rules of the agents (which name commands, not their
+// redirections) from being fooled — a `2>&1` must not re-open a command the agent is not allowed to run, nor force a
+// deny on one it is. A real redirection to a file stays in the command, to be refused (shellOutside). Only unquoted
+// occurrences are removed: `grep '2>&1' logs` keeps its search string.
+const NOISE_REDIRECT = /(?:^|\s)(?:\d*>&\d+|\d*>&-|(?:\d+|&)?>>?[ \t]*\/dev\/null)(?=$|[\s;&|)`])/
+function stripNoise(command) {
+  const text = String(command || "")
+  if (!/>/.test(text)) return text
+  let masked = text.replace(QUOTED, (m) => " ".repeat(m.length))
+  let out = text
+  for (let guard = 0; guard < 64; guard++) {
+    const m = NOISE_REDIRECT.exec(masked)
+    if (!m) break
+    out = out.slice(0, m.index) + out.slice(m.index + m[0].length)
+    masked = masked.slice(0, m.index) + masked.slice(m.index + m[0].length)
+  }
+  return out
+}
 // A user and a password in a URL (https://user:token@host), in curl/wget -u, or in a NuGet source
 const SECRET_IN_URL = /\b(?:https?|ssh|git|ftp):\/\/[\w.%-]+:[^\s/@*]+@/i
 const SECRET_IN_OPTION = /\b(?:curl|wget)\b[^\n]*\s(?:-u|--user)\s*[\w.%-]+:\S|\bdotnet\s+nuget\s+(?:add|update)\s+source\b[^\n]*(?:\s-p\s|--password)/i
@@ -316,15 +338,20 @@ function pathOf(word, cwd) {
 // The first word of a shell command that leaves the repository, as { piece, readOnly }, or null. readOnly: the word
 // points into a folder the agent may read, but the command does more than read it. A cd is followed: the relative
 // paths of the next commands are in its folder.
-function shellOutside(command, cwd, root, readable, depth = 0) {
+function shellOutside(command, cwd, root, readable, noWriteRedirect = false, depth = 0) {
   let here = cwd
   let readsReadable = false
   let xargsRuns = ""
   for (const words of commandWords(String(command || ""))) {
-    // the target of a redirection is written
+    // the target of a redirection is written: /dev/null is fine; a file in the repository is still a write, refused
+    // for the agents of the pack (they write with the edit and write tools); a file outside it, for every agent
     if (words.after === ">") {
       const target = pathOf(words[0], here) || resolve(here, words[0])
-      if (DEVICES.has(target) || within(target, root)) continue
+      if (DEVICES.has(target)) continue
+      if (within(target, root)) {
+        if (noWriteRedirect) return { piece: words[0], redirect: true }
+        continue
+      }
       return { piece: words[0], readOnly: readable.some((dir) => within(target, dir)) }
     }
     // the pack's scripts check their own arguments, which may be free text (a commit message, a decision)
@@ -348,7 +375,10 @@ function shellOutside(command, cwd, root, readable, depth = 0) {
       const word = words[w]
       if (/\s/.test(word)) {
         if (depth < 3) {
-          const inner = shellOutside(word, here, root, readable, depth + 1)
+          // a quoted word re-parsed here is data (a search string with => or a > inside), not a shell redirection: the
+          // redirection refusal is a top-level concern, and a real nested shell (sh -c, bash -c, eval) is denied for the
+          // agents of the pack by the rules anyway
+          const inner = shellOutside(word, here, root, readable, false, depth + 1)
           if (inner) return inner
         }
         continue
@@ -714,7 +744,7 @@ export const Guards = async (input) => {
       const extra = SHELL_READERS.has(agent) || !PACK_AGENTS.has(agent) ? [...(await referenceFolders()), ...(await namedIn(sessionID))] : []
       const readable = [...shared, ...extra]
       if (!within(cwd, root) && !readable.some((dir) => within(cwd, dir))) return { piece: args.workdir }
-      return shellOutside(args && args.command, cwd, root, readable)
+      return shellOutside(args && args.command, cwd, root, readable, PACK_AGENTS.has(agent))
     }
     if (!PACK_AGENTS.has(agent)) return null
     // a patch writes every file it names
@@ -778,6 +808,8 @@ export const Guards = async (input) => {
         // 11. a build tool called by its full path runs by its name: the rules of the agents know `dotnet build`, not
         // `/home/me/.bin/dotnet build`, and the folder of the tool is outside the repository
         output.args.command = output.args.command.replace(TOOL_PATH, "$1$3")
+        // 6/7. the harmless stderr/stdout and /dev/null redirections do not reach the permission rules (nor change the run)
+        output.args.command = stripNoise(output.args.command)
         const why = refusal(output.args.command)
         if (why) {
           logRefusal(call, why)
@@ -795,6 +827,15 @@ export const Guards = async (input) => {
         outside = await escape(call.tool, call.sessionID, output.args)
       } catch {
         outside = null
+      }
+      if (outside && outside.redirect) {
+        logRefusal(call, "writes a file with a redirection", outside.piece)
+        throw new Error(
+          "Refused by the pack: " + outside.piece + " is written by a redirection (> or >>). The agents of the pack " +
+            "write files with the edit and write tools, never with a shell redirection (a read-only agent must stay " +
+            "read-only, and a redirection escapes the edit rules). Only 2>&1 and /dev/null are allowed. Never try " +
+            "another form of this command.",
+        )
       }
       if (outside && outside.readOnly) {
         logRefusal(call, "read-only folder", outside.piece)

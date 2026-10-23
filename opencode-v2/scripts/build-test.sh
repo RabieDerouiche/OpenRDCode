@@ -14,10 +14,41 @@
 # (state-fingerprint.sh): /check does not run the build and tests again while the code keeps this fingerprint.
 # An environment problem (dotnet missing from the PATH, the package feed refusing access, no .NET runtime for the
 # test host) ends with an "ENVIRONMENT PROBLEM" line: the agent stops and tells the user instead of investigating.
+# A test that runs more than 5 minutes is stopped and named ("HANG:"), with VSTest, the default runner of dotnet test;
+# its run files go to the git folder, never to the repository.
+# One dotnet build or test run at a time in a working tree, shared with test-guardian.sh: a run that waits says
+# "WAIT:" once (the test-guardians of a wave of /fortify or /fix work in parallel).
 
 # English output whatever the machine's language, so that the summaries below are found
 DOTNET_CLI_UI_LANGUAGE=en
 export DOTNET_CLI_UI_LANGUAGE
+HANG=${TEST_GUARDIAN_HANG:-5m}
+
+# The lock of test-guardian.sh (same folder, same rules); not taken again under a script that holds it
+gitdir=$(git rev-parse --absolute-git-dir 2>/dev/null)
+lockdir=${gitdir:+$gitdir/opencode-dotnet.lock}
+take_lock() {
+  [ -n "$lockdir" ] || return 0
+  [ "${OPENCODE_DOTNET_LOCK:-}" = "$lockdir" ] && return 0
+  waited=0
+  while ! mkdir "$lockdir" 2>/dev/null; do
+    holder=$(cat "$lockdir/pid" 2>/dev/null)
+    if { [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; } || { [ -z "$holder" ] && [ "$waited" -ge 30 ]; }; then
+      rm -rf "$lockdir"
+      continue
+    fi
+    [ "$waited" -eq 0 ] && echo "WAIT: another build or test run of this folder is in progress: this one starts after it"
+    if [ "$waited" -ge "${TEST_GUARDIAN_LOCK_WAIT:-900}" ]; then
+      echo "BUILD: NOT RUN (another build or test run of this folder has been running for more than ${TEST_GUARDIAN_LOCK_WAIT:-900} s)"
+      exit 1
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  echo "$$" > "$lockdir/pid"
+  OPENCODE_DOTNET_LOCK=$lockdir
+  export OPENCODE_DOTNET_LOCK
+}
 
 build_only=0
 if [ "$1" = "--build-only" ]; then
@@ -48,8 +79,16 @@ fingerprint=""
 [ "$whole" -eq 1 ] && fingerprint=$(sh "$(dirname "$0")/state-fingerprint.sh" 2>/dev/null)
 
 out=$(mktemp "${TMPDIR:-/tmp}/build-test.XXXXXX") || exit 1
-trap 'rm -f "$out"' EXIT
-trap 'exit 1' INT TERM
+mine=""
+[ "${OPENCODE_DOTNET_LOCK:-}" = "$lockdir" ] || mine=1
+take_lock
+# the lock is released only by the run that took it
+if [ -n "$mine" ] && [ -n "$lockdir" ]; then
+  trap 'rm -f "$out"; rm -rf "$lockdir"' EXIT
+else
+  trap 'rm -f "$out"' EXIT
+fi
+trap 'exit 1' INT TERM HUP
 
 dotnet build ${target:+"$target"} -nologo -v q -clp:ErrorsOnly > "$out" 2>&1
 status=$?
@@ -72,7 +111,21 @@ fi
 echo "BUILD: OK"
 [ "$build_only" -eq 1 ] && exit 0
 
-dotnet test ${target:+"$target"} --no-build -nologo "$@" > "$out" 2>&1
+# A hanging test is stopped and named (VSTest blame): unless the caller set it, or the repository runs
+# Microsoft.Testing.Platform (global.json), whose options differ; the run files go to the git folder
+blame=1
+case " $* " in *" --blame"*) blame="" ;; esac
+grep -qs '"runner"[[:space:]]*:[[:space:]]*"Microsoft.Testing.Platform"' "$(git rev-parse --show-toplevel 2>/dev/null)/global.json" && blame=""
+[ -n "$gitdir" ] || blame=""
+results=""
+case " $* " in *" --results-directory"*) ;; *) [ -n "$blame" ] && results="$gitdir/opencode-test-results" ;; esac
+[ -n "$results" ] && rm -rf "$results"
+if [ -n "$blame" ]; then
+  dotnet test ${target:+"$target"} --no-build -nologo --blame-hang-timeout "$HANG" --blame-hang-dump-type none \
+    ${results:+--results-directory "$results"} "$@" > "$out" 2>&1
+else
+  dotnet test ${target:+"$target"} --no-build -nologo "$@" > "$out" 2>&1
+fi
 status=$?
 total=$(wc -l < "$out" | tr -d ' ')
 if [ "$total" -gt 80 ]; then
@@ -95,6 +148,15 @@ if [ "$status" -ne 0 ]; then
   if [ -n "$failed" ]; then
     count=$(printf '%s\n' "$failed" | grep -c .)
     echo "FAILED TESTS ($count): $(printf '%s\n' "$failed" | head -n 25 | awk 'NR > 1 { printf ", " } { printf "%s", $0 } END { print "" }')$([ "$count" -gt 25 ] && echo " (+$((count - 25)) more)")"
+  fi
+  # a test host that hung or crashed: the test that was running
+  if grep -q 'test run was aborted\|Test Run Aborted' "$out"; then
+    running=$(awk '/The test running when the crash occurred:/ { on = 1; next } on && NF { print; n++ } on && !NF && n { exit }' "$out" | head -n 3 | tr '\n' ' ')
+    if grep -q 'inactivity time of' "$out"; then
+      echo "HANG: a test ran more than $HANG and was stopped: ${running:-unknown test}. A unit test never waits for the network, a real clock or a lock: fix that test (or report it), never raise the limit"
+    else
+      echo "CRASH: the test host stopped (a stack overflow or an exit of the process) during: ${running:-unknown test}"
+    fi
   fi
   echo "TESTS: FAILED (exit $status)"
   if grep -q -E 'You must install (or update )?\.NET to run this application' "$out"; then

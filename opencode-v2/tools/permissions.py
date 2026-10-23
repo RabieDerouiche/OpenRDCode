@@ -62,13 +62,14 @@ FRONT_BUILD = ["npm run build*", "npx tsc*", "npx ng build*"]
 # The read-only forms of the format and lint checks that the CI runs (/check); their fixing forms stay refused
 CHECKS = ["dotnet format *--verify-no-changes*", "npx eslint *", "npx prettier --check *", "npx prettier -c *"]
 
-# Read-only agents never write a file with a redirection. `>` inside a quoted search string (C# generics, lambdas)
-# is not refused: only a space before `>`, `2>` and `&>` are. The harmless forms (`2>&1`, `>/dev/null`) are re-allowed,
-# then a file redirection combined with them is refused again (last match wins).
-REDIRECT = [("* >*", "deny"), ("*2>*", "deny"), ("*&>*", "deny"),
-            ("*2>&1*", "allow"), ("*>/dev/null*", "allow"), ("*> /dev/null*", "allow"),
-            ("* >*2>&1*", "deny"), ("*2>&1 >*", "deny"), ("* >>*", "deny"),
-            ("*>/dev/null 2>&1*", "allow"), ("*> /dev/null 2>&1*", "allow")]
+# Writing a file with a redirection: a coarse backstop here, the real guard is the pack plugin. The plugin removes the
+# harmless redirections (`2>&1`, `>/dev/null`, `2>&-`, `&>/dev/null`…) from a command before OpenCode checks it, and
+# refuses a redirection to a real file for the agents of the pack — every form, including `2>file`, `&>file`, no
+# space, and a path inside the repository, which these wildcards cannot see (they would also refuse a `2>` or `&>`
+# inside a quoted search string). What stays here catches the common `> file` / `>> file` of an agent even if the
+# plugin is not loaded. NO rule re-allows a redirection: an earlier version re-allowed anything containing `2>&1` or
+# `>/dev/null`, which lifted the deny of the base command (`dotnet build … 2>&1` ran for the test-guardian).
+REDIRECT = [("* >*", "deny"), ("* >>*", "deny")]
 # find, sed, sort and tree forms that write a file or run commands
 OTHER_DENY = ["find *-exec*", "find *-execdir*", "find *-delete*", "find *-ok*", "find *-fprint*", "find *-fls*",
               "sed *-i*", "sed *--in-place*", "sort -o *", "sort * -o *", "sort *--output*", "tree -o *",
@@ -121,6 +122,9 @@ WRITE_SCRIPTS = ["*ship.sh*", "*branch.sh*", "*ticket-sheet.sh*", "*fortify.sh d
 # a seal (test-guardian.sh sealed) stays open: the pilot does it before each commit. The conversation agents keep it
 # all (the developer's own runs): opencode.snippet.json does not change.
 SEAL_SCRIPTS = ["*test-guardian.sh seal *", "*test-guardian.sh restore*"]
+# The unit test project of a repository that has none (once the developer agreed) and the proofs of a wave put away
+# until their turn: the pilot only (the conversation agents keep them, as for the seal)
+PILOT_SCRIPTS = ["*test-guardian.sh setup*", "*test-guardian.sh park*", "*test-guardian.sh unpark*"]
 
 # The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS)
 SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
@@ -242,13 +246,17 @@ CODER_OTHER_DENY = [p for p in OTHER_DENY if p not in ("*--fix*", "*--write*")]
 
 def coder_bash(guardian=False):
     rules = [("*", "deny")]
-    rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + DOTNET_RUN + CODER_BUILD + FRONT_TEST + FRONT_BUILD
+    # the test-guardian builds and runs tests only through test-guardian.sh, which runs one build at a time in the
+    # folder: the proofs of a wave are written in parallel, and a build of its own would break the others'
+    builds = [] if guardian else DOTNET_RUN
+    tools = [p for p in CODER_BUILD if not (guardian and p.startswith(("dotnet clean", "dotnet build-server")))]
+    rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + builds + tools + FRONT_TEST + FRONT_BUILD
                    + CODER_FRONT + CODER_FILES)
     rules += REDIRECT
     # (the commands of CREDENTIAL_STORES and DECOMPILE are not in the allowlist; their paths are outside the repository)
-    # the test-guardian seals its proofs and puts them back; the coder never does
+    # the test-guardian seals its proofs and puts them back; the coder never does; setup, park and unpark are the pilot's
     rules += deny(GIT_READ_GUARD + CODER_OTHER_DENY + CODER_RM_GUARD + SECRETS + WRITE_SCRIPTS
-                  + ([] if guardian else SEAL_SCRIPTS) + PACKAGE_GUARD
+                  + ([] if guardian else SEAL_SCRIPTS) + PILOT_SCRIPTS + PACKAGE_GUARD
                   + ["* /tmp/*", "* /tmp", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*"] + SUBST)
     return rules
 
@@ -258,7 +266,7 @@ AGENTS = {
     "pilot": SHEET + BASE + [("task", only(["analyst", "coder", "checker", "debugger", "test-guardian"]))]
     + [("bash", pilot_bash())] + MCP_WRITE_DENY + [("*create_merge_request", "allow")]
     + mcp_only(["jira", "confluence", "gitlab", "sonar", "fortify"]),
-    "analyst": SHEET + SILENT + NO_TASK + [("bash", read_only_bash() + deny(SEAL_SCRIPTS))] + MCP_WRITE_DENY
+    "analyst": SHEET + SILENT + NO_TASK + [("bash", read_only_bash() + deny(SEAL_SCRIPTS + PILOT_SCRIPTS))] + MCP_WRITE_DENY
     + mcp_only(["jira", "confluence", "gitlab"]),
     # code and tests anywhere in the repository except .git (the ticket sheet is the pilot's), no MCP
     "coder": [("edit", [("*", "allow"), ("../*", "deny"), (".git/**", "deny"), ("*/.git/**", "deny")])] + SILENT
@@ -268,16 +276,16 @@ AGENTS = {
     "test-guardian": [("edit", only(["*Tests/**", "*Test/**", "tests/**", "test/**", "*/tests/**", "*/test/**"]))] + SILENT
     + NO_TASK + [("bash", coder_bash(guardian=True))] + mcp_only([]),
     "checker": NO_EDIT + SILENT + NO_TASK
-    + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS) + deny(SEAL_SCRIPTS))] + MCP_WRITE_DENY
+    + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS) + deny(SEAL_SCRIPTS + PILOT_SCRIPTS))] + MCP_WRITE_DENY
     + mcp_only(["jira"]),
     # /compare asks me which check I make when the cause is not confirmed (as the agent of the command); as a subagent
     # of /go or /fix it cannot ask (experimental.primary_tools in opencode.json)
     "debugger": NO_EDIT + BASE + NO_TASK
-    + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD, package_guard=False) + deny(SEAL_SCRIPTS))]
+    + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD, package_guard=False) + deny(SEAL_SCRIPTS + PILOT_SCRIPTS))]
     + MCP_WRITE_DENY + mcp_only(["kibana"]),
     # /outil doc: writes docs/ and the root README.md only, never opens a configuration file, never publishes
     "doc-writer": [("edit", only(["docs/**", "README.md"])), ("read", deny(CONFIG_FILES_READ))] + SILENT
-    + NO_TASK + [("bash", read_only_bash() + deny(CONFIG_FILES_BASH + SEAL_SCRIPTS))] + MCP_WRITE_DENY + mcp_only([]),
+    + NO_TASK + [("bash", read_only_bash() + deny(CONFIG_FILES_BASH + SEAL_SCRIPTS + PILOT_SCRIPTS))] + MCP_WRITE_DENY + mcp_only([]),
 }
 
 TOOL_KEYS = {"edit", "read", "bash", "webfetch", "websearch", "question", "task", "doom_loop"}

@@ -226,6 +226,32 @@ await check("after &&", async () => assert.equal(await command("cd src && $HOME/
 await check("/usr/bin/git becomes git", async () => assert.equal(await command("/usr/bin/git status"), "git status"))
 await check("a path in a search stays", async () => assert.equal(await command("grep -rn /api/v1/node src"), "grep -rn /api/v1/node src"))
 
+// ---------- 6/7. harmless redirections are removed; a redirection to a file is refused for the agents of the pack ----------
+// 2>&1 and /dev/null are dropped before the command is checked and run (OpenCode combines the two channels anyway)
+await check("2>&1 is removed", async () => assert.equal(await command("cat src/Foo.cs 2>&1"), "cat src/Foo.cs"))
+await check("2>&1 before a pipe is removed", async () => assert.equal(await command("dotnet build src/App.sln 2>&1 | tail -60"), "dotnet build src/App.sln | tail -60"))
+await check(">/dev/null is removed", async () => assert.equal(await command("ls src 2>/dev/null"), "ls src"))
+await check(">/dev/null 2>&1 is removed", async () => assert.equal(await command("dotnet build 2>&1 >/dev/null"), "dotnet build"))
+await check(">&2 is removed", async () => assert.equal(await command("echo oops >&2"), "echo oops"))
+await check("a noise redirection without a space on /dev/null stays (harmless device)", async () => assert.equal(await command("ls>/dev/null"), "ls>/dev/null"))
+// a 2>&1 written inside a quoted search string is left alone
+await check("a quoted 2>&1 is kept", async () => assert.equal(await command("grep -n '2>&1' src/Foo.cs"), "grep -n '2>&1' src/Foo.cs"))
+await check("a quoted > is kept", async () => assert.equal(await command("grep -n \"a > b\" src/Foo.cs"), "grep -n \"a > b\" src/Foo.cs"))
+// a redirection to a real file, inside the repository, is refused for every agent of the pack
+const REDIRECTS = ["echo x > notes.txt", "cat src/Foo.cs > copy.cs", "git diff >> changes.txt", "dotnet test > out.log",
+  "cat src/Foo.cs 2> err.log", "cat src/Foo.cs >out.txt", "echo x &> both.log", "sort a.txt > a.txt"]
+for (const who of ["pilot-1", "coder-1", "analyst-1", "debugger-1"]) {
+  for (const cmd of REDIRECTS) await check(`[${who}] redirection refused: ${cmd}`, () => refused(who, "bash", { command: cmd }, /redirection/))
+}
+// /dev/null and 2>&1 are never refused, even without a space
+for (const who of ["pilot-1", "coder-1", "analyst-1"]) {
+  for (const cmd of ["cat src/Foo.cs >/dev/null", "cat src/Foo.cs > /dev/null 2>&1", "dotnet test 2>&1 | tail", "echo hi >&2"]) {
+    await check(`[${who}] allowed: ${cmd}`, () => allowed(who, "bash", { command: cmd }))
+  }
+}
+// the conversation agents keep OpenCode's own rules for a redirection (build writes files for /outil)
+await check("[build] a redirection in the repository is left to OpenCode", () => allowed("build-1", "bash", { command: "echo x > notes.txt" }))
+
 // ---------- refusals written to OpenCode's log, without the command ----------
 logs.length = 0
 await check("an outside path is logged", async () => {
@@ -264,6 +290,7 @@ await check("a longer timeout is kept", async () => assert.equal(await timeout(S
 for (const command of [S + "test-guardian.sh red tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_X_V1",
   S + "test-guardian.sh green tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_X_V1",
   S + "test-guardian.sh coverage V1-before tests/Api.Tests/Api.Tests.csproj src/A.cs", S + "test-guardian.sh changes origin/develop",
+  S + "test-guardian.sh build tests/Api.Tests/Api.Tests.csproj", S + "test-guardian.sh setup xunit src/A.cs",
   S + "fortify.sh prereq"]) {
   await check("the tests of the test-guardian get 20 min: " + command.split("/").pop(), async () => assert.equal(await timeout(command), 1200000))
 }

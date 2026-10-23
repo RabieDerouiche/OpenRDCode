@@ -11,10 +11,21 @@
 #                                  coverage after a change, file by file: "STOP:" when a file lost coverage
 #   red <test project> <filter>    the new tests must FAIL on the current code (and compile), the same way twice
 #   green <test project> <filter>  the same tests must PASS, twice: a test whose result changes is FLAKY
+#   build <project>                builds a project (the test-guardian never runs dotnet itself): "BUILD: OK", or the
+#                                  compiler errors and "BUILD: FAILED"
 #   tests-only                     the uncommitted changes touch only test projects
 #   seal <label> <test file>...    keeps a copy of the test files of a proof, before the fix: "SEALED: <n> test files"
 #   sealed <label>                 the sealed test files are unchanged ("SEAL: OK"), or "STOP:" with the changed ones
 #   restore <label>                puts the sealed test files back as they were sealed: "RESTORED: <files>"
+#   park <label>, unpark <label>   (the pilot) takes the sealed test files of a proof out of the working tree until its
+#                                  turn, and brings them back as sealed: the proofs of a wave are written together,
+#                                  their fixes one after the other, each commit with its own tests only
+#   setup xunit|mstest|nunit <file.cs or project>...
+#                                  (the pilot, once the developer agreed) creates the unit test project of these files:
+#                                  the dotnet new template of the SDK, coverlet.collector, the versions this machine's
+#                                  NuGet cache already holds (otherwise the template's), the central versions when the
+#                                  repository has them, the project references and the solution, then a build; or adds
+#                                  coverlet.collector to the test projects that lack it. A failure undoes everything
 #   changes <base> [<solution, project or folder>]
 #                                  the whole suite once, with coverlet (the BUILD, TESTS and FAILED TESTS lines of
 #                                  build-test.sh), then the lines the branch changed since <base> that no test runs:
@@ -24,10 +35,15 @@
 # worktrees, never committed; the test runs write nothing in the repository. Output lines are for the agents: exit 1
 # with one "STOP: <reason>" line when a check fails, "ENVIRONMENT PROBLEM:" when this machine cannot build or run the
 # tests (the agent stops and tells the developer). A test that runs more than 5 minutes is stopped and named.
+# One dotnet build or test run at a time in a working tree (a lock shared with build-test.sh): the test-guardians of
+# a wave work in parallel, their builds wait for each other ("WAIT:"). VSTest only, the default runner of dotnet test:
+# a repository that runs Microsoft.Testing.Platform (global.json) gets a "STOP:".
 # A seal is the proof of the test-guardian: the coder makes the sealed tests pass as they are, and the test-guardian
-# checks them before its proof after the fix. Only the test-guardian may seal or restore (permission rules).
+# checks them before its proof after the fix. Only the test-guardian may seal or restore, only the pilot may park,
+# unpark and set up (permission rules).
 # Usage: test-guardian.sh deps <file> | coverage <label> <proj> <file>... | compare <a> <b> | red|green <proj> <filter>
-#        | tests-only | seal <label> <file>... | sealed <label> | restore <label> | changes <base> [<target>] | folder
+#        | build <proj> | tests-only | seal <label> <file>... | sealed <label> | restore <label> | park|unpark <label>
+#        | setup xunit|mstest|nunit <file>... | changes <base> [<target>] | folder
 
 LC_ALL=C
 export LC_ALL
@@ -50,6 +66,41 @@ common=$(git rev-parse --git-common-dir) && common=$(cd "$common" && pwd)
 key=$(git branch --show-current 2>/dev/null | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -n 1)
 folder="$common/opencode-tickets/${key:-NOKEY}.tests"
 
+# One dotnet build or test run at a time in this working tree: the test-guardians of a wave work in parallel, and two
+# builds of the same projects break each other. The lock is a folder in the git folder of the working tree (its own
+# for each worktree); a run stopped by a timeout leaves it behind, and the next run takes it over. A script called by
+# the one that holds it (build-test.sh under changes or build) does not take it again.
+lockdir="$(git rev-parse --absolute-git-dir)/opencode-dotnet.lock"
+LOCK_WAIT=${TEST_GUARDIAN_LOCK_WAIT:-900}
+take_lock() {
+  [ "${OPENCODE_DOTNET_LOCK:-}" = "$lockdir" ] && return 0
+  waited=0
+  while ! mkdir "$lockdir" 2>/dev/null; do
+    holder=$(cat "$lockdir/pid" 2>/dev/null)
+    if { [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; } || { [ -z "$holder" ] && [ "$waited" -ge 30 ]; }; then
+      rm -rf "$lockdir"
+      continue
+    fi
+    [ "$waited" -eq 0 ] && echo "WAIT: another build or test run of this folder is in progress (a test-guardian working in parallel): this one starts after it"
+    [ "$waited" -ge "$LOCK_WAIT" ] && stop "another build or test run of this folder has been running for more than $LOCK_WAIT s"
+    sleep 2
+    waited=$((waited + 2))
+  done
+  echo "$$" > "$lockdir/pid"
+  OPENCODE_DOTNET_LOCK=$lockdir
+  export OPENCODE_DOTNET_LOCK
+  trap 'rm -rf "$lockdir"' EXIT
+  trap 'exit 1' INT TERM HUP
+}
+
+# Microsoft.Testing.Platform (global.json: "test": { "runner": "Microsoft.Testing.Platform" }) takes other options and
+# prints other results than VSTest, the default runner of dotnet test, which every measure here reads
+vstest_only() {
+  if grep -qs '"runner"[[:space:]]*:[[:space:]]*"Microsoft.Testing.Platform"' global.json; then
+    stop "this repository runs its tests with Microsoft.Testing.Platform (global.json): the measures of the pack read VSTest runs only. Tell the developer in one line"
+  fi
+}
+
 need_dotnet() {
   command -v dotnet >/dev/null 2>&1 && return 0
   echo "ENVIRONMENT PROBLEM: dotnet is not on the PATH of this machine. Stop and tell the developer in one line (COMMANDES.md, « Environnement »)."
@@ -68,14 +119,107 @@ environment() {
   fi
 }
 
-# The unit test projects: .csproj files that reference a test SDK, say they are test projects, or are named so
+# The unit test projects: .csproj files that reference a test SDK or the MSTest package, say they are test projects,
+# or are named so
 test_projects() {
   git ls-files '*.csproj' | while read -r p; do
-    if grep -qi 'Microsoft.NET.Test.Sdk\|MSTest.Sdk\|xunit.v3\|<IsTestProject>[[:space:]]*true' "$p" 2>/dev/null ||
+    if grep -qi 'Microsoft.NET.Test.Sdk\|MSTest.Sdk\|xunit.v3\|Include="MSTest"\|<IsTestProject>[[:space:]]*true' "$p" 2>/dev/null ||
       printf '%s\n' "$p" | grep -qE '\.(Unit|Integration)?Tests?\.csproj$'; then
       echo "$p"
     fi
   done
+}
+
+# coverlet.collector for a project: in the project, or in a Directory.Build.props / Directory.Build.targets /
+# Directory.Packages.props of one of its folders
+has_coverlet() {
+  grep -qi 'coverlet.collector' "$1" 2>/dev/null && return 0
+  dir=$(dirname "$1")
+  while :; do
+    for f in Directory.Build.props Directory.Build.targets Directory.Packages.props; do
+      grep -qi 'coverlet.collector' "$dir/$f" 2>/dev/null && return 0
+    done
+    [ "$dir" = "." ] || [ "$dir" = "/" ] && return 1
+    dir=$(dirname "$dir")
+  done
+}
+
+# The nearest project file in the folder of a file or above it
+project_of() {
+  d=$(dirname "$1")
+  while :; do
+    for c in "$d"/*.csproj; do
+      [ -f "$c" ] && { printf '%s\n' "${c#./}"; return 0; }
+    done
+    [ "$d" = . ] || [ "$d" = / ] && return 1
+    d=$(dirname "$d")
+  done
+}
+
+# The Directory.Packages.props that sets the versions of a folder, when the repository manages them centrally
+central_props() {
+  d=$1
+  while :; do
+    if [ -f "$d/Directory.Packages.props" ]; then
+      if grep -qi '<ManagePackageVersionsCentrally>[[:space:]]*true' "$d/Directory.Packages.props" ||
+        grep -qsi '<ManagePackageVersionsCentrally>[[:space:]]*true' "$d/Directory.Build.props"; then
+        printf '%s\n' "${d#./}/Directory.Packages.props" | sed 's:^\./::'
+      fi
+      return 0
+    fi
+    [ "$d" = . ] || [ "$d" = / ] && return 0
+    d=$(dirname "$d")
+  done
+}
+
+# The highest stable version of a package in the NuGet cache of this machine (what the package feed already served
+# here, for the other repositories), otherwise the version given
+cache_version() {
+  cache=${NUGET_PACKAGES:-$HOME/.nuget/packages}
+  id=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  best=$(for d in "$cache/$id"/*; do [ -d "$d" ] && basename "$d"; done | grep -E '^[0-9]+(\.[0-9]+)*$' |
+    awk -F. '{ printf "%09d%09d%09d%09d %s\n", $1, $2, $3, $4, $0 }' | sort | tail -n 1 | cut -d' ' -f2)
+  printf '%s\n' "${best:-$2}"
+}
+
+# Adds <PackageReference Include="id"[ Version="v"] /> to a project, next to its other package references
+add_package_ref() {
+  awk -v id="$2" -v v="$3" '
+    function line() { return "    <PackageReference Include=\"" id "\"" (v == "" ? "" : " Version=\"" v "\"") " />" }
+    !done && /<PackageReference / { seen = 1 }
+    !done && seen && /<\/ItemGroup>/ { print line(); done = 1 }
+    !done && /<\/Project>/ { print "  <ItemGroup>"; print line(); print "  </ItemGroup>"; print ""; done = 1 }
+    { print }' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+
+# Declares a version in Directory.Packages.props, next to the other PackageVersion lines (nothing when it is there)
+add_package_version() {
+  grep -qi "<PackageVersion[^>]*Include=\"$2\"" "$1" && return 0
+  awk -v id="$2" -v v="$3" '
+    function line() { return "    <PackageVersion Include=\"" id "\" Version=\"" v "\" />" }
+    !done && /<PackageVersion / { seen = 1 }
+    !done && seen && /<\/ItemGroup>/ { print line(); done = 1 }
+    !done && /<\/Project>/ { print "  <ItemGroup>"; print line(); print "  </ItemGroup>"; done = 1 }
+    { print }' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+
+# The target framework a new test project takes from a production project (its own, or its Directory.Build.props):
+# the first modern one (net8.0, net10.0); none (netstandard only): the SDK's default; .NET Framework only: legacy
+target_of() {
+  tfms=$(sed -n 's:.*<TargetFrameworks\{0,1\}>\([^<]*\)</TargetFrameworks\{0,1\}>.*:\1:p' "$1" | tr ';' '\n')
+  if [ -z "$tfms" ]; then
+    d=$(dirname "$1")
+    while [ -z "$tfms" ]; do
+      [ -f "$d/Directory.Build.props" ] &&
+        tfms=$(sed -n 's:.*<TargetFrameworks\{0,1\}>\([^<]*\)</TargetFrameworks\{0,1\}>.*:\1:p' "$d/Directory.Build.props" | tr ';' '\n')
+      [ "$d" = . ] || [ "$d" = / ] && break
+      d=$(dirname "$d")
+    done
+  fi
+  modern=$(printf '%s\n' "$tfms" | tr -d ' \r' | grep -E '^net[0-9]+\.[0-9]+' | head -n 1)
+  if [ -n "$modern" ]; then printf '%s\n' "$modern"; return 0; fi
+  printf '%s\n' "$tfms" | tr -d ' \r' | grep -qE '^net[0-9]+$' && echo legacy
+  return 0
 }
 
 # The folders of the test projects, one per line ("." for a test project at the root of the repository)
@@ -228,7 +372,9 @@ case "$1" in
     [ -f "$project" ] || stop "no test project $project"
     printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
     need_dotnet
+    vstest_only
     mkdir -p "$folder" || stop "cannot create $folder"
+    take_lock
     results="$folder/results-$label"
     rm -rf "$results"
     dotnet test "$project" --collect:"XPlat Code Coverage" --results-directory "$results" --nologo -v q \
@@ -299,7 +445,9 @@ case "$1" in
     project=$2 filter=$3
     [ -f "$project" ] && [ -n "$filter" ] || stop "usage: test-guardian.sh $1 <test project> <filter>"
     need_dotnet
+    vstest_only
     mkdir -p "$folder"
+    take_lock
     stamp=$(date +%H%M%S)
     one="$folder/$1-$stamp-1.log" two="$folder/$1-$stamp-2.log"
     run_tests "$project" "$filter" "$one"
@@ -344,6 +492,14 @@ case "$1" in
       echo "GREEN: $passed tests pass, twice"
     fi
     exit 0 ;;
+
+  build)
+    project=$2
+    [ -n "$project" ] && [ -f "$project" ] || stop "usage: test-guardian.sh build <project or solution>"
+    need_dotnet
+    take_lock
+    sh "$(dirname "$0")/build-test.sh" --build-only "$project"
+    exit $? ;;
 
   tests-only)
     dirs=$(test_dirs)
@@ -404,12 +560,227 @@ case "$1" in
     echo "RESTORED: ${changed:-nothing (the test files were as sealed)}"
     exit 0 ;;
 
+  park|unpark)
+    label=$2
+    [ -n "$label" ] || stop "usage: test-guardian.sh $1 <label>"
+    seal="$folder/seal-$label"
+    [ -f "$seal/list" ] || stop "no seal $label: only a sealed proof is parked"
+    tab=$(printf '\t')
+    total=$(wc -l < "$seal/list" | tr -d ' ')
+    # the sealed files that are in the working tree as they were sealed
+    intact=0 changed=""
+    while IFS= read -r p; do
+      if [ -f "$p" ] && cmp -s "$p" "$seal/files/$p"; then intact=$((intact + 1)); else changed="$changed $p"; fi
+    done < "$seal/list"
+    if [ "$1" = park ]; then
+      # only an intact proof, and only once
+      [ ! -f "$seal/parked" ] || stop "the proof $label is parked already (test-guardian.sh unpark $label brings it back)"
+      [ -z "$changed" ] || stop "the tests of the proof $label are not as sealed:$changed. Nothing parked"
+      # what HEAD holds for each file when it leaves: unpark refuses a file that a commit changed meanwhile
+      while IFS= read -r p; do
+        blob=$(git rev-parse -q --verify "HEAD:$p" 2>/dev/null) || blob=new
+        printf '%s\t%s\n' "$blob" "$p"
+      done < "$seal/list" > "$seal/base.new"
+      while IFS="$tab" read -r blob p; do
+        if [ "$blob" = new ]; then
+          rm -f "$p" || stop "cannot take $p out"
+        else
+          git checkout -q HEAD -- "$p" || stop "cannot put $p back to its committed content"
+        fi
+      done < "$seal/base.new"
+      mv "$seal/base.new" "$seal/base"
+      : > "$seal/parked"
+      echo "PARKED: $total test files of the proof $label out of the working tree until its turn (test-guardian.sh unpark $label)"
+      exit 0
+    fi
+    # unpark: a proof out of the working tree (parked, or put aside with the work of an interrupted fix) comes back as
+    # sealed, unless a commit changed one of its files since it was parked
+    [ -f "$seal/base" ] || stop "the proof $label was never parked"
+    if [ "$intact" -eq "$total" ]; then
+      rm -f "$seal/parked"
+      echo "UNPARKED: the proof $label is in the working tree already, as sealed"
+      exit 0
+    fi
+    moved=""
+    while IFS="$tab" read -r blob p; do
+      [ -f "$p" ] && cmp -s "$p" "$seal/files/$p" && continue
+      now=$(git rev-parse -q --verify "HEAD:$p" 2>/dev/null) || now=new
+      if [ "$now" != "$blob" ]; then moved="$moved $p (committed meanwhile)"
+      elif [ "$blob" = new ] && [ -e "$p" ]; then moved="$moved $p (exists)"
+      elif [ "$blob" != new ] && ! git diff --quiet HEAD -- "$p"; then moved="$moved $p (changed)"
+      fi
+    done < "$seal/base"
+    [ -z "$moved" ] || stop "the proof $label cannot come back as it was made:$moved. Its test-guardian makes it again (phase « avant le correctif »)"
+    while IFS= read -r p; do
+      { mkdir -p "$(dirname "$p")" && cp "$seal/files/$p" "$p"; } || stop "cannot bring back $p"
+    done < "$seal/list"
+    rm -f "$seal/parked"
+    echo "UNPARKED: $total test files of the proof $label back, as sealed"
+    exit 0 ;;
+
+  setup)
+    framework=$2
+    case "$framework" in
+      xunit|mstest|nunit) ;;
+      *) stop "usage: test-guardian.sh setup xunit|mstest|nunit <file.cs or project>..." ;;
+    esac
+    shift 2
+    [ $# -ge 1 ] || stop "usage: test-guardian.sh setup xunit|mstest|nunit <file.cs or project>..."
+    need_dotnet
+    vstest_only
+    [ -z "$(git status --porcelain)" ] || stop "uncommitted changes: setup runs on a clean working tree, so that a failure undoes all it did"
+    # the production projects of the files
+    prods=$(for f in "$@"; do
+      p=$(repo_path "$f") || { echo "MISSING $f"; continue; }
+      case "$p" in
+        *.csproj) printf '%s\n' "$p" ;;
+        *) project_of "$p" || echo "MISSING $f" ;;
+      esac
+    done | sort -u)
+    missing=$(printf '%s\n' "$prods" | sed -n 's/^MISSING //p' | tr '\n' ' ')
+    [ -z "$missing" ] || stop "no project file for: $missing"
+    prods=$(printf '%s\n' "$prods" | while IFS= read -r p; do in_tests "$p" || printf '%s\n' "$p"; done)
+    [ -n "$prods" ] || stop "these files belong to test projects only"
+    mkdir -p "$folder" || stop "cannot create $folder"
+    log="$folder/setup.log"
+    take_lock
+    built=""
+    undo() {
+      [ -n "$built" ] && rm -rf "$built"
+      git checkout -q -- . 2>/dev/null
+    }
+    # Test projects already there: coverlet.collector where it lacks, nothing else
+    existing=$(test_projects)
+    if [ -n "$existing" ]; then
+      v=$(cache_version coverlet.collector 6.0.4)
+      added="" props=""
+      while IFS= read -r t; do
+        has_coverlet "$t" && continue
+        props=$(central_props "$(dirname "$t")")
+        if [ -n "$props" ]; then
+          add_package_version "$props" coverlet.collector "$v"
+          add_package_ref "$t" coverlet.collector ""
+        else
+          add_package_ref "$t" coverlet.collector "$v"
+        fi
+        added="$added$t
+"
+      done <<EOF
+$existing
+EOF
+      [ -n "$added" ] || { echo "SETUP: nothing to do, every test project has coverlet.collector"; exit 0; }
+      while IFS= read -r t; do
+        [ -n "$t" ] || continue
+        if ! dotnet build "$t" -nologo -v q > "$log" 2>&1; then
+          undo
+          environment "$log"
+          grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5
+          stop "the build of $t fails with coverlet.collector: nothing changed"
+        fi
+      done <<EOF
+$added
+EOF
+      echo "SETUP: coverlet.collector $v added to $(printf '%s' "$added" | tr '\n' ' ' | sed 's/ $//')${props:+ (version in $props)}; build OK"
+      exit 0
+    fi
+    # A new test project: named after the solution that builds these projects, in its tests folder
+    first=$(printf '%s\n' "$prods" | head -n 1)
+    # the solutions that list one of these projects ("…\Api.csproj" in a .sln, "…/Api.csproj" in a .slnx)
+    slns=$(git ls-files '*.sln' '*.slnx' | while IFS= read -r s; do
+      printf '%s\n' "$prods" | while IFS= read -r p; do
+        bn=$(basename "$p" | sed 's/[].[*^$\\]/\\&/g')
+        grep -qE "[\"/\\\\]$bn\"" "$s" 2>/dev/null && { printf '%s\n' "$s"; break; }
+      done
+    done | sort -u)
+    sln1=$(printf '%s\n' "$slns" | head -n 1)
+    if [ -n "$sln1" ]; then
+      base=$(basename "$sln1"); base=${base%.*}; home=$(dirname "$sln1")
+    else
+      base=$(basename "$first" .csproj); home=.
+    fi
+    name="$base.UnitTests"
+    if [ -d "$home/test" ] && [ ! -d "$home/tests" ]; then dir="$home/test/$name"
+    elif [ -d "$home/tests" ] || [ -d "$home/src" ]; then dir="$home/tests/$name"
+    else dir="$home/$name"; fi
+    dir=${dir#./}
+    [ ! -e "$dir" ] || stop "$dir exists already: nothing created"
+    tfm=$(target_of "$first")
+    case "$tfm" in
+      legacy) stop "$first is a .NET Framework project: it does not build on this machine (Linux)" ;;
+      *-windows*) stop "$first targets $tfm: a Windows project does not build on this machine" ;;
+    esac
+    built=$dir
+    if ! dotnet new "$framework" -o "$dir" -n "$name" ${tfm:+-f "$tfm"} --no-update-check --no-restore > "$log" 2>&1; then
+      rm -rf "$dir"
+      dotnet new "$framework" -o "$dir" -n "$name" --no-update-check --no-restore > "$log" 2>&1 ||
+        { undo; stop "dotnet new $framework failed: $(grep -v '^[[:space:]]*$' "$log" | tail -n 2 | tr '\n' ' ')"; }
+      [ -n "$tfm" ] && sed "s:<TargetFramework>[^<]*</TargetFramework>:<TargetFramework>$tfm</TargetFramework>:" \
+        "$dir/$name.csproj" > "$dir/$name.csproj.new" && mv "$dir/$name.csproj.new" "$dir/$name.csproj"
+    fi
+    csproj="$dir/$name.csproj"
+    if grep -q 'MSTest.Sdk\|EnableMSTestRunner\|TestingPlatformDotnetTestSupport' "$csproj"; then
+      undo
+      stop "the $framework template of this SDK runs Microsoft.Testing.Platform: the measures of the pack read VSTest runs only"
+    fi
+    # the example test of the template is not kept: the test-guardian writes the real ones
+    rm -f "$dir/UnitTest1.cs" "$dir/Test1.cs"
+    grep -qi 'coverlet.collector' "$csproj" || add_package_ref "$csproj" coverlet.collector 6.0.4
+    # the versions this machine already uses, otherwise the template's; the central versions file when there is one
+    props=$(central_props "$dir")
+    versions=""
+    pvs=$(sed -n 's/.*<PackageReference Include="\([^"]*\)" Version="\([^"]*\)".*/\1=\2/p' "$csproj")
+    while IFS= read -r pv; do
+      [ -n "$pv" ] || continue
+      id=${pv%%=*} v=${pv#*=}
+      nv=$(cache_version "$id" "$v")
+      how=""
+      [ "$nv" = "$v" ] || how=" (cache)"
+      if [ -n "$props" ]; then
+        if grep -qi "<PackageVersion[^>]*Include=\"$id\"" "$props"; then
+          nv="" how="(central)"
+        else
+          add_package_version "$props" "$id" "$nv"
+        fi
+        awk -v id="$id" 'index($0, "Include=\"" id "\"") && /<PackageReference / { sub(/ Version="[^"]*"/, "") } { print }' \
+          "$csproj" > "$csproj.new" && mv "$csproj.new" "$csproj"
+      elif [ "$nv" != "$v" ]; then
+        awk -v id="$id" -v nv="$nv" 'index($0, "Include=\"" id "\"") && /<PackageReference / { sub(/Version="[^"]*"/, "Version=\"" nv "\"") } { print }' \
+          "$csproj" > "$csproj.new" && mv "$csproj.new" "$csproj"
+      fi
+      versions="$versions, $id $nv$how"
+    done <<EOF
+$pvs
+EOF
+    if ! printf '%s\n' "$prods" | tr '\n' '\0' | xargs -0 dotnet add "$csproj" reference > "$log" 2>&1; then
+      undo
+      stop "dotnet add reference failed: $(grep -v '^[[:space:]]*$' "$log" | tail -n 2 | tr '\n' ' ')"
+    fi
+    while IFS= read -r s; do
+      [ -n "$s" ] || continue
+      if ! dotnet sln "$s" add "$csproj" > "$log" 2>&1; then
+        undo
+        stop "dotnet sln $s add failed: $(grep -v '^[[:space:]]*$' "$log" | tail -n 2 | tr '\n' ' ')"
+      fi
+    done <<EOF
+$slns
+EOF
+    if ! dotnet build "$csproj" -nologo -v q > "$log" 2>&1; then
+      undo
+      environment "$log"
+      grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5
+      stop "the new test project does not build: nothing created"
+    fi
+    echo "SETUP: $csproj created ($framework${tfm:+, $tfm}), it references $(printf '%s\n' "$prods" | tr '\n' ' ' | sed 's/ $//'); packages:${versions#,}${props:+; versions in $props}${slns:+; added to $(printf '%s\n' "$slns" | tr '\n' ' ' | sed 's/ $//')}; build OK"
+    exit 0 ;;
+
   changes)
     base=$2 target=$3
     [ -n "$base" ] || stop "usage: test-guardian.sh changes <base branch> [<solution, project or folder>]"
     git rev-parse --verify -q "$base^{commit}" >/dev/null || stop "unknown base $base"
     need_dotnet
+    vstest_only
     mkdir -p "$folder" || stop "cannot create $folder"
+    take_lock
     results="$folder/results-changes"
     rm -rf "$results"
     # the whole suite once, with coverlet: build-test.sh prints its usual BUILD, TESTS and FAILED TESTS lines
@@ -477,5 +848,5 @@ case "$1" in
       }'
     exit "$status" ;;
 
-  *) stop "usage: test-guardian.sh deps <file> | coverage <label> <project> <file>... | compare <a> <b> | red|green <project> <filter> | tests-only | seal <label> <file>... | sealed <label> | restore <label> | changes <base> [<target>] | folder" ;;
+  *) stop "usage: test-guardian.sh deps <file> | coverage <label> <project> <file>... | compare <a> <b> | red|green <project> <filter> | build <project> | tests-only | seal <label> <file>... | sealed <label> | restore <label> | park|unpark <label> | setup xunit|mstest|nunit <file>... | changes <base> [<target>] | folder" ;;
 esac

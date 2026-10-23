@@ -620,10 +620,10 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
 | un sous-agent repris par son identifiant | son message n'a plus la ligne qui dit « sous-agent » | reconnu par sa session parente : toujours sans question |
 
 **Les vérifications automatiques passent** :
-- plugin : 592 sur 592 ;
-- permissions : 1 888 cas sur 1 888 ;
+- plugin : 647 sur 647 ;
+- permissions : 1 933 cas sur 1 933 ;
 - de bout en bout avec le vrai v2.1.3, son interface web et un modèle simulé : 71 contrôles sur 71, dont la reprise d'un `/go` après un redémarrage du service, trois espaces de travail en parallèle, et les reprises automatiques (panne du serveur du modèle, limite d'étapes, réponse coupée), les retries étalés et les résumés de contexte ;
-- les scripts de mesure des tests (`test-guardian.sh`, `fortify.sh`) avec un vrai `dotnet test` et coverlet : 38 scénarios sur 38 (rouge, vert, test instable, test bloqué, tests de la preuve scellés puis remis quand le correctif les modifie, perte de couverture, couverture des lignes modifiées, travail mis de côté entre deux espaces de travail) ;
+- les scripts de mesure des tests (`test-guardian.sh`, `fortify.sh`) avec un vrai `dotnet test` et coverlet : 98 scénarios sur 98 (rouge, vert, test instable, test bloqué, tests de la preuve scellés puis remis quand le correctif les modifie, perte de couverture, couverture des lignes modifiées, travail mis de côté entre deux espaces de travail ; le verrou qui sérialise les builds d'une vague écrite en parallèle, la sous-commande `build`, un build qui ne s'arrête pas stoppé et nommé, la mise de côté puis le retour d'une preuve ; et la mise en place d'un projet de tests — xUnit, MSTest, NUnit, l'ajout de coverlet, les versions centralisées, un projet .NET Framework ou Microsoft.Testing.Platform laissé de côté) ;
 - 30 fichiers d'agents, de commandes et de skills validés ;
 - `shellcheck` sur tous les scripts ;
 - ce guide, rejoué de bout en bout sur une machine de test : 57 contrôles pour le parcours principal, 47 pour l'annexe A avec le service, 47 avec `opencode-web.sh`.
