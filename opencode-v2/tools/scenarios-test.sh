@@ -120,10 +120,6 @@ sln() {
     done
     printf '\tEndGlobalSection\nEndGlobal\n'; } > "$f"
 }
-# note <text>: with the real dotnet, a value only the real tools decide, shown by the CI (lines « NOTE: »)
-note() { [ "$REAL" -eq 1 ] && printf 'NOTE: [%s] %s\n' "$scenario" "$1"; return 0; }
-# pick <with the fake> <with the real dotnet>: a pattern for what only the real tools decide
-pick() { if [ "$REAL" -eq 1 ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
 on_origin() {
   # on_origin <repo.git> <branch>: the branch exists on "GitLab"
   git --git-dir="$1" rev-parse -q --verify "refs/heads/$2" >/dev/null
@@ -837,16 +833,17 @@ check "…so the question of the set-up, with the blocking questions" 0 '^PREREQ
 # « Oui, xUnit »: the first commit of the branch
 run test-guardian.sh setup xunit src/Rules/Shipping.cs
 check "the test project created" 0 "^SETUP: tests/Rules.UnitTests/Rules.UnitTests.csproj created \\(xunit, $TFM\\)"
+# with no test yet, coverlet still reports each line of the code it references at 0 (for the fake: what it reports)
+T6=tests/Rules.UnitTests/Rules.UnitTests.csproj
+sed -i 's#</Project>#  <!-- fake-cover: src/Rules/Shipping.cs if=src/Rules/Shipping.cs:return c=Rules.Shipping m=Fee 5:0 6:0:0/2 7:0 8:0 10:0 11:0 -->\n  <!-- fake-cover: src/Rules/Shipping.cs unless=src/Rules/Shipping.cs:return c=Rules.Shipping m=Fee 4:0:0/2 -->\n</Project>#' "$T6"
 run ship.sh --no-push "test: add the unit test project (LOCAL-1)" "- tests/Rules.UnitTests (xunit)"
 check "its own commit" 0 '^COMMIT: .* test: add the unit test project \(LOCAL-1\)'
 # the step « (filet d'abord) »: the test-guardian, mission « filet », phase « avant la modification »
-T6=tests/Rules.UnitTests/Rules.UnitTests.csproj
 run test-guardian.sh coverage S1-before "$T6" src/Rules/Shipping.cs
-check "no test yet: the measure says it, never a missing collector" 0 "$(pick '^TESTS: 0 passed, 0 failed \(no test in tests/Rules.UnitTests/Rules.UnitTests.csproj yet\)$' '^TESTS: 0 passed, 0 failed')" '^STOP'
-note "couverture d'un projet de tests sans test : $(printf '%s\n' "$out" | tr '\n' ' ')"
+check "no test yet: measured, never taken for a missing collector" 0 '^TESTS: 0 passed, 0 failed$' '^STOP'
+check "…each line of the method at 0" 0 '^src/Rules/Shipping.cs lines 0/6 \(0%\) branches 0/2 uncovered 5-8 10-11$'
 run test-guardian.sh net S1-before src/Rules/Shipping.cs:Fee
-check "the net: THIN, every line of the method to run" 0 "$(pick '^SAFETY NET: THIN \(no test runs this method yet, 0% < 80%\)' '^SAFETY NET: THIN \((no test runs this method yet, 0%|0/6 lines of this method run by the tests, 0%) < 80%\)')"
-note "filet avant tout test : $(printf '%s\n' "$out" | tr '\n' ' ')"
+check "the net: THIN, every line of the method to run" 0 '^SAFETY NET: THIN \(0/6 lines of this method run by the tests, 0% < 80%\)'
 cat > tests/Rules.UnitTests/ShippingFeeTests.cs <<'EOF'
 namespace Rules.UnitTests;
 

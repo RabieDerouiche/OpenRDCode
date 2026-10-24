@@ -18,6 +18,8 @@
 #   <!-- fake-build-error -->                              (its build fails; in a .cs file: that file does not compile)
 #   <!-- fake-mtp-old -->                                  (a platform older than 1.5: no --timeout)
 #   <!-- fake-ansi -->                                     (colors in the output of the test application)
+#   <!-- fake-no-cover-without-tests -->                   (a test project without tests: no coverage report, where
+#                                                          coverlet writes one with every line at 0)
 # $FAKE_DOTNET_STATE: a folder for the state of the flaky tests; FAKE_DOTNET_SLOW: builds take 3 s; FAKE_DOTNET_SLOW_TEST=<s>:
 # a test run takes <s> seconds (test-guardians of a wave that meet on the lock); FAKE_TEMPLATE=mtp: `dotnet new mstest` makes an
 # MSTest.Sdk project (the template of a recent SDK); FAKE_DOTNET_COVER: a file of fake-cover lines that replaces those
@@ -271,7 +273,16 @@ case "$1" in
     done
     status=0 any=0
     for p in $(projects_of "$t"); do
-      sources_of "$p" | while IFS= read -r src; do cat "$src" 2>/dev/null; done | grep -q 'fake-test:' || continue
+      if ! sources_of "$p" | while IFS= read -r src; do cat "$src" 2>/dev/null; done | grep -q 'fake-test:'; then
+        # a test project with no test yet (just set up): VSTest finds none, and coverlet still writes its report, each
+        # line of the code at 0 (fake-no-cover-without-tests: a runner that then writes none)
+        grep -q 'Microsoft.NET.Test.Sdk' "$p" 2>/dev/null || continue
+        any=1
+        echo "No test is available in $(dll_of "$p"). Make sure that test discoverer & executors are registered and platform & framework version settings are appropriate and try again."
+        [ "$collect" -eq 1 ] && [ -n "$results" ] && ! grep -q 'fake-no-cover-without-tests' "$p" &&
+          cobertura "$p" "$results/$(name_of "$p")-guid/coverage.cobertura.xml"
+        continue
+      fi
       any=1
       # dotnet test builds first (not with --no-build): a test file that does not compile stops it
       broken=$(broken_of "$p")

@@ -124,20 +124,39 @@ printf '<Project Sdk="Microsoft.NET.Sdk">\n  <ItemGroup>\n    <PackageReference 
 git add -A && git commit -q -m "test: an empty test project"
 run build-test.sh tests/Empty.Tests/Empty.Tests.csproj
 check "VSTest: a test project without tests, said so" 0 '^TESTS: NONE RUN \(1 test project\(s\) in this target, but no test ran'
-# its coverage and the net of a fix, before its first test (just set up): 0 %, never a missing collector
+# beside a test project whose tests run: they ran, whatever the empty one says (the memory of the last green run of
+# the solution kept aside, for --if-changed below)
+green="$(git rev-parse --absolute-git-dir)/opencode-green"
+cp "$green" "$work/green.kept"
+{ cat App.sln; printf 'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Empty.Tests", "tests\\Empty.Tests\\Empty.Tests.csproj", "{33333333-3333-3333-3333-333333333333}"\nEndProject\n'; } > Both.sln
+run build-test.sh Both.sln
+check "VSTest: tests that ran beside a test project without tests: OK" 0 '^TESTS: OK$' 'NONE RUN'
+run build-test.sh Both.sln --filter FullyQualifiedName~InvoiceTests
+check "VSTest: a filter that only one test project matches: OK" 0 '^TESTS: OK$' 'NONE RUN'
+# its coverage before its first test: coverlet writes its report, each line of the code at 0
+sed -i 's#</Project>#  <ItemGroup><ProjectReference Include="../../src/App/App.csproj" /></ItemGroup>\n  <!-- fake-cover: src/App/Invoice.cs c=App.Invoice m=Total 3:0 -->\n</Project>#' tests/Empty.Tests/Empty.Tests.csproj
 run test-guardian.sh coverage empty tests/Empty.Tests/Empty.Tests.csproj src/App/Invoice.cs
-check "coverage with no test yet: said, not a STOP" 0 '^TESTS: 0 passed, 0 failed \(no test in tests/Empty.Tests/Empty.Tests.csproj yet\)$' '^STOP'
+check "coverage before the first test: no test ran" 0 '^TESTS: 0 passed, 0 failed$' '^STOP'
+check "…each line of the file at 0" 0 '^src/App/Invoice.cs lines 0/1 \(0%\) branches 0/0 uncovered 3$'
+run test-guardian.sh net empty src/App/Invoice.cs:Total
+check "…its net: THIN" 0 '^SAFETY NET: THIN \(0/1 lines of this method run by the tests, 0% < 80%\)'
+# a runner that writes no report when no test runs: the same 0 %, never taken for a missing collector
+sed -i 's#</Project>#  <!-- fake-no-cover-without-tests -->\n</Project>#' tests/Empty.Tests/Empty.Tests.csproj
+run test-guardian.sh coverage none-yet tests/Empty.Tests/Empty.Tests.csproj src/App/Invoice.cs
+check "no report and no test: said, not a STOP" 0 '^TESTS: 0 passed, 0 failed \(no test in tests/Empty.Tests/Empty.Tests.csproj yet\)$' '^STOP'
 check "…each file at 0/0" 0 '^src/App/Invoice.cs lines 0/0 \(no test yet: none of its lines runs\)$'
-run test-guardian.sh net empty src/App/Invoice.cs:Total src/App/Invoice.cs:Invoice
+run test-guardian.sh net none-yet src/App/Invoice.cs:Total src/App/Invoice.cs:Invoice
 check "its net: THIN, every line of the methods to run" 0 '^SAFETY NET: THIN \(no test runs these 2 methods yet, 0% < 80%\): before the fix'
 check "…each method named" 0 '^NET: src/App/Invoice.cs:Total no test yet: none of its lines runs$'
-run test-guardian.sh net empty --min 0 src/App/Invoice.cs:Total
+run test-guardian.sh net none-yet --min 0 src/App/Invoice.cs:Total
 check "…a minimum of 0 %: OK" 0 '^SAFETY NET: OK \(no test runs this method yet, 0%; minimum 0%\)$'
-run test-guardian.sh net empty src/App/Nothing.cs:Total
+run test-guardian.sh net none-yet src/App/Nothing.cs:Total
 check "…a file that does not exist: STOP" 1 '^STOP: no file src/App/Nothing.cs in this repository$'
-run test-guardian.sh compare empty empty
-check "…compared: nothing to lose" 0 '^COVERAGE: no file lost coverage$'
+run test-guardian.sh compare none-yet empty
+check "…compared with a later measure: nothing lost" 0 '^COVERAGE: no file lost coverage$'
+rm -f Both.sln
 git reset -q --hard HEAD~1
+cp "$work/green.kept" "$green"
 
 # --if-changed (/push): the code that already passed is not built and tested again
 run build-test.sh --if-changed

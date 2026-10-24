@@ -292,11 +292,17 @@ elif [ "$mixed" -eq 1 ]; then
     echo "TESTS: OK ($ran test$([ "$ran" -eq 1 ] || echo s))"
     tests_ok=1
   fi
-elif ! grep -q '[^[:space:]]' "$out" || grep -q -E 'No test matches|No test is available|No test source files' "$out"; then
-  none_run "$@"
 else
-  echo "TESTS: OK"
-  tests_ok=1
+  # the tests that ran, from the summary of each test assembly: a project of the target whose tests the filter leaves
+  # out, or that has no test yet, says so beside those of the others, which ran
+  ran=$(awk '/(Passed|Failed)!/ { if (match($0, /Total: *[0-9]+/)) { s = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", s); n += s } }
+             END { print n + 0 }' "$out")
+  if [ "$ran" -eq 0 ] && { ! grep -q '[^[:space:]]' "$out" || grep -q -E 'No test matches|No test is available|No test source files' "$out"; }; then
+    none_run "$@"
+  else
+    echo "TESTS: OK"
+    tests_ok=1
+  fi
 fi
 if [ -n "$fingerprint" ] && [ "$whole" -eq 1 ]; then
   echo "Code fingerprint of this run: $fingerprint (whole solution)"
