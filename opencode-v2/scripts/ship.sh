@@ -153,7 +153,7 @@ if git rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null; then
       stop "git refused to bring the $behind commits of origin/$branch: $(printf '%s\n' "$out" | head -n 3 | join)"
     echo "REMOTE: $behind commits of origin/$branch brought in (pushed from another computer)"
   elif [ "$protected" -eq 1 ] && [ "$ahead" -gt 0 ] && [ "$behind" -gt 0 ]; then
-    stop "the local $branch has $ahead commits that origin/$branch does not have: nothing was merged; put them on a branch (/push), then reset $branch in Rider"
+    stop "the local $branch has $ahead commits that origin/$branch does not have: nothing was merged; /push puts them on a branch of their own and brings $branch back to origin/$branch"
   elif [ "$behind" -gt 0 ]; then
     merge "origin/$branch" "the $behind commits pushed on origin/$branch from another computer"
     echo "REMOTE: the $behind commits of origin/$branch merged (pushed from another computer)"

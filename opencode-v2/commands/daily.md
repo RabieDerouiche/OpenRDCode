@@ -7,7 +7,7 @@ subtask: false
 Scope given: "$ARGUMENTS"
 Today: !`date +%Y-%m-%d`
 
-My personal todo list (/todo, kept outside Jira):
+My personal todo list (/outil todo, kept outside Jira):
 [[run todo.sh list]]
 
 Build my morning brief with the Jira and GitLab MCP tools. "Me" is the authenticated user.

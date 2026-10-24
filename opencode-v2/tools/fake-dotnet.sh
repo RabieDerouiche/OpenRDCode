@@ -3,15 +3,21 @@
 # (VSTest mode) and `dotnet exec <test app>` (Microsoft.Testing.Platform) to test the pack's scripts without a .NET SDK.
 # The output formats are those of VSTest's console logger and of MTP's terminal reporter (microsoft/testfx,
 # TerminalTestReporter: "failed <name> (12ms)", "Test run summary: Failed! - <dll> (<tfm>|<arch>)", "  total: n"…).
-# A test project declares its fake tests in comments:
+# A test project declares its fake tests in comments, in its project file or in the .cs files of its folder (a test
+# file declares the tests it holds: sealing, parking or deleting it changes what runs):
 #   <!-- fake-test: <fully qualified name> pass|fail <message>|hang|flaky -->
+#   <!-- fake-test: <fully qualified name> requires <file>:<text> <message> -->
+#                                                          (passes when <file> of the repository holds <text>, fails
+#                                                          with <message> otherwise: a test of the production code)
 #   <!-- fake-cover: <source file> <line>:<hits> ... -->   (the coverage report of a run with coverage)
 #   <!-- fake-mtp-v2 -->                                   (dotnet test in VSTest mode refuses it, as the .NET 10 SDK)
-#   <!-- fake-build-error -->                              (its build fails)
+#   <!-- fake-build-error -->                              (its build fails; in a .cs file: that file does not compile)
 #   <!-- fake-mtp-old -->                                  (a platform older than 1.5: no --timeout)
 #   <!-- fake-ansi -->                                     (colors in the output of the test application)
-# $FAKE_DOTNET_STATE: a folder for the state of the flaky tests; FAKE_TEMPLATE=mtp: `dotnet new mstest` makes an
-# MSTest.Sdk project (the template of a recent SDK)
+# $FAKE_DOTNET_STATE: a folder for the state of the flaky tests; FAKE_DOTNET_SLOW: builds take 3 s; FAKE_DOTNET_SLOW_TEST=<s>:
+# a test run takes <s> seconds (test-guardians of a wave that meet on the lock); FAKE_TEMPLATE=mtp: `dotnet new mstest` makes an
+# MSTest.Sdk project (the template of a recent SDK); FAKE_DOTNET_COVER: a file of fake-cover lines that replaces those
+# of the projects (the coverage a run measures, changed by a test without touching the repository)
 # Every call is logged, one line, to $FAKE_DOTNET_LOG.
 [ -n "$FAKE_DOTNET_LOG" ] && printf '%s\n' "dotnet $*" >> "$FAKE_DOTNET_LOG"
 
@@ -32,11 +38,33 @@ projects_of() {
   esac
 }
 
+# the project file and the .cs files of its folder (bin and obj left out): where its fake tests are declared
+sources_of() {
+  printf '%s\n' "$1"
+  find "$(dirname "$1")" -name '*.cs' -not -path '*/bin/*' -not -path '*/obj/*' 2>/dev/null | sort
+}
+
+# the first source that does not compile in a project or in the projects it references (as dotnet builds them first)
+broken_of() {
+  b=$(sources_of "$1" | while IFS= read -r src; do grep -l 'fake-build-error' "$src" 2>/dev/null; done | head -n 1)
+  if [ -n "$b" ]; then
+    [ "$b" = "$1" ] && b="$(dirname "$1")/Broken.cs"
+    printf '%s\n' "$b"
+    return
+  fi
+  [ "${2:-0}" -ge 3 ] && return
+  sed -n 's/.*<ProjectReference Include="\([^"]*\)".*/\1/p' "$1" 2>/dev/null | tr '\\' '/' | while IFS= read -r r; do
+    broken_of "$(dirname "$1")/$r" $((${2:-0} + 1))
+  done | head -n 1
+}
+
 # the fake tests of a project that a filter selects: "<name>|<outcome>|<message>"
 selected() {
   proj=$1 mode=$2
   shift 2
-  sed -n 's/.*<!-- fake-test: \([^ ]*\) \([a-z]*\) *\(.*\) -->.*/\1|\2|\3/p' "$proj" | while IFS='|' read -r n o m; do
+  sources_of "$proj" | while IFS= read -r src; do
+    sed -n 's/.*<!-- fake-test: \([^ ]*\) \([a-z]*\) *\(.*\) -->.*/\1|\2|\3/p' "$src"
+  done | while IFS='|' read -r n o m; do
     keep=1
     if [ "$mode" = vstest ] && [ -n "$1" ]; then
       keep=0
@@ -79,6 +107,12 @@ segment() {
 }
 
 outcome() {
+  # requires <file>:<text>: the test passes when the production code holds the text
+  if [ "$2" = requires ]; then
+    spec=${3%% *} top=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+    if grep -qF -- "${spec#*:}" "$top/${spec%%:*}" 2>/dev/null; then echo pass; else echo fail; fi
+    return
+  fi
   # flaky: pass, then fail, then pass… (a counter next to the project)
   if [ "$2" = flaky ]; then
     f="${FAKE_DOTNET_STATE:-${TMPDIR:-/tmp}}/flaky-$(name_of "$1")"
@@ -97,7 +131,7 @@ cobertura() {
   {
     echo '<?xml version="1.0" encoding="utf-8"?>'
     echo '<coverage line-rate="0.5" branch-rate="0" version="1.9"><packages><package name="p"><classes>'
-    sed -n 's/.*<!-- fake-cover: \(.*\) -->.*/\1/p' "$1" | while read -r file rest; do
+    sed -n 's/.*<!-- fake-cover: \(.*\) -->.*/\1/p' "${FAKE_DOTNET_COVER:-$1}" | while read -r file rest; do
       echo "<class name=\"C\" filename=\"$top/$file\" line-rate=\"0.5\"><lines>"
       for lh in $rest; do echo "<line number=\"${lh%%:*}\" hits=\"${lh#*:}\" branch=\"False\" />"; done
       echo "</lines></class>"
@@ -110,12 +144,15 @@ case "$1" in
   --version) echo "10.0.100"; exit 0 ;;
   build)
     shift
+    # FAKE_DOTNET_SLOW: a build that takes 3 s (two builds of one folder at the same time)
+    [ -n "${FAKE_DOTNET_SLOW:-}" ] && sleep 3
     t=""
     case "$1" in ""|-*) ;; *) t=$1 ;; esac
     status=0
     for p in $(projects_of "$t"); do
-      if grep -q 'fake-build-error' "$p" 2>/dev/null; then
-        echo "$(dirname "$p")/Broken.cs(3,5): error CS0103: The name 'x' does not exist in the current context [$(abs "$p")]"
+      broken=$(broken_of "$p")
+      if [ -n "$broken" ]; then
+        echo "$broken(3,5): error CS0103: The name 'x' does not exist in the current context [$(abs "$p")]"
         status=1
       else
         d=$(dll_of "$p"); mkdir -p "$(dirname "$d")"; : > "$d"
@@ -128,11 +165,13 @@ case "$1" in
     exit 0 ;;
   test)
     shift
+    [ -n "${FAKE_DOTNET_SLOW_TEST:-}" ] && sleep "$FAKE_DOTNET_SLOW_TEST"
     t=""
     case "$1" in ""|-*) ;; *) t=$1; shift ;; esac
-    filter="" logger="" results="" collect=0
+    filter="" logger="" results="" collect=0 nobuild=0
     while [ $# -gt 0 ]; do
       case "$1" in
+        --no-build) nobuild=1; shift ;;
         --filter) filter=$2; shift 2 ;;
         --logger) logger=$2; shift 2 ;;
         --results-directory) results=$2; shift 2 ;;
@@ -144,8 +183,15 @@ case "$1" in
     done
     status=0 any=0
     for p in $(projects_of "$t"); do
-      grep -q 'fake-test:' "$p" 2>/dev/null || continue
+      sources_of "$p" | while IFS= read -r src; do cat "$src" 2>/dev/null; done | grep -q 'fake-test:' || continue
       any=1
+      # dotnet test builds first (not with --no-build): a test file that does not compile stops it
+      broken=$(broken_of "$p")
+      if [ "$nobuild" -eq 0 ] && [ -n "$broken" ]; then
+        echo "$broken(3,5): error CS0103: The name 'x' does not exist in the current context [$(abs "$p")]"
+        status=1
+        continue
+      fi
       if grep -q 'fake-mtp-v2' "$p"; then
         echo "/usr/share/dotnet/sdk/10.0.100/Microsoft.TestPlatform.targets(48,5): error : Testing with VSTest target is no longer supported by Microsoft.Testing.Platform on .NET 10 SDK and later. If you use dotnet test, you should opt-in to the new dotnet test experience. For more information, see https://aka.ms/dotnet-test-mtp-error [$(abs "$p")]"
         status=1
@@ -156,6 +202,7 @@ case "$1" in
       passed=0 failed=0
       while IFS='|' read -r n o m; do
         [ -n "$n" ] || continue
+        [ "$o" = requires ] && { r=$(outcome "$p" "$o" "$m"); m=${m#* }; o=$r; }
         o=$(outcome "$p" "$o")
         case "$o" in
           pass) passed=$((passed + 1)); case "$logger" in *normal*) echo "  Passed $n [12 ms]" ;; esac ;;
@@ -179,6 +226,7 @@ EOF
     [ "$any" -eq 0 ] && echo "No test source files were specified."
     exit $status ;;
   exec)
+    [ -n "${FAKE_DOTNET_SLOW_TEST:-}" ] && sleep "$FAKE_DOTNET_SLOW_TEST"
     dll=$2
     shift 2
     projdir=$(cd "$(dirname "$dll")/../../.." && pwd)
@@ -211,6 +259,7 @@ EOF
     passed=0 failed=0
     while IFS='|' read -r n o m; do
       [ -n "$n" ] || continue
+      [ "$o" = requires ] && { r=$(outcome "$p" "$o" "$m"); m=${m#* }; o=$r; }
       o=$(outcome "$p" "$o")
       case "$o" in
         pass) passed=$((passed + 1)) ;;
@@ -266,7 +315,28 @@ EOF
     echo "namespace T; public class UnitTest1 { }" > "$dir/UnitTest1.cs"
     echo "The template was created successfully."
     exit 0 ;;
-  sln|add|format|restore) exit 0 ;;
+  sln)
+    # dotnet sln <solution> add <project>: the project goes in the solution, as the real one does
+    if [ "$3" = add ] && [ -f "$2" ]; then
+      case "$2" in
+        *.slnx) sed -i "s#</Solution>#  <Project Path=\"$4\" />\n</Solution>#" "$2" ;;
+        *) printf 'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "%s", "%s", "{44444444-4444-4444-4444-444444444444}"\nEndProject\n' \
+             "$(name_of "$4")" "$(printf '%s' "$4" | tr '/' '\\')" >> "$2" ;;
+      esac
+    fi
+    exit 0 ;;
+  add)
+    # dotnet add <project> reference <project>...: the references go in the project file, as the real one writes them
+    if [ "$3" = reference ]; then
+      proj=$2
+      shift 3
+      for r in "$@"; do
+        rel=$(realpath -m --relative-to="$(dirname "$proj")" "$r")
+        sed -i "s#</Project>#  <ItemGroup>\n    <ProjectReference Include=\"$rel\" />\n  </ItemGroup>\n</Project>#" "$proj"
+      done
+    fi
+    exit 0 ;;
+  format|restore) exit 0 ;;
   run) echo "fake dotnet: dotnet run must never be called by the pack's scripts"; exit 99 ;;
   *) echo "fake dotnet: unknown command $1"; exit 99 ;;
 esac

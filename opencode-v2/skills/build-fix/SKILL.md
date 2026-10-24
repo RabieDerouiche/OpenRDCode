@@ -9,7 +9,7 @@ compatibility: opencode
 - Build command: the "Build & test" section of the repository AGENTS.md if it exists, otherwise `sh ~/.config/opencode/scripts/detect-project-type.sh` (line "Build").
 - .NET, errors only: `sh ~/.config/opencode/scripts/build-test.sh --build-only [<solution or project>]` (each error once, then "BUILD: OK" or "BUILD: FAILED"). A line "ENVIRONMENT PROBLEM" means that `dotnet` or the package feed is not reachable from OpenCode: say it in one line and stop.
 - If the output mentions MSB1003 / MSB1011 or the project is not a .NET SDK project, ignore it and use the build command from AGENTS.md instead (front-end default: `npm run build`).
-- For a failed CI job, start from the error lines of the job log given by the user or by /scans.
+- For a failed CI job, start from the error lines of the job log given by the user or gathered by /fix.
 
 ## Rules
 - Fix only what is needed to compile. No refactoring, no renaming, no behavior change.
@@ -20,4 +20,4 @@ compatibility: opencode
 - After fixing, build again. Repeat at most 3 times, then report what remains.
 
 ## Report
-Each error fixed (file:line, error code, change made) and the final build status. Then: "Prochaine étape : /check".
+Each error fixed (file:line, error code, change made) and the final build status. In the conversation (not in a run of /go or /fix, whose report format wins): then « Prochaine étape : /push » (it tests, commits and pushes).

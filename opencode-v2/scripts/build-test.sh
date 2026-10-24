@@ -99,8 +99,12 @@ if [ -n "$fingerprint" ] && [ -n "$green" ] && [ "$build_only" -eq 0 ] && [ "$no
   runkey="$fingerprint $(printf '%s\n' "$target" "$@" | cksum | cut -d' ' -f1)"
 fi
 if [ "$if_changed" -eq 1 ] && [ -n "$runkey" ] && [ "$(head -n 1 "$green" 2>/dev/null)" = "$runkey" ]; then
-  echo "BUILD: OK (not run again: this same code passed this build and its tests on $(sed -n 2p "$green"))"
-  echo "TESTS: OK (not run again: same code, same target and options)"
+  echo "BUILD: OK (not run again: this same code passed this build on $(sed -n 2p "$green"))"
+  if [ "$(sed -n 3p "$green")" = none ]; then
+    echo "TESTS: NONE RUN (not run again: same code, same target and options; no test project for this target, or no test matches the filter)"
+  else
+    echo "TESTS: OK (not run again: same code, same target and options)"
+  fi
   exit 0
 fi
 
@@ -285,8 +289,8 @@ fi
 if [ -n "$fingerprint" ] && [ "$whole" -eq 1 ]; then
   echo "Code fingerprint of this run: $fingerprint (whole solution)"
 fi
-# a green run is remembered for --if-changed (a run with no test at all is not)
-if [ -n "$runkey" ] && [ "$status" -eq 0 ] && [ "$tests_ok" -eq 1 ]; then
-  printf '%s\n%s\n' "$runkey" "$(date '+%Y-%m-%d %H:%M')" > "$green" 2>/dev/null
+# a green run is remembered for --if-changed, with what its tests said (a build without any test to run included)
+if [ -n "$runkey" ] && [ "$status" -eq 0 ]; then
+  printf '%s\n%s\n%s\n' "$runkey" "$(date '+%Y-%m-%d %H:%M')" "$([ "$tests_ok" -eq 1 ] && echo ok || echo none)" > "$green" 2>/dev/null
 fi
 exit "$status"

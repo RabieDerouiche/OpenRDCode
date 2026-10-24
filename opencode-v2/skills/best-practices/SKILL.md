@@ -1,6 +1,6 @@
 ---
 name: best-practices
-description: Checklist of best practices by project type (modern .NET API, CQRS API, Blazor, legacy .NET Framework, library, front-end), including the Result pattern, feature flags, performance and running on several instances, with how to detect whether each one is already in place. Load to suggest improvements in /check, for a repository audit (/audit), or when asked "is there a better approach".
+description: Checklist of best practices by project type (modern .NET API, CQRS API, Blazor, legacy .NET Framework, library, front-end), including the Result pattern, feature flags, performance and running on several instances, with how to detect whether each one is already in place. Load for a decision about error handling, a feature flag or performance (the coder), for a repository audit (/outil audit), or when asked "is there a better approach".
 compatibility: opencode
 ---
 # Best practices by project type
@@ -10,7 +10,7 @@ compatibility: opencode
 - Always check first that it is not already in place, with the "Detect" hint. Quote the evidence (file:line) for "absent" as well as for "present". Never suggest something you did not verify.
 - A suggestion is never blocking. It names the benefit in one sentence and the smallest change that brings it.
 - If it needs a package the repository does not use yet, say so: the developer decides ("Garder l'existant" or "Introduire").
-- If a skill whose name starts with `pattern-` covers the practice (e.g. `pattern-healthchecks-back`), point to it: `/apply-pattern <name>`.
+- If a skill whose name starts with `pattern-` covers the practice (e.g. `pattern-healthchecks-back`), point to it: `/go <KEY> comme le pattern <name>` (a pattern skill is applied by /go).
 - Follow the existing architecture. Never suggest CQRS, a mediator or Clean Architecture to a project that does not use them.
 - Every suggestion needs a current, concrete benefit: a real bug, a production risk that is measured or likely for this load and this deployment, or a requirement of the ticket. "If one day…" is not a reason: no abstraction, layer, pattern or package for a hypothetical need (for example no `IHttpClientFactory` for a call made once a day, no interface or service that only forwards calls).
 

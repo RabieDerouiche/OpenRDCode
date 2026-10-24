@@ -357,6 +357,8 @@ Les fichiers ignorés par git du dépôt principal (un `.env`, des réglages loc
 
 Un espace de travail démarre sur une HEAD détachée (c'est ainsi que la v2 crée ses worktrees). `/go` y crée la branche du ticket ; un travail sans ticket (un POC, un essai) se pousse avec `/push`, qui lui crée d'abord une branche `poc/<résumé>` à partir de ce qui est là (`/push branche essai-cache` pour choisir le nom, `/push feature …` pour un autre préfixe).
 
+**Deux dossiers qui poussent en même temps**, chacun sur sa branche : rien à faire de spécial. Chaque dossier a son verrou de build, son dossier de mesures et sa fiche ; leurs `git fetch` simultanés sont relancés tout seuls s'ils se croisent. Si les deux branches modifient la même ligne, rien ne se voit au push (deux branches différentes) : le conflit apparaît quand la première MR est fusionnée, au prochain `/sync develop` ou `/fix` de la seconde, qui annulent la fusion et nomment le fichier. Tu la refais dans Rider, dans le dossier de la seconde (`git merge origin/develop`), puis `/push`.
+
 **2. Le lendemain.** Les sessions du dossier sont listées avec celles du projet. Pour reprendre : ouvre une de ses sessions, puis `/go` seul ; après la CI, `/fix` dans la même session.
 
 **3. Un ticket en cours dans le dépôt principal, à passer dans un dossier.** Une branche ne s'ouvre que dans un dossier à la fois. Dans le dépôt principal, avec rien de non commité (`git status -s` n'affiche rien ; sinon `/fix` livre d'abord) :
@@ -611,7 +613,7 @@ Pousser ton travail, avec ou sans ticket : `/push` lit tes changements et te pos
 - **Commit** : deux ou trois messages au format conventional commit (`feat(export): add the CSV export`), le recommandé d'abord ;
 - **MR** : en Draft vers la base (recommandée, sauf pour un POC) ou pas de MR. Pas posée si la branche a déjà sa MR : le push la met à jour.
 
-Ce que tu dis dans ta commande n'est pas redemandé ; `vite` prend les choix recommandés sans question. Avant le commit, le code modifié est buildé et testé (`build-test.sh --if-changed` : pas relancé si ce même code vient de passer au vert dans la conversation) ; un échec arrête tout, rien n'est poussé (`sans les tests` pour pousser quand même un travail en cours). Puis il fusionne ce que tu as poussé sur la branche depuis ton autre poste, passe le contrôle avant push, et pousse ; « avec develop » fusionne aussi la base :
+Ce que tu dis dans ta commande n'est pas redemandé ; `vite` prend les choix recommandés sans question. Avant la question, le code modifié est buildé et testé (`build-test.sh --if-changed` : pas relancé si ce même code vient de passer au vert dans la conversation ; rien pour de la doc seule ; pas de build ici pour un projet .NET Framework). En échec, la question commence par « Build » ou « Tests » : « Ne rien pousser, je corrige » (recommandé) ou « Pousser quand même » (un travail en cours, ou des tests déjà rouges sur develop) ; avec `vite`, rien n'est poussé. `sans les tests` saute le build. Le nom de branche que tu tapes est rendu valide s'il le faut (espaces, caractères refusés par git), et la réponse le dit. Un commit fait par erreur sur develop part sur la nouvelle branche, et develop revient à origin/develop. Puis il fusionne ce que tu as poussé sur la branche depuis ton autre poste, passe le contrôle avant push, et pousse ; « avec develop » fusionne aussi la base :
 ```text
 /push
 ```

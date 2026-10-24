@@ -14,7 +14,8 @@
 #   build <project>                builds a project (the test-guardian never runs dotnet itself): "BUILD: OK", or the
 #                                  compiler errors and "BUILD: FAILED"
 #   tests-only                     the uncommitted changes touch only test projects
-#   seal <label> <test file>...    keeps a copy of the test files of a proof, before the fix: "SEALED: <n> test files"
+#   seal <label> [<test file>...]  keeps a copy of the test files of a proof, before the fix: "SEALED: <n> test files";
+#                                  none for a problem that no unit test can show (« non démontrable »): an empty proof
 #   sealed <label>                 the sealed test files are unchanged ("SEAL: OK"), or "STOP:" with the changed ones
 #   restore <label>                puts the sealed test files back as they were sealed: "RESTORED: <files>"
 #   park <label>, unpark <label>   (the pilot) takes the sealed test files of a proof out of the working tree until its
@@ -47,7 +48,7 @@
 # checks them before its proof after the fix. Only the test-guardian may seal or restore, only the pilot may park,
 # unpark and set up (permission rules).
 # Usage: test-guardian.sh deps <file> | coverage <label> <proj> <file>... | compare <a> <b> | red|green <proj> <filter>
-#        | build <proj> | tests-only | seal <label> <file>... | sealed <label> | restore <label> | park|unpark <label>
+#        | build <proj> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label>
 #        | setup xunit|mstest|nunit <file>... | changes <base> [<target>] | folder
 
 LC_ALL=C
@@ -547,7 +548,7 @@ case "$1" in
     exit 0 ;;
 
   seal)
-    [ $# -ge 3 ] || stop "usage: test-guardian.sh seal <label> <test file>..."
+    [ $# -ge 2 ] || stop "usage: test-guardian.sh seal <label> [<test file>...]"
     label=$2
     shift 2
     printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
@@ -566,7 +567,13 @@ case "$1" in
     while IFS= read -r p; do
       { mkdir -p "$seal/files/$(dirname "$p")" && cp "$p" "$seal/files/$p"; } || stop "cannot copy $p"
     done < "$seal/list"
-    echo "SEALED: $(wc -l < "$seal/list" | tr -d ' ') test files ($(tr '\n' ' ' < "$seal/list" | sed 's/ $//')): the fix must make them pass as they are"
+    if [ -s "$seal/list" ]; then
+      echo "SEALED: $(wc -l < "$seal/list" | tr -d ' ') test files ($(tr '\n' ' ' < "$seal/list" | sed 's/ $//')): the fix must make them pass as they are"
+    else
+      # a problem that no unit test can show (configuration, a framework setting): an empty proof, so that park, unpark
+      # and sealed work the same way; the fix is checked by the build, the tests of the module and the review
+      echo "SEALED: 0 test files: this proof holds no test (« non démontrable »); the fix is checked by the build, the tests of the module and the review"
+    fi
     exit 0 ;;
 
   sealed|restore)
@@ -679,7 +686,8 @@ case "$1" in
     take_lock
     built=""
     undo() {
-      [ -n "$built" ] && rm -rf "$built"
+      # the folder it created, and the parent folders that hold nothing else now (tests/ of a first test project)
+      [ -n "$built" ] && rm -rf "$built" && rmdir -p "$(dirname "$built")" 2>/dev/null
       git checkout -q -- . 2>/dev/null
     }
     # Test projects already there: the coverage collector where it lacks, nothing else (coverlet.collector for VSTest,
@@ -890,5 +898,5 @@ EOF
       }'
     exit "$status" ;;
 
-  *) stop "usage: test-guardian.sh deps <file> | coverage <label> <project> <file>... | compare <a> <b> | red|green <project> <filter> | build <project> | tests-only | seal <label> <file>... | sealed <label> | restore <label> | park|unpark <label> | setup xunit|mstest|nunit <file>... | changes <base> [<target>] | folder" ;;
+  *) stop "usage: test-guardian.sh deps <file> | coverage <label> <project> <file>... | compare <a> <b> | red|green <project> <filter> | build <project> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label> | setup xunit|mstest|nunit <file>... | changes <base> [<target>] | folder" ;;
 esac

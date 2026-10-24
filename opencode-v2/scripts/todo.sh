@@ -295,7 +295,7 @@ END {
   if (op != "count" && op != "due") { if (op != "list") print ""; show_list(raw && op == "list") }
   if (changed) {
     out = ENVIRON["OUT"]
-    print "# Ma todo (/todo dans OpenCode, modifiable à la main)" > out
+    print "# Ma todo (/outil todo dans OpenCode, modifiable à la main)" > out
     for (i = 1; i <= n_other; i++) if (other[i] !~ /^# Ma todo/ && other[i] != "") print other[i] > out
     for (i = 1; i <= n_items; i++) {
       if (id[i] < 0) continue

@@ -161,8 +161,12 @@ git switch -q develop
 printf 'tests\n' > tests.txt
 run branch.sh --here --name develop
 check "name: develop refused" 1 'STOP: develop is not a branch for this work'
-run branch.sh --here --name "bad name"
-check "name: an invalid name refused" 1 'is not a branch name'
+run branch.sh --here --name "///"
+check "name: an invalid name refused" 1 'STOP: "///" is not a branch name'
+run branch.sh --here --name "Feature/Mon essai: cache"
+check "name: a typed name made valid, said so" 0 '^BRANCH: Feature/Mon-essai-cache \(created from develop.*\(the name given, made valid: Feature/Mon essai: cache\)'
+git switch -q develop
+git branch -q -D Feature/Mon-essai-cache
 run branch.sh --here --name poc/essai-cache-redis
 check "name: a name taken on origin stops" 1 'STOP: the branch poc/essai-cache-redis exists already'
 run branch.sh --here --name feature/export-csv-par-mail
@@ -243,6 +247,41 @@ check "sync --base: develop merged" 0 'BASE: '
 truth "sync --base: its file is here" '[ -f dev2.txt ]'
 truth "sync --base: still nothing pushed" '! git merge-base --is-ancestor HEAD origin/feature/ABC-9-sync'
 rm -f wip.txt
+
+# ---------- /outil abandon: a ticket started by mistake, never any work lost ----------
+cd "$work/repo" || exit 1
+git switch -q develop && git reset -q --hard origin/develop && git clean -qfd
+run abandon.sh --check
+check "abandon: nothing on develop" 1 'STOP: nothing to abandon on develop'
+run branch.sh ABC-77 feature "Mauvais ticket"
+mkdir -p .git/opencode-tickets && printf '# ABC-77\n' > .git/opencode-tickets/ABC-77.md
+printf 'wip\n' > wip.txt
+run abandon.sh
+check "abandon: an untracked file stops it" 1 'STOP: uncommitted or untracked files: wip.txt'
+rm -f wip.txt
+run abandon.sh --check
+check "abandon: what it would delete" 0 'WOULD DELETE: the local branch feature/ABC-77-mauvais-ticket'
+check "abandon: and the sheet" 0 'WOULD DELETE: its ticket sheet .*ABC-77.md'
+truth "abandon --check: nothing changed" '[ "$(git branch --show-current)" = feature/ABC-77-mauvais-ticket ] && [ -f .git/opencode-tickets/ABC-77.md ]'
+run abandon.sh
+check "abandon: back to develop" 0 '^SWITCHED: to develop, at origin/develop'
+check "abandon: sheet deleted" 0 '^DELETED: the ticket sheet'
+check "abandon: branch deleted" 0 '^DELETED: the local branch feature/ABC-77-mauvais-ticket'
+truth "abandon: the branch is gone" '! git rev-parse -q --verify refs/heads/feature/ABC-77-mauvais-ticket >/dev/null'
+run branch.sh ABC-78 feature "Un vrai debut"
+printf 'work\n' > work.txt && git add work.txt && git commit -q -m "real work"
+run abandon.sh
+check "abandon: a commit of its own stops it" 1 'STOP: feature/ABC-78-vrai-debut has 1 commits that origin/develop does not have'
+truth "abandon: the work is still there" '[ "$(git branch --show-current)" = feature/ABC-78-vrai-debut ] && [ -f work.txt ]'
+git switch -q develop
+git worktree add -q --detach "$work/wt-abandon" origin/develop
+cd "$work/wt-abandon" || exit 1
+run branch.sh ABC-79 bugfix "Erreur de depot"
+run abandon.sh
+check "abandon in a worktree: detached at the base" 0 '^SWITCHED: this worktree to a detached HEAD at origin/develop'
+check "abandon in a worktree: says the folder can go" 0 '^WORKTREE: wt-abandon holds nothing now'
+cd "$work/repo" || exit 1
+git worktree remove --force "$work/wt-abandon"
 
 echo "$pass checks passed, $fail failed ($SHELL_UNDER_TEST)"
 [ "$fail" -eq 0 ]

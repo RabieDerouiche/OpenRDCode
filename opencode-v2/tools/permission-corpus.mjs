@@ -150,7 +150,7 @@ add(["test-guardian"], [S + "test-guardian.sh seal V1 tests/Api.Tests/Security/P
   S + "test-guardian.sh sealed V1", S + "test-guardian.sh restore V1", S + "test-guardian.sh seal S2 \"tests/Api.Tests/Invoice Tests.cs\""], "allow")
 add(["coder", "pilot", ...RO], [S + "test-guardian.sh seal V1 tests/Api.Tests/Security/PathTraversalV1Tests.cs",
   S + "test-guardian.sh restore V1", "bash ~/.config/opencode/scripts/test-guardian.sh seal V1 tests/Api.Tests/X.cs",
-  "cd tests && " + S + "test-guardian.sh restore V1"], "deny")
+  "cd tests && " + S + "test-guardian.sh restore V1", S + "test-guardian.sh seal V3"], "deny")
 add(["coder", "pilot", "test-guardian"], [S + "test-guardian.sh sealed V1"], "allow")
 add(["pilot"], [S + "test-guardian.sh sealed V2 && " + S + "ship.sh --no-push \"fix(security): path traversal in FileStore.cs (V2, ABC-123)\" \"- Fortify 4F2A\" \"- tests: 3 context, 2 vulnerability (red before, green after, twice each)\" && " + S + "ticket-sheet.sh tick 2 \"/fortify V2 - corrigée - tests 3+2 - couverture sans perte\"",
   S + "test-guardian.sh sealed S3 && " + S + "ship.sh --no-push \"fix(invoices): reject a negative discount (ABC-123)\" \"- InvoiceService: discount validated\" && " + S + "ticket-sheet.sh tick 3 \"/go étape 3 - 2 fichiers - build ok, tests 41/41\""], "allow")
@@ -343,6 +343,96 @@ for (const a of ["debugger", "analyst", "coder", "checker", "doc-writer"]) quest
 for (const a of ["build", "pilot", "analyst", "coder", "checker", "debugger", "doc-writer"]) {
   for (const t of ["bash", "read", "edit", "task"]) cases.push({ agent: a, perm: "doom_loop", pattern: t, expect: "deny" })
 }
+
+// ---------- every command the pack prescribes, run by the agent it prescribes it to (commands, agents, skills,
+// AGENTS.global.md: tools/prescribed inventory). A refusal here is a run that stops on a rule of the pack itself. ----------
+const P = (agents, cmds) => add(agents, cmds, "allow", { note: "prescribed by the pack" })
+// /go, /fix, /fortify, /push, /sync, /tests: the pilot
+P(["pilot"], [
+  S + "ticket-sheet.sh suivi \"/go - reprise à l'étape 2\"",
+  S + "branch.sh ABC-123 feature \"Export CSV des factures\" --from feature/ABC-100-socle && " + S + "workflow-state.sh --no-fetch --sheet",
+  S + "branch.sh ABC-123 feature \"Export CSV des factures\" --from feature/ABC-100-socle",
+  S + "build-test.sh src/App.sln", S + "build-test.sh", S + "ticket-sheet.sh check",
+  S + "ticket-sheet.sh decision \"Base : feature/ABC-100-socle au lieu de develop (consigne du dev)\"",
+  S + "ticket-sheet.sh suivi \"/go - base develop : build ok - tests 12/12 - en échec avant le ticket : aucun\"",
+  S + "test-guardian.sh setup xunit src/Billing/VatCalculator.cs && " + S + "ship.sh --no-push \"test: add the unit test project (ABC-123)\" \"- SETUP: tests/App.UnitTests\"",
+  S + "test-guardian.sh green tests/App.Tests/App.Tests.csproj FullyQualifiedName~InvoiceServiceTests",
+  S + "test-guardian.sh sealed S2 && " + S + "ship.sh --no-push \"fix(billing): round the VAT per line (ABC-123)\" \"- src/Billing: VatCalculator\" && " +
+    S + "ticket-sheet.sh tick 2 \"/go étape 2 - 2 fichiers - build ok, tests 14/14\" && " + S + "ticket-sheet.sh decision \"Arrondi : par ligne — comme la facture papier (étape 2)\"",
+  S + "package-refs.sh --doc Blazorise.DataGrid",
+  S + "test-guardian.sh changes origin/develop src/App.sln", "git diff origin/develop...HEAD", "git diff --stat origin/develop...HEAD",
+  S + "ship.sh --sync-only --base", S + "ship.sh --sync-only --base --merge hotfix/ABC-130-urgent",
+  S + "ship.sh \"feat(billing): export the invoices as CSV (ABC-123)\"",
+  S + "ticket-sheet.sh suivi \"/go - livré - MR https://gitlab.example.com/g/p/-/merge_requests/42 - build ok - tests 14/14 - auto-review ok\"",
+  S + "workflow-state.sh --no-fetch --sheet",
+  // /fix
+  S + "test-guardian.sh park F1 && " + S + "test-guardian.sh park F2", S + "fortify.sh discard F1",
+  S + "test-guardian.sh unpark F2 && " + S + "ship.sh --no-push \"test(security): show that path manipulation in FileStore.cs is not exploitable (ABC-123)\"",
+  S + "test-guardian.sh unpark F2 && " + S + "test-guardian.sh red tests/App.Tests/App.Tests.csproj FullyQualifiedName~Security_PathManipulation_F2",
+  S + "test-guardian.sh sealed F2 && " + S + "ship.sh --no-push \"fix(security): path manipulation in FileStore.cs (ABC-123)\" \"- tests: 3 context, 2 vulnerability (red before, green after, twice each)\"",
+  S + "ship.sh --no-push \"fix(billing): address the review (ABC-123)\" && " + S + "ticket-sheet.sh decision \"Nommage : Total plutôt que Sum — demande de la review (/fix)\"",
+  "git diff abc1234..HEAD", S + "ship.sh --base \"fix(billing): address the CI, scan and review feedback (ABC-123)\"",
+  S + "ticket-sheet.sh suivi \"/fix - 3 corrigés, 1 réponses, 0 hors périmètre - build ok - tests 14/14\"",
+  // /fortify
+  S + "test-guardian.sh park V2", S + "fortify.sh discard reprise", S + "fortify.sh discard V1 V2",
+  S + "branch.sh LOCAL bugfix \"Fortify Path Manipulation lot 2026-10-24\" && " + S + "workflow-state.sh --no-fetch --sheet && " + S + "fortify.sh batch",
+  S + "test-guardian.sh unpark V2 && " + S + "ship.sh --no-push \"test(security): show that path manipulation in FileStore.cs is not exploitable (V2, LOCAL-3)\" \"- Fortify 4512\" && " +
+    S + "ticket-sheet.sh tick 2 \"/fortify V2 - non exploitable - tests 3 - à déclarer dans SSC par toi\"",
+  S + "test-guardian.sh unpark V2 && " + S + "test-guardian.sh red tests/App.Tests/App.Tests.csproj FullyQualifiedName~Security_PathManipulation_V2",
+  // /push
+  "git status --porcelain", "git diff --stat HEAD", "git log --oneline @{upstream}..HEAD",
+  "git diff HEAD -- src/Billing/VatCalculator.cs src/Billing/Invoice.cs | head -300",
+  S + "build-test.sh --if-changed src/App.sln --filter \"Category!=Integration\"", S + "build-test.sh --if-changed",
+  S + "branch.sh --here --name feature/export-csv && " + S + "ship.sh --base \"feat(export): add the CSV export\"",
+  S + "ship.sh \"docs: explain the export settings\"", "git log --oneline origin/develop..HEAD",
+  // /tests
+  "git grep -l \"Billing.csproj\" -- '*Tests*.csproj' '*Test*.csproj'", S + "branch.sh --here test \"unit tests of the VAT calculation\"",
+  S + "test-guardian.sh tests-only && " + S + "ship.sh --no-push \"test(billing): add unit tests of the VAT calculation\" \"- 12 tests; coverage VatCalculator.cs 40% -> 92%\"",
+  S + "test-guardian.sh green tests/App.Tests/App.Tests.csproj \"FullyQualifiedName~VatCalculatorTests\"",
+])
+add(["pilot", "coder", "test-guardian", ...RO], [S + "abandon.sh", S + "abandon.sh --check"], "deny")
+// the subagents of the runs
+P(["coder"], [
+  S + "pattern-skills.sh", S + "package-refs.sh --doc Blazorise.DataGrid", S + "package-refs.sh",
+  S + "test-guardian.sh green tests/App.Tests/App.Tests.csproj FullyQualifiedName~InvoiceServiceTests",
+  "dotnet format --include src/Billing/VatCalculator.cs", "npx prettier --write src/app/invoice.ts", "npx eslint --fix src/app/invoice.ts",
+  S + "build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~InvoiceServiceTests", S + "build-test.sh --build-only src/App.sln",
+  S + "build-test.sh tests/App.Tests/App.Tests.csproj",
+  "dotnet ef migrations add AddInvoiceStatus --project src/Infrastructure --startup-project src/Api", "dotnet ef migrations list --no-connect",
+  "dotnet add src/Api/Api.csproj reference src/Billing/Billing.csproj", "npm ci", "dotnet restore --force --no-cache",
+  S + "detect-project-type.sh", "npm run build",
+])
+P(["test-guardian"], [
+  S + "test-guardian.sh deps src/Billing/FileStore.cs", S + "test-guardian.sh coverage V2-before tests/App.Tests/App.Tests.csproj src/Billing/FileStore.cs",
+  S + "test-guardian.sh red tests/App.Tests/App.Tests.csproj FullyQualifiedName~Security_PathManipulation_V2",
+  S + "test-guardian.sh green tests/App.Tests/App.Tests.csproj FullyQualifiedName~Security_PathManipulation_V2",
+  S + "test-guardian.sh seal V2 tests/App.Tests/Security/FileStoreTests.cs", S + "test-guardian.sh seal V3", S + "test-guardian.sh sealed V2", S + "test-guardian.sh restore V2",
+  S + "test-guardian.sh compare V2-before V2-after", S + "test-guardian.sh tests-only", S + "test-guardian.sh build tests/App.Tests/App.Tests.csproj",
+  S + "test-guardian.sh changes origin/develop", "git grep InternalsVisibleTo",
+])
+P(["analyst"], [S + "pattern-skills.sh", S + "package-refs.sh --doc Blazorise.DataGrid", S + "detect-project-type.sh"])
+P(["checker"], ["git diff origin/develop...HEAD", "git diff HEAD", "git diff --stat", "git diff -U10 origin/develop...HEAD -- src/Billing/VatCalculator.cs",
+  S + "detect-project-type.sh", "git show abc1234:src/Billing/VatCalculator.cs", "git grep -n IStorageService abc1234 -- src/Billing/VatCalculator.cs"])
+P(["debugger"], ["git log --oneline -15", "git log -5 --format='%h %an %s' -- src/Billing/VatCalculator.cs | head -20", S + "detect-project-type.sh",
+  S + "build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~Total_WithVat_Rounds"])
+P(["doc-writer"], [S + "doc-inventory.sh", S + "api-routes.sh", S + "config-keys.sh", S + "package-refs.sh", S + "detect-project-type.sh --files"])
+// the conversation (build) and the procedures of /outil, run by build
+P(["build"], [
+  "realpath ~", S + "package-refs.sh --doc Blazorise.DataGrid", S + "build-test.sh src/App.sln --filter \"Category!=Integration\"",
+  S + "build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~InvoiceServiceTests", S + "build-test.sh --build-only src/App.sln",
+  "dotnet run --project src/Api", "timeout 60 dotnet run --project src/Api", S + "todo.sh add \"call Paul on Friday\"", S + "todo.sh", S + "todo.sh due",
+  S + "detect-project-type.sh", S + "workflow-state.sh --no-fetch",
+  // /outil abandon: its script checks that the branch holds nothing, then deletes it and its sheet
+  S + "abandon.sh --check", S + "abandon.sh",
+  // /outil licences, release-notes, setup, doc, cqrs; build-fix
+  "dotnet nuget why src/App.sln Newtonsoft.Json", "git rev-parse --verify origin/master",
+  "git log --first-parent --merges --format=%h%x09%cs%x09%s origin/master..origin/develop",
+  "git log --no-merges --format=%h%x09%an%x09%s origin/master..origin/develop",
+  "git diff --stat abc1234..HEAD -- '*.sln' '*.slnx' '*.csproj' 'Directory.*.props' 'global.json' '.editorconfig' '.gitlab-ci.yml' 'package.json'",
+  "git log --oneline abc1234..HEAD | head -30", "git log --oneline -30 origin/develop", "npm test -- --watch=false --browsers=ChromeHeadless",
+  "npx vitest run", S + "detect-project-type.sh --files", S + "doc-inventory.sh", S + "api-routes.sh", S + "config-keys.sh", "npm run build",
+  "dotnet restore --force --no-cache",
+])
 
 // ---------- MCP (tool names "<server>_<tool>") ----------
 const tool = (agent, name, expect) => cases.push({ agent, tool: name, expect })

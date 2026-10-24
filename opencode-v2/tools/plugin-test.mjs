@@ -1021,6 +1021,48 @@ await wait(100)
 await check("[v2 15] never in a subagent's session", () => assert.equal(wt.sessions.get("wt-sub").title, "Auto-review"))
 await check("[v2 15] never in the main checkout", () => assert.equal(v2.sessions.get("run-1").title.startsWith("⛔ /go"), true))
 
+// ---------- 9 and 15. two runs at the same time, one in the main checkout and one in its worktree ----------
+await check("[v2 9] a /go in the main checkout and a /go in its worktree run together, each with its own lock", async () => {
+  const main = fakeV2(mainRepo)
+  await v2Plugin.setup(main.ctx)
+  const mainPrompt = async (sessionID, text) => {
+    const event = { sessionID, messageID: "m", prompt: { text }, delivery: "steer" }
+    await main.hooks["session.prompt"](event)
+    return event
+  }
+  main.sessions.set("par-main", { id: "par-main", title: "/go ABC-30" })
+  wt.sessions.set("par-wt", { id: "par-wt", title: "/go ABC-31" })
+  wt.sessions.set("par-wt2", { id: "par-wt2", title: "/push" })
+  const a = await mainPrompt("par-main", goText("ABC-30"))
+  const b = await wtPrompt("par-wt", goText("ABC-31"))
+  assert.doesNotMatch(a.prompt.text, /refusé/)
+  assert.doesNotMatch(b.prompt.text, /refusé/)
+  const mainLock = join(mainRepo, ".git", "opencode-pilot.lock")
+  const wtLock = join(mainRepo, ".git", "worktrees", "brave-fox", "opencode-pilot.lock")
+  assert.equal(JSON.parse(readFileSync(mainLock, "utf8")).session, "par-main")
+  assert.equal(JSON.parse(readFileSync(wtLock, "utf8")).session, "par-wt")
+  // a second git command in the worktree waits for its own run only
+  const c = await wtPrompt("par-wt2", "[[command push feat: x]]\nCommit and push the work of this folder now.")
+  assert.match(c.prompt.text, /⛔ \/push refusé : \/go tourne déjà dans ce dossier/)
+  wt.push("session.execution.succeeded", { sessionID: "par-wt2" })
+  main.push("session.execution.started", { sessionID: "par-main" })
+  wt.push("session.execution.started", { sessionID: "par-wt" })
+  main.push("session.step.started", { sessionID: "par-main", assistantMessageID: "pm" })
+  main.push("session.text.ended", { sessionID: "par-main", assistantMessageID: "pm", ordinal: 0, text: "🚀 MR en Draft : https://gitlab/x/-/merge_requests/30" })
+  main.push("session.execution.succeeded", { sessionID: "par-main" })
+  await wait(150)
+  // the end of the run of the main checkout frees its folder only
+  assert.ok(!existsSync(mainLock))
+  assert.equal(JSON.parse(readFileSync(wtLock, "utf8")).session, "par-wt")
+  wt.push("session.step.started", { sessionID: "par-wt", assistantMessageID: "pw" })
+  wt.push("session.text.ended", { sessionID: "par-wt", assistantMessageID: "pw", ordinal: 0, text: "🚀 MR en Draft : https://gitlab/x/-/merge_requests/31" })
+  wt.push("session.execution.succeeded", { sessionID: "par-wt" })
+  await wait(150)
+  assert.ok(!existsSync(wtLock))
+  assert.equal(main.sessions.get("par-main").title, "✅ /go ABC-30")
+  assert.equal(wt.sessions.get("par-wt").title, "✅ [brave-fox] /go ABC-31")
+})
+
 // ---------- the references of opencode.json, in OPENCODE_CONFIG_DIR, with comments and trailing commas ----------
 await check("[v2] the references of opencode.json in OPENCODE_CONFIG_DIR are readable, comments and trailing commas included", async () => {
   const ocDir = join(home, "oc2", "config", "opencode")
@@ -1668,6 +1710,25 @@ await check("[23] build runs a committed project", () => runTool("dotnet run --p
 await check("[23] build runs the tests of a committed test project", () => runTool("dotnet run --project tests/Api.Tests/Api.Tests.csproj --no-build"))
 for (const command of ["dotnet run --project Probe", "dotnet run --project Probe/Probe.csproj", "dotnet run Probe.cs", "cd Probe && dotnet run"]) {
   await check(`[23] refused: ${command}`, () => assert.rejects(() => runTool(command), /dotnet run runs only a project of this repository that the last commit holds/))
+}
+
+// ---------- every command the pack prescribes passes the guards of the plugin, for the agent that runs it ----------
+// (tools/permission-corpus.mjs, the cases noted "prescribed by the pack": the permission rules check them too)
+const { cases: corpus } = await import(join(pack, "tools", "permission-corpus.mjs"))
+const prescribed = corpus.filter((c) => c.note === "prescribed by the pack" && typeof c.cmd === "string" && !/\bdotnet run\b/.test(c.cmd))
+for (const agent of [...new Set(prescribed.map((c) => c.agent))]) {
+  await check(`[prescribed] every command prescribed to ${agent} passes the guards`, async () => {
+    guards.agent("presc-" + agent, agent)
+    const refused = []
+    for (const c of prescribed.filter((x) => x.agent === agent)) {
+      try {
+        await guards.before({ tool: "bash", sessionID: "presc-" + agent, agent, callID: "p" }, { args: { command: c.cmd } })
+      } catch (error) {
+        refused.push(c.cmd + " -> " + String(error && error.message).slice(0, 120))
+      }
+    }
+    assert.deepEqual(refused, [])
+  })
 }
 
 console.log(`\n${count - failures}/${count} plugin checks as expected`)

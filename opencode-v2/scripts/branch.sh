@@ -9,13 +9,15 @@
 #   its base (base.sh): its diff, its review, the check before the push, the merges of ship.sh --base and the target of
 #   its merge request. The branch must be on origin (a merge request targets a branch of origin).
 # - A change without a Jira ticket: the key LOCAL becomes the next free local key, LOCAL-<n> (branches here and on
-#   origin, ticket sheets), printed on a "KEY:" line.
+#   origin, ticket sheets), printed on a "KEY:" line; the key is reserved at once in the git folder that the worktrees
+#   share, so that two /go of two worktrees started at the same moment never get the same key.
 # Here mode (/push and /tests, work done outside a ticket):
 #   branch.sh --here <feature|bugfix|hotfix|test|docs|refactor|chore|poc|wip> "<summary>"   or   branch.sh --here --name <branch>
 # - On develop, master, main, a detached HEAD (an OpenCode workspace starts detached) or an OpenCode workspace branch:
 #   a new branch <type>/<words of the summary> (or the name given) at the current commit, with the uncommitted
 #   changes; a name already taken gets -2, -3… (a name given and taken stops: choose another); on any other branch:
-#   that branch is kept.
+#   that branch is kept. Commits made on develop, master or main that origin does not have go to the new branch with
+#   the rest, and the protected branch goes back to its copy on origin ("MOVED:"): it never keeps work of its own.
 # Uncommitted changes never travel silently: they go to a NEW branch only when they were made on the base branch, on
 # a detached HEAD or on a workspace branch (work started there before /go or /push); in every other case the script
 # stops and lists them. A new ticket branch that cannot start from the base with them (they touch files the base
@@ -71,8 +73,13 @@ if [ "$mode" = ticket ]; then
     *) type=feature ;;
   esac
 elif [ -n "$given" ] || [ "$type" = "" ]; then
-  given=${given#origin/}
-  [ -n "$given" ] && git check-ref-format --branch "$given" >/dev/null 2>&1 || stop "\"$given\" is not a branch name"
+  raw=${given#origin/}
+  # a name typed by the developer in the question of /push: spaces become hyphens, the characters git refuses go
+  given=$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//; s/[[:space:]]*$//; s/[[:space:]][[:space:]]*/-/g' \
+    -e 's/@{//g; s/[~^:?*[]//g' -e 's#\\#/#g; s#//*#/#g; s/\.\.\.*/./g; s#^[/.-]*##; s#[/.]*$##; s/\.lock$//')
+  renamed=""
+  [ "$given" = "$raw" ] || renamed=$raw
+  [ -n "$given" ] && git check-ref-format --branch "$given" >/dev/null 2>&1 || stop "\"$raw\" is not a branch name"
   case "$given" in
     develop|master|main|opencode/*) stop "$given is not a branch for this work: give the name of a branch of its own" ;;
   esac
@@ -150,9 +157,35 @@ if [ "$mode" = here ]; then
       name="$type/$words-$n"
     done
   fi
+  # commits of develop, master or main that origin does not have: they are the work, they go with it
+  own=0
+  case "$current" in
+    develop|master|main)
+      git rev-parse -q --verify "refs/remotes/origin/$current" >/dev/null &&
+        own=$(git rev-list --count "refs/remotes/origin/$current..HEAD") ;;
+  esac
+  # a detached HEAD that is not on the default base (a workspace started from another branch): its commits go with the
+  # work, and with its merge request
+  extra=0
+  if [ -z "$current" ]; then
+    default=$(sh "$here/base.sh" --default)
+    [ -n "$default" ] && git rev-parse -q --verify "refs/remotes/origin/$default" >/dev/null &&
+      extra=$(git rev-list --count "refs/remotes/origin/$default..HEAD")
+  fi
   git switch -q -c "$name" 2>/dev/null || stop "git could not create $name"
-  echo "BRANCH: $name (created from ${current:-the detached HEAD $detached}, at $(git log -1 --format='%h, %cs'))"
+  echo "BRANCH: $name (created from ${current:-the detached HEAD $detached}, at $(git log -1 --format='%h, %cs'))${renamed:+ (the name given, made valid: $renamed)}"
   [ -n "$dirty" ] && echo "CARRIED: the uncommitted changes came along: $dirty"
+  if [ "$extra" -gt 0 ]; then
+    from_branches=$(git for-each-ref --contains HEAD --format='%(refname:short)' refs/heads refs/remotes/origin | grep -vxF "$name" | grep -v '/HEAD$' | head -n 3 | tr '\n' ' ' | sed 's/ $//')
+    echo "WARNING: the detached HEAD was $extra commits ahead of origin/$default${from_branches:+ (the commits of $from_branches)}: they are in $name, and in its merge request"
+  fi
+  if [ "$own" -gt 0 ]; then
+    if git branch -q -f "$current" "refs/remotes/origin/$current" 2>/dev/null; then
+      echo "MOVED: the $own commits of $current that origin/$current does not have are on $name now; $current is back at origin/$current"
+    else
+      echo "WARNING: the $own commits of $current that origin/$current does not have are on $name too; $current still has them (it is checked out in another worktree): reset it there"
+    fi
+  fi
   cleanup_workspace_branch
   exit 0
 fi
@@ -220,9 +253,19 @@ fi
 # A change without a ticket: the next free local key
 if [ "$key" = LOCAL ]; then
   common=$(git rev-parse --git-common-dir 2>/dev/null) && common=$(cd "$common" && pwd)
-  last=$( { git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin; ls "${common:-.git}/opencode-tickets" 2>/dev/null; } |
+  keys="${common:-.git}/opencode-tickets/.local-keys"
+  mkdir -p "$keys" 2>/dev/null
+  last=$( { git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin; ls "${common:-.git}/opencode-tickets" "$keys" 2>/dev/null; } |
     grep -oE '(^|[^A-Za-z0-9])LOCAL-[0-9]+' | grep -oE '[0-9]+$' | sort -n | tail -n 1)
-  key="LOCAL-$(( ${last:-0} + 1 ))"
+  n=$(( ${last:-0} + 1 ))
+  # the reservation: mkdir succeeds for one run only (a /go of another worktree at the same moment takes the next)
+  tries=0
+  while ! mkdir "$keys/LOCAL-$n" 2>/dev/null; do
+    n=$((n + 1))
+    tries=$((tries + 1))
+    [ "$tries" -lt 50 ] || stop "no free local key (LOCAL-$n reserved): check $keys"
+  done
+  key="LOCAL-$n"
   regex="(^|[^A-Za-z0-9])$key([^0-9]|$)"
   echo "KEY: $key"
 fi

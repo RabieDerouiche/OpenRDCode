@@ -63,7 +63,7 @@
 //    a lock left by an OpenCode that stopped is ignored, except by OpenCode run as its background service: it resumes
 //    the turn a restart interrupted, and the plugin keeps the folder for that resumed run (freed after 2 minutes if
 //    the run does not start again).
-// 10. Leaves the outcome of a /go, /fix or /fortify in the session title once it ends: "✅ " (merge request created
+// 10. Leaves the outcome of a /go, /fix, /fortify or /tests in the session title once it ends: "✅ " (merge request created
 //    or updated, nothing left to do), "⏸ " (waits for me: an answer of the product owner), "↻ " (resumes by itself
 //    soon, 19) or "⛔ " (stopped: its answer holds ⛔, or the run failed or was stopped and is not resumed). The mark
 //    goes away when the next turn of the session starts.
@@ -76,7 +76,7 @@
 //    - the web search, which sends the query to an outside search service;
 //    - the tools that move a session or create or remove a worktree, refused to every agent by their names (the
 //      developer does it in the web interface);
-//    - the question tool in a subagent's session (nobody answers during /go, /fix or /fortify; 1.19 did it with
+//    - the question tool in a subagent's session (nobody answers during /go, /fix, /fortify or /tests; 1.19 did it with
 //      experimental.primary_tools, which v2 ignores): taken out of its requests, and refused if called.
 // 13. When "compaction.prune" is true in opencode.json, the outputs of old tool calls are cleared from what the model
 //    receives, as 1.19 did (v2 ignores that setting): only the tool outputs before the last two messages I typed, and
@@ -92,16 +92,16 @@
 // 16. Refuses the third identical tool call (same tool, same input) of one answer of the model, as 1.19 did with its
 //    "doom_loop" rule (v2 no longer detects it): a model stuck in a loop gets an error and changes its approach, or
 //    its subagent ends with an error the pilot handles, instead of running the same call again and again.
-// 17. Keeps a run of /go, /fix or /fortify on its procedure when its context is full. OpenCode v2 then summarizes the
+// 17. Keeps a run of /go, /fix, /fortify or /tests on its procedure when its context is full. OpenCode v2 then summarizes the
 //    conversation and goes on from the summary alone, which it gives the model as "historical context, not new
 //    instructions": the instructions of the command and the task of a subagent would be lost. The summary is asked to
 //    keep the state of the run (ticket, sheet, batch folder, current step and phase, sessionIDs of the subagents,
 //    commits), then every request that follows gets back, as instructions, the procedure of the command (the pilot,
 //    who first reads the ticket sheet again) or the task the pilot gave (a subagent).
-// 18. Gives the model server more time on a run of /go, /fix or /fortify and its subagents: OpenCode retries a failed
+// 18. Gives the model server more time on a run of /go, /fix, /fortify or /tests and its subagents: OpenCode retries a failed
 //    request 10 times within about 1.5 minutes, then the run fails; the same 10 retries are spread over about 8
 //    minutes (a gateway that restarts, a 504 storm). A conversation keeps OpenCode's own timing.
-// 19. Resumes a run of /go, /fix or /fortify that ended before its final answer, without me: after a failure of the
+// 19. Resumes a run of /go, /fix, /fortify or /tests that ended before its final answer, without me: after a failure of the
 //    model server (once its retries are spent: 2 minutes later, then 5), or when the pilot ended its turn without its
 //    final report (its step limit, or a model that stops halfway). The pilot gets, in the same session, a message that
 //    tells it to read the ticket sheet again and to go on from the first step not done: nothing is redone. Two
@@ -186,7 +186,7 @@ const RECOMMENDED = /\s*\((?:recommandé|recommended)\)\s*$/i
 const CHOICE = /^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?$/i
 // Progress in the title
 const PROGRESS = /^(?:⏳|❓) [^—]*— /
-// Outcome of the last /go, /fix or /fortify of a session (10): delivered, waits for me, resumes by itself, stopped
+// Outcome of the last /go, /fix, /fortify or /tests of a session (10): delivered, waits for me, resumes by itself, stopped
 const OUTCOME = /^(?:✅|⏸|↻|⛔) /
 // The title of a session OpenCode has not named yet
 const DEFAULT_TITLE = /^(New session - |Child session - )\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
@@ -2252,10 +2252,10 @@ export default Plugin.define({
         )
       }
       if (event.tool === "question" && (await isSubagent(event.sessionID))) {
-        throw new Error("Refused by the pack: a subagent never asks a question, nobody answers during /go, /fix or /fortify. Decide with the rules of your instructions, or write the question in your report.")
+        throw new Error("Refused by the pack: a subagent never asks a question, nobody answers during /go, /fix, /fortify or /tests. Decide with the rules of your instructions, or write the question in your report.")
       }
       if (refusedRuns.has(event.sessionID)) {
-        throw new Error("Refused by the pack: this run was refused (another /go, /fix or /fortify runs in this folder). Answer with the sentence of the request only.")
+        throw new Error("Refused by the pack: this run was refused (another /go, /fix, /fortify, /tests, /push or /sync runs in this folder). Answer with the sentence of the request only.")
       }
       const tool = V2_TOOLS[event.tool] || event.tool
       const input = event.input && typeof event.input === "object" ? event.input : {}
@@ -2291,7 +2291,7 @@ export default Plugin.define({
       guards.env(invocation.env)
     })
 
-    // 18. the sessions of a run of /go, /fix or /fortify: the pilot's, and those of its subagents
+    // 18. the sessions of a run of /go, /fix, /fortify or /tests: the pilot's, and those of its subagents
     const inPilotRun = async (sessionID) => {
       let id = sessionID
       for (let depth = 0; depth < 4 && id; depth++) {
@@ -2429,7 +2429,7 @@ export default Plugin.define({
       }
     })
 
-    // 22. the run of /go, /fix or /fortify that a session stopped before its end (no ✅ nor ⏸ in its title), or undefined:
+    // 22. the run of /go, /fix, /fortify or /tests that a session stopped before its end (no ✅ nor ⏸ in its title), or undefined:
     // the one this instance saw start, otherwise the one its title names (after a restart of OpenCode)
     async function stoppedRun(sessionID) {
       if (!sessionID || runs.has(sessionID)) return undefined
@@ -2458,7 +2458,7 @@ export default Plugin.define({
         list.push((first ? prompt.text.slice(SUBAGENT_PROMPT.length) : prompt.text).trim().slice(0, TASK_MAX))
         remember(tasks, sessionID, list.length > 3 ? [list[0], ...list.slice(-2)] : list)
       }
-      // 22. « continue » after a run of /go, /fix or /fortify that stopped before its end: that run resumes, with the
+      // 22. « continue » after a run of /go, /fix, /fortify or /tests that stopped before its end: that run resumes, with the
       // pilot, instead of the agent the web interface switched the session to
       if (!subagent && !COMMAND_LINE.test(prompt.text) && isContinue(prompt.text)) {
         const run = await stoppedRun(sessionID)

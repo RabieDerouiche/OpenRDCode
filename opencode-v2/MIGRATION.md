@@ -237,7 +237,7 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère : remplace tout son contenu ;
 - `FAILED open or read` : il n'existe pas encore : crée-le.
 
-La première fois, avec un pack 1.19 à jour, tu dois voir ces 22 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
+La première fois, avec un pack 1.19 à jour, tu dois voir ces 25 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
 ```text
 agents/analyst.md: FAILED
 agents/checker.md: FAILED
@@ -256,7 +256,10 @@ commands/push.md: FAILED open or read
 commands/review.md: FAILED
 commands/sync.md: FAILED open or read
 commands/tests.md: FAILED open or read
+skills/best-practices/SKILL.md: FAILED
+skills/build-fix/SKILL.md: FAILED
 skills/fortify-remediation/SKILL.md: FAILED
+skills/pack-abandon/SKILL.md: FAILED
 skills/pack-doc/SKILL.md: FAILED
 skills/pack-release-notes/SKILL.md: FAILED
 skills/pack-setup/SKILL.md: FAILED
@@ -272,22 +275,25 @@ ls ~/oc2/config/opencode/agents ~/oc2/config/opencode/commands
 ```
 Tu dois voir, pour les agents : `analyst.md checker.md coder.md debugger.md doc-writer.md pilot.md test-guardian.md` ; pour les commandes : `compare.md daily.md fix.md fortify.md go.md outil.md push.md review.md sync.md tests.md`. Un autre nom est soit un fichier à toi (garde-le), soit un reste d'un ancien pack : envoie-moi son nom. Dans `skills`, tes skills `pattern-…` sont à toi : ils restent.
 
-**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `fortify.sh`, `test-guardian.sh`, `base.sh` et `test-platform.sh` ; sept d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `diff-guard.sh`, `outil.sh`, `package-refs.sh`, `ship.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public).
+**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `abandon.sh`, `base.sh`, `fortify.sh`, `test-guardian.sh` et `test-platform.sh` ; neuf d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-refs.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public, `git fetch` de deux espaces de travail qui se croisent relancé tout seul).
 ```sh
 cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
 ```
-Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 11 lignes :
+Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 14 lignes :
 ```text
+abandon.sh: FAILED open or read
 base.sh: FAILED open or read
 branch.sh: FAILED
 build-test.sh: FAILED
 diff-guard.sh: FAILED
+fetch.sh: FAILED
 fortify.sh: FAILED open or read
 outil.sh: FAILED
 package-refs.sh: FAILED
 ship.sh: FAILED
 test-guardian.sh: FAILED open or read
 test-platform.sh: FAILED open or read
+todo.sh: FAILED
 workflow-state.sh: FAILED
 ```
 `FAILED open or read` : crée le fichier dans `~/.config/opencode/scripts/` avec le contenu du même fichier de `opencode-v2/scripts/` ; `FAILED` : remplace tout son contenu. D'autres lignes veulent dire que tes scripts 1.19 ne sont pas les derniers : colle-les aussi depuis `opencode-v2/scripts/`. `diff-guard.sh` contient des tabulations : s'il reste en `FAILED`, c'est que ton éditeur les a remplacées par des espaces.
@@ -636,33 +642,37 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
 | un sous-agent repris par son identifiant | son message n'a plus la ligne qui dit « sous-agent » | reconnu par sa session parente : toujours sans question |
 
 **Les vérifications automatiques passent** :
-- plugin : 686 sur 686 (651 à cette étape), dont le contenu `null` des messages d'appels d'outils remplacé par `""` (rejoué sur le vrai v2.1.3 contre un serveur qui refuse `null` comme la passerelle de la plateforme), puis la coupure des réponses qui bouclent, « continue » repris par le pilote et `dotnet run` limité aux projets commités, `/tests` ;
-- permissions : 2 070 cas sur 2 070 (1 933 à cette étape) ;
-- scripts git hors ticket (`/push`, `/sync`, `/go … depuis`, espace de travail en HEAD détachée) : 55 contrôles sur 55 contre un dépôt distant de test (`tools/scripts-test.sh`, dash et bash) ;
+- plugin : 695 sur 695 (651 à cette étape), dont le contenu `null` des messages d'appels d'outils remplacé par `""` (rejoué sur le vrai v2.1.3 contre un serveur qui refuse `null` comme la passerelle de la plateforme), puis la coupure des réponses qui bouclent, « continue » repris par le pilote et `dotnet run` limité aux projets commités, `/tests`, chaque commande que le pack prescrit à un agent passée aux gardes du plugin, et un `/go` dans le dossier principal en même temps qu'un `/go` dans son espace de travail ;
+- permissions : 2 216 cas sur 2 216 (1 933 à cette étape), dont les 126 commandes que les commandes, agents et skills du pack prescrivent, chacune permise à l'agent qui la lance ;
+- scripts git hors ticket (`/push`, `/sync`, `/go … depuis`, espace de travail en HEAD détachée, `/outil abandon`) : 69 contrôles sur 69 contre un dépôt distant de test (`tools/scripts-test.sh`, dash et bash) ;
 - scripts .NET avec un `dotnet` simulé, VSTest et Microsoft.Testing.Platform : 113 contrôles sur 113 (`tools/dotnet-test.sh`, dash et bash) ;
+- des histoires complètes, avec un `dotnet` simulé, deux dépôts (avec et sans tests) et un second ordinateur qui pousse aussi : 104 contrôles sur 104 (`tools/scenarios-test.sh`, dash et bash) — `/go`, `/go … depuis`, POC, documentation seule, build cassé, test rouge, « sans les tests », code déjà vert non relancé, commits du Mac fusionnés puis en conflit, `/sync`, commit fait sur develop par erreur, secret bloqué, `dotnet` absent, `/fix` sans ticket, `/tests` dans un dépôt sans tests, deux espaces de travail du même dépôt qui buildent, mesurent et poussent chacun sa branche en même temps, puis 4 espaces de travail qui font `git fetch` ensemble pendant que 12 branches bougent ;
+- le flux de `/fortify` et de son test-guardian de A à Z, ses lignes de commande dans l'ordre de ses étapes, sur de vrais projets C# : 157 contrôles sur 157 (`tools/fortify-test.sh`, dash et bash ; avec `--real`, le même rejeu avec le vrai SDK .NET, lancé par GitHub à chaque push) ;
+- 33 fichiers d'agents, de commandes et de skills validés (30 à cette étape), chaque fichier du pack décrit dans `FICHIERS.md` ;
+- `shellcheck` sur tous les scripts.
+
+**Avec les vrais programmes**, sur la version du pack du 23 octobre 2026 (pas rejoués depuis : ma machine de vérification n'a ni OpenCode ni `dotnet` ; les changements suivants sont couverts par les contrôles ci-dessus, avec un `dotnet` simulé et le moteur de permissions d'OpenCode reproduit) :
 - de bout en bout avec le vrai v2.1.3, son interface web et un modèle simulé : 71 contrôles sur 71, dont la reprise d'un `/go` après un redémarrage du service, trois espaces de travail en parallèle, et les reprises automatiques (panne du serveur du modèle, limite d'étapes, réponse coupée), les retries étalés et les résumés de contexte ;
 - les scripts de mesure des tests (`test-guardian.sh`, `fortify.sh`) avec un vrai `dotnet test` et coverlet : 98 scénarios sur 98 (rouge, vert, test instable, test bloqué, tests de la preuve scellés puis remis quand le correctif les modifie, perte de couverture, couverture des lignes modifiées, travail mis de côté entre deux espaces de travail ; le verrou qui sérialise les builds d'une vague écrite en parallèle, la sous-commande `build`, un build qui ne s'arrête pas stoppé et nommé, la mise de côté puis le retour d'une preuve ; et la mise en place d'un projet de tests — xUnit, MSTest, NUnit, l'ajout de coverlet, les versions centralisées, un projet .NET Framework ou Microsoft.Testing.Platform laissé de côté) ;
-- 33 fichiers d'agents, de commandes et de skills validés (30 à cette étape) ;
-- `shellcheck` sur tous les scripts ;
-- ce guide, rejoué de bout en bout sur une machine de test : 57 contrôles pour le parcours principal, 47 pour l'annexe A avec le service, 47 avec `opencode-web.sh`.
+- ce guide, rejoué de bout en bout sur une machine de test : 57 contrôles pour le parcours principal, 47 pour l'annexe A avec le service, 47 avec `opencode-web.sh` (les lignes attendues en 5.3, 5.4 et A.7 sont recalculées à chaque version, sur une copie d'une installation 1.19).
 
 ## Étape 15 — Les fichiers de `opencode-v2/`
 
 - **Nouveaux par rapport à `v2/`** :
   - `plugins/openrd-pack.js`, qui remplace `compact-commands.js` ;
   - `commands/fortify.md`, `agents/test-guardian.md`, `scripts/fortify.sh`, `scripts/test-guardian.sh` ;
-  - `commands/push.md`, `commands/sync.md`, `commands/tests.md` (le travail hors ticket), `scripts/base.sh` (la base d'une branche), `scripts/test-platform.sh` (les tests Microsoft.Testing.Platform), `AGENTS.repo-template.md` ;
+  - `commands/push.md`, `commands/sync.md`, `commands/tests.md` (le travail hors ticket), `scripts/base.sh` (la base d'une branche), `scripts/test-platform.sh` (les tests Microsoft.Testing.Platform), `scripts/abandon.sh` (`/outil abandon` sans jamais perdre de travail), `AGENTS.repo-template.md` ;
   - `CHECKSUMS-config.txt` et `CHECKSUMS-scripts.txt`, les listes d'empreintes de l'étape 5 ;
-  - ce guide et `ANALYSE.md`.
+  - ce guide, `ANALYSE.md`, et `FICHIERS.md` (chaque fichier du pack : ce qu'il fait, qui le lance, à quoi il sert).
 - **Modifiés** :
   - les agents (vocabulaire des sous-agents, règles régénérées), les six commandes de la 1.19 (leur première ligne `[[command …]]`, lue par le plugin ; `go.md` et `fix.md` aussi pour le vocabulaire, `/go … depuis <branche>` et les arrêts qui renvoient à `/push`), `AGENTS.global.md` ;
-  - `skills/pack-setup/SKILL.md` (un AGENTS.md de dépôt court et utile aux agents) ;
-  - les scripts `branch.sh`, `build-test.sh`, `diff-guard.sh`, `outil.sh`, `package-refs.sh`, `ship.sh`, `workflow-state.sh` (mêmes appels qu'en 1.19) ;
+  - `skills/pack-setup/SKILL.md` (un AGENTS.md de dépôt court et utile aux agents), `skills/pack-abandon/SKILL.md` (passe par `abandon.sh`), `skills/best-practices/SKILL.md` et `skills/build-fix/SKILL.md` (les commandes de la v1 qu'ils nommaient encore) ;
+  - les scripts `branch.sh`, `build-test.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-refs.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh` (mêmes appels qu'en 1.19) ;
   - `skills/pack-doc/SKILL.md` (vocabulaire), `skills/pack-release-notes/SKILL.md` (un espace en fin de ligne retiré) et `skills/fortify-remediation/SKILL.md` (une ligne vide finale retirée), pour qu'un copier-coller les reproduise à l'identique ;
   - `opencode.snippet.json` (règles de la v2, partage, mises à jour et recherche web coupés) ;
   - `COMMANDES.md` et `README.md`.
 - **Identiques** : les autres scripts et les autres skills.
-- **`tools/`** contient aussi `scripts-test.sh` (scripts git), `dotnet-test.sh` et `fake-dotnet.sh` (scripts .NET avec un `dotnet` simulé).
+- **`tools/`** contient aussi `scripts-test.sh` (scripts git), `dotnet-test.sh` et `fake-dotnet.sh` (scripts .NET avec un `dotnet` simulé), `scenarios-test.sh` (les histoires complètes, plusieurs espaces de travail en parallèle), `fortify-test.sh` (le flux de `/fortify` et de son test-guardian de A à Z, avec le `dotnet` simulé ou, avec `--real`, le vrai).
 - **`tools/`** : mes outils de vérification. Ne les copie jamais dans ta configuration.
 
 ## Annexe A — La v2 a déjà remplacé ta 1.19 : tout remettre d'aplomb, avec l'interface web
@@ -928,9 +938,12 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère. Par exemple, `agents/pilot.md: FAILED` veut dire : remplace tout le contenu de `~/.config/opencode/agents/pilot.md` par celui de `opencode-v2/agents/pilot.md` ;
 - `FAILED open or read` : il n'existe pas encore, crée-le.
 
-Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 5 lignes :
+Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 8 lignes :
 ```text
+skills/best-practices/SKILL.md: FAILED
+skills/build-fix/SKILL.md: FAILED
 skills/fortify-remediation/SKILL.md: FAILED
+skills/pack-abandon/SKILL.md: FAILED
 skills/pack-doc/SKILL.md: FAILED
 skills/pack-release-notes/SKILL.md: FAILED
 skills/pack-setup/SKILL.md: FAILED

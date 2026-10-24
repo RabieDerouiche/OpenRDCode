@@ -1,0 +1,107 @@
+# Checks of the OpenCode v2 pack (opencode-v2/) on every push that changes it, and on demand (Actions tab, "Run
+# workflow"). Two jobs: every suite of the pack (no .NET SDK needed), and the flow of /fortify and of its test-guardian
+# with the real .NET SDK (real builds, real xUnit and MSTest tests, real coverage). A failed check becomes an annotation
+# of the run; the logs are kept as an artifact of the run.
+name: opencode-v2
+
+on:
+  push:
+    paths:
+      - "opencode-v2/**"
+      - ".github/workflows/opencode-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  suites:
+    name: Suites du pack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: opencode-v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Dépendances des simulateurs
+        run: |
+          command -v shellcheck > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck > /dev/null; }
+          cd tools && npm install --no-save --silent web-tree-sitter@0.25.10 tree-sitter-bash@0.25.0 gray-matter@4.0.3
+      - name: Toutes les suites
+        run: |
+          mkdir -p logs
+          failed=0
+          # annotate <title> <log>: each FAIL block of a suite as an error annotation of the run
+          annotate() {
+            awk -v t="$1" '
+              function flush() { if (msg != "") { print "::error title=" t "::" msg; msg = ""; n = 0 } }
+              { gsub(/%/, "%25"); gsub(/\r/, "") }
+              /^FAIL/ { flush(); msg = $0; next }
+              /^    / && msg != "" && n < 30 { msg = msg "%0A" $0; n++; next }
+              { flush() }
+              END { flush() }' "$2"
+          }
+          suite() {
+            title=$1 log=logs/$2.log
+            shift 2
+            if "$@" > "$log" 2>&1; then
+              echo "::notice title=$title::$(tail -n 1 "$log")"
+            else
+              failed=1
+              annotate "$title" "$log"
+              echo "::error title=$title::$(tail -n 1 "$log")"
+            fi
+          }
+          suite "shellcheck" shellcheck sh -c 'shellcheck -S warning scripts/*.sh tools/*.sh && echo "shellcheck: OK"'
+          suite "validate.js" validate node tools/validate.js
+          suite "plugin-test" plugin node tools/plugin-test.mjs
+          suite "permission-sim" permissions sh -c 'cd tools && node permission-sim.mjs ..'
+          for s in dash bash; do
+            suite "scripts-test $s" "scripts-$s" sh tools/scripts-test.sh "$s"
+            suite "dotnet-test $s" "dotnet-$s" sh tools/dotnet-test.sh "$s"
+            suite "scenarios-test $s" "scenarios-$s" sh tools/scenarios-test.sh "$s"
+            suite "fortify-test $s" "fortify-$s" sh tools/fortify-test.sh "$s"
+          done
+          exit "$failed"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-suites
+          path: opencode-v2/logs/
+
+  real-dotnet:
+    name: Flux Fortify avec le vrai dotnet
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: opencode-v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: fortify-test --real
+        run: |
+          mkdir -p logs
+          dotnet --info > logs/dotnet-info.log 2>&1
+          status=0
+          sh tools/fortify-test.sh --real dash > logs/fortify-real.log 2>&1 || status=$?
+          awk '
+            function flush() { if (msg != "") { print "::error title=fortify-test --real::" msg; msg = ""; n = 0 } }
+            { gsub(/%/, "%25"); gsub(/\r/, "") }
+            /^FAIL/ { flush(); msg = $0; next }
+            /^    / && msg != "" && n < 30 { msg = msg "%0A" $0; n++; next }
+            { flush() }
+            END { flush() }' logs/fortify-real.log
+          echo "::notice title=fortify-test --real::$(tail -n 1 logs/fortify-real.log)"
+          exit "$status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-real-dotnet
+          path: opencode-v2/logs/

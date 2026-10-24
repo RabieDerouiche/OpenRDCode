@@ -5,6 +5,10 @@
 # (like coreutils timeout), or 77 when GitLab refused the credentials or got none: this machine has no GitLab
 # credentials that git can use on its own, and nobody can type them in an agent's command (COMMANDES.md, section
 # "Identifiants GitLab").
+# Two worktrees of one repository share their remote-tracking branches: a fetch that meets the lock of a ref another
+# worktree is updating at that moment ("cannot lock ref … is at … but expected …", "Unable to create … .lock") is run
+# again, up to 3 times (6 worktrees fetching at the same moment while 30 branches move: every raw git fetch failed,
+# none of these).
 # Usage: fetch.sh <git fetch arguments>
 
 FETCH_TIMEOUT=${FETCH_TIMEOUT:-30}
@@ -31,18 +35,30 @@ kill_tree() {
 
 # The errors of git, kept to recognize an authentication failure, then passed on to stderr
 errors=$(mktemp "${TMPDIR:-/tmp}/fetch.XXXXXX" 2>/dev/null) || errors=/dev/null
-git fetch "$@" </dev/null >/dev/null 2>"$errors" &
-pid=$!
-# The watchdog writes nowhere: a sleeping process must not keep the output of the caller open
-( sleep "$FETCH_TIMEOUT"; kill_tree "$pid" ) </dev/null >/dev/null 2>&1 &
-watchdog=$!
-wait "$pid" 2>/dev/null
-status=$?
-if kill -0 "$watchdog" 2>/dev/null; then
-  kill_tree "$watchdog"
-else
-  status=124
-fi
+attempt=1
+while :; do
+  git fetch "$@" </dev/null >/dev/null 2>"$errors" &
+  pid=$!
+  # The watchdog writes nowhere: a sleeping process must not keep the output of the caller open
+  ( sleep "$FETCH_TIMEOUT"; kill_tree "$pid" ) </dev/null >/dev/null 2>&1 &
+  watchdog=$!
+  wait "$pid" 2>/dev/null
+  status=$?
+  if kill -0 "$watchdog" 2>/dev/null; then
+    kill_tree "$watchdog"
+  else
+    status=124
+  fi
+  # a ref locked by the fetch of another worktree at the same moment: once more, after a short pause
+  if [ "$status" != 0 ] && [ "$status" != 124 ] && [ "$errors" != /dev/null ] && [ "$attempt" -lt 4 ] &&
+    grep -qiE 'cannot lock ref|unable to create .*\.lock|unable to update local ref|is at [0-9a-f]+ but expected' "$errors"; then
+    attempt=$((attempt + 1))
+    # 1 s, then 2, then 3: the fetches of several worktrees drift apart instead of meeting again
+    sleep $((attempt - 1))
+    continue
+  fi
+  break
+done
 if [ "$errors" != /dev/null ]; then
   cat "$errors" >&2
   if [ "$status" != 0 ] && [ "$status" != 124 ] &&

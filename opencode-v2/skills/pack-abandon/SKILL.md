@@ -7,12 +7,10 @@ compatibility: opencode
 
 Started directly as the command `/pack-abandon` (this procedure is the message that started you, with no line « Skill : pack-abandon » printed before it): answer only « Lance `/outil abandon` : cette procédure a besoin de ce que /outil prépare. » and stop.
 
-Undo the ticket of the current branch, started by mistake. Never lose work. The workflow state is printed above.
+Undo the ticket of the current branch, started by mistake. Never lose work: `abandon.sh` refuses by itself a branch that holds anything of its own. The workflow state is printed above.
 
-1. Checks, from the workflow state, without any tool call:
-   - On develop, master or main: say « Rien à abandonner sur <branch> » and stop.
-   - The branch must hold nothing of its own: the "Commits behind / ahead of <base>" line says 0 ahead, and there is no uncommitted and no untracked file. Otherwise list what it holds and stop: « Cette branche contient du travail : je ne la supprime pas. Commite-le ailleurs ou supprime la branche toi-même. »
-2. Confirm, with the question tool: "Abandonner <branch> dans <repository folder name>" (recommandé) / "Annuler", with in its description what will be deleted: the local branch and, when it exists, the ticket sheet (the "Current ticket sheet" line).
-3. Undo, each command alone in its call, in this order: only if the sheet exists, `sh ~/.config/opencode/scripts/ticket-sheet.sh delete`; then, in the main checkout ("Worktree: no"), `git switch <base without origin/> && git merge --ff-only <base>`, and in a worktree ("Worktree: yes"; the base branch is checked out in the main checkout), `git switch --detach <base>`; then `git branch -d <branch>` (it refuses a branch with unmerged work: say so and stop, never force).
+1. `sh ~/.config/opencode/scripts/abandon.sh --check`, alone in its call. A "STOP:" line: say it in French (what the branch holds, or why there is nothing to abandon) and stop: never delete anything yourself, never force.
+2. Confirm, with the question tool: "Abandonner <branch> dans <repository folder name>" (recommandé) / "Annuler", with in its description the "WOULD DELETE" and "WOULD SWITCH" lines, said simply.
+3. "Abandonner": `sh ~/.config/opencode/scripts/abandon.sh`, alone in its call. A "STOP:" line: say it and stop.
 
-Answer, in French: one line per thing deleted. If the "Upstream" line shows the branch was pushed: « La branche existe aussi sur GitLab : supprime-la depuis la page Branches du projet (je ne supprime jamais rien sur GitLab). » In a worktree, one more line: « Ce dossier ne contient plus rien : supprime-le depuis un terminal, dans le dépôt principal, avec `sh ~/.config/opencode/scripts/workspace.sh remove <the folder name of the "Worktree" line>`. » Last line: « Rien n'a changé dans Jira. Pour repartir : nouvelle session dans le bon dépôt, puis /go <KEY>. »
+Answer, in French: one line per DELETED and SWITCHED line, said simply. A WARNING line: say it (the branch is kept). A "PUSHED" line: « La branche existe aussi sur GitLab : supprime-la depuis la page Branches du projet (je ne supprime jamais rien sur GitLab). » A "WORKTREE" line: « Ce dossier ne contient plus rien : supprime-le depuis le dépôt principal (`git worktree remove <its path>`), puis archive ses sessions. » Last line: « Rien n'a changé dans Jira. Pour repartir : nouvelle session dans le bon dépôt, puis /go <KEY>. »

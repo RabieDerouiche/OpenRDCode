@@ -2,7 +2,8 @@
 """Regenerates the one-line `permission:` frontmatter of every agent of the v2 pack (agents/), and opencode.snippet.json.
 
 Run from the v2 folder: python3 tools/permissions.py
-Then check every decision with the simulator of tools/README.md (a port of OpenCode 1.19's permission engine).
+Then check every decision with tools/permission-sim.mjs (a port of OpenCode 1.19's permission engine, which v2 keeps),
+which replays tools/permission-corpus.mjs: README.md, « Pour la maintenance du pack ».
 
 How OpenCode 1.19 decides (verified in its source):
 - Each command of a shell call (pipes, &&, ;, $(...) included) is checked on its own, with its full text,
@@ -131,6 +132,9 @@ RM_RECURSIVE = ["rm -r*", "rm -R*", "rm -fr*", "rm -fR*", "rm -f -r*", "rm -f -R
 DEVELOPER_SCRIPTS = ["*scripts/workspace.sh*"]
 # fortify.sh discard puts work aside (git stash): the pilot only
 WRITE_SCRIPTS = ["*ship.sh*", "*branch.sh*", "*ticket-sheet.sh*", "*fortify.sh discard*"] + DEVELOPER_SCRIPTS
+# /outil abandon (build, once the developer confirmed): deletes the branch of a ticket started by mistake and its sheet,
+# after its own checks; no agent of a run ever does it
+CONVERSATION_SCRIPTS = ["*scripts/abandon.sh*"]
 # The seal of a proof (test-guardian.sh seal and restore): the test-guardian's only. The coder never seals its own
 # version of the tests it is checked against, nor puts them back; a read-only agent never writes a test file. Checking
 # a seal (test-guardian.sh sealed) stays open: the pilot does it before each commit. The conversation agents keep it
@@ -194,7 +198,7 @@ def read_only_bash(extra_allows=(), after_secrets=(), package_guard=True):
     rules = [("*", "deny")]
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + list(extra_allows))
     rules += REDIRECT
-    rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS + WRITE_SCRIPTS
+    rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS + WRITE_SCRIPTS + CONVERSATION_SCRIPTS
                   + (PACKAGE_GUARD if package_guard else []))
     rules += allow(after_secrets)
     return rules
@@ -228,7 +232,7 @@ def pilot_bash():
     rules = [("*", "deny")]
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS)
     rules += REDIRECT
-    rules += deny(GIT_READ_GUARD + OTHER_DENY + SECRETS + PACKAGE_GUARD + DEVELOPER_SCRIPTS + SEAL_SCRIPTS)
+    rules += deny(GIT_READ_GUARD + OTHER_DENY + SECRETS + PACKAGE_GUARD + DEVELOPER_SCRIPTS + SEAL_SCRIPTS + CONVERSATION_SCRIPTS)
     rules += allow([SSC_NAME] + TEXT_SCRIPTS)
     rules += deny(SUBST)
     return rules
@@ -267,7 +271,7 @@ def coder_bash(guardian=False):
     rules += REDIRECT
     # (the commands of CREDENTIAL_STORES and DECOMPILE are not in the allowlist; their paths are outside the repository)
     # the test-guardian seals its proofs and puts them back; the coder never does; setup, park and unpark are the pilot's
-    rules += deny(GIT_READ_GUARD + CODER_OTHER_DENY + CODER_RM_GUARD + SECRETS + WRITE_SCRIPTS
+    rules += deny(GIT_READ_GUARD + CODER_OTHER_DENY + CODER_RM_GUARD + SECRETS + WRITE_SCRIPTS + CONVERSATION_SCRIPTS
                   + ([] if guardian else SEAL_SCRIPTS) + PILOT_SCRIPTS + PACKAGE_GUARD
                   + ["* /tmp/*", "* /tmp", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*"] + SUBST)
     return rules

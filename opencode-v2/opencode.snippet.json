@@ -490,6 +490,7 @@
           "*ticket-sheet.sh*": "deny",
           "*fortify.sh discard*": "deny",
           "*scripts/workspace.sh*": "deny",
+          "*scripts/abandon.sh*": "deny",
           "*.nuget/packages*": "deny",
           "*.dll*": "deny",
           "*.nupkg*": "deny"
