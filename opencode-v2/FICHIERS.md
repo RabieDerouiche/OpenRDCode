@@ -33,7 +33,7 @@ Les mots utilisés : le **pilote** est l'agent qui mène `/go`, `/fix`, `/fortif
 | 1 | exécute les lignes `[[run <script> …]]` des commandes, dans le dépôt de la session, avant que le modèle ne lise le prompt ; sans terminal, arrêtées au bout de 3 minutes | l'état git, la fiche, la détection du projet arrivent tout calculés : le modèle ne les cherche pas |
 | 2 | donne aux commandes des agents un environnement stable (messages .NET en anglais, sans bannière ni télémétrie, git qui n'attend jamais un mot de passe) et en retire le mot de passe du serveur OpenCode, les tokens MCP et les dossiers `~/oc2` | une commande ne bloque jamais sur une invite ; aucun secret dans ce que lance un agent |
 | 3 | affiche `/<commande> <arguments> — <dossier> · branche <branche>` au lieu du prompt déroulé (plus « ⏰ n rappel(s) » de ta todo) ; nomme la session sans requête au modèle | la conversation reste lisible, le modèle reçoit tout |
-| 4 | lance tout seul la commande choisie dans un QCM (« /go ABC-123 », « /push »…) à la fin du tour | un clic suffit pour enchaîner |
+| 4 | lance tout seul la commande choisie dans un QCM (« /go ABC-123 », « /push »…) à la fin du tour ; quand un run finit par son QCM « Suite » : libère le dossier pendant qu'il attend, garde l'issue de la réponse finale dans le titre, ne le reprend jamais, et lance la commande choisie même si le serveur du modèle tombe juste après | un clic suffit pour enchaîner, et un QCM en attente ne bloque ni le dossier ni l'état du run |
 | 5 | montre l'avancement dans le titre de la session : « ⏳ 1:42 réflexion 2,3k tokens », l'outil ou les sous-agents en cours, « nouvel essai », « rien reçu depuis 4 min » | tu vois où en est un long run sans ouvrir la session |
 | 6 | refuse une commande qui change `PATH` ou `DOTNET_ROOT`, ou qui écrit un identifiant (mot de passe, token, variable Artifactory) | un secret tapé dans une commande resterait dans l'historique |
 | 7 | garde les agents du pack dans le dépôt : un chemin hors du dépôt est refusé, même entre guillemets, dans `sh -c` ou après une redirection ; sont permis en lecture seule les scripts et skills du pack, la fiche, le cache NuGet (outils de fichiers), les `references` d'`opencode.json` et les dossiers que tu nommes toi-même ; refuse aussi les dumps d'environnement et les `rm` récursifs | aucun agent ne lit `~/.zshenv` ni ne touche un autre dépôt ; les règles d'OpenCode ne voient pas dans les guillemets |
@@ -62,19 +62,19 @@ Les mots utilisés : le **pilote** est l'agent qui mène `/go`, `/fix`, `/fortif
 Chaque fichier commence par `[[command <nom> $ARGUMENTS]]` (lu par le plugin), puis les lignes `[[run …]]` qui calculent les faits, puis la procédure que suit l'agent. Le pilote répond toujours en français, avec une première ligne d'issue : 🚀, 🔁, ✅, ⏸ ou ⛔.
 
 ### `commands/go.md` — `/go`
-- **Ce qu'il fait** : d'un ticket Jira à une MR en Draft, en un seul run : l'analyste écrit la fiche (critères, plan, tests attendus, décisions) pendant que la base est buildée et testée ; puis chaque étape du plan par un coder (un bug : son test écrit d'abord par le test-guardian, rouge puis vert) ; build et tests complets avec la couverture des lignes modifiées, tests des lignes qu'aucun test n'exécute, auto-review par le checker et ses corrections, contrôle avant push, commit, push, MR avec son rapport. Sans ticket : `/go sans ticket : <ce qu'il faut faire>` (clé `LOCAL-<n>`).
+- **Ce qu'il fait** : d'un ticket Jira à une MR en Draft, en un seul run : l'analyste écrit la fiche (critères, plan, tests attendus, décisions) pendant que la base est buildée et testée ; puis chaque étape du plan par un coder (une étape « (filet d'abord) » : le filet de non-régression des méthodes qu'elle change, écrit d'abord par le test-guardian s'il en manque ; un bug : son filet et son test écrits d'abord, rouge puis vert) ; build et tests complets avec la couverture des lignes modifiées, tests des lignes qu'aucun test n'exécute, auto-review par le checker et ses corrections, contrôle avant push, commit, push, MR avec son rapport. Sans ticket : `/go sans ticket : <ce qu'il faut faire>` (clé `LOCAL-<n>`).
 - **Agent** : pilot. **Faits calculés** : `detect-project-type.sh`, `workflow-state.sh --fetch-all --sheet`.
 - **Quand** : pour un ticket. Consignes : « depuis <branche> », « analyse seule », « pas à pas », « comme le pattern <nom> », « comme dans <dépôt> ». Relancé, il reprend à sa dernière étape faite.
-- **Utilité** : le travail d'un ticket sans toi ; il ne pose de questions que si le ticket est ambigu, toutes à la fois.
+- **Utilité** : le travail d'un ticket sans toi ; il ne pose de questions que si le ticket est ambigu, toutes à la fois, au début. Finit par un QCM « Suite » (`/fix`, ou l'étape suivante en « pas à pas ») que ton clic lance.
 
 ### `commands/fix.md` — `/fix`
-- **Ce qu'il fait** : après la CI ou la review, rassemble en une passe les jobs en échec du pipeline, les failles Sonar et Fortify des fichiers de la branche et les discussions ouvertes de la MR ; trie (à corriger, à répondre, hors périmètre) ; corrige (une faille avec ses tests écrits d'abord par le test-guardian) ; teste avec la couverture des lignes modifiées ; commit, push avec le contrôle avant push ; écrit les réponses à coller. Ramène aussi les commits poussés d'un autre poste et ceux de develop.
+- **Ce qu'il fait** : après la CI ou la review, rassemble en une passe les jobs en échec du pipeline, les failles Sonar et Fortify des fichiers de la branche et les discussions ouvertes de la MR ; trie (à corriger, à répondre, hors périmètre) ; corrige (une faille ou un bug avec son filet de non-régression et ses tests écrits d'abord par le test-guardian ; un refactoring demandé avec son filet) ; teste avec la couverture des lignes modifiées ; commit, push avec le contrôle avant push ; écrit les réponses à coller. Ramène aussi les commits poussés d'un autre poste et ceux de develop.
 - **Agent** : pilot. **Faits calculés** : `detect-project-type.sh`, `workflow-state.sh --sheet --appsec`.
 - **Quand** : après chaque pipeline ou review, avec ou sans ticket (pas de MR créée sur une branche `poc/` ou `wip/`).
-- **Utilité** : les retours de la CI et de la review traités sans aller-retour.
+- **Utilité** : les retours de la CI et de la review traités sans aller-retour. Finit par un QCM « Suite » (`/fix` quand la CI de son push est terminée).
 
 ### `commands/fortify.md` — `/fortify`
-- **Ce qu'il fait** : les 4 ou 5 vulnérabilités Fortify les plus graves de l'application SSC du dépôt : analysées en parallèle (3 à la fois), prouvées par vagues par le test-guardian (tests du module rouges, deux fois, scellés), corrigées une à une par le coder (verts deux fois, sans perte de couverture), un commit par vulnérabilité, puis une MR Draft. Sans projet de tests, propose d'abord de le créer.
+- **Ce qu'il fait** : les 4 ou 5 vulnérabilités Fortify les plus graves de l'application SSC du dépôt : analysées en parallèle (3 à la fois), prouvées par vagues par le test-guardian (le filet de non-régression des méthodes que le correctif touche, que la carte nomme, écrit d'abord s'il en manque ; tests de la faille rouges, deux fois, scellés avec lui), corrigées une à une par le coder (verts deux fois, filet intact, sans perte de couverture), un commit par vulnérabilité, puis une MR Draft avec le filet de chacune. Sans projet de tests, propose d'abord de le créer. Finit par un QCM « Suite » (`/fix`, `/fortify` pour le lot suivant).
 - **Agent** : pilot. **Faits calculés** : `fortify.sh prereq`, `workflow-state.sh --fetch-all --sheet --appsec`.
 - **Quand** : depuis develop ou un nouvel espace de travail, sans fichier non commité. Reprend où il s'est arrêté.
 - **Utilité** : la dette Fortify réduite par lots, chaque correctif prouvé par un test.
@@ -82,17 +82,17 @@ Chaque fichier commence par `[[command <nom> $ARGUMENTS]]` (lu par le plugin), p
 ### `commands/tests.md` — `/tests`
 - **Ce qu'il fait** : des tests unitaires sans ticket, pour les classes, fichiers ou dossiers que tu nommes (6 fichiers au plus par run) : le test-guardian mesure la couverture, écrit les tests du comportement actuel dans le style du dépôt, les prouve (verts deux fois, aucun test instable), mesure la couverture après ; un commit sur une branche `test/…` (ou ta branche). Ton travail non commité qui n'est pas un test est d'abord commité à part, si tu le veux. Rien n'est poussé.
 - **Agent** : pilot. **Faits calculés** : `fortify.sh prereq --tests`, `workflow-state.sh --no-fetch`.
-- **Quand** : pour ajouter des tests hors Jira ; ensuite `/push`.
+- **Quand** : pour ajouter des tests hors Jira ; ensuite `/push`, proposé par son QCM « Suite ».
 - **Utilité** : la couverture qui monte sans ticket, avec les mêmes preuves que dans `/go`.
 
 ### `commands/push.md` — `/push`
-- **Ce qu'il fait** : commit et push du travail de ce dossier, avec ou sans ticket. Lit les changements (non commités et commits pas encore poussés), builde et teste d'abord quand du code a changé (pas de nouveau si ce même code est déjà passé), puis pose UNE question : la branche (quand il en faut une), le message de commit en conventional commit, la MR ; chaque fois la recommandation d'abord, et ta propre réponse possible. Un build ou des tests en échec : la question propose « Ne rien pousser, je corrige » (recommandé). Puis `branch.sh --here` et `ship.sh`, et la MR en Draft si tu l'as choisie.
+- **Ce qu'il fait** : commit et push du travail de ce dossier, avec ou sans ticket. Lit les changements (non commités et commits pas encore poussés), builde et teste d'abord quand du code a changé (pas de nouveau si ce même code est déjà passé), puis pose UNE question : la branche (quand il en faut une), le message de commit en conventional commit, la MR ; chaque fois la recommandation d'abord, et ta propre réponse possible. Un build ou des tests en échec : la question propose « Ne rien pousser, je corrige » (recommandé). Puis `branch.sh --here` et `ship.sh`, et la MR en Draft si tu l'as choisie ; enfin un QCM « Suite » (`/fix` après la CI) quand une MR existe.
 - **Agent** : pilot. **Faits calculés** : `workflow-state.sh --no-fetch`, `detect-project-type.sh`.
 - **Quand** : après un travail fait dans la conversation, un POC, de la doc, des tests ; « vite » prend les recommandations sans question ; « sans les tests » saute le build.
 - **Utilité** : pousser hors Jira sans bloquer, sans jamais pousser sur develop, ni un secret, ni du code non buildé sans le savoir.
 
 ### `commands/sync.md` — `/sync`
-- **Ce qu'il fait** : met la branche à jour sans rien commiter ni pousser : les commits poussés d'un autre poste (Rider sur le Mac) ; avec « develop », les nouveaux commits de sa base ; avec « merge <branche> », une autre branche. Par merge ; un conflit est annulé et ses fichiers nommés. Sur develop : une avance rapide sur origin seulement.
+- **Ce qu'il fait** : met la branche à jour sans rien commiter ni pousser : les commits poussés d'un autre poste (Rider sur le Mac) ; avec « develop », les nouveaux commits de sa base ; avec « merge <branche> », une autre branche. Par merge ; un conflit est annulé et ses fichiers nommés. Sur develop : une avance rapide sur origin seulement. Quand du code est arrivé, un QCM « Suite » (`/push`, ou rien pour l'instant).
 - **Agent** : pilot. **Faits calculés** : `workflow-state.sh --no-fetch`.
 - **Utilité** : reprendre sur cette machine ce que tu as fait ailleurs, sans risque.
 
@@ -107,7 +107,7 @@ Chaque fichier commence par `[[command <nom> $ARGUMENTS]]` (lu par le plugin), p
 - **Utilité** : une review complète en lecture seule, adaptée au type du projet.
 
 ### `commands/compare.md` — `/compare`
-- **Ce qu'il fait** : compare une fonctionnalité avec un dépôt où elle marche (code migré, ancienne version) : packages, code et historique d'abord par un script, puis l'agent suit la valeur qui diffère jusqu'à sa cause (code, package, configuration, données, correctif jamais reporté). Lecture seule.
+- **Ce qu'il fait** : compare une fonctionnalité avec un dépôt où elle marche (code migré, ancienne version) : packages, code et historique d'abord par un script, puis l'agent suit la valeur qui diffère jusqu'à sa cause (code, package, configuration, données, correctif jamais reporté). Lecture seule. Finit par un QCM « Suite » : `/go sans ticket : <le correctif>` d'un clic.
 - **Agent** : debugger. **Faits calculés** : `compare-repos.sh --raw`.
 - **Utilité** : trouver pourquoi « ça marchait avant » sans tout relire.
 
@@ -122,15 +122,15 @@ La ligne `permission:` de chaque agent est générée par `tools/permissions.py`
 
 ### `agents/pilot.md`
 - **Rôle** : mène `/go`, `/fix`, `/fortify`, `/daily`, et le travail hors ticket `/push`, `/sync`, `/tests`. Délègue l'analyse, chaque étape, la review et les diagnostics à des sous-agents ; n'écrit jamais de code.
-- **Peut** : écrire la fiche (seulement par `ticket-sheet.sh`), lancer `branch.sh` et `ship.sh` (ses seules écritures git), `test-guardian.sh setup`, `park` et `unpark`, `fortify.sh discard` ; appeler analyst, coder, checker, debugger et test-guardian ; poser des questions, seulement celles que sa commande prévoit ; créer la MR en Draft. 100 étapes au plus par tour, caché dans le choix des agents.
+- **Peut** : écrire la fiche (seulement par `ticket-sheet.sh`), lancer `branch.sh` et `ship.sh` (ses seules écritures git), `test-guardian.sh setup`, `park` et `unpark`, `fortify.sh discard` ; appeler analyst, coder, checker, debugger et test-guardian ; poser des questions, seulement celles que sa commande prévoit au début, et le QCM « Suite » à la fin ; créer la MR en Draft. 100 étapes au plus par tour, caché dans le choix des agents.
 - **Utilité** : un run qui va au bout sans toi et s'arrête net (⛔) sur ce qu'il ne doit pas trancher.
 
 ### `agents/analyst.md`
-- **Rôle** : lit le ticket Jira, ses pages Confluence et le code, puis écrit la fiche : critères d'acceptation, plan numéroté avec ses fichiers et ses tests, tests attendus, décisions avec leur raison, questions bloquantes seulement. Lecture seule partout ailleurs. Sous-agent de `/go` et `/fortify`.
+- **Rôle** : lit le ticket Jira, ses pages Confluence et le code, puis écrit la fiche : critères d'acceptation, plan numéroté avec ses fichiers et ses tests (une étape qui change une méthode existante marquée « (filet d'abord) », un bug « (test d'abord) »), tests attendus, décisions avec leur raison, questions bloquantes seulement. Lecture seule partout ailleurs. Sous-agent de `/go` et `/fortify`.
 - **Utilité** : un plan vérifiable avant la première ligne de code.
 
 ### `agents/coder.md`
-- **Rôle** : réalise UNE étape du plan, ou une liste de corrections donnée, avec ses tests unitaires, puis builde et teste (par `build-test.sh`). Ne pose jamais de question : décide comme le code existant et rapporte ses décisions. Écrit dans le dépôt (jamais dans `.git`) ; jamais de commit, push ou merge. Sous-agent du pilote.
+- **Rôle** : réalise UNE étape du plan, ou une liste de corrections donnée, avec ses tests unitaires, puis builde et teste (par `build-test.sh`). Ne pose jamais de question : décide comme le code existant et rapporte ses décisions. Écrit dans le dépôt (jamais dans `.git`) ; jamais de commit, push ou merge. Ne modifie jamais les tests du test-guardian : la preuve et le filet de non-régression doivent passer tels quels (un test du filet qui fige un comportement que l'étape change exprès est nommé, pas modifié). Sous-agent du pilote.
 - **Utilité** : un changement petit, testé et relisible à chaque étape.
 
 ### `agents/checker.md`
@@ -142,8 +142,8 @@ La ligne `permission:` de chaque agent est générée par `tools/permissions.py`
 - **Utilité** : la cause d'un échec, prouvée, avant toute correction.
 
 ### `agents/test-guardian.md`
-- **Rôle** : gardien des tests unitaires d'un travail à la fois, avec quatre missions : « faille » (`/fortify`, faille de `/fix`), « bug » (étape « test d'abord » de `/go`, bug de `/fix`), « couverture » (lignes modifiées qu'aucun test n'exécute) et « tests » (`/tests`). Toute mesure et toute preuve passent par `test-guardian.sh` (jamais un résultat jugé en lisant le code) ; seul à pouvoir sceller ou remettre les tests d'une preuve. N'écrit que dans les projets de tests ; ne lance jamais `dotnet` lui-même.
-- **Utilité** : des tests qui prouvent quelque chose : rouges avant, verts deux fois après, aucune perte de couverture.
+- **Rôle** : gardien des tests unitaires d'un travail à la fois, avec cinq missions : « faille » (`/fortify`, faille de `/fix`), « bug » (étape « test d'abord » de `/go`, bug de `/fix`), « filet » (étape « filet d'abord » de `/go`, refactoring de `/fix`), « couverture » (lignes modifiées qu'aucun test n'exécute) et « tests » (`/tests`). Avant tout correctif, le filet de non-régression : la couverture des méthodes que le correctif touchera et de celles qui y mènent (`test-guardian.sh net`) ; sous le minimum (80 % de leurs lignes, ou celui d'AGENTS.md), il écrit d'abord les tests de leur comportement actuel, les scelle avec la preuve et vérifie après le correctif qu'ils passent toujours. Toute mesure et toute preuve passent par `test-guardian.sh` (jamais un résultat jugé en lisant le code) ; seul à pouvoir sceller ou remettre les tests d'une preuve. N'écrit que dans les projets de tests ; ne lance jamais `dotnet` lui-même.
+- **Utilité** : des tests qui prouvent quelque chose : un filet sous le code avant de le toucher, rouges avant, verts deux fois après, aucune perte de couverture.
 
 ### `agents/doc-writer.md`
 - **Rôle** : écrit et met à jour `docs/` et le `README.md` racine, en français, depuis le code, pour `/outil doc`. N'ouvre jamais un fichier de configuration, ne copie jamais une valeur, ne touche ni au code, ni aux tests, ni à Confluence.
@@ -160,10 +160,10 @@ Annule un ticket lancé par erreur : `abandon.sh --check` dit ce qui serait supp
 Audit des bonnes pratiques de tout le dépôt selon son type (charge `best-practices`) : chaque pratique présente, partielle ou absente avec sa preuve (fichier:ligne), et la plus petite façon d'ajouter ce qui manque. Lecture seule.
 
 ### `skills/pack-cqrs/SKILL.md` — `/outil cqrs`
-Une command ou une query CQRS avec son handler, son validator, ses tests et, si le dépôt le fait, son endpoint, en imitant les exemples de référence du dépôt (charge `dotnet-cqrs-conventions`) ; puis build et tests.
+Une command ou une query CQRS avec son handler, son validator, ses tests et, si le dépôt le fait, son endpoint, en imitant les exemples de référence du dépôt (charge `dotnet-cqrs-conventions`) ; puis build et tests, et un QCM « Suite » (`/push`).
 
 ### `skills/pack-doc/SKILL.md` — `/outil doc`
-Délègue au doc-writer l'écriture de `docs/` (architecture, API, configuration, intégrations, données, exploitation) depuis l'inventaire calculé (`doc-inventory.sh`, `api-routes.sh`, `config-keys.sh`) ; en mise à jour, seulement les sujets touchés depuis la dernière fois. Puis, si tu le demandes, la publication sur Confluence, chaque page après ta validation.
+Délègue au doc-writer l'écriture de `docs/` (architecture, API, configuration, intégrations, données, exploitation) depuis l'inventaire calculé (`doc-inventory.sh`, `api-routes.sh`, `config-keys.sh`) ; en mise à jour, seulement les sujets touchés depuis la dernière fois. Puis, si tu le demandes, la publication sur Confluence, chaque page après ta validation ; enfin un QCM « Suite » (`/fix` sur une branche de ticket, `/push` ailleurs) pour livrer les fichiers.
 
 ### `skills/pack-licences/SKILL.md` — `/outil licences`
 Lit le résultat de `package-licenses.sh` : les packages NuGet devenus payants ou copyleft à partir d'une version, avec leur option gratuite. Aucun autre appel.
@@ -175,7 +175,7 @@ Capture une bonne implémentation d'un autre dépôt en skill d'équipe `pattern
 La note de version d'une mise en production depuis master (`release-commits.sh`, tickets Jira lus), d'un dépôt ou d'un groupe de dépôts regroupé par ticket, dans la forme de la dernière note ; publiée sur Confluence après ta validation.
 
 ### `skills/pack-setup/SKILL.md` — `/outil setup`
-Crée ou met à jour l'`AGENTS.md` du dépôt depuis le code : court et utile aux agents (builder et tester ici avec `build-test.sh`, ce que la CI impose, les conventions avec le fichier à imiter, les exemples de référence, les conventions git). Une fois par dépôt, puis après un gros changement.
+Crée ou met à jour l'`AGENTS.md` du dépôt depuis le code : court et utile aux agents (builder et tester ici avec `build-test.sh`, ce que la CI impose, le minimum du filet de non-régression quand l'équipe en veut un autre, les conventions avec le fichier à imiter, les exemples de référence, les conventions git). Une fois par dépôt, puis après un gros changement. Finit par un QCM « Suite » (`/push`).
 
 ### `skills/pack-stats/SKILL.md` — `/outil stats`
 Le tableau de `ticket-stats.sh` est déjà affiché ; le skill dit comment le commenter en trois lignes au plus.
@@ -187,7 +187,7 @@ La todo personnelle (`todo.sh`), hors Jira et hors dépôts : ajouter avec une �
 Les bonnes pratiques par type de projet (API .NET, CQRS, Blazor, .NET Framework, librairie, front-end), avec comment détecter si chacune est déjà en place, et la règle : aucune suggestion sans bénéfice actuel et concret. Chargé par le coder pour une décision de gestion d'erreurs, de feature flag ou de performance, et par `/outil audit`.
 
 ### `skills/build-fix/SKILL.md`
-Corriger une erreur de compilation avec le plus petit changement : obtenir les erreurs (`build-test.sh --build-only`), ne jamais toucher aux fichiers pour une erreur d'Artifactory, ne jamais remettre MediatR, trois tours au plus. Chargé par le coder et par la conversation (« corrige le build »).
+Corriger une erreur de compilation avec le plus petit changement : obtenir les erreurs (`build-test.sh --build-only`), ne jamais toucher aux fichiers pour une erreur d'Artifactory, ne jamais remettre MediatR, trois tours au plus. Chargé par le coder et par la conversation (« corrige le build »), où il finit par un QCM « Suite » (`/push`).
 
 ### `skills/dotnet-cqrs-conventions/SKILL.md`
 Les conventions des API .NET 10 Clean Architecture + CQRS avec le médiateur interne et FluentValidation : couches, un cas d'usage par dossier, requêtes, handlers, validators, tests, et la liste à vérifier avant de dire « fini ». Seulement pour un dépôt de type `cqrs-api`.
@@ -257,7 +257,7 @@ Ils font ce que le modèle ne doit pas faire lui-même : écrire dans git, mesur
 - **Utilité** : une étape cochée ne dépend pas d'une édition exacte du fichier par le modèle ; la fiche est le point de reprise de chaque run.
 
 ### `scripts/test-guardian.sh`
-- **Ce qu'il fait** : les mesures et les preuves des tests unitaires. `deps` (le module d'un fichier et ses dépendances, deux niveaux), `coverage` (couverture ligne et branche par fichier, avec coverlet ou l'extension de la plateforme), `compare` (`STOP` si un fichier perd de la couverture), `red` (les nouveaux tests échouent, deux fois de la même façon), `green` (ils passent deux fois : sinon `FLAKY`), `build`, `tests-only`, `seal`/`sealed`/`restore` (la preuve scellée avant le correctif ; vide, sans aucun fichier, pour une faille qu'aucun test unitaire ne peut montrer), `park`/`unpark` (les preuves d'une vague), `setup xunit|mstest|nunit` (crée le projet de tests, ou ajoute le collecteur de couverture ; un échec défait tout), `changes <base>` (toute la suite, puis les lignes modifiées qu'aucun test n'exécute), `folder`.
+- **Ce qu'il fait** : les mesures et les preuves des tests unitaires. `deps` (le module d'un fichier et ses dépendances, deux niveaux), `coverage` (couverture ligne et branche par fichier, avec coverlet ou l'extension de la plateforme, et les tests en échec nommés), `compare` (`STOP` si un fichier perd de la couverture), `net` (le filet de non-régression d'un correctif, sans relancer les tests : la couverture de chaque méthode nommée, son code asynchrone, ses lambdas et ses fonctions locales compris, puis `SAFETY NET: OK` ou `THIN` contre le minimum), `red` (les nouveaux tests échouent, deux fois de la même façon), `green` (ils passent deux fois : sinon `FLAKY`), `build`, `tests-only`, `seal`/`sealed`/`restore` (la preuve scellée avant le correctif ; vide, sans aucun fichier, pour une faille qu'aucun test unitaire ne peut montrer), `park`/`unpark` (les preuves d'une vague), `setup xunit|mstest|nunit` (crée le projet de tests, ou ajoute le collecteur de couverture ; un échec défait tout), `changes <base>` (toute la suite, puis les lignes modifiées qu'aucun test n'exécute), `folder`.
 - **Lancé par** : le test-guardian (mesures, preuves, scellés), le coder (`green`, pour finir un correctif sur les tests scellés), le pilote (`setup`, `park`, `unpark`, `changes`) ; seul le test-guardian peut sceller ou remettre, seul le pilote peut créer ou garer. **Écrit** : le dossier des mesures `<dossier git>/opencode-tickets/<CLÉ ou nom de branche>.tests`, commun aux espaces de travail ; avec `setup`, un projet de tests dans le dépôt ; avec `restore`/`park`/`unpark`, les fichiers de tests d'une preuve.
 - **Utilité** : aucun agent ne juge une couverture ou un résultat de test en lisant du code.
 
@@ -335,10 +335,10 @@ Ils font ce que le modèle ne doit pas faire lui-même : écrire dans git, mesur
 ## Configuration et documentation
 
 ### `AGENTS.global.md`
-Les règles globales de tous les agents, à fusionner dans `…/opencode/AGENTS.md` (avec tes sections « Daily » et « Release groups ») : réponses en français, code en anglais ; quand poser une question (dans un run : jamais, sauf ce que la commande prévoit ; dans la conversation : seulement quand la réponse change ce qu'on fait, en un QCM) ; le style de travail (lire avant d'écrire, le plus petit changement, ne jamais inventer un nom) ; la vitesse (builder et tester par `build-test.sh`, les formes de commandes refusées) ; le routage de tes demandes vers la bonne commande (`/go`, `/push`, `/tests`, `/outil …`) et les écritures git, seulement par ces commandes ; l'API d'un package par `package-refs.sh --doc` ; NuGet et Artifactory sans jamais lire leurs identifiants ; Jira et Fortify SSC.
+Les règles globales de tous les agents, à fusionner dans `…/opencode/AGENTS.md` (avec tes sections « Daily » et « Release groups ») : réponses en français, code en anglais ; quand poser une question (dans un run : jamais, sauf ce que la commande prévoit au début et son QCM « Suite » à la fin ; dans la conversation : seulement quand la réponse change ce qu'on fait, en un QCM) ; toute action proposée est un QCM qui la lance (une commande : le plugin la démarre ; une action ici : l'agent la fait sans redemander) ; le style de travail (lire avant d'écrire, le plus petit changement, ne jamais inventer un nom) ; la vitesse (builder et tester par `build-test.sh`, les formes de commandes refusées) ; le routage de tes demandes vers la bonne commande (`/go`, `/push`, `/tests`, `/outil …`) et les écritures git, seulement par ces commandes ; l'API d'un package par `package-refs.sh --doc` ; NuGet et Artifactory sans jamais lire leurs identifiants ; Jira et Fortify SSC.
 
 ### `AGENTS.repo-template.md`
-Le modèle de l'`AGENTS.md` d'un dépôt (type, structure, build et tests, conventions, exemples de référence, git, Confluence). Le plus simple est `/outil setup`, qui le remplit depuis le code.
+Le modèle de l'`AGENTS.md` d'un dépôt (type, structure, build et tests et le minimum du filet de non-régression, conventions, exemples de référence, git, Confluence). Le plus simple est `/outil setup`, qui le remplit depuis le code.
 
 ### `opencode.snippet.json`
 La partie du pack d'`opencode.json`, à compléter avec tes propres sections (provider, modèle, MCP) comme le dit `MIGRATION.md`, étape 5.6 : les règles des agents d'OpenCode (`build`, `general`, `explore`, `plan`) générées par `tools/permissions.py`, la `permission` globale (outils de la v2 refusés, écritures MCP refusées, publication Confluence soumise à ta validation), `experimental`, `compaction.prune`, et `share`, `autoupdate` et `websearch` coupés.
@@ -372,27 +372,27 @@ Génère la ligne `permission:` de chaque agent et les règles d'`opencode.snipp
 Le moteur de permissions d'OpenCode, porté fidèlement (correspondance des motifs, fusion des règles, analyse du shell par tree-sitter, chemins hors du dépôt, sous-sessions) : rejoue chaque cas de `permission-corpus.mjs` avec les vrais fichiers du pack.
 
 ### `tools/permission-corpus.mjs`
-Les 2 216 cas : chaque commande que le pack prescrit à un agent (126, chacune permise à l'agent qui la lance), les réflexes du modèle, les secrets, les écritures git interdites, la liste blanche du coder, les outils MCP, les outils que la v2 ajoute ; avec la décision attendue pour chaque agent.
+Les 2 228 cas : chaque commande que le pack prescrit à un agent (138, chacune permise à l'agent qui la lance), les réflexes du modèle, les secrets, les écritures git interdites, la liste blanche du coder, les outils MCP, les outils que la v2 ajoute ; avec la décision attendue pour chaque agent.
 
 ### `tools/plugin-test.mjs`
-Les 695 vérifications du plugin, contre un faux OpenCode v2 dans un faux dossier personnel : les gardes du shell et des fichiers (dépôt, refus, délais), les commandes prescrites passées aux gardes, le verrou (deux runs en même temps dans un dépôt et son espace de travail), les titres, les QCM, la boucle coupée, la pénalité de présence, les reprises, les résumés de contexte, ce que la v2 ouvre.
+Les 699 vérifications du plugin, contre un faux OpenCode v2 dans un faux dossier personnel : les gardes du shell et des fichiers (dépôt, refus, délais), les commandes prescrites passées aux gardes, le verrou (deux runs en même temps dans un dépôt et son espace de travail), les titres, les QCM et le « Suite » qui finit un run, la boucle coupée, la pénalité de présence, les reprises, les résumés de contexte, ce que la v2 ouvre.
 
 ### `tools/scripts-test.sh`
 Les 69 contrôles des scripts git (`branch.sh`, `base.sh`, `ship.sh`, `workflow-state.sh`, `diff-guard.sh`, `abandon.sh`) contre un dépôt nu qui joue GitLab, avec dash, bash ou busybox sh.
 
 ### `tools/scenarios-test.sh`
-Les 105 contrôles des journées d'un développeur, au niveau des scripts, avec de vrais tests xUnit (`--real` : le vrai SDK .NET de la machine ; sans, le `dotnet` simulé) : `/go`, `/fix`, `/push`, `/sync`, `/tests` dans l'ordre de leurs commandes, sur un dépôt avec tests, un sans tests, un second poste qui pousse aussi, puis deux et quatre espaces de travail d'un même dépôt qui buildent, fetchent et poussent en même temps, chacun sur sa branche, jusqu'au conflit et sa résolution. La part du modèle (le code qu'il écrit, les noms qu'il choisit) y est jouée par des réponses fixes.
+Les 120 contrôles des journées d'un développeur, au niveau des scripts, avec de vrais tests xUnit (`--real` : le vrai SDK .NET de la machine ; sans, le `dotnet` simulé) : `/go`, `/fix`, `/push`, `/sync`, `/tests` dans l'ordre de leurs commandes, sur un dépôt avec tests, un sans tests, un second poste qui pousse aussi, puis deux et quatre espaces de travail d'un même dépôt qui buildent, fetchent et poussent en même temps, chacun sur sa branche, jusqu'au conflit et sa résolution ; une étape « (filet d'abord) » dont le filet arrête la régression du coder. La part du modèle (le code qu'il écrit, les noms qu'il choisit) y est jouée par des réponses fixes.
 
 ### `tools/fortify-test.sh`
-Les 157 contrôles du flux de `/fortify` et de son test-guardian, de A à Z, avec les lignes de commande de `commands/fortify.md` dans l'ordre de ses étapes, sur de vrais projets C# et de vrais tests (xUnit, et MSTest sur Microsoft.Testing.Platform) : prérequis, mise en place des tests, branche et fiche du lot, mesure de develop, preuves d'une vague en parallèle, rouge, instable, bloqué, preuves rangées, correctifs, tests scellés remis, couverture perdue, le code qui résiste, preuve vide d'une faille non démontrable, abandon mis de côté, chaque reprise, livraison ; un second lot dans un espace de travail. Avec `--real`, le vrai SDK .NET de la machine (à lancer sur la machine d'OpenCode : rien de ta configuration n'est touché) ; sans, le `dotnet` simulé. GitHub le lance avec le vrai SDK à chaque push.
+Les 205 contrôles du flux de `/fortify` et de son test-guardian, de A à Z, avec les lignes de commande de `commands/fortify.md` et de `agents/test-guardian.md` dans l'ordre de leurs étapes, sur de vrais projets C# et de vrais tests (xUnit, et MSTest sur Microsoft.Testing.Platform) : prérequis, mise en place des tests, branche et fiche du lot, mesure de develop, le filet de non-régression de chaque faille (insuffisant puis complété, déjà en place, gardé après le correctif, rangé et repris avec sa preuve), preuves d'une vague en parallèle, rouge, instable, bloqué, preuves rangées, correctifs, tests scellés remis, couverture perdue, le code qui résiste, preuve vide d'une faille non démontrable, abandon mis de côté, chaque reprise, livraison ; un second lot dans un espace de travail ; le filet de méthodes que le compilateur découpe (asynchrone, itérateur, lambda, fonction locale, surcharges, propriété, constructeur) et un filet qu'aucun test ne peut compléter (l'horloge réelle) ; le minimum d'AGENTS.md, atteint pile puis manqué d'un point. Avec `--real`, le vrai SDK .NET de la machine (à lancer sur la machine d'OpenCode : rien de ta configuration n'est touché) ; sans, le `dotnet` simulé. Les chiffres de chaque filet sont les valeurs exactes du vrai coverlet (aucune ligne pour l'accolade qui suit un `throw` ou un `return`) ; GitHub le lance avec le vrai SDK à chaque push, et montre ces valeurs en annotation (lignes « NOTE: »).
 
 ### `tools/dotnet-test.sh`
-Les 115 contrôles des scripts .NET (`build-test.sh`, `test-platform.sh`, `test-guardian.sh`, `fortify.sh prereq`, `outil.sh setup`, `package-refs.sh --doc`) avec le faux `dotnet` : VSTest, Microsoft.Testing.Platform (xUnit v3, MSTest.Sdk, TUnit), solution mixte, projet refusé par le SDK .NET 10.
+Les 118 contrôles des scripts .NET (`build-test.sh`, `test-platform.sh`, `test-guardian.sh`, `fortify.sh prereq`, `outil.sh setup`, `package-refs.sh --doc`) avec le faux `dotnet` : VSTest, Microsoft.Testing.Platform (xUnit v3, MSTest.Sdk, TUnit), solution mixte, projet refusé par le SDK .NET 10.
 
 ### `tools/fake-dotnet.sh`
-Un `dotnet` simulé, pour vérifier les scripts sur une machine sans SDK .NET (jamais installé par le pack) : `build`, `test`, `exec`, `new`, `add reference`, `sln add`, `msbuild -getProperty`, aux formats de sortie réels de VSTest et de Microsoft.Testing.Platform ; les tests d'un projet sont déclarés en commentaires, dans le projet ou dans ses fichiers de tests (`fake-test`, dont `requires`, un test qui passe selon le code de production ; `fake-cover`, `fake-build-error`…), à côté du vrai code C# que `--real` compile.
+Un `dotnet` simulé, pour vérifier les scripts sur une machine sans SDK .NET (jamais installé par le pack) : `build`, `test`, `exec`, `new`, `add reference`, `sln add`, `msbuild -getProperty`, aux formats de sortie réels de VSTest et de Microsoft.Testing.Platform ; les tests d'un projet sont déclarés en commentaires, dans le projet ou dans ses fichiers de tests (`fake-test`, dont `requires`, un test qui passe selon le code de production ; `fake-cover`, la couverture au format de coverlet, méthode par méthode et classes du compilateur comprises, qu'un fichier de tests ajoute quand il est là, selon ce que contient le code (`if=`, `unless=`) ; `fake-build-error`…), à côté du vrai code C# que `--real` compile.
 
 ### `tools/validate.js`
-Analyse l'en-tête de chaque agent, commande et skill avec `gray-matter`, le parseur d'OpenCode, et vérifie que chaque fichier du pack est décrit dans ce document.
+Analyse l'en-tête de chaque agent, commande et skill avec `gray-matter`, le parseur d'OpenCode, vérifie que chaque fichier du pack est décrit dans ce document, et que les numéros de ligne des sections d'`AGENTS.global.md` que donne `MIGRATION.md` sont ceux que `grep` affichera.
 
 `tools/node_modules` n'est pas un fichier du pack : il est créé par le `npm install` des vérifications, et n'est jamais commité.

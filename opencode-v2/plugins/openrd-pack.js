@@ -133,7 +133,8 @@
 // Every refusal of 6, 7, 9, 12, 16 and 23 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
-// the summaries of a run (17), its automatic resumes (19), the loops cut (21) and the resumes I ask for (22). Any error leaves the prompt or the call as it is.
+// the summaries of a run (17), its automatic resumes (19), the loops cut (21), the resumes I ask for (22) and the end of a
+// run at its « Suite » question (4). Any error leaves the prompt or the call as it is.
 import { execFile, execFileSync, spawn } from "node:child_process"
 import { Plugin } from "@opencode/plugin"
 import {
@@ -1888,12 +1889,14 @@ export default Plugin.define({
       if (run.pilot && !mark) return
       if (commandRuns.get(event.sessionID) !== run || suites.has(event.sessionID)) return
       suites.set(event.sessionID, mark)
-      release(event.sessionID)
       const state = runs.get(event.sessionID)
       if (state && mark) {
         state.mark = mark
         nudge(event.sessionID, state)
       }
+      // the commands that hold the folder (9) free it now; the others (/compare, /outil) hold nothing
+      if (!LOCKING_COMMANDS.has(run.command)) return
+      release(event.sessionID)
       log("the run ended with its « Suite » question: the folder is free", { command: "/" + run.command })
     }
 

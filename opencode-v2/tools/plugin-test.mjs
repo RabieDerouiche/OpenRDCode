@@ -1773,6 +1773,21 @@ await check("[v2 4] a question of the run before its final answer keeps the fold
   assert.equal(ct.calls.command.length, commands)
 })
 
+await check("[v2 4] /compare ends with its « Suite »: the command chosen starts, there is no folder to free", async () => {
+  const logged = pluginLog().length
+  ct.sessions.set("ct-24", { id: "ct-24", title: "/compare", agent: "debugger" })
+  await ctPrompt("ct-24", "[[command compare /srv/old-api ExportService le séparateur]]\nCompare a feature with a repository where it works.")
+  ct.push("session.execution.started", { sessionID: "ct-24" })
+  ct.push("session.step.started", { sessionID: "ct-24", assistantMessageID: "k1" })
+  ct.push("session.text.ended", { sessionID: "ct-24", assistantMessageID: "k1", ordinal: 0, text: "**Cause** : la culture du serveur.\n**Correctif proposé** (non appliqué) : …" })
+  await suiteQuestion("ct-24", ["/go sans ticket : garder le séparateur décimal (recommandé)", "Rien pour l'instant"])
+  await suiteAnswer("ct-24", ["/go sans ticket : garder le séparateur décimal (recommandé)"])
+  ct.push("session.execution.succeeded", { sessionID: "ct-24" })
+  await wait(150)
+  assert.deepEqual(ct.calls.command.at(-1), { sessionID: "ct-24", name: "go", text: "sans ticket : garder le séparateur décimal" })
+  assert.doesNotMatch(pluginLog().slice(logged), /the folder is free/)
+})
+
 // ---------- 23. dotnet run: a project of the repository that the last commit holds ----------
 const runRepo = join(home, "repos", "run-api")
 mkdirSync(join(runRepo, "src", "Api"), { recursive: true })

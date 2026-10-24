@@ -698,7 +698,7 @@ project tests/App.Tests/App.Tests.csproj Microsoft.NET.Sdk \
   '  <PackageReference Include="coverlet.collector" Version="6.0.2" />' '  <ProjectReference Include="../../src/App/App.csproj" />' \
   '  <Using Include="Xunit" />' '</ItemGroup>' \
   '<!-- fake-cover: src/App/Invoice.cs c=App.Invoice m=Total 4:1 m=Vat 5:1 -->' \
-  '<!-- fake-cover: src/App/Invoice.cs if=src/App/Invoice.cs:return c=App.Invoice m=Discount 7:0 8:0:0/2 9:0 10:0 11:0 12:0 13:0 -->' \
+  '<!-- fake-cover: src/App/Invoice.cs if=src/App/Invoice.cs:return c=App.Invoice m=Discount 7:0 8:0:0/2 9:0 10:0 12:0 13:0 -->' \
   '<!-- fake-cover: src/App/Invoice.cs unless=src/App/Invoice.cs:return c=App.Invoice m=Discount 6:0:0/2 -->'
 cat > tests/App.Tests/InvoiceTests.cs <<'EOF'
 namespace App.Tests;
@@ -725,14 +725,14 @@ check "the ticket branch" 0 '^BRANCH: feature/ABC-5-remise-expression'
 T5=tests/App.Tests/App.Tests.csproj
 run test-guardian.sh coverage S1-before "$T5" src/App/Invoice.cs
 run test-guardian.sh net S1-before src/App/Invoice.cs:Discount
-check "the net of the method to rewrite: no test runs it" 0 '^SAFETY NET: THIN \(0/[0-9]+ lines of this method run by the tests, 0% < 80%\)'
+check "the net of the method to rewrite: no test runs it" 0 '^SAFETY NET: THIN \(0/6 lines of this method run by the tests, 0% < 80%\)'
 cat > tests/App.Tests/InvoiceDiscountTests.cs <<'EOF'
 namespace App.Tests;
 
 // <!-- fake-test: App.Tests.InvoiceDiscountTests.Discount_TenPercent_TakesTenOff pass -->
 // <!-- fake-test: App.Tests.InvoiceDiscountTests.Discount_ZeroPercent_Unchanged pass -->
 // <!-- fake-test: App.Tests.InvoiceDiscountTests.Discount_NegativePercent_Unchanged requires src/App/Invoice.cs:<= Assert.Equal() Failure: Values differ -->
-// <!-- fake-cover: src/App/Invoice.cs if=src/App/Invoice.cs:return c=App.Invoice m=Discount 7:1 8:1:2/2 9:1 10:1 11:1 12:1 13:1 -->
+// <!-- fake-cover: src/App/Invoice.cs if=src/App/Invoice.cs:return c=App.Invoice m=Discount 7:1 8:1:2/2 9:1 10:1 12:1 13:1 -->
 // <!-- fake-cover: src/App/Invoice.cs unless=src/App/Invoice.cs:return c=App.Invoice m=Discount 6:1:2/2 -->
 public class InvoiceDiscountTests
 {
@@ -750,7 +750,7 @@ run test-guardian.sh green "$T5" FullyQualifiedName~InvoiceDiscountTests
 check "its non-regression tests: the current behavior, green twice" 0 '^GREEN: 3 tests pass, twice$'
 run test-guardian.sh coverage S1-net "$T5" src/App/Invoice.cs
 run test-guardian.sh net S1-net src/App/Invoice.cs:Discount
-check "the net, then OK" 0 '^SAFETY NET: OK \([0-9]+/[0-9]+ lines of this method run by the tests, 100%; minimum 80%\)$'
+check "the net, then OK" 0 '^SAFETY NET: OK \(6/6 lines of this method run by the tests, 100%; minimum 80%\)$'
 run test-guardian.sh tests-only
 run test-guardian.sh seal S1 tests/App.Tests/InvoiceDiscountTests.cs
 check "the net sealed" 0 '^SEALED: 1 test files'
@@ -786,7 +786,7 @@ check "after: no test fails" 0 '^TESTS: [0-9]+ passed, 0 failed$' '^FAILED TESTS
 run test-guardian.sh compare S1-before S1-after
 check "after: no file lost coverage" 0 '^COVERAGE: no file lost coverage$'
 run test-guardian.sh net S1-after src/App/Invoice.cs:Discount
-check "after: the net kept" 0 '^SAFETY NET: OK \([0-9]+/[0-9]+ lines of this method run by the tests, 100%; minimum 80%\)$'
+check "after: the net kept" 0 '^SAFETY NET: OK \(1/1 lines of this method run by the tests, 100%; minimum 80%\)$'
 # the commit of the step (go.md 5.4): its net with it
 run test-guardian.sh sealed S1
 run ship.sh --no-push "refactor(billing): compute the discount in one expression (ABC-5)" "- src/App: Invoice.Discount" "- safety net: 0% -> 100% of the lines of 1 methods"

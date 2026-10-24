@@ -1,6 +1,7 @@
 // Parses the frontmatter of every agent, command and skill with gray-matter, the parser used by OpenCode; then checks
 // that FICHIERS.md describes every file of the pack (a "### `<path>`" heading each), describes no file that does not
-// exist, and gives the right counts in its summary.
+// exist, and gives the right counts in its summary; and that the line numbers MIGRATION.md gives for the sections of
+// AGENTS.global.md are those grep shows.
 // Usage, from the repository root: npm install --no-save gray-matter@4.0.3 && node tools/validate.js
 const matter = require("gray-matter")
 const fs = require("fs")
@@ -68,4 +69,22 @@ for (const [word, [prefix, suffix]] of Object.entries(counts)) {
   else if (Number(match[1]) !== real) problem("« Les " + word + " » says " + match[1] + ", there are " + real)
 }
 console.log(problems ? `FICHIERS.md: ${problems} problem(s)` : `FICHIERS.md: the ${pack.length} files of the pack are described`)
-process.exit(failed || problems ? 1 : 0)
+
+// MIGRATION.md tells where the sections of AGENTS.global.md are (`77:## Daily`): those numbers are what grep shows
+let stale = 0
+const globalLines = fs.readFileSync("AGENTS.global.md", "utf8").split("\n")
+const guide = fs.readFileSync("MIGRATION.md", "utf8")
+const told = [...guide.matchAll(/`(\d+):(## [^`]+)`/g)]
+for (const [, number, heading] of told) {
+  if (globalLines[Number(number) - 1] !== heading) {
+    stale++
+    const real = globalLines.findIndex((line) => line === heading)
+    console.log("FAIL MIGRATION.md -> `" + number + ":" + heading + "`: AGENTS.global.md has it at line " + (real < 0 ? "none" : real + 1))
+  }
+}
+if (!told.length) {
+  stale++
+  console.log("FAIL MIGRATION.md -> no section line of AGENTS.global.md to check")
+}
+console.log(stale ? `MIGRATION.md: ${stale} line number(s) of AGENTS.global.md wrong` : `MIGRATION.md: the ${told.length} line numbers of AGENTS.global.md it gives are right`)
+process.exit(failed || problems || stale ? 1 : 0)
