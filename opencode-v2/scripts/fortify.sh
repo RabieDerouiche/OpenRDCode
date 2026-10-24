@@ -1,6 +1,8 @@
 #!/bin/sh
 # What /fortify needs besides the measures of the tests (test-guardian.sh). Run from the repository.
-#   prereq [--tests] dotnet, the Fortify SSC application line ("STOP:" when one lacks; not with --tests, for /tests),
+#   prereq [--tests] a .NET project (a front-end repository: "STOP:"), dotnet and the SDK its global.json asks for
+#                    ("ENVIRONMENT PROBLEM:"), the Fortify SSC application line ("STOP:" when one lacks; not with
+#                    --tests, for /tests),
 #                    then the unit test projects
 #                    and the coverage collector of each of them (coverlet.collector with VSTest; with
 #                    Microsoft.Testing.Platform, Microsoft.Testing.Extensions.CodeCoverage or coverlet.MTP):
@@ -61,8 +63,19 @@ has_coverlet() {
 
 case "$1" in
   prereq)
+    # a repository without .NET project (a front-end): the proofs of /fortify and /tests are .NET unit tests
+    [ -n "$(git ls-files '*.csproj' 2>/dev/null | head -n 1)" ] ||
+      stop "no .NET project in this repository (front-end): /fortify and /tests write and prove .NET unit tests; a front-end fix goes through /go (its test first, with the test runner of the repository)"
     command -v dotnet >/dev/null 2>&1 || stop "dotnet is not on the PATH of this machine (ENVIRONMENT PROBLEM: COMMANDES.md, « Environnement »)"
-    echo "PREREQ: dotnet $(dotnet --version 2>/dev/null | head -n 1)"
+    # the SDK of global.json missing: dotnet --version itself fails, and says why
+    log=$(mktemp "${TMPDIR:-/tmp}/fortify-prereq.XXXXXX") || exit 1
+    if ! dotnet --version > "$log" 2>&1; then
+      sh "$here/dotnet-problem.sh" "$log" || echo "ENVIRONMENT PROBLEM: dotnet --version fails here: $(grep . "$log" | head -n 2 | tr '\n' ' ')"
+      rm -f "$log"
+      exit 1
+    fi
+    echo "PREREQ: dotnet $(head -n 1 "$log")"
+    rm -f "$log"
     if [ "$2" != --tests ]; then
       ssc=$(git grep -h '^APPSEC_PROJECT_NAME=' -- '*appsec-ci.env' 2>/dev/null | head -n 1)
       [ -n "$ssc" ] || stop "no APPSEC_PROJECT_NAME line in appsec-ci.env: the Fortify SSC application of this repository is unknown"

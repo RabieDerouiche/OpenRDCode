@@ -469,6 +469,295 @@ check "--doc: a package never restored" 0 '^XML documentation of Missing.Package
 run package-refs.sh
 check "the list says how to get the documentation of a public package" 0 '^nuget.org packages \(the XML documentation of one: package-refs.sh --doc <id>\):$'
 
+# ---------- the machine, not the code (dotnet-problem.sh): .NET 8, global.json, the runtimes of the tests ----------
+mkdir -p "$work/env"
+cd "$work/env" || exit 1
+git init -q
+mkdir -p src/Api src/Contracts tests/Api.Tests
+printf '<Project Sdk="Microsoft.NET.Sdk.Web">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n  </PropertyGroup>\n</Project>\n' > src/Api/Api.csproj
+printf '<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n    <TargetFramework>netstandard2.0</TargetFramework>\n  </PropertyGroup>\n</Project>\n' > src/Contracts/Contracts.csproj
+cat > tests/Api.Tests/Api.Tests.csproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.11" />
+  </ItemGroup>
+  <!-- fake-test: Api.Tests.HealthTests.Get_ReturnsOk pass -->
+</Project>
+EOF
+cat > Api.sln <<'EOF'
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Api", "src\Api\Api.csproj", "{11111111-1111-1111-1111-111111111111}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Contracts", "src\Contracts\Contracts.csproj", "{33333333-3333-3333-3333-333333333333}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Api.Tests", "tests\Api.Tests\Api.Tests.csproj", "{22222222-2222-2222-2222-222222222222}"
+EndProject
+EOF
+printf '{\n  "sdk": { "version": "8.0.400" }\n}\n' > global.json
+printf 'bin/\nobj/\n' > .gitignore
+git add -A && git commit -q -m init
+# only the .NET 10 SDK on this machine: global.json asks for 8.0.400 (rollForward patch by default)
+run build-test.sh
+check "the SDK of global.json is missing: an environment problem" any 'ENVIRONMENT PROBLEM: global.json asks for the .NET SDK 8.0.400, which is not installed on this machine \(installed: 10.0.100\)'
+check "and global.json is never changed to make it build" any 'Never change global.json or its rollForward yourself'
+truth "the SDK of global.json is missing: the run fails" '[ "$status" -ne 0 ]'
+called "and no test runs" '^dotnet build' '^dotnet test'
+run dotnet-targets.sh
+check "dotnet-targets: the SDK global.json asks for, not installed" 0 '^\.NET SDK: global.json asks for 8\.0\.400 \(rollForward patch\): NOT INSTALLED on this machine \(installed: 10\.0\.100\)'
+check "dotnet-targets: the target frameworks and their projects" 0 '^Target frameworks: net8\.0 \(src/Api, tests/Api\.Tests\), netstandard2\.0 \(src/Contracts\)$'
+check "dotnet-targets: the C# version of each target framework" 0 '^C#: 12 for net8\.0, 7\.3 for netstandard2\.0 \(the defaults: no LangVersion\)'
+check "dotnet-targets: the end of support of .NET 8" 0 '^Support: net8\.0 \((ends|ended) on 2026-11-10\)'
+# the .NET 8 SDK installed, not its runtimes: the build passes, the tests cannot start
+FAKE_DOTNET_SDKS="8.0.404 10.0.100"
+export FAKE_DOTNET_SDKS
+run build-test.sh
+check "the runtime of the tests is missing: an environment problem" any 'ENVIRONMENT PROBLEM: the tests run on Microsoft\.NETCore\.App 8\.0\.0 \(a net8\.0 project\), which is not installed on this machine \(found: 10\.0\.0\)'
+check "and the target framework is never changed to make them run" any 'Never change the target framework of a project, never roll it forward'
+run dotnet-targets.sh
+check "dotnet-targets: the SDK fits" 0 '^\.NET SDK: global.json asks for 8\.0\.400 \(rollForward patch\): 8\.0\.404 is installed'
+check "dotnet-targets: the runtimes of the tests, not installed" 0 '^Test runtimes: NOT INSTALLED on this machine: Microsoft\.AspNetCore\.App 8\.0 for net8\.0, Microsoft\.NETCore\.App 8\.0 for net8\.0'
+# and its runtimes
+FAKE_DOTNET_RUNTIMES="Microsoft.AspNetCore.App 8.0.11
+Microsoft.NETCore.App 8.0.11
+Microsoft.AspNetCore.App 10.0.0
+Microsoft.NETCore.App 10.0.0"
+export FAKE_DOTNET_RUNTIMES
+run build-test.sh
+check ".NET 8 with its SDK and runtimes: build and tests" 0 '^TESTS: OK$' 'ENVIRONMENT PROBLEM'
+run dotnet-targets.sh
+check "dotnet-targets: the runtimes of the tests, installed" 0 '^Test runtimes: installed \(net8\.0: Microsoft\.AspNetCore\.App, Microsoft\.NETCore\.App\)'
+unset FAKE_DOTNET_SDKS FAKE_DOTNET_RUNTIMES
+# the other messages, read from the output of dotnet
+mkdir -p "$work/logs"
+printf '/src/Api/Api.csproj : error NETSDK1045: The current .NET SDK does not support targeting .NET 11.0.  Either target .NET 10.0 or lower, or use a version of the .NET SDK that supports .NET 11.0.\n' > "$work/logs/1045"
+printf 'error NETSDK1147: To build this project, the following workloads must be installed: wasm-tools\n' > "$work/logs/1147"
+printf '/x/src/Desktop/Desktop.csproj : error NETSDK1100: To build a project targeting Windows on this operating system, set the EnableWindowsTargeting property to true. [/x/src/Desktop/Desktop.csproj]\n' > "$work/logs/1100"
+printf '  /x/src/Api/Api.csproj : error NU1301: Unable to load the service index for source https://artifactory.example.com/api/nuget/v3/nuget.\n' > "$work/logs/1301"
+printf 'src/Api/Program.cs(12,5): error CS0103: The name '"'"'Foo'"'"' does not exist in the current context\n' > "$work/logs/cs"
+printf '/x/src/Legacy/Legacy.csproj : error MSB3644: The reference assemblies for .NETFramework,Version=v4.8 were not found. To resolve this, install the Developer Pack.\n' > "$work/logs/3644"
+printf '  Failed Api.Tests.OrderRepositoryTests.Save [1 ms]\n  Error Message:\n   DotNet.Testcontainers.Builders.DockerUnavailableException : Docker is either not running or misconfigured. Please ensure that Docker is running and that the endpoint is properly configured.\n' > "$work/logs/docker"
+printf '  Error Message:\n   System.PlatformNotSupportedException : LocalDB is not supported on this platform.\n' > "$work/logs/localdb"
+for c in "1045:a project targets \.NET 11\.0 newer than the \.NET SDK of this machine \(10\.0\.100\).*Never lower the target framework" \
+  "1147:needs the \.NET workload wasm-tools" "1100:targets Windows .*solution filter \(\.slnf\)" \
+  "1301:the package feed \(Artifactory\) refused access or cannot be reached" "3644:a \.NET Framework project \(\.NETFramework,Version=v4\.8\) needs the reference assemblies" \
+  "docker:some tests need Docker \(Testcontainers\).*Never change or skip these tests" "localdb:some tests need SQL Server LocalDB"; do
+  out=$(cd "$work/logs" && "$SHELL_UNDER_TEST" "$scripts/dotnet-problem.sh" "$work/logs/${c%%:*}" 2>&1)
+  status=$?
+  check "dotnet-problem: ${c%%:*}" 0 "ENVIRONMENT PROBLEM: .*${c#*:}"
+done
+out=$("$SHELL_UNDER_TEST" "$scripts/dotnet-problem.sh" "$work/logs/cs" 2>&1)
+status=$?
+check "dotnet-problem: a compilation error is the code, not the machine" 1 '^$'
+
+# ---------- a library: its package, its public API, its tests ----------
+mkdir -p "$work/lib"
+cd "$work/lib" || exit 1
+git init -q
+mkdir -p src/Lib/Dtos src/Api/Controllers tests/Lib.Tests
+cat > src/Lib/Lib.csproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <IsPackable>true</IsPackable>
+    <PackageId>Company.Lib</PackageId>
+    <Version>2.3.0</Version>
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>2.2.0</PackageValidationBaselineVersion>
+  </PropertyGroup>
+</Project>
+EOF
+cat > src/Lib/Client.cs <<'EOF'
+namespace Lib;
+public class Client
+{
+    public Client(string host) { }
+    public void Connect(string host) { }
+    public void Disconnect() { }
+    internal void Hidden() { }
+}
+EOF
+cat > src/Lib/Dtos/InvoiceDto.cs <<'EOF'
+namespace Lib.Dtos;
+public class InvoiceDto
+{
+    public string Number { get; set; } = "";
+    public decimal Total { get; set; }
+}
+EOF
+cat > src/Api/Controllers/InvoicesController.cs <<'EOF'
+[ApiController]
+[Route("api/invoices")]
+public class InvoicesController : ControllerBase
+{
+    [HttpGet("{id:int}")]
+    public IActionResult Get(int id) => Ok();
+}
+EOF
+project tests/Lib.Tests/Lib.Tests.csproj Microsoft.NET.Sdk '<ItemGroup>' '  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />' \
+  '  <PackageReference Include="xunit" Version="2.9.2" />' '</ItemGroup>' '<!-- fake-test: Lib.Tests.ClientTests.Connect_Opens pass -->'
+cat > tests/Lib.Tests/ClientTests.cs <<'EOF'
+namespace Lib.Tests;
+public class ClientTests
+{
+    [Fact]
+    public void Connect_Opens() => Assert.True(new Client("h").IsOpen);
+}
+EOF
+cat > Lib.sln <<'EOF'
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lib", "src\Lib\Lib.csproj", "{11111111-1111-1111-1111-111111111111}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lib.Tests", "tests\Lib.Tests\Lib.Tests.csproj", "{22222222-2222-2222-2222-222222222222}"
+EndProject
+EOF
+printf 'bin/\nobj/\n' > .gitignore
+git add -A && git commit -q -m init
+git checkout -q -b feature/ABC-7-retry
+run detect-project-type.sh
+check "detect-project-type: the library, its version and its package validation" 0 '^Library: src/Lib/Lib\.csproj packable; version: 2\.3\.0 \(Version in src/Lib/Lib\.csproj\); package validation: on, against 2\.2\.0: dotnet pack fails on a breaking change \(build-test\.sh --pack\)'
+check "detect-project-type: a multi-target library" 0 '^Target frameworks: netstandard2\.0 \(src/Lib\), net8\.0 \(src/Lib, tests/Lib\.Tests\)|^Target frameworks: .*netstandard2\.0 \(src/Lib\)'
+run build-test.sh --pack
+check "--pack: build, tests, then the package" 0 '^PACK: OK \(Lib\.1\.0\.0\.nupkg\)'
+called "--pack: dotnet pack of what was built (Debug), into the git folder" "^dotnet pack --no-build -c Debug -nologo -v q -o $work/lib/.git/opencode-pack\$"
+truth "--pack: nothing written in the repository" '[ -z "$(git status --porcelain)" ]'
+# a breaking change that package validation finds
+printf '// fake-breaking: Member '"'"'Lib.Client.Connect(string)'"'"' exists on [Baseline] lib/net8.0/Company.Lib.dll but not on lib/net8.0/Company.Lib.dll\n' >> src/Lib/Client.cs
+run build-test.sh --pack
+check "--pack: a breaking change of the public API is named" 1 "^BREAKING CHANGE: CP0002: Member 'Lib\.Client\.Connect\(string\)' exists on \[Baseline\]"
+check "--pack: and fails, never hidden by a suppression file" 1 '^PACK: FAILED \(package validation: 1 breaking change of the public API.*never a suppression file'
+git checkout -q -- src/Lib/Client.cs
+# what the branch changes in the contracts (api-surface.sh): a signature, a removal, a field, a route
+sed -i 's/public void Connect(string host) { }/public void Connect(string host, int port) { }/; /public void Disconnect() { }/d' src/Lib/Client.cs
+sed -i 's/    public decimal Total { get; set; }/    public decimal Total { get; set; }\n    public string Currency { get; set; } = "EUR";/' src/Lib/Dtos/InvoiceDto.cs
+sed -i 's/\[HttpGet("{id:int}")\]/[HttpGet("{id:guid}")]/' src/Api/Controllers/InvoicesController.cs
+run api-surface.sh develop
+check "api-surface: a changed signature" 0 '^API CHANGED: src/Lib/Client\.cs: public void Connect\(string host\) -> public void Connect\(string host, int port\)$'
+check "api-surface: a removed member" 0 '^API REMOVED: src/Lib/Client\.cs: public void Disconnect\(\)$'
+check "api-surface: a new field of a contract" 0 '^CONTRACT FIELD ADDED: src/Lib/Dtos/InvoiceDto\.cs: public string Currency \{ get; set; \} = "EUR";$'
+check "api-surface: a route changed" 0 '^ROUTE REMOVED: src/Api/Controllers/InvoicesController\.cs: \[HttpGet\("\{id:int\}"\)\]$'
+check "api-surface: the verdict" 0 '^SURFACE: breaking \(3 removed or changed\)'
+truth "api-surface: the internal member is not the public API" '! printf "%s\n" "$out" | grep -q Hidden'
+git checkout -q -- src
+printf 'namespace Lib;\npublic static class ClientExtensions\n{\n    public static void Ping(this Client c) { }\n}\n' > src/Lib/ClientExtensions.cs
+run api-surface.sh develop
+check "api-surface: an addition only is additive" 0 '^SURFACE: additive \(2 added\): compatible'
+rm src/Lib/ClientExtensions.cs
+run api-surface.sh develop
+check "api-surface: no production code changed" 0 '^SURFACE: unchanged \(no production C# file changed\)$'
+# the quality of the tests (test-lint.sh): what the branch brings, not what was there
+cat >> tests/Lib.Tests/ClientTests.cs <<'EOF'
+public class RetryTests
+{
+    [Fact]
+    public void Retry_NoAssert()
+    {
+        var client = new Client("h");
+        client.Connect("h");
+    }
+
+    [Fact]
+    public async Task Retry_Waits()
+    {
+        await Task.Delay(100);
+        var now = DateTime.Now;
+        Assert.Equal(1, Retry.Count(now));
+    }
+
+    [Fact(Skip = "flaky")]
+    public void Retry_Old() { Assert.True(true); }
+
+    [Fact]
+    public void Retry_Helper()
+    {
+        var policy = Build();
+        AssertValid(policy);
+    }
+}
+EOF
+run test-lint.sh --changed develop
+check "test-lint: a test without assertion" 0 'ClientTests\.cs:[0-9]+: blocking: test without assertion'
+check "test-lint: a real delay" 0 'ClientTests\.cs:[0-9]+: major: sleep or real delay'
+check "test-lint: a real clock" 0 'ClientTests\.cs:[0-9]+: major: real clock'
+check "test-lint: a skipped test" 0 'ClientTests\.cs:[0-9]+: major: skipped test'
+check "test-lint: an assertion that cannot fail" 0 'ClientTests\.cs:[0-9]+: minor: an assertion that cannot fail'
+check "test-lint: the count" 0 '^TEST LINT: 5 problems \(1 blocking, 3 major\)$'
+truth "test-lint: a helper that asserts is an assertion" '! printf "%s\n" "$out" | grep -q "ClientTests.cs:3[2-9]: blocking"'
+truth "test-lint: the test that was there is not read again" '! printf "%s\n" "$out" | grep -q "ClientTests.cs:5:"'
+git checkout -q -- tests
+# /review of a teammate's branch: its contracts and the tests it brings, read from git (review-target.sh), my working
+# tree untouched
+git init -q --bare "$work/lib-origin.git"
+git remote add origin "$work/lib-origin.git"
+git push -q origin develop 2>/dev/null
+git checkout -q -b feature/ABC-8-teammate develop
+sed -i '/public void Disconnect() { }/d' src/Lib/Client.cs
+printf 'public class TeammateTests\n{\n    [Fact]\n    public void Connect_Twice() { var c = new Client("h"); c.Connect("h"); }\n}\n' >> tests/Lib.Tests/ClientTests.cs
+git add -A && git commit -q -m "feat: a teammate change"
+git push -q origin feature/ABC-8-teammate 2>/dev/null
+git checkout -q feature/ABC-7-retry
+git branch -q -D feature/ABC-8-teammate
+printf 'local work in progress\n' > notes.txt
+# shellcheck disable=SC2034 # read in the eval of truth
+before=$(git status --porcelain; git rev-parse HEAD; git branch --show-current)
+run review-target.sh feature/ABC-8-teammate
+check "review: the contracts of the reviewed branch, from git" 0 '^API REMOVED: src/Lib/Client\.cs: public void Disconnect\(\)$'
+check "review: their verdict" 0 '^SURFACE: breaking \(1 removed or changed\)'
+check "review: the tests it brings, as committed" 0 '^tests/Lib\.Tests/ClientTests\.cs:[0-9]+: blocking: test without assertion'
+truth "review: my working tree, my branch and my files untouched" '[ "$(git status --porcelain; git rev-parse HEAD; git branch --show-current)" = "$before" ]'
+rm notes.txt
+
+# ---------- two repositories of one application (related-repos.sh) ----------
+mkdir -p "$work/apps"
+for r in api-factures front-factures; do
+  mkdir -p "$work/apps/$r"
+  git -C "$work/apps/$r" init -q
+  printf '# %s\n' "$r" > "$work/apps/$r/README.md"
+done
+cat > "$work/apps/front-factures/AGENTS.md" <<'EOF'
+# AGENTS.md
+
+## Dépôts liés
+- `api-factures` : l'API .NET des factures (GET /api/invoices)
+- `lib-commun` (`~/nowhere/lib-commun`) : la librairie NuGet interne des montants
+
+## Build & test
+- npm test
+EOF
+for r in api-factures front-factures; do git -C "$work/apps/$r" add -A && git -C "$work/apps/$r" commit -q -m init; done
+git -C "$work/apps/api-factures" checkout -q -b feature/ABC-123-export-csv
+mkdir -p "$work/apps/api-factures/.git/opencode-tickets"
+cat > "$work/apps/api-factures/.git/opencode-tickets/ABC-123.md" <<'EOF'
+# ABC-123 — Export CSV des factures
+
+## Contrat
+- GET /api/invoices/export?from=&to= : text/csv, colonnes Number;Date;Total
+- InvoiceDto : champ Currency ajouté (string, "EUR" par défaut)
+
+## Suivi
+- 2026-10-20 10:00 — /go - étape 1 faite
+- 2026-10-21 16:30 — /go - livré - MR https://gitlab.example.com/g/api/-/merge_requests/42 - build ok - tests 48/48
+EOF
+cd "$work/apps/front-factures" || exit 1
+run related-repos.sh ABC-123
+check "related-repos: the other repository, next to this one" 0 "^RELATED: api-factures — $work/apps/api-factures \(branch feature/ABC-123-export-csv\): l'API \.NET des factures"
+check "related-repos: its branch and its delivery for the ticket" 0 '^  ABC-123 there: branch feature/ABC-123-export-csv, sheet .*ABC-123\.md; 2026-10-21 16:30 — /go - livré - MR https://gitlab\.example\.com/g/api/-/merge_requests/42'
+check "related-repos: its contract" 0 '^    - GET /api/invoices/export\?from=&to= : text/csv'
+check "related-repos: a repository not on this machine says how to give its path" 0 "^RELATED: lib-commun — not found at $HOME/nowhere/lib-commun: give its path"
+run related-repos.sh
+check "related-repos: without a key, where they are" 0 '^RELATED: api-factures — ' '^  ABC-123'
+cd "$work/apps/api-factures" || exit 1
+run related-repos.sh ABC-123
+check "related-repos: a repository without the section" 0 '^RELATED: none \(no AGENTS\.md'
+run detect-project-type.sh
+cd "$work/apps/front-factures" || exit 1
+run detect-project-type.sh
+check "detect-project-type: the related repositories" any '^Related repositories \(AGENTS\.md\): api-factures, lib-commun \(~/nowhere/lib-commun\) — sh ~/.config/opencode/scripts/related-repos\.sh <KEY>'
+
 # never dotnet run, in any of these runs
 truth "never dotnet run" '! grep -q "^dotnet run" "$work/all-calls.log"'
 truth "no output file left in the temporary folder" '[ -z "$(ls "$TMPDIR")" ]'

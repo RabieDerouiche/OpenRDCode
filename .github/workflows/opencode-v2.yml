@@ -1,7 +1,10 @@
 # Checks of the OpenCode v2 pack (opencode-v2/) on every push that changes it, and on demand (Actions tab, "Run
-# workflow"). Two jobs: every suite of the pack (no .NET SDK needed), and the stories of the pack with the real .NET
-# SDK (real builds, real xUnit and MSTest tests, real coverage): the flow of /fortify and of its test-guardian, and the
-# developer's days. A failed check becomes an annotation of the run; the logs are kept as an artifact of the run.
+# workflow"). Three jobs: every suite of the pack (no .NET SDK, no registry needed); the stories of the pack with the
+# real .NET SDKs 10 and 8 (real builds, real xUnit and MSTest tests, real coverage, the real messages of the host, of
+# the test host and of package validation): the flow of /fortify and of its test-guardian, the developer's days, the
+# environment problems; and the front-end with the real tools (Jest, Vitest, Angular with Vitest and with Karma in
+# ChromeHeadless, from the npm registry). A failed check becomes an annotation of the run; the logs are kept as an
+# artifact of the run.
 name: opencode-v2
 
 on:
@@ -71,6 +74,7 @@ jobs:
             suite "dotnet-test $s" "dotnet-$s" sh tools/dotnet-test.sh "$s"
             suite "scenarios-test $s" "scenarios-$s" sh tools/scenarios-test.sh "$s"
             suite "fortify-test $s" "fortify-$s" sh tools/fortify-test.sh "$s"
+            suite "frontend-test $s" "frontend-$s" sh tools/frontend-test.sh "$s"
           done
           echo "::notice title=Suites du pack::$(awk '{ gsub(/%/, "%25"); printf "%s%s", (NR > 1 ? "%0A" : ""), $0 }' "$results")"
           exit "$failed"
@@ -91,16 +95,21 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "10.0.x"
-      - name: fortify-test --real et scenarios-test --real
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: fortify-test --real, scenarios-test --real et real-dotnet-test
         run: |
           logs="$RUNNER_TEMP/logs"
           mkdir -p "$logs"
           dotnet --info > "$logs/dotnet-info.log" 2>&1
           failed=0
-          for t in fortify scenarios; do
+          for t in fortify scenarios real-dotnet; do
             log="$logs/$t-real.log"
-            sh "tools/$t-test.sh" --real dash > "$log" 2>&1 || failed=1
+            case "$t" in
+              real-dotnet) sh tools/real-dotnet-test.sh dash > "$log" 2>&1 || failed=1 ;;
+              *) sh "tools/$t-test.sh" --real dash > "$log" 2>&1 || failed=1 ;;
+            esac
             awk -v t="$t-test --real" '
               function flush() { if (msg != "") { print "::error title=" t "::" msg; msg = ""; n = 0 } }
               { gsub(/%/, "%25"); gsub(/\r/, "") }
@@ -117,4 +126,39 @@ jobs:
         if: always()
         with:
           name: logs-real-dotnet
+          path: ${{ runner.temp }}/logs/
+
+  real-frontend:
+    name: Front-end avec les vrais outils
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: opencode-v2
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: frontend-test --real
+        run: |
+          logs="$RUNNER_TEMP/logs"
+          mkdir -p "$logs"
+          { node --version; npm --version; command -v google-chrome chromium chromium-browser; } > "$logs/tools.log" 2>&1
+          log="$logs/frontend-real.log"
+          failed=0
+          sh tools/frontend-test.sh --real dash > "$log" 2>&1 || failed=1
+          awk -v t="frontend-test --real" '
+            function flush() { if (msg != "") { print "::error title=" t "::" msg; msg = ""; n = 0 } }
+            { gsub(/%/, "%25"); gsub(/\r/, "") }
+            /^FAIL/ { flush(); msg = $0; next }
+            /^    / && msg != "" && n < 40 { msg = msg "%0A" $0; n++; next }
+            { flush() }
+            END { flush() }' "$log"
+          echo "::notice title=frontend-test --real::$(tail -n 1 "$log")"
+          exit "$failed"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: logs-real-frontend
           path: ${{ runner.temp }}/logs/

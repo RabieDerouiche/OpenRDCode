@@ -237,7 +237,7 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère : remplace tout son contenu ;
 - `FAILED open or read` : il n'existe pas encore : crée-le.
 
-La première fois, avec un pack 1.19 à jour, tu dois voir ces 27 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
+La première fois, avec un pack 1.19 à jour, tu dois voir ces 28 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
 ```text
 agents/analyst.md: FAILED
 agents/checker.md: FAILED
@@ -258,6 +258,7 @@ commands/sync.md: FAILED open or read
 commands/tests.md: FAILED open or read
 skills/best-practices/SKILL.md: FAILED
 skills/build-fix/SKILL.md: FAILED
+skills/dotnet-cqrs-conventions/SKILL.md: FAILED
 skills/fortify-remediation/SKILL.md: FAILED
 skills/pack-abandon/SKILL.md: FAILED
 skills/pack-audit/SKILL.md: FAILED
@@ -277,23 +278,32 @@ ls ~/oc2/config/opencode/agents ~/oc2/config/opencode/commands
 ```
 Tu dois voir, pour les agents : `analyst.md checker.md coder.md debugger.md doc-writer.md pilot.md test-guardian.md` ; pour les commandes : `compare.md daily.md fix.md fortify.md go.md outil.md push.md review.md sync.md tests.md`. Un autre nom est soit un fichier à toi (garde-le), soit un reste d'un ancien pack : envoie-moi son nom. Dans `skills`, tes skills `pattern-…` sont à toi : ils restent.
 
-**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `abandon.sh`, `base.sh`, `fortify.sh`, `test-guardian.sh` et `test-platform.sh` ; neuf d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-refs.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public, `git fetch` de deux espaces de travail qui se croisent relancé tout seul).
+**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `abandon.sh`, `api-surface.sh`, `base.sh`, `dotnet-problem.sh`, `dotnet-targets.sh`, `fortify.sh`, `front-info.sh`, `front-test.sh`, `related-repos.sh`, `test-guardian.sh`, `test-lint.sh` et `test-platform.sh` ; onze d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `detect-project-type.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-refs.sh`, `review-target.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public, `git fetch` de deux espaces de travail qui se croisent relancé tout seul, un dossier front-end buildé et testé une fois par `build-test.sh <dossier>`, un problème de la machine dit en une ligne, un `node_modules` jamais poussé).
 ```sh
 cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
 ```
-Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 14 lignes :
+Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 23 lignes :
 ```text
 abandon.sh: FAILED open or read
+api-surface.sh: FAILED open or read
 base.sh: FAILED open or read
 branch.sh: FAILED
 build-test.sh: FAILED
+detect-project-type.sh: FAILED
 diff-guard.sh: FAILED
+dotnet-problem.sh: FAILED open or read
+dotnet-targets.sh: FAILED open or read
 fetch.sh: FAILED
 fortify.sh: FAILED open or read
+front-info.sh: FAILED open or read
+front-test.sh: FAILED open or read
 outil.sh: FAILED
 package-refs.sh: FAILED
+related-repos.sh: FAILED open or read
+review-target.sh: FAILED
 ship.sh: FAILED
 test-guardian.sh: FAILED open or read
+test-lint.sh: FAILED open or read
 test-platform.sh: FAILED open or read
 todo.sh: FAILED
 workflow-state.sh: FAILED
@@ -311,7 +321,7 @@ grep -n '^## ' ~/.config/opencode/AGENTS.md
 ```sh
 grep -n '^## ' ~/oc2/config/opencode/AGENTS.md
 ```
-Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `77:## Daily`, `81:## Release groups` et `88:## NuGet / Artifactory`.
+Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `81:## Daily`, `85:## Release groups` et `92:## NuGet / Artifactory`.
 3. Dans le nouveau fichier, remplace d'abord la section « Release groups » (de sa ligne `## Release groups` jusqu'à la ligne avant `## NuGet / Artifactory`) par la tienne, copiée dans ta 1.19 de la même façon. Puis la section « Daily » (de `## Daily` jusqu'à la ligne avant `## Release groups`). Dans cet ordre : en commençant par le bas, les numéros de ligne du haut ne bougent pas.
 4. Vérifie que les sections sont les mêmes que dans ta 1.19 :
 ```sh
@@ -609,6 +619,8 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
 | une conversation résumée quand le contexte est plein : le pilote pouvait perdre la procédure de sa commande | le pilote retrouve les consignes de sa commande après le résumé, chaque sous-agent sa tâche |
 | — | **`/fortify`** : voir le document « Fortify par lot avec test-guardian », et la section « Fortify » de `COMMANDES.md` pour ses prérequis (coverlet) |
 | les tests écrits par l'agent qui code | `/go` : le test d'un bug est écrit d'abord par le test-guardian (rouge, puis vert après le correctif, deux fois chacun) ; en fin de `/go`, les lignes modifiées qu'aucun test n'exécute reçoivent leurs tests ; `/fix` : une faille de Fortify ou de Sonar est corrigée avec sa preuve |
+| les tests front-end lancés par l'agent avec la commande d'AGENTS.md : `npm test` sur un Angular avec Karma tenait le tour 20 minutes en mode watch | `build-test.sh <dossier du front>` : son build, puis ses tests une fois (Karma en ChromeHeadless, Vitest, Jest, Create React App), avec des lignes `BUILD:` et `TESTS:` ; une commande qui ne finit jamais (serveur, mode watch) est refusée aux agents du pack, la conversation peut la lancer en arrière-plan ou bornée |
+| des règles écrites pour .NET 10 | .NET 8, 9 et 10, netstandard2.0 et les librairies : les agents écrivent pour la version du projet et sa version de C#, ne touchent jamais global.json ni un framework cible ; un SDK ou un runtime absent est dit en une ligne ; l'API publique d'une librairie est contrôlée contre sa dernière version publiée ; les dépôts d'une même application partagent leur « Contrat » |
 
 ## Étape 14 — Ce que le pack reprend de la 1.19, et ce qu'il ferme dans la v2
 
@@ -629,7 +641,10 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
 - un pilote arrêté avant sa réponse finale (sa limite d'étapes, une réponse coupée) : repris tout seul, deux fois au plus d'affilée ;
 - une conversation résumée parce que le contexte du modèle est plein : le résumé garde l'état du run (fiche, étape, sous-agents, commits), puis le pilote retrouve les consignes de sa commande et chaque sous-agent sa tâche ;
 - plusieurs sous-agents à la fois (les analyses de `/fortify`, trois en parallèle) : tous dans le titre ;
-- les preuves des tests : chaque test rouge ou vert exécuté deux fois (un test instable est refusé), un test qui ne s'arrête pas arrêté au bout de 5 minutes et nommé, et la couverture des lignes modifiées par la branche.
+- les preuves des tests : chaque test rouge ou vert exécuté deux fois (un test instable est refusé), un test qui ne s'arrête pas arrêté au bout de 5 minutes et nommé, et la couverture des lignes modifiées par la branche ;
+- des tests qui prouvent un comportement : chaque test attendu de la fiche a son niveau et un scénario avec des valeurs, et `test-lint.sh` refuse un test sans assertion, focalisé, ignoré, ou qui dépend de l'horloge réelle ;
+- le front-end, les versions de .NET et les librairies : `build-test.sh <dossier>` pour un front, `dotnet-problem.sh` pour un SDK, un runtime, Docker ou un flux de paquets absents, `build-test.sh --pack` et `api-surface.sh` pour l'API publique et les contrats, `related-repos.sh` pour les dépôts d'une même application ;
+- jamais un `node_modules`, un `obj` ou un `bin/Debug` poussé : une installation que git n'ignorerait pas est refusée, et le contrôle avant push les arrête.
 
 **Ce que la v2 ouvre, et que le pack ferme :**
 
@@ -644,10 +659,12 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
 | un sous-agent repris par son identifiant | son message n'a plus la ligne qui dit « sous-agent » | reconnu par sa session parente : toujours sans question |
 
 **Les vérifications automatiques passent** :
-- plugin : 701 sur 701 (651 à cette étape), dont le QCM « Suite » qui finit chaque commande (le dossier libre pendant qu'il attend, l'issue gardée dans le titre, aucune reprise automatique après lui, la commande choisie lancée même si le serveur du modèle tombe ensuite), le contenu `null` des messages d'appels d'outils remplacé par `""` (rejoué sur le vrai v2.1.3 contre un serveur qui refuse `null` comme la passerelle de la plateforme), puis la coupure des réponses qui bouclent, « continue » repris par le pilote et `dotnet run` limité aux projets commités, `/tests`, chaque commande que le pack prescrit à un agent passée aux gardes du plugin, et un `/go` dans le dossier principal en même temps qu'un `/go` dans son espace de travail ;
-- permissions : 2 233 cas sur 2 233 (1 933 à cette étape), dont les 143 commandes que les commandes, agents et skills du pack prescrivent, chacune permise à l'agent qui la lance ;
-- scripts git hors ticket (`/push`, `/sync`, `/go … depuis`, espace de travail en HEAD détachée, `/outil abandon`) : 69 contrôles sur 69 contre un dépôt distant de test (`tools/scripts-test.sh`, dash et bash) ;
-- scripts .NET avec un `dotnet` simulé, VSTest et Microsoft.Testing.Platform : 130 contrôles sur 130 (`tools/dotnet-test.sh`, dash et bash) ;
+- plugin : 767 sur 767 (701 à l'étape précédente), dont les commandes qui ne finissent jamais (un serveur, un mode watch, `npm test` jugé sur ce que lance son script, la conversation en arrière-plan ou bornée), et le QCM « Suite » qui finit chaque commande (le dossier libre pendant qu'il attend, l'issue gardée dans le titre, aucune reprise automatique après lui, la commande choisie lancée même si le serveur du modèle tombe ensuite), le contenu `null` des messages d'appels d'outils remplacé par `""` (rejoué sur le vrai v2.1.3 contre un serveur qui refuse `null` comme la passerelle de la plateforme), puis la coupure des réponses qui bouclent, « continue » repris par le pilote et `dotnet run` limité aux projets commités, `/tests`, chaque commande que le pack prescrit à un agent passée aux gardes du plugin, et un `/go` dans le dossier principal en même temps qu'un `/go` dans son espace de travail ;
+- permissions : 2 401 cas sur 2 401 (2 233 à l'étape précédente), dont les 182 commandes que les commandes, agents et skills du pack prescrivent, chacune permise à l'agent qui la lance, et les scripts de package.json (un client d'API généré oui ; publier, déployer, les tests de bout en bout non) ;
+- scripts git hors ticket (`/push`, `/sync`, `/go … depuis`, espace de travail en HEAD détachée, `/outil abandon`, un `node_modules` jamais poussé) : 74 contrôles sur 74 contre un dépôt distant de test (`tools/scripts-test.sh`, dash et bash) ;
+- scripts .NET avec un `dotnet` simulé, VSTest et Microsoft.Testing.Platform, .NET 8 sans son SDK puis sans ses runtimes, librairie et validation de paquet, contrats, qualité des tests, dépôts liés, review d'une branche d'un collègue : 186 contrôles sur 186 (`tools/dotnet-test.sh`, dash et bash) ;
+- scripts front-end avec un npm simulé (Angular avec Karma et avec Vitest, Create React App, Vitest, Jest, registre refusé, lockfile désynchronisé, Chrome absent, run qui ne finit pas) : 77 contrôles sur 77 (`tools/frontend-test.sh`, dash et bash ; avec `--real`, les vrais Jest, Vitest et Angular, lancés par GitHub à chaque push) ;
+- les messages réels du SDK .NET (SDK de global.json absent, NETSDK1045, runtime des tests absent, .NET 8, CS9202, validation de paquet) : `tools/real-dotnet-test.sh`, lancé par GitHub avec les SDK 10 et 8 ;
 - des histoires complètes, avec un `dotnet` simulé, deux dépôts (avec et sans tests) et un second ordinateur qui pousse aussi : 139 contrôles sur 139 (`tools/scenarios-test.sh`, dash et bash ; avec `--real`, le vrai SDK .NET, lancé par GitHub à chaque push) — `/go`, une étape « (filet d'abord) » dont le filet arrête la régression du coder, la même dans un dépôt sans tests (le projet de tests créé d'abord, le filet mesuré avant tout test), `/go … depuis`, POC, documentation seule, build cassé, test rouge, « sans les tests », code déjà vert non relancé, commits du Mac fusionnés puis en conflit, `/sync`, commit fait sur develop par erreur, secret bloqué, `dotnet` absent, `/fix` sans ticket, `/tests` dans un dépôt sans tests, deux espaces de travail du même dépôt qui buildent, mesurent et poussent chacun sa branche en même temps, puis 4 espaces de travail qui font `git fetch` ensemble pendant que 12 branches bougent ;
 - le flux de `/fortify` et de son test-guardian de A à Z, ses lignes de commande dans l'ordre de ses étapes, sur de vrais projets C# : 205 contrôles sur 205 (`tools/fortify-test.sh`, dash et bash ; avec `--real`, le même rejeu avec le vrai SDK .NET, lancé par GitHub à chaque push), dont le filet de non-régression de chaque faille et celui de méthodes que le compilateur découpe (asynchrone, itérateur, lambda, fonction locale), ses chiffres comparés aux valeurs exactes du vrai coverlet ;
 - 33 fichiers d'agents, de commandes et de skills validés (30 à cette étape), chaque fichier du pack décrit dans `FICHIERS.md` ;
@@ -940,10 +957,11 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère. Par exemple, `agents/pilot.md: FAILED` veut dire : remplace tout le contenu de `~/.config/opencode/agents/pilot.md` par celui de `opencode-v2/agents/pilot.md` ;
 - `FAILED open or read` : il n'existe pas encore, crée-le.
 
-Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 10 lignes :
+Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 11 lignes :
 ```text
 skills/best-practices/SKILL.md: FAILED
 skills/build-fix/SKILL.md: FAILED
+skills/dotnet-cqrs-conventions/SKILL.md: FAILED
 skills/fortify-remediation/SKILL.md: FAILED
 skills/pack-abandon/SKILL.md: FAILED
 skills/pack-audit/SKILL.md: FAILED
@@ -987,7 +1005,7 @@ grep -n '^## ' ~/opencode-config-avant-pack-v2/AGENTS.md
 ```sh
 grep -n '^## ' ~/.config/opencode/AGENTS.md
 ```
-Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `77:## Daily`, `81:## Release groups` et `88:## NuGet / Artifactory`.
+Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `81:## Daily`, `85:## Release groups` et `92:## NuGet / Artifactory`.
 
 3. Dans le nouveau fichier, remplace d'abord la section « Release groups » par la tienne : de sa ligne `## Release groups` jusqu'à la ligne avant `## NuGet / Artifactory`, copiée de la même façon dans `~/opencode-config-avant-pack-v2/AGENTS.md`. Puis la section « Daily », de `## Daily` jusqu'à la ligne avant `## Release groups`. Dans cet ordre : en commençant par le bas, les numéros de ligne du haut ne bougent pas.
 4. Vérifie :

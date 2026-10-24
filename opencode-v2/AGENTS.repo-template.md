@@ -13,6 +13,10 @@
 ## Project overview
 - [2 lines: what this API does, who calls it]
 
+## Dépôts liés (optional: the other repositories of the same application, one line each: name, path when it is not next to this one, role)
+- `[front-factures]` (`[~/repos/front-factures]`) : [le front Angular qui appelle cette API]
+- `[lib-commun]` : [la librairie NuGet interne des montants, utilisée en version [2.3]]
+
 ## Build & test
 - Solution : `[src/App.sln]` (only when the root has several solutions or none)
 - Tests locaux : `[--filter "Category!=Integration"]` (only when some tests need Docker, a database or the network)
@@ -22,7 +26,7 @@
 - La CI vérifie aussi : `[dotnet format --verify-no-changes | npx eslint src | coverage >= 80%]`
 - Filet de non-régression : `[80 %]` (only to change the pack's minimum: the share of the lines of the methods a fix touches that tests must run before it)
 - EF Core migration : `[dotnet tool restore && dotnet ef migrations add <Name> --project src/[Project].Infrastructure --startup-project src/[Project].Api]`
-- Front-end : `[npm run build]`, `[npm test -- --watch=false --browsers=ChromeHeadless | npx vitest run]` (one run that ends)
+- Front-end : `[ClientApp]` (the folder of its package.json: the agents build and test it with `build-test.sh [ClientApp]`, its tests once); terminal: `[npm run build]`, `[npm test -- --watch=false --browsers=ChromeHeadless | npx vitest run]`
 
 ## Solution structure
 - `src/[Project].Api` — endpoints, DI wiring
@@ -58,6 +62,7 @@
 - Naming: `[Method_State_Expected]`; a new test file goes in `[tests/[Project].UnitTests/<same folders as src>]`
 - Fixtures and builders: [IClassFixture / ICollectionFixture / base class / builders in `[folder]`]
 - Integration tests: [WebApplicationFactory / Testcontainers in `[project]`, need `[Docker | database | network]`]
+- Front-end tests: [Jasmine + Karma | Jest | Vitest], [TestBed | Testing Library], specs next to their component (`*.spec.ts`)
 
 ## Reference examples (read these before generating similar code)
 - Command: `[path/to/Command.cs]`
@@ -79,6 +84,10 @@
 ## Releases
 - Production is deployed from `master` as is (no tags). Merge requests target `develop`.
 - Application name in release notes: `[name]`
+
+## Library (library only)
+- Package: `[Company.Lib]`, version `[in src/Lib/Lib.csproj | Directory.Build.props | GitVersion | set by the CI]`; consumers: `[repositories or applications]`
+- Compatibility: `[package validation against the last published version (EnablePackageValidation) | PublicAPI.Shipped.txt | none]`; a breaking change: `[a major version, announced to the consumers]`
 
 ## Repository-specific rules
 - [Add here every mistake the agent made twice]

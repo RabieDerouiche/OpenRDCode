@@ -137,16 +137,11 @@ need_dotnet() {
   exit 1
 }
 
-# An output of dotnet that says the machine, not the code, is the problem
+# An output of dotnet that says the machine, not the code, is the problem (an SDK, a runtime, a workload, the package
+# feed): its "ENVIRONMENT PROBLEM" line, and stop
 environment() {
-  if grep -q -E 'NU1301|Response status code does not indicate success: 40[13]|\((Unauthorized|Forbidden)\)' "$1"; then
-    echo "ENVIRONMENT PROBLEM: the package feed (Artifactory) refused access or cannot be reached (NU1301, 401 or 403). Stop and tell the developer in one line. Never read nuget.config or environment variables, never retry with other options."
-    exit 1
-  fi
-  if grep -q -E 'You must install (or update )?\.NET to run this application' "$1"; then
-    echo "ENVIRONMENT PROBLEM: the test host does not find the .NET runtime (DOTNET_ROOT is missing). Stop and tell the developer in one line."
-    exit 1
-  fi
+  sh "$scripts/dotnet-problem.sh" "$1" && exit 1
+  return 0
 }
 
 # The unit test projects: .csproj files that reference a test SDK or the MSTest package, say they are test projects,

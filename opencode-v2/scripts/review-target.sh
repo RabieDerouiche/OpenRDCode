@@ -120,3 +120,11 @@ if [ "$lines" -gt "$MAX_DIFF_LINES" ]; then
 else
   cat "$tmp"
 fi
+echo
+# what it changes in the contracts others rely on, and the quality of the tests it brings (read from git, the working
+# tree untouched)
+echo "=== Contracts (api-surface.sh: the public API, the routes and the contract fields it removes, changes or adds)"
+sh "$here/api-surface.sh" "$base" "$rev"
+echo
+echo "=== Tests it adds or changes (test-lint.sh)"
+sh "$here/test-lint.sh" --changed "$base" "$rev"

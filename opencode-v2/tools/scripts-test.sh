@@ -206,6 +206,19 @@ printf 'url = "https://user:Sup3rSecretValue@gitlab.example.com/x.git"\n' > sett
 run ship.sh "feat: secret (ABC-8)"
 check "secret: nothing pushed" 1 'GUARD: STOP'
 truth "secret: the branch is not on origin" '! git ls-remote --exit-code --heads origin feature/ABC-8-secret >/dev/null 2>&1'
+# installed dependencies and build outputs that the .gitignore misses: never pushed
+git switch -q -c feature/ABC-8-modules origin/develop 2>/dev/null
+mkdir -p ClientApp/node_modules/left-pad ClientApp/dist/shop src/Api/obj/Debug
+printf 'module.exports = 1\n' > ClientApp/node_modules/left-pad/index.js
+printf 'x\n' > ClientApp/node_modules/left-pad/package.json
+printf '<html></html>\n' > ClientApp/dist/shop/index.html
+printf '{}\n' > src/Api/obj/project.assets.json
+run ship.sh "feat: with an install (ABC-8)"
+check "node_modules: nothing pushed" 1 'GUARD: STOP'
+check "node_modules: said once, with the count" 1 '2 file\(s\) of node_modules added \(ClientApp/node_modules/left-pad/[a-z.]*, …\)'
+check "obj: said" 1 '1 file\(s\) of obj added \(src/Api/obj/project.assets.json\)'
+check "dist: a warning" 1 'WARNING: 1 file\(s\) of dist added'
+truth "node_modules: the branch is not on origin" '! git ls-remote --exit-code --heads origin feature/ABC-8-modules >/dev/null 2>&1'
 
 # ---------- /sync on develop: a fast-forward to origin, never a merge ----------
 git switch -q develop

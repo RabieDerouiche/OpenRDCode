@@ -1,5 +1,9 @@
 #!/bin/sh
 # Detects the project type of a git repository from tracked files only (read-only).
+# With .NET projects, also their target frameworks, the C# version the code may use, the SDK global.json asks for, the
+# runtimes of the tests and their support (dotnet-targets.sh); a packable library, its packages, how they are versioned
+# and checked; a front-end package, its framework, package manager, test runner and node (front-info.sh); the related
+# repositories of AGENTS.md « Dépôts liés ».
 # Usage: detect-project-type.sh [--files] [repository path]
 #   --files  also print the repository root, the state of its AGENTS.md, its solution and project files, and the
 #            files that define how it is built, checked and contributed to (SDK, code style, CI, local tools,
@@ -127,9 +131,11 @@ if [ -n "$packages" ]; then
     git ls-files --error-unmatch yarn.lock >/dev/null 2>&1 && runner="yarn"
     git ls-files --error-unmatch pnpm-lock.yaml >/dev/null 2>&1 && runner="pnpm"
     first=$(echo "$ui" | head -1)
-    front_build="$runner run build"
+    front_dir=$(dirname "$first")
+    front_build="sh ~/.config/opencode/scripts/build-test.sh $front_dir (its build script, then its tests once)"
     front_test="none (no test script)"
-    git grep -q -E '"test"[[:space:]]*:' -- "$first" 2>/dev/null && front_test="$runner test"
+    git grep -q -E '"test"[[:space:]]*:' -- "$first" 2>/dev/null && front_test="sh ~/.config/opencode/scripts/build-test.sh $front_dir (its test script, once: never $runner test in a watch mode)"
+    [ "$front_dir" = . ] && front_build="sh ~/.config/opencode/scripts/build-test.sh (its build script, then its tests once)"
     if [ -n "$build" ]; then
       build="$build | front-end: $front_build"
       test="$test | front-end: $front_test"
@@ -178,6 +184,68 @@ echo "Build: ${build:-unknown}"
 echo "Test: ${test:-unknown}"
 echo "Test stack: ${test_stack:-none detected}"
 echo "Evidence:$evidence"
+
+here=$(cd "$(dirname "$0")" && pwd)
+# .NET: target frameworks, C#, SDK, test runtimes, support
+[ -n "$projects" ] && sh "$here/dotnet-targets.sh"
+
+# A packable library: its packages, how they are versioned, and what checks their public API
+if [ -n "$packable" ]; then
+  version=""
+  for f in $packable $(git ls-files 'Directory.Build.props' '*/Directory.Build.props' 2>/dev/null); do
+    v=$(sed -n -E 's:.*<(Version|VersionPrefix|PackageVersion)>([^<$]*)</(Version|VersionPrefix|PackageVersion)>.*:\2 (\1 in '"$f"'):p' "$f" | head -n 1)
+    [ -n "$v" ] && { version=$v; break; }
+  done
+  [ -z "$version" ] && git ls-files --error-unmatch GitVersion.yml >/dev/null 2>&1 && version="from git (GitVersion.yml)"
+  [ -z "$version" ] && git ls-files --error-unmatch version.json >/dev/null 2>&1 && version="from git (Nerdbank.GitVersioning, version.json)"
+  [ -z "$version" ] && git grep -q -i 'Include="MinVer"' -- '*.csproj' 'Directory.Build.props' 'Directory.Packages.props' 2>/dev/null && version="from the git tags (MinVer)"
+  [ -z "$version" ] && version="set by the CI (none in the repository)"
+  validation=$(git grep -h -o '<PackageValidationBaselineVersion>[^<]*' -- '*.csproj' 'Directory.Build.props' 2>/dev/null | head -n 1 | sed 's/.*>//')
+  if git grep -q -i '<EnablePackageValidation>[[:space:]]*true' -- '*.csproj' 'Directory.Build.props' 2>/dev/null; then
+    validation="on${validation:+, against $validation}: dotnet pack fails on a breaking change (build-test.sh --pack)"
+  else
+    validation="off: a breaking change of the public API is found by reading the diff (api-surface.sh)"
+  fi
+  public_api=$(git ls-files '*PublicAPI.Shipped.txt' 2>/dev/null | head -n 1)
+  echo "Library: $(printf '%s\n' "$packable" | head -n 3 | tr '\n' ' ' | sed 's/ $//')$( [ "$(printf '%s\n' "$packable" | grep -c .)" -gt 3 ] && echo " …") packable; version: $version; package validation: $validation${public_api:+; public API tracked in PublicAPI.Shipped.txt / Unshipped.txt (RS0016: a new public member goes into PublicAPI.Unshipped.txt)}"
+fi
+
+# Front-end: its framework, package manager, test runner and node
+if [ -n "${ui:-}" ]; then
+  for f in $(printf '%s\n' "$ui" | head -n 2); do
+    d=$(dirname "$f")
+    fi_framework="" fi_pm="" fi_runner="" fi_node="" fi_want="" fi_watch=0
+    while IFS= read -r line; do
+      case "${line%%=*}" in
+        framework) fi_framework=${line#*=} ;; pm) fi_pm=${line#*=} ;; runner) fi_runner=${line#*=} ;;
+        node) fi_node=${line#*=} ;; nodewant) fi_want=${line#*=} ;; watch) fi_watch=${line#*=} ;;
+      esac
+    done <<EOF
+$(sh "$here/front-info.sh" "$d")
+EOF
+    case "$fi_runner" in
+      karma-ng) how="Karma through the Angular CLI (ChromeHeadless, --watch=false)" ;;
+      vitest-ng) how="Vitest through the Angular CLI (--watch=false)" ;;
+      jest-ng) how="Jest through the Angular CLI (--watch=false)" ;;
+      ng) how="the Angular CLI (--watch=false)" ;;
+      cra) how="Jest through Create React App (--watchAll=false)" ;;
+      vitest) how="Vitest (--run)" ;;
+      jest|mocha|karma) how=$fi_runner ;;
+      node) how="node --test" ;;
+      e2e) how="end-to-end tests only (the CI runs them)" ;;
+      none) how="no test script" ;;
+      *) how="its test script" ;;
+    esac
+    [ "$fi_watch" = 1 ] && how="$how; its test script watches: build-test.sh runs it without its watch option"
+    echo "Front-end: $d — ${fi_framework:-no UI framework}, $fi_pm, tests: $how; Node: ${fi_node:-not installed}${fi_want:+, the package asks for $fi_want}"
+  done
+fi
+
+# Related repositories (AGENTS.md « Dépôts liés »): related-repos.sh tells where they are and what they say of a ticket
+if [ -f "$(git rev-parse --show-toplevel)/AGENTS.md" ]; then
+  related=$(awk '/^## Dépôts liés/ { on = 1; next } /^## / { on = 0 } on && /^- / { sub(/^- */, ""); sub(/[[:space:]]*:.*/, ""); gsub(/`/, ""); printf "%s%s", sep, $0; sep = ", " }' "$(git rev-parse --show-toplevel)/AGENTS.md")
+  [ -n "$related" ] && echo "Related repositories (AGENTS.md): $related — sh ~/.config/opencode/scripts/related-repos.sh <KEY> shows their sheet and contract for a ticket"
+fi
 
 if [ "$files" -eq 1 ]; then
   root=$(git rev-parse --show-toplevel)

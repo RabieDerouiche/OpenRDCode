@@ -5,10 +5,12 @@
 # commit (the history is pushed too): private key, cloud or GitLab/GitHub/Slack token, user and password in a URL, a
 # password in a connection string, a secret value in a configuration file; a key or certificate file or a .env file
 # added by one of these commits; a merge conflict marker left in the code; a package whose added version is paid or
-# copyleft (package-licenses.sh); the value of a secret variable of the environment (a name with PASSWORD, PASSWD,
+# copyleft (package-licenses.sh); installed dependencies or build outputs (node_modules, obj, bin/Debug, TestResults)
+# that a .gitignore misses; the value of a secret variable of the environment (a name with PASSWORD, PASSWD,
 # TOKEN, SECRET, API_KEY or CREDENTIAL: the Artifactory password of ~/.zshenv) anywhere in an added line, test files
 # and "gitleaks:allow" included. The value of a secret is never printed: only its kind and its place.
-# WARNING (exit 0): the same findings in test files (fake tokens in fixtures), a binary or a file over 1 MB added.
+# WARNING (exit 0): the same findings in test files (fake tokens in fixtures), a binary or a file over 1 MB added, a
+# dist/ or coverage/ folder added.
 # PACKAGES (exit 0): every package added or changed, for the merge request.
 # A false positive: the comment "gitleaks:allow" (or "pragma: allowlist secret") on that line lets it through.
 # Usage: diff-guard.sh [<base ref>]     default: the base of the branch (base.sh), origin/develop when none is recorded
@@ -161,6 +163,18 @@ while IFS= read -r f; do
     *) echo "STOP|$kind added: $f" ;;
   esac
 done < "$tmp/added-history" >> "$tmp/findings"
+
+# Installed dependencies and build outputs added by these commits (a folder the .gitignore misses: node_modules after an
+# install, obj/ after a build): one line per folder kind, never pushed; bin/, dist/ and coverage/ may be meant (a legacy
+# site with its bin/ in git): a warning
+awk '{ p = "/" $0
+  if (p ~ /\/node_modules\//) k = "node_modules"; else if (p ~ /\/obj\//) k = "obj"; else if (p ~ /\/\.angular\/cache\//) k = ".angular/cache"
+  else if (p ~ /\/TestResults\//) k = "TestResults"; else if (p ~ /\/bin\/(Debug|Release)\//) k = "bin/Debug or bin/Release"
+  else if (p ~ /\/(dist|coverage)\//) k = (p ~ /\/dist\//) ? "dist" : "coverage"; else next
+  n[k]++; if (!(k in first)) first[k] = $0 }
+  END { for (k in n) {
+    sev = (k == "dist" || k == "coverage") ? "WARNING" : "STOP"
+    print sev "|" n[k] " file(s) of " k " added (" first[k] (n[k] > 1 ? ", …" : "") "): an install or a build output that .gitignore misses; the developer adds " k "/ to .gitignore and takes them out of the commits not pushed yet" } }' "$tmp/added-history" >> "$tmp/findings"
 
 # Binaries and large files added
 while IFS= read -r f; do

@@ -1,6 +1,6 @@
 ---
 name: best-practices
-description: Checklist of best practices by project type (modern .NET API, CQRS API, Blazor, legacy .NET Framework, library, front-end), including the Result pattern, feature flags, performance and running on several instances, with how to detect whether each one is already in place. Load for a decision about error handling, a feature flag or performance (the coder), for a repository audit (/outil audit), or when asked "is there a better approach".
+description: Checklist of best practices by project type (modern .NET API on .NET 8, 9 or 10, CQRS API, REST contract, Blazor, legacy .NET Framework, library published as a NuGet package, front-end, tests), including the Result pattern, feature flags, performance, running on several instances, package validation and tests that prove behaviors, with how to detect whether each one is already in place. Load for a decision about error handling, a feature flag or performance (the coder), for a repository audit (/outil audit), or when asked "is there a better approach".
 compatibility: opencode
 ---
 # Best practices by project type
@@ -30,7 +30,9 @@ compatibility: opencode
 | Large files streamed, never fully buffered (S3, SharePoint, DocuSign documents) | Memory | `ToArray()`, `ReadAllBytes`, `MemoryStream` on downloads |
 | Nullable reference types enabled, warnings treated seriously | Fewer null bugs | `<Nullable>enable</Nullable>`; many `!` operators are a smell |
 | Rate limiting on public endpoints | Abuse protection | `AddRateLimiter`; only if the API is exposed outside |
-| Integration tests on the HTTP pipeline | Routing, serialization, auth tested together | `WebApplicationFactory` in the test projects |
+| Integration tests on the HTTP pipeline | Routing, serialization, auth tested together | `WebApplicationFactory` in the test projects (package Microsoft.AspNetCore.Mvc.Testing of the same major version as the API) |
+| Time through `TimeProvider` (.NET 8 and later), never `DateTime.Now` / `UtcNow` in business code | Time-dependent rules (expiry, deadlines, schedules) testable with `FakeTimeProvider` (Microsoft.Extensions.TimeProvider.Testing) | `DateTime.Now`, `DateTime.UtcNow`, `DateTimeOffset.UtcNow` in services or handlers; an in-house `IClock` or `IDateTimeProvider` already there: keep it |
+| The HTTP contract described and stable: OpenAPI document generated from the code, a field or route removed or renamed only with its consumers | The front-end and the other clients keep working | `AddOpenApi` (.NET 9 and later) or Swashbuckle / NSwag; `api-surface.sh <base>` lists the routes and contract fields a branch removes or changes |
 | Result pattern for expected business failures (not found, validation, conflict, forbidden, failure of an external system that the caller must handle): methods return a result (success value or typed error), exceptions stay for unexpected failures; the result is mapped to ProblemDetails / status codes in one place at the endpoint | Explicit failure paths, no exceptions for control flow, cheaper than throwing | An existing result type (in-house `Result<T>`, FluentResults, ErrorOr, Ardalis.Result, OneOf): if there is one, every new handler or service with expected failures must use it. If there is none, introducing one is a decision for the developer: propose a minimal in-house `Result<T>` / `Error` or keep exceptions. Smells: `throw new NotFoundException` caught in the controller, `null` returned to mean "not found", `bool` + `out` error message |
 | Feature flags for changes that must not be visible as soon as they reach master (production deploys master as is), progressive rollouts, or behavior that business may switch off | Merge unfinished or risky work without exposing it; instant rollback without redeploy | An existing mechanism (`Microsoft.FeatureManagement`, `IFeatureManager`, a `FeatureFlags` / `Features` section in appsettings, an in-house service): reuse it. If there is none, introducing one is a decision for the developer. Only suggest a flag when the change is user-visible, risky, or not finished for the next deployment; never for internal refactorings. Every flag needs an owner and a removal ticket |
 
@@ -75,10 +77,14 @@ Keep the existing patterns. Suggest only what the target framework supports.
 | A simple health endpoint (for example `/health` returning 200 after a dependency check) | Monitoring | no such route or handler |
 | Feature switches through `appSettings` keys when a change must stay hidden in production | Same reason as for modern APIs | existing keys such as `Feature.*` or `Enable*` in `web.config` |
 
-## Library (type library)
+## Library (type library, a NuGet package of the team)
 | Practice | Why | Detect |
 |---|---|---|
-| Public API documented (XML comments) and versioned with SemVer, breaking changes announced | Consumers can upgrade safely | `<GenerateDocumentationFile>`, version in the csproj |
+| Public API documented (XML comments) and versioned with SemVer, breaking changes announced | Consumers can upgrade safely | `<GenerateDocumentationFile>`, version in the csproj (the « Library » line of `detect-project-type.sh` says where it comes from) |
+| Package validation against the last published version | `dotnet pack` fails on a breaking change of the public API (CP0002…), before the consumers find it | `<EnablePackageValidation>true</EnablePackageValidation>` and `<PackageValidationBaselineVersion>`; `build-test.sh --pack` runs it; a `CompatibilitySuppressions.xml` that hides a break is a smell |
+| Public API tracked in files (Microsoft.CodeAnalysis.PublicApiAnalyzers) | Every change of the public API is visible in the merge request | `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`; RS0016 for a new member |
+| Multi-targeting only for real consumers (netstandard2.0 for .NET Framework consumers), the code compiling for each target | No API used that one target lacks | `<TargetFrameworks>`; `#if NET8_0_OR_GREATER` where the APIs differ |
+| Source Link and symbols, deterministic build | Consumers debug into the package | the Source Link tooling is part of the .NET 8 SDK and later (older SDKs: a `Microsoft.SourceLink.*` package), `<IncludeSymbols>`, `ContinuousIntegrationBuild` in the CI |
 | `ConfigureAwait(false)` on awaits in library code | No deadlocks in legacy or UI consumers | awaits without it |
 | Depends on abstractions only (`Microsoft.Extensions.Logging.Abstractions`, options), no static mutable state | Consumers choose the implementation | references to concrete logging frameworks, static fields |
 | CancellationToken on public async methods | Consumers can cancel | public async methods without it |
@@ -92,3 +98,13 @@ Keep the existing patterns. Suggest only what the target framework supports.
 | Strict TypeScript and lint in CI | Fewer runtime bugs | `"strict": true` in tsconfig, lint script |
 | No tokens in `localStorage` unless the existing code already does it | XSS exposure | `localStorage.setItem` with tokens |
 | Accessible new UI (labels, roles, keyboard) | Users and compliance | inputs without labels, click handlers on non-interactive elements |
+| Unit tests that run once in the CI (headless browser or jsdom), never focused | A `fit` or `.only` silently skips the rest of the suite | `fdescribe(`, `fit(`, `.only(` in specs; Karma with `ChromeHeadless`, Vitest `run`; `build-test.sh <folder>` runs them as the CI does |
+| The API calls typed from the contract of the back-end (a client generated from its OpenAPI document, or interfaces kept in step with it) | A field renamed on one side breaks at compile time, not in production | a generator script in package.json (`openapi-generator`, `orval`, `ng-openapi-gen`, `nswag`); hand-written DTO interfaces far from the API |
+
+## Tests (every project type)
+| Practice | Why | Detect |
+|---|---|---|
+| A test per behavior the code promises (an acceptance criterion, a business rule, an error path), with concrete values and the expected result written in the test | A test that only runs lines raises the coverage and proves nothing | `test-lint.sh <files>`: a test without assertion, an assertion that cannot fail; an expected value recomputed with the code under test |
+| Deterministic tests: no real clock, delay, network, random or shared state | A test that fails once in ten is ignored, then hides a real failure | `test-lint.sh`: `DateTime.Now`, `Thread.Sleep`, `Task.Delay`, `new Random()`, `setTimeout`, a real `HttpClient` |
+| No skipped or focused test left in the code | A skipped test is a forgotten failure; a focused one hides the others | `[Fact(Skip`, `[Ignore]`, `xit(`, `it.skip(`, `fit(`, `.only(` |
+| The right level: unit tests for the rules, integration tests (WebApplicationFactory, Testcontainers in the CI) for the wiring, the queries and the HTTP contract | Each kind of defect is found where it is cheap to find | only unit tests that mock everything around an endpoint; only end-to-end tests |

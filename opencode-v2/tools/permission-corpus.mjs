@@ -52,6 +52,7 @@ const SECRETS = [
   "cat /proc/self/environ", "tr '\\0' '\\n' < /proc/1/environ",
   "cat ~/.zshenv", "grep artifactory ~/.zshrc_perso", "cat ~/.zshrc_perso", "cat ~/.zshrc", "cat ~/.bashrc",
   "cat ~/.ssh/id_rsa", "cat ~/.aws/credentials", "cat ~/.npmrc", "cat ~/.netrc", "cat ~/.git-credentials",
+  "cat .npmrc", "cat ClientApp/.npmrc", "cat .yarnrc.yml", "grep -i token .yarnrc.yml",
   "cat appsec-ci.env", "grep APPSEC appsec-ci.env",
   "git config --list", "git config --get remote.origin.url", "git remote -v", "git remote get-url origin",
   "cat ~/.config/opencode/opencode.json", "grep -i token ~/.config/opencode/opencode.json",
@@ -213,6 +214,20 @@ const CODER_DENY = [
   S + "ticket-sheet.sh tick 1", "npm run deploy", "npx some-random-tool", "dotnet nuget push x.nupkg",
 ]
 add(["coder"], CODER_DENY, "deny")
+// the scripts of package.json: the repository's own commands (a generated API client, a check), never what publishes,
+// deploys, needs the running application or never ends; a name in the arguments is not the name of a script
+add(["coder"], ["npm run generate:api", "npm run lint", "yarn run build", "pnpm run lint", "npm run build:dev", "npm run build:release",
+  "npm run test -- src/app/stop-watch/stop-watch.component.spec.ts", "npm test -- src/app/release-notes/release-notes.component.spec.ts",
+  "npm test -- src/app/deploy-status/deploy-status.spec.ts", "npm run lint -- --fix src/app/publish-dialog", "npm run test:ci"], "allow")
+add(["coder", "test-guardian"], ["npm start", "npm run start", "npm run start:prod", "npm run dev", "npm run dev:ssr", "npm run serve:ssr",
+  "npm run watch", "npm run test:e2e", "npm run e2e", "npm run cypress:open", "npm run playwright", "npm publish", "npm run release",
+  "npm run deploy:prod", "npm run docker:build", "yarn run deploy", "yarn start", "pnpm dev", "pnpm run docker:build", "pnpm test:e2e",
+  "yarn test:e2e", "npx some-random-tool"], "deny")
+// what never ends is refused by the pack plugin, which reads what the script runs (24, tools/plugin-test.mjs): these
+// names reach it
+add(["coder"], ["npm run build:watch", "npm run preview", "yarn run dev", "yarn test:watch", "npm run storybook"], "allow",
+  { note: "refused by the pack plugin (24): it never ends" })
+add(["checker", "debugger"], ["npm run test:e2e", "yarn test:e2e", "pnpm run test:e2e"], "deny")
 
 // ---------- pilot: /push and /sync (work outside a ticket, the commits of another computer) ----------
 add(["pilot"], [S + "branch.sh --here poc \"Essai cache Redis\"", S + "branch.sh ABC-1 feature \"x\" --from feature/TEAM-9-socle",
@@ -292,6 +307,9 @@ readCase(ALL, "src/Foo.cs", "allow")
 for (const p of ["~/.nuget/NuGet/NuGet.Config", "nuget.config", "src/NuGet.Config", "appsec-ci.env", "~/.config/opencode/opencode.json", "~/.git-credentials"]) readCase(ALL, p, "deny")
 readCase(ALL, "~/.local/share/opencode/tool-output/tool_abc", "allow")
 for (const p of ["src/Api/.env", ".env", "src/web/.env.local", "src/web/.env.production"]) readCase([...ALL, "plan"], p, "deny")
+// the registry credentials of a front-end package (an auth token in .npmrc or .yarnrc.yml)
+for (const p of [".npmrc", "ClientApp/.npmrc", ".yarnrc.yml", "web/.yarnrc.yml"]) readCase(ALL, p, "deny")
+readCase(ALL, "ClientApp/package.json", "allow")
 readCase(["build", "pilot", "coder", "analyst", "checker", "debugger", "plan"], "src/web/.env.example", "allow")
 readCase(ALL, "~/.nuget/packages/inhouse.lib/1.2.0/lib/net8.0/Inhouse.Lib.xml", "allow")
 readCase(ALL.filter((a) => a !== "doc-writer"), "src/Api/appsettings.json", "allow")
@@ -428,9 +446,24 @@ P(["test-guardian"], [
   S + "test-guardian.sh compare V2-before V2-after", S + "test-guardian.sh tests-only", S + "test-guardian.sh build tests/App.Tests/App.Tests.csproj",
   S + "test-guardian.sh changes origin/develop", "git grep InternalsVisibleTo",
 ])
-P(["analyst"], [S + "pattern-skills.sh", S + "package-refs.sh --doc Blazorise.DataGrid", S + "detect-project-type.sh"])
+P(["coder"], [S + "build-test.sh ClientApp", S + "build-test.sh ClientApp --filter src/app/invoice/invoice.component.spec.ts",
+  S + "build-test.sh --build-only ClientApp", S + "build-test.sh --pack", S + "build-test.sh --build-only --pack src/Billing/Billing.csproj",
+  S + "test-lint.sh tests/App.Tests/VatCalculatorTests.cs ClientApp/src/app/invoice/invoice.component.spec.ts", S + "test-lint.sh --changed origin/develop",
+  "npm run generate:api"])
+P(["test-guardian"], [S + "test-lint.sh tests/App.Tests/Security/FileStoreTests.cs", S + "test-lint.sh --changed origin/develop"])
+P(["pilot"], [S + "build-test.sh src/App.sln --filter \"Category!=Integration\" ; " + S + "build-test.sh ClientApp",
+  S + "test-guardian.sh changes origin/develop src/App.sln ; " + S + "build-test.sh --build-only --pack ; " + S + "build-test.sh ClientApp",
+  S + "build-test.sh --if-changed src/App.sln ; " + S + "build-test.sh --if-changed ClientApp", S + "build-test.sh --build-only --pack"])
+P(["pilot"], [S + "related-repos.sh ABC-123", S + "related-repos.sh", S + "api-surface.sh origin/develop", S + "test-lint.sh --changed origin/develop",
+  S + "build-test.sh --if-changed --pack", S + "build-test.sh --if-changed ClientApp", S + "build-test.sh ClientApp", S + "build-test.sh --pack src/App.sln"])
+P(["analyst"], [S + "pattern-skills.sh", S + "package-refs.sh --doc Blazorise.DataGrid", S + "detect-project-type.sh",
+  S + "related-repos.sh ABC-123", S + "api-surface.sh origin/develop"])
+P(["checker"], [S + "api-surface.sh origin/develop", S + "test-lint.sh --changed origin/develop", S + "build-test.sh ClientApp", S + "related-repos.sh ABC-123",
+  S + "review-target.sh '!42' ''", S + "api-surface.sh origin/develop abc1234", S + "test-lint.sh --changed origin/develop abc1234"])
+P(["build"], [S + "build-test.sh --build-only ClientApp", S + "build-test.sh src/App.sln ; " + S + "build-test.sh ClientApp"])
 P(["checker"], ["git diff origin/develop...HEAD", "git diff HEAD", "git diff --stat", "git diff -U10 origin/develop...HEAD -- src/Billing/VatCalculator.cs",
   S + "detect-project-type.sh", "git show abc1234:src/Billing/VatCalculator.cs", "git grep -n IStorageService abc1234 -- src/Billing/VatCalculator.cs"])
+P(["debugger"], [S + "build-test.sh ClientApp --filter src/app/cart/cart.service.spec.ts", S + "detect-project-type.sh"])
 P(["debugger"], ["git log --oneline -15", "git log -5 --format='%h %an %s' -- src/Billing/VatCalculator.cs | head -20", S + "detect-project-type.sh",
   S + "build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~Total_WithVat_Rounds"])
 P(["doc-writer"], [S + "doc-inventory.sh", S + "api-routes.sh", S + "config-keys.sh", S + "package-refs.sh", S + "detect-project-type.sh --files"])
@@ -439,6 +472,7 @@ P(["build"], [
   "realpath ~", S + "package-refs.sh --doc Blazorise.DataGrid", S + "build-test.sh src/App.sln --filter \"Category!=Integration\"",
   S + "build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~InvoiceServiceTests", S + "build-test.sh --build-only src/App.sln",
   "dotnet run --project src/Api", "timeout 60 dotnet run --project src/Api", S + "todo.sh add \"call Paul on Friday\"", S + "todo.sh", S + "todo.sh due",
+  S + "related-repos.sh", S + "build-test.sh ClientApp", S + "test-lint.sh --changed origin/develop", S + "api-surface.sh origin/develop",
   S + "detect-project-type.sh", S + "workflow-state.sh --no-fetch",
   // /outil abandon: its script checks that the branch holds nothing, then deletes it and its sheet
   S + "abandon.sh --check", S + "abandon.sh",

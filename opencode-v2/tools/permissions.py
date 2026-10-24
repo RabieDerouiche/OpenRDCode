@@ -90,7 +90,7 @@ SUBST = ["*$(*", "*${*", "*`*"]
 # ---------- secrets: refused for every agent, build and dev included ----------
 # Files that hold credentials. *?u?et.?onfig* = nuget.config, NuGet.Config, NuGet.config, Nuget.Config.
 SECRET_FILES = ["*?u?et.?onfig*", "*.nuget/NuGet*", "*/.z*", "*zshrc*", "*/.bash*", "*/.profile*", "*/.ssh/*",
-                "*/.aws/*", "*/.docker/*", "*.npmrc*", "*.netrc*", "*.pypirc*", "*.git-credentials*",
+                "*/.aws/*", "*/.docker/*", "*.npmrc*", "*.yarnrc*", "*.netrc*", "*.pypirc*", "*.git-credentials*",
                 "*/proc/*environ*", "*appsec-ci.env*", "* .env*", "*/.env*", "*opencode.json*",
                 "*opencode/auth.json*", "*/git/credential*", "*git-credential*"]
 # Environment dumps and credential-bearing git output (a remote URL or the git config can hold a token)
@@ -199,7 +199,8 @@ def read_only_bash(extra_allows=(), after_secrets=(), package_guard=True):
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + list(extra_allows))
     rules += REDIRECT
     rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS + WRITE_SCRIPTS + CONVERSATION_SCRIPTS
-                  + (PACKAGE_GUARD if package_guard else []))
+                  + (PACKAGE_GUARD if package_guard else [])
+                  + (FRONT_TEST_DENY if any(p in extra_allows for p in FRONT_TEST) else []))
     rules += allow(after_secrets)
     return rules
 
@@ -252,7 +253,23 @@ CODER_BUILD = ["dotnet clean*", "dotnet format*", "dotnet build-server shutdown*
                "dotnet remove reference *", "dotnet sln list*", "dotnet sln * list*"]
 CODER_FRONT = ["npm run lint*", "npm run format*", "npx eslint *", "npx prettier *", "npx ng lint*", "npx ng generate *",
                "npx ng g *", "npm ci*", "npm install", "npm i", "yarn install --frozen-lockfile*",
-               "yarn install --immutable*", "pnpm install --frozen-lockfile*"]
+               "yarn install --immutable*", "pnpm install --frozen-lockfile*",
+               # the scripts of package.json (a generated API client, a code generator, a check of the team): the
+               # repository's own commands, as its build and its tests are; FRONT_SCRIPT_DENY refuses what publishes,
+               # deploys or needs the running application, and the pack plugin (24) what never ends
+               "npm run *", "yarn run *", "pnpm run *"]
+# Scripts of package.json the agents never run, by their name: they publish, deploy or release, or need the running
+# application (end-to-end) or Docker. OpenCode's * also spans spaces, so no pattern could match inside the arguments
+# ("*release*" would refuse `npm test -- src/app/release-notes/x.spec.ts`). What never ends by itself (a server, a
+# watch mode) is refused by the pack plugin (24), which reads what each script runs; the most common names are refused
+# here too, as a second layer. Each rule weighs on the context of the model: a refused command lists them all.
+FRONT_SCRIPT_NAMES = ["publish*", "deploy*", "release*", "e2e*", "cypress*", "playwright*", "docker*", "*:publish*",
+                      "*:deploy*", "*:e2e*", "*:docker*"]
+# the end-to-end tests: refused to every agent that runs the tests
+FRONT_TEST_DENY = [f"{pm}test:e2e*" for pm in ("npm run ", "yarn run ", "pnpm run ", "yarn ", "pnpm ")]
+FRONT_SCRIPT_DENY = ([f"{pm} run {name}" for pm in ("npm", "yarn", "pnpm") for name in FRONT_SCRIPT_NAMES]
+                     + ["yarn test:e2e*", "pnpm test:e2e*", "npm run start*", "npm run serve*", "npm run dev",
+                        "npm run dev:*", "npm run watch*"])
 CODER_FILES = ["mkdir *", "touch *", "cp *", "mv *", "rm *", "chmod +x *"]
 # One file removed at a time, never a folder (the plugin refuses a path outside the repository)
 CODER_RM_GUARD = RM_RECURSIVE + ["rm *..*"]
@@ -272,7 +289,7 @@ def coder_bash(guardian=False):
     # (the commands of CREDENTIAL_STORES and DECOMPILE are not in the allowlist; their paths are outside the repository)
     # the test-guardian seals its proofs and puts them back; the coder never does; setup, park and unpark are the pilot's
     rules += deny(GIT_READ_GUARD + CODER_OTHER_DENY + CODER_RM_GUARD + SECRETS + WRITE_SCRIPTS + CONVERSATION_SCRIPTS
-                  + ([] if guardian else SEAL_SCRIPTS) + PILOT_SCRIPTS + PACKAGE_GUARD
+                  + ([] if guardian else SEAL_SCRIPTS) + PILOT_SCRIPTS + PACKAGE_GUARD + FRONT_SCRIPT_DENY
                   + ["* /tmp/*", "* /tmp", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*"] + SUBST)
     return rules
 
@@ -394,7 +411,7 @@ SNIPPET = as_dict([
         # files are refused instead of asked: "always" on that question would allow every read of every agent.
         ("read", deny(["*/.nuget/NuGet/*", "*?u?et.?onfig", "*appsec-ci.env", "*opencode.json",
                        "*opencode/auth.json", "*/.ssh/*", "*/.aws/*", "*/.z*", "*zshrc*", "*.netrc",
-                       "*.git-credentials", "*.npmrc", "*.env", "*.env.*"])
+                       "*.git-credentials", "*.npmrc", "*.yarnrc.yml", "*.yarnrc", "*.env", "*.env.*"])
          + allow(["*.env.example", "*.env.sample", "*.env.template"])),
     ] + MCP_WRITE_DENY),
     # A subagent never gets the question tool: nobody answers during /go or /fix (the debugger keeps it as the agent of

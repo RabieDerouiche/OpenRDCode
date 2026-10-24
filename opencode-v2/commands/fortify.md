@@ -24,7 +24,7 @@ Fix a batch of Fortify vulnerabilities, from the scan to a Draft merge request, 
 ## 2. Select the batch (you, Fortify tools, read-only)
 1. Application: the value after `=` of the "Fortify SSC application" line. Version: `develop` (otherwise the base branch, `/` replaced by `-`); no uploaded scan: say it and stop. Never invent a project, version or filter name: a name rejected → list the valid ones and retry once.
 2. Issues of that version, filter set "Security Auditor View", Critical then High, 20 per page, 2 pages at most.
-3. Keep up to the count of the request (5 when none, never more): in a file of this repository (not generated code, migrations or test projects), not in an open « Lot Fortify » sheet of the "Existing ticket sheets" (unless the request names it again), within the category or file of the request when one is given. Prefer the same category, then the same file: one kind of fix per merge request.
+3. Keep up to the count of the request (5 when none, never more): in a .NET file of this repository (not generated code, migrations or test projects; a vulnerability in front-end code, a `.ts`, `.tsx`, `.js` or `.html` file, is not kept: its proof is a front-end spec, not a .NET test; the answer lists it under « Non traitées » with « code front-end : /go sans ticket : corriger <category> dans <file> »), not in an open « Lot Fortify » sheet of the "Existing ticket sheets" (unless the request names it again), within the category or file of the request when one is given. Prefer the same category, then the same file: one kind of fix per merge request.
 4. Nothing kept: « ✅ Aucune vulnérabilité Critical ou High à corriger dans <application> / <version> » and stop.
 
 ## 3. Branch and batch sheet

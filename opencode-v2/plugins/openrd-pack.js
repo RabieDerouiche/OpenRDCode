@@ -7,7 +7,8 @@
 //    can never wait there for a password) and is stopped, with everything it started, after 3 minutes.
 //    "[[run <script> --raw <text>]]" passes the text as ONE argument, as typed (apostrophes included).
 // 2. Gives every shell command of the agents a stable environment: English .NET messages, no .NET banner or
-//    telemetry, no npm notices, file names printed by git as they are (no octal escapes), git never waiting for a
+//    telemetry, no npm notices nor audit request, no analytics prompt of the Angular CLI nor telemetry of Next.js,
+//    file names printed by git as they are (no octal escapes), git never waiting for a
 //    password or an editor; and never the password of the OpenCode server (v2 keeps it in the environment of what it
 //    runs when started with "serve"), nor a token of the MCP servers (Jira, Confluence, GitLab, Sonar, Fortify), nor
 //    the XDG folders of an OpenCode v2 run next to 1.19 in ~/oc2.
@@ -130,7 +131,19 @@
 // 23. Lets the free conversation run a project with `dotnet run` only when the last commit holds it: a POC or the tests
 //    of a Microsoft.Testing.Platform project, never a probe or reflection project made for the occasion, nor a C# file
 //    run as a program (.NET 10). The agents of the pack never run `dotnet run` (permission rules).
-// Every refusal of 6, 7, 9, 12, 16 and 23 is written as "refused by the pack" to the log of the plugin,
+// 24. Refuses a command that never ends by itself: a development server (`ng serve`, `npm start`, `npm run dev`,
+//    `vite`, `next dev`, `dotnet watch`, `dotnet run` of a web, worker or Aspire project, `func start`…), a watch mode
+//    (`--watch`, `ng test` without --watch=false, `react-scripts test` without --watchAll=false, `karma start` without
+//    --single-run, `vitest --ui`), `tail -f`, `docker compose up` without -d, `ping` without -c. A package script is
+//    judged by its name (start, dev, serve, watch…) and by what package.json says it runs: `npm test` is refused when
+//    its script watches (`ng test` with Karma), never when it runs once (`jest`, `vitest`); and npm passes to the script
+//    only the options after `--` (`npm test --watch=false` does not reach Karma: the refusal says so). A command run
+//    through npx, env, nohup, sh -c or after a cd is judged the same. It would hold the turn until OpenCode stops it
+//    (20 minutes for a test command, 8), and the agent would then try another form. The agent is told to use
+//    build-test.sh, which builds a .NET or front-end folder and runs its tests once. The free conversation may run one
+//    in the background (OpenCode v2, background: true) or bounded by `timeout` (5 minutes at most); the agents of the
+//    pack never.
+// Every refusal of 6, 7, 9, 12, 16, 23 and 24 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
 // the summaries of a run (17), its automatic resumes (19), the loops cut (21), the resumes I ask for (22) and the end of a
@@ -144,6 +157,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   renameSync,
   statSync,
@@ -207,7 +221,7 @@ const SETS_ENVIRONMENT = new RegExp(ASSIGN + String.raw`(?:PATH|DOTNET_ROOT\w*)=
 const SETS_SECRET = new RegExp(ASSIGN + String.raw`(?:\w*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_?KEY|CREDENTIALS?)\w*|ARTIFACTORY\w*)=`, "i")
 const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
 // Commands that take minutes (8): a build or tests, a restore, the front-end tooling; the pack's git scripts
-const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*fortify\.sh\s+prereq|\S*test-guardian\.sh\s+(?:coverage|red|green|changes|build|setup)|dotnet\s+(?:build|test|restore|format|ef|clean)|npm\s+(?:test|ci|install|i|run\s+(?:test|build|lint))|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint))|yarn\s+(?:test|install|build|lint)|pnpm\s+(?:test|install|build|lint))(?=\s|$|[;&|)])/
+const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*front-test\.sh|\S*fortify\.sh\s+prereq|\S*test-guardian\.sh\s+(?:coverage|red|green|changes|build|setup)|dotnet\s+(?:build|test|restore|format|ef|clean|pack)|npm\s+(?:test|ci|install|i|run\s+\S+)|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint|generate|g))|yarn\s+(?:test|install|build|lint|run\s+\S+)|pnpm\s+(?:test|install|build|lint|run\s+\S+))(?=\s|$|[;&|)])/
 const GIT_SCRIPT = /(?:^|[\s;&|(])\S*(?:ship|branch)\.sh(?=\s|$)/
 // A build tool called by its full path at the start of a command (11): ~/.bin/dotnet, $HOME/.dotnet/dotnet, /usr/bin/git
 const TOOL_PATH = /(^\s*|[;&|(`\n]\s*)((?:~|\$\{HOME\}|\$HOME)?\/(?:[^\s;&|()<>'"`]*\/)?)(dotnet|node|npm|npx|yarn|pnpm|git)(?=$|[\s;&|)`])/g
@@ -862,6 +876,27 @@ export const Guards = async (input) => {
           )
         }
       }
+      // 24. a command that never ends by itself: refused, except in the free conversation (in the background or bounded)
+      if (call.tool === "bash" && typeof output.args.command === "string") {
+        const cwd = typeof output.args.workdir === "string" && output.args.workdir ? resolve(directory, output.args.workdir) : directory
+        const found = neverEnding(output.args.command, cwd, root)
+        if (found) {
+          const agent = call.agent || agents.get(call.sessionID) || ""
+          const conversation = !PACK_AGENTS.has(agent) && !(await parentOf(call.sessionID))
+          // the free conversation: in the background (OpenCode v2 keeps it running and the turn goes on), or bounded
+          if (!(conversation && (output.args.background === true || (found.bounded > 0 && found.bounded <= 300)))) {
+            logRefusal(call, "a command that never ends: " + found.log)
+            throw new Error(
+              "Refused by the pack: " + found.what + " does not end by itself (a server or a watch mode): it would hold " +
+                "the turn until OpenCode stops it. The build and the tests, once: sh ~/.config/opencode/scripts/" +
+                "build-test.sh [<folder>] (a front-end folder: its build, then its tests once, with explicit TESTS " +
+                "lines). A behavior: a test." +
+                (conversation ? " Here, in the conversation: in the background (background: true), or bounded: timeout 60 <the command>." : "") +
+                " Never try another form of this command.",
+            )
+          }
+        }
+      }
       let outside = null
       try {
         outside = await escape(call.tool, call.sessionID, output.args)
@@ -914,6 +949,11 @@ export const Guards = async (input) => {
         set("MSBUILDTERMINALLOGGER", "off")
         set("NPM_CONFIG_UPDATE_NOTIFIER", "false")
         set("NPM_CONFIG_FUND", "false")
+        // npm ci without its audit request (a call to the registry that Artifactory may not answer), the Angular CLI and
+        // Next.js without their analytics prompt or telemetry
+        set("NPM_CONFIG_AUDIT", "false")
+        set("NG_CLI_ANALYTICS", "false")
+        set("NEXT_TELEMETRY_DISABLED", "1")
         // Nobody can answer a prompt or close an editor in an agent's command: forced, whatever the environment
         env.GIT_TERMINAL_PROMPT = "0"
         env.GIT_EDITOR = "true"
@@ -1467,6 +1507,216 @@ export function dotnetRunTarget(command, cwd, root) {
     } catch {
       return { project: project || ".", ok: false }
     }
+  }
+  return ""
+}
+
+// ---------- 24. commands that never end by themselves ----------
+// The name of a package script that starts a server or a watch ("start", "dev", "serve", "watch", "preview", "develop",
+// "start:prod", "dev:ssr", "build:watch", "api:serve", "api-start"). A name that only ends in ":dev" or "-dev"
+// ("build:dev") is decided by its script.
+const SERVER_SCRIPT = /^(?:start|dev|develop|serve|watch|preview)(?:[:-][\w:.-]*)?$|^[\w.-]*[:-](?:watch|serve|start)$/
+// The options that make a test command run once
+const SINGLE_RUN = /^(?:--watch=false|--no-watch|--watchAll=false|--watch-all=false|--run|--single-run|--singleRun|--single-run=true|--singleRun=true)$/
+// The tools whose -w is their watch mode (elsewhere -w is a word match, a word count or a workspace)
+const W_WATCH = new Set(["kubectl", "tsc", "rollup", "webpack", "babel", "tailwindcss", "postcss", "sass", "vite", "esbuild", "tsup", "swc", "mocha", "nodemon", "less-watch-compiler"])
+// The commands of yarn and pnpm that are not the name of a script
+const PM_COMMANDS = new Set(["install", "i", "add", "remove", "rm", "uninstall", "un", "ci", "exec", "dlx", "why", "list", "ls", "outdated",
+  "audit", "info", "view", "pack", "publish", "version", "versions", "config", "cache", "init", "create", "link", "unlink", "upgrade", "up",
+  "update", "rebuild", "prune", "dedupe", "store", "import", "patch", "patch-commit", "licenses", "env", "bin", "root", "fetch", "setup",
+  "help", "login", "logout", "whoami", "set", "node", "workspaces", "constraints", "plugin", "explain", "unplug", "stage", "search",
+  "owner", "doctor", "check", "global", "generate-lock-entry", "policies", "tag", "team", "upgrade-interactive", "deploy"])
+// The project of `dotnet run` is an application that serves until it is stopped: a web, worker or Blazor WebAssembly
+// project, or an Aspire AppHost
+function serverProject(words, cwd) {
+  let project = ""
+  for (let i = 0; i < words.length && words[i] !== "--"; i++) {
+    if (words[i] === "--project" || words[i] === "-p") project = words[++i] || ""
+    else if (words[i].startsWith("--project=")) project = words[i].slice(10)
+  }
+  try {
+    let file = resolve(cwd, project || ".")
+    if (statSync(file).isDirectory()) {
+      const found = readdirSync(file).filter((name) => /\.csproj$/i.test(name))
+      if (found.length !== 1) return false
+      file = join(file, found[0])
+    }
+    const text = readFileSync(file, "utf8")
+    return /Sdk="Microsoft\.NET\.Sdk\.(?:Web|Worker|BlazorWebAssembly)"/i.test(text) || /Aspire\.AppHost\.Sdk|<IsAspireHost>\s*true/i.test(text)
+  } catch {
+    return false
+  }
+}
+// The package.json a package manager reads: the one of the folder, otherwise of a parent folder up to the repository
+const readPackage = (dir, root) => {
+  for (let d = dir; ; d = dirname(d)) {
+    try {
+      const json = JSON.parse(readFileSync(join(d, "package.json"), "utf8"))
+      return { dir: d, scripts: json && typeof json.scripts === "object" && json.scripts ? json.scripts : {} }
+    } catch {
+      // not here
+    }
+    if (!root || d === root || dirname(d) === d || !within(d, root)) return null
+  }
+}
+const shellWord = (word) => (/^[\w@%+=:,./-]+$/.test(word) ? word : "'" + word.replace(/'/g, "'\\''") + "'")
+// The script a package manager runs (npm test, npm run build, yarn dev, pnpm --filter web serve), as
+// { label, script, passed, dir }, or null. passed: the words the script gets (npm: its positional words and those
+// after --, its options before -- being settings of npm itself; yarn and pnpm: every word after the name of the script).
+function packageScript(cmd, rest, cwd) {
+  let dir = cwd
+  const dash = rest.indexOf("--")
+  const end = dash < 0 ? rest.length : dash
+  const named = []
+  let need = 0
+  let at = -1
+  for (let i = 0; i < end; i++) {
+    if (at >= 0 && cmd !== "npm") break
+    const word = rest[i]
+    const option = /^(--prefix|--dir|--cwd|-C)(?:=(.*))?$/.exec(word)
+    if (option) {
+      const value = option[2] !== undefined ? option[2] : rest[++i]
+      if (value) dir = resolve(cwd, value)
+      continue
+    }
+    if (/^(?:--workspace|-w|--filter|-F)$/.test(word)) {
+      i++
+      continue
+    }
+    if (word.startsWith("-")) continue
+    named.push(i)
+    if (named.length === 1) need = (cmd === "npm" ? /^(?:run|run-script|rum|urn)$/.test(word) : word === "run") ? 2 : cmd !== "npm" && word === "workspace" ? 3 : 1
+    if (at < 0 && named.length === need) at = i
+  }
+  if (at < 0) return null
+  const first = rest[named[0]]
+  let script = ""
+  if (cmd === "npm") {
+    if (need === 2) script = rest[named[1]]
+    else if (["test", "t", "tst"].includes(first)) script = "test"
+    else if (first === "start" || first === "restart") script = "start"
+    else return null
+  } else if (need === 2) script = rest[named[1]]
+  else if (need === 3) {
+    script = rest[named[2]]
+    dir = ""
+  } else if (PM_COMMANDS.has(first)) return null
+  else script = first
+  if (!script) return null
+  const passed = cmd === "npm"
+    ? [...named.filter((k) => k > at).map((k) => rest[k]), ...(dash < 0 ? [] : rest.slice(dash + 1))]
+    : rest.slice(at + 1).filter((word) => word !== "--")
+  return { label: [cmd, ...named.slice(0, need).map((k) => rest[k])].join(" "), script, passed, dir }
+}
+// What never ends in a shell command, as { what, log, bounded } (log: what without the scripts of package.json, which
+// may hold a credential; bounded: the seconds of a `timeout` before it), or "".
+// cwd: the folder of the command (a cd in the command moves it); root: the repository (a package.json is looked for up
+// to it); ci: CI is set for it (CI=true npm test: Create React App runs once).
+export function neverEnding(command, cwd = process.cwd(), root = "", depth = 0, inCi = false) {
+  let here = cwd
+  for (const all of commandWords(String(command || ""))) {
+    if (all.after === ">" || all.after === "<") continue
+    let words = all.slice()
+    let bounded = 0
+    let ci = inCi
+    if ((words[0] === "cd" || words[0] === "pushd") && words.length <= 2) {
+      here = words[1] && words[1] !== "-" ? resolve(here, words[1].replace(/^~(?=\/|$)/, HOME)) : HOME
+      continue
+    }
+    // what runs the command: VAR=value, env, nohup, setsid, time, nice, exec, command, cross-env, timeout, npx and
+    // the exec commands of the package managers
+    for (let guard = 0; guard < 12 && words.length; guard++) {
+      const [w0, w1] = words
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w0)) {
+        if (/^CI=(?!$|0$|false$)/i.test(w0)) ci = true
+        words = words.slice(1)
+      } else if (w0 === "env" || w0 === "cross-env" || w0 === "cross-env-shell") {
+        words = words.slice(1)
+        while (words[0] && words[0].startsWith("-")) words = words.slice(1)
+      } else if (["nohup", "setsid", "time", "exec", "command", "builtin", "stdbuf", "unbuffer", "nice", "ionice"].includes(w0)) {
+        words = words.slice(1)
+        while (words[0] && words[0].startsWith("-")) words = words.slice(/^-[nc]$/.test(words[0]) ? 2 : 1)
+      } else if (w0 === "timeout") {
+        let i = 1
+        while (i < words.length && words[i].startsWith("-")) i += /^(?:-k|-s|--kill-after|--signal)$/.test(words[i]) ? 2 : 1
+        const time = /^(\d+(?:\.\d+)?)([smhd])?$/.exec(words[i] || "")
+        if (!time) {
+          words = []
+          break
+        }
+        const seconds = Number(time[1]) * { s: 1, m: 60, h: 3600, d: 86400 }[time[2] || "s"]
+        bounded = bounded ? Math.min(bounded, seconds) : seconds
+        words = words.slice(i + 1)
+      } else if (w0 === "npx" || w0 === "pnpx" || w0 === "bunx" || ((w0 === "pnpm" || w0 === "yarn" || w0 === "npm") && (w1 === "exec" || w1 === "dlx"))) {
+        words = words.slice(w0 === "npx" || w0 === "pnpx" || w0 === "bunx" ? 1 : 2)
+        while (words[0] && words[0].startsWith("-")) words = words.slice(/^(?:-p|--package)$/.test(words[0]) ? 2 : 1)
+      } else break
+    }
+    const [cmd, ...rest] = words
+    if (!cmd) continue
+    const flag = (name) => rest.includes(name)
+    const once = rest.some((word, k) => SINGLE_RUN.test(word) || (word === "--watch" && rest[k + 1] === "false"))
+    let what = ""
+    let log = ""
+    let inner = null
+    if (/^(?:sh|bash|dash|zsh)$/.test(cmd) && rest[0] === "-c" && depth < 3) inner = neverEnding(rest[1], here, root, depth + 1, ci)
+    else if (cmd === "npm" || cmd === "yarn" || cmd === "pnpm") {
+      const run = packageScript(cmd, rest, here)
+      if (run) {
+        const pkg = run.dir ? readPackage(run.dir, root) : null
+        const body = pkg && typeof pkg.scripts[run.script] === "string" ? pkg.scripts[run.script] : null
+        if (SERVER_SCRIPT.test(run.script)) what = run.label
+        else if (body !== null && depth < 3) {
+          const found = neverEnding(body + (run.passed.length ? " " + run.passed.map(shellWord).join(" ") : ""), pkg.dir, root, depth + 1, ci)
+          if (found) {
+            const short = body.length > 60 ? body.slice(0, 57) + "..." : body
+            log = run.label + " (its script: " + (found.log || found.what) + ")"
+            what = run.label + " (its script \"" + short + "\": " + found.what + ")" +
+              (cmd === "npm" && rest.some((word) => SINGLE_RUN.test(word)) && !run.passed.some((word) => SINGLE_RUN.test(word)) ? "; npm passes to the script only the options after --: npm " + (run.script === "test" ? "test" : "run " + run.script) + " -- <option>" : "")
+          }
+        } else if (body === null && run.passed.some((word, k) => /^--watch(?:All)?(?:=true)?$/.test(word) && run.passed[k + 1] !== "false")) what = run.label + " with a watch option"
+      }
+    } else if (cmd === "concurrently" || cmd === "run-p" || cmd === "run-s" || cmd === "npm-run-all") {
+      // what they start together: a server or a watch among them never ends
+      for (const word of rest.filter((w) => !w.startsWith("-"))) {
+        const name = word.replace(/^npm:/, "")
+        if (/^(?:start|dev|develop|serve|watch|preview)\b|[:-](?:watch|serve|start|dev)\b/.test(name)) what = cmd + " " + word
+        else if (/\s/.test(word) && depth < 3) {
+          const found = neverEnding(word, here, root, depth + 1, ci)
+          if (found) {
+            what = cmd + " \"" + word + "\" (" + found.what + ")"
+            log = cmd + " (" + (found.log || found.what) + ")"
+          }
+        }
+        if (what) break
+      }
+    } else if (rest.some((word, k) => (/^--watch(?:All)?(?:=true)?$/.test(word) && rest[k + 1] !== "false") || (W_WATCH.has(cmd) && word === "-w"))) what = cmd + " with a watch option"
+    else if (cmd === "ng" && (rest[0] === "serve" || rest[0] === "s" || (rest[0] === "run" && /:serve/.test(rest[1] || "")))) what = "ng serve"
+    else if (cmd === "ng" && (rest[0] === "test" || rest[0] === "t" || (rest[0] === "run" && /:test(?::|$)/.test(rest[1] || ""))) && !once) what = "ng test without --watch=false"
+    else if (["react-scripts", "craco", "rescripts", "react-app-rewired"].includes(cmd) && rest[0] === "test" && !ci && !flag("--watchAll=false")) what = cmd + " test without --watchAll=false (Create React App watches by default)"
+    else if (["react-scripts", "craco", "rescripts", "react-app-rewired"].includes(cmd) && rest[0] === "start") what = cmd + " start"
+    else if (cmd === "vitest" && (rest[0] === "watch" || rest[0] === "dev" || flag("--ui"))) what = "vitest " + (flag("--ui") ? "--ui" : rest[0])
+    else if (cmd === "karma" && rest[0] === "start" && !once) what = "karma start without --single-run"
+    else if (cmd === "playwright" && (flag("--ui") || rest[0] === "show-report" || rest[0] === "codegen")) what = "playwright " + (flag("--ui") ? "test --ui" : rest[0])
+    else if (cmd === "cypress" && rest[0] === "open") what = "cypress open"
+    else if (cmd === "vite" && !["build", "optimize"].includes(rest[0])) what = "vite (a development server)"
+    else if (cmd === "webpack" && rest[0] === "serve") what = "webpack serve"
+    else if ((cmd === "next" && ["dev", "start"].includes(rest[0])) || ((cmd === "nuxt" || cmd === "nuxi") && ["dev", "preview", "start"].includes(rest[0])) ||
+      (cmd === "astro" && ["dev", "preview"].includes(rest[0])) || (cmd === "remix" && rest[0] === "dev") || (cmd === "gatsby" && ["develop", "serve"].includes(rest[0])) ||
+      (cmd === "vue-cli-service" && rest[0] === "serve") || (cmd === "storybook" && rest[0] === "dev") || (cmd === "swa" && rest[0] === "start") ||
+      (cmd === "parcel" && !["build"].includes(rest[0])) || (cmd === "esbuild" && rest.some((word) => /^--serve(?:=|$)/.test(word))) || (cmd === "php" && flag("-S"))) what = cmd + (rest[0] && !rest[0].startsWith("-") ? " " + rest[0] : "")
+    else if (["webpack-dev-server", "nodemon", "ts-node-dev", "live-server", "http-server", "json-server", "lite-server", "browser-sync", "serve", "start-storybook", "azurite", "ngrok", "watch"].includes(cmd)) what = cmd
+    else if (cmd === "dotnet" && rest[0] === "watch") what = "dotnet watch"
+    else if (cmd === "dotnet" && rest[0] === "run" && serverProject(rest.slice(1), here)) what = "dotnet run of a web, worker or Aspire project"
+    else if (cmd === "func" && (rest[0] === "start" || (rest[0] === "host" && rest[1] === "start"))) what = "func start"
+    else if ((cmd === "tail" || cmd === "journalctl") && rest.some((word) => /^-[A-Za-z]*[fF]/.test(word) || word === "--follow")) what = cmd + " -f"
+    else if ((cmd === "docker" || cmd === "kubectl" || cmd === "docker-compose") && rest.some((word) => word === "-f" || word === "--follow") && rest.includes("logs")) what = cmd + " logs -f"
+    else if (cmd === "kubectl" && rest[0] === "port-forward") what = "kubectl port-forward"
+    else if (((cmd === "docker" && rest[0] === "compose" && rest[1] === "up") || (cmd === "docker-compose" && rest[0] === "up")) && !flag("-d") && !flag("--detach")) what = "docker compose up"
+    else if (/^python3?$/.test(cmd) && rest[0] === "-m" && rest[1] === "http.server") what = "python -m http.server"
+    else if (cmd === "ping" && !rest.some((word) => /^-[A-Za-z]*[cw]/.test(word))) what = "ping without -c"
+    if (inner) return { what: inner.what, log: inner.log || inner.what, bounded: bounded ? (inner.bounded ? Math.min(bounded, inner.bounded) : bounded) : inner.bounded }
+    if (what) return { what, log: log || what, bounded }
   }
   return ""
 }

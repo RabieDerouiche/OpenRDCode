@@ -27,6 +27,83 @@
 # Every call is logged, one line, to $FAKE_DOTNET_LOG.
 [ -n "$FAKE_DOTNET_LOG" ] && printf '%s\n' "dotnet $*" >> "$FAKE_DOTNET_LOG"
 
+# The SDKs and runtimes of the fake machine: FAKE_DOTNET_SDKS (versions, default 10.0.100) and FAKE_DOTNET_RUNTIMES
+# ("<name> <version>" per line, default the .NET 10 runtimes); their lists answer as the real host does
+sdks=${FAKE_DOTNET_SDKS:-10.0.100}
+runtimes=${FAKE_DOTNET_RUNTIMES:-"Microsoft.AspNetCore.App 10.0.0
+Microsoft.NETCore.App 10.0.0"}
+case "$1" in
+  --list-sdks) for s in $sdks; do echo "$s [/usr/share/dotnet/sdk]"; done; exit 0 ;;
+  --list-runtimes)
+    printf '%s\n' "$runtimes" | while read -r n v; do [ -n "$n" ] && echo "$n $v [/usr/share/dotnet/shared/$n]"; done
+    exit 0 ;;
+esac
+# global.json: the SDK it asks for (rollForward patch when it gives none), resolved by the host before any command,
+# with the message of the real host when none fits
+g="" d=$(pwd)
+while [ "$d" != / ]; do
+  [ -f "$d/global.json" ] && { g="$d/global.json"; break; }
+  d=$(dirname "$d")
+done
+if [ -n "$g" ]; then
+  want=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$g" | head -n 1)
+  roll=$(sed -n 's/.*"rollForward"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$g" | head -n 1)
+  if [ -n "$want" ]; then
+    fit=$(for s in $sdks; do echo "$s"; done | awk -v want="$want" -v roll="${roll:-patch}" '
+      function num(v, part,   a) { sub(/-.*/, "", v); split(v, a, "."); return a[part] + 0 }
+      BEGIN { M = num(want, 1); m = num(want, 2); b = int(num(want, 3) / 100); p = num(want, 3) % 100; r = tolower(roll) }
+      { M2 = num($1, 1); m2 = num($1, 2); b2 = int(num($1, 3) / 100); p2 = num($1, 3) % 100
+        if (r == "disable") ok = ($1 == want)
+        else if (r == "patch" || r == "latestpatch") ok = (M2 == M && m2 == m && b2 == b && p2 >= p)
+        else if (r == "feature" || r == "latestfeature") ok = (M2 == M && m2 == m && (b2 * 100 + p2) >= (b * 100 + p))
+        else if (r == "minor" || r == "latestminor") ok = (M2 == M && (m2 * 10000 + b2 * 100 + p2) >= (m * 10000 + b * 100 + p))
+        else ok = (M2 * 1000000 + m2 * 10000 + b2 * 100 + p2) >= (M * 1000000 + m * 10000 + b * 100 + p)
+        if (ok) print $1 }' | tail -n 1)
+    if [ -z "$fit" ]; then
+      echo "The command could not be loaded, possibly because:"
+      echo "  * You intended to execute a .NET application:"
+      echo "      The application '$1' does not exist or is not a managed .dll or .exe."
+      echo "  * You intended to execute a .NET SDK command:"
+      echo "      A compatible .NET SDK was not found."
+      echo ""
+      echo "Requested SDK version: $want"
+      echo "global.json file: $g"
+      echo ""
+      echo "Installed SDKs:"
+      for s in $sdks; do echo "$s [/usr/share/dotnet/sdk]"; done
+      echo ""
+      echo "Install the [$want] .NET SDK or update [$g] to match an installed SDK."
+      echo ""
+      echo "Learn about SDK resolution:"
+      echo "https://aka.ms/dotnet/sdk-not-found"
+      exit 145
+    fi
+  fi
+fi
+# the runtime a test project needs (its target framework, ASP.NET Core too for the tests of a web project): the
+# message of the real host when this machine lacks it
+missing_runtime() {
+  t=$(sed -n 's:.*<TargetFramework>\([^<]*\)</TargetFramework>.*:\1:p' "$1" | head -n 1)
+  case "$t" in net[0-9]*.[0-9]*) ;; *) return 1 ;; esac
+  v=${t#net}; v=${v%%-*}
+  for need in Microsoft.NETCore.App Microsoft.AspNetCore.App; do
+    [ "$need" = Microsoft.AspNetCore.App ] && ! grep -q 'Microsoft.AspNetCore.Mvc.Testing' "$1" && continue
+    printf '%s\n' "$runtimes" | grep -q "^$need $v\." && continue
+    echo "Testhost process for source(s) '$(dll_of "$1")' exited with error: You must install or update .NET to run this application."
+    echo "App: $(dirname "$(dll_of "$1")")/testhost.dll"
+    echo "Architecture: x64"
+    echo "Framework: '$need', version '$v.0' (x64)"
+    echo ".NET location: /usr/share/dotnet/"
+    echo "The following frameworks were found:"
+    printf '%s\n' "$runtimes" | awk -v n="$need" '$1 == n { print "  " $2 " at [/usr/share/dotnet/shared/" n "]" }'
+    echo "Learn more about framework resolution:"
+    echo "https://aka.ms/dotnet/app-launch-failed"
+    echo ". Please check the diagnostic logs for more information."
+    return 0
+  done
+  return 1
+}
+
 abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$(pwd)" "$1" ;; esac; }
 name_of() { n=$(basename "$1"); printf '%s\n' "${n%.*}"; }
 dll_of() { d=$(cd "$(dirname "$1")" && pwd); printf '%s/bin/Debug/net10.0/%s.dll\n' "$d" "$(name_of "$1")"; }
@@ -231,7 +308,7 @@ cobertura() {
 }
 
 case "$1" in
-  --version) echo "10.0.100"; exit 0 ;;
+  --version) echo "${fit:-$(for s in $sdks; do echo "$s"; done | tail -n 1)}"; exit 0 ;;
   build)
     shift
     # FAKE_DOTNET_SLOW: a build that takes 3 s (two builds of one folder at the same time)
@@ -293,6 +370,10 @@ case "$1" in
       fi
       if grep -q 'fake-mtp-v2' "$p"; then
         echo "/usr/share/dotnet/sdk/10.0.100/Microsoft.TestPlatform.targets(48,5): error : Testing with VSTest target is no longer supported by Microsoft.Testing.Platform on .NET 10 SDK and later. If you use dotnet test, you should opt-in to the new dotnet test experience. For more information, see https://aka.ms/dotnet-test-mtp-error [$(abs "$p")]"
+        status=1
+        continue
+      fi
+      if missing_runtime "$p"; then
         status=1
         continue
       fi
@@ -435,6 +516,25 @@ EOF
       done
     fi
     exit 0 ;;
+  pack)
+    # the packable projects of the target: <name>.1.0.0.nupkg in the output folder; a "fake-breaking: <message>" in the
+    # project or its files is a breaking change that package validation reports (CP0002)
+    shift
+    t="" o=""
+    case "$1" in ""|-*) ;; *) t=$1; shift ;; esac
+    while [ $# -gt 0 ]; do case "$1" in -o|--output) o=$2; shift 2 ;; *) shift ;; esac; done
+    status=0
+    for p in $(projects_of "$t"); do
+      grep -q -i '<IsPackable>true\|<PackageId>\|<GeneratePackageOnBuild>true' "$p" 2>/dev/null || continue
+      breaking=$(sources_of "$p" | while IFS= read -r src; do sed -n 's/.*fake-breaking: \(.*[^ ]\) *-->.*/\1/p; s/.*fake-breaking: \([^>]*[^ ]\) *$/\1/p' "$src"; done | head -n 3)
+      if [ -n "$breaking" ]; then
+        printf '%s\n' "$breaking" | while IFS= read -r m; do echo "/usr/share/dotnet/sdk/10.0.100/Sdks/Microsoft.DotNet.ApiCompat.Task/build/Microsoft.DotNet.ApiCompat.ValidatePackage.targets(39,5): error CP0002: $m [$(abs "$p")]"; done
+        status=1
+        continue
+      fi
+      [ -n "$o" ] && { mkdir -p "$o"; : > "$o/$(name_of "$p").1.0.0.nupkg"; }
+    done
+    exit $status ;;
   format|restore) exit 0 ;;
   run) echo "fake dotnet: dotnet run must never be called by the pack's scripts"; exit 99 ;;
   *) echo "fake dotnet: unknown command $1"; exit 99 ;;

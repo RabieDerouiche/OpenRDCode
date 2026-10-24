@@ -1848,12 +1848,73 @@ await check("[23] which project a dotnet run starts", () => {
 })
 const runGuards = await Guards({ client, directory: runRepo, worktree: runRepo })
 runGuards.agent("run-build", "build")
-const runTool = async (command) => { const output = { args: { command } }; await runGuards.before({ tool: "bash", sessionID: "run-build", agent: "build", callID: "r" }, output); return output.args }
-await check("[23] build runs a committed project", () => runTool("dotnet run --project src/Api"))
+const runTool = async (command, extra = {}) => { const output = { args: { command, ...extra } }; await runGuards.before({ tool: "bash", sessionID: "run-build", agent: "build", callID: "r" }, output); return output.args }
+// src/Api is a web project: it serves until it is stopped (24), so the conversation runs it in the background or bounded
+await check("[23] build runs a committed project (a web API: in the background)", () => runTool("dotnet run --project src/Api", { background: true }))
+await check("[23] build runs a committed project (bounded)", () => runTool("timeout 60 dotnet run --project src/Api"))
+await check("[23/24] a committed web API run in the foreground is refused: it never ends", () =>
+  assert.rejects(() => runTool("dotnet run --project src/Api"), /dotnet run of a web, worker or Aspire project does not end by itself.*in the background \(background: true\), or bounded: timeout 60/))
 await check("[23] build runs the tests of a committed test project", () => runTool("dotnet run --project tests/Api.Tests/Api.Tests.csproj --no-build"))
 for (const command of ["dotnet run --project Probe", "dotnet run --project Probe/Probe.csproj", "dotnet run Probe.cs", "cd Probe && dotnet run"]) {
   await check(`[23] refused: ${command}`, () => assert.rejects(() => runTool(command), /dotnet run runs only a project of this repository that the last commit holds/))
 }
+
+// ---------- 24. commands that never end by themselves ----------
+// An application with an Angular front-end (Karma: ng test watches), a Next.js package (jest runs once) and a web API
+const shop = join(home, "repos", "shop")
+mkdirSync(join(shop, "ClientApp"), { recursive: true })
+mkdirSync(join(shop, "web"), { recursive: true })
+mkdirSync(join(shop, "src", "Api"), { recursive: true })
+writeFileSync(join(shop, "ClientApp", "package.json"), JSON.stringify({ scripts: { test: "ng test", "test:ci": "ng test --no-watch --browsers=ChromeHeadless", build: "ng build", "build:dev": "ng build --configuration development", start: "ng serve", "generate:api": "openapi-generator-cli generate -i ../api.json -g typescript-angular -o src/app/api" } }))
+writeFileSync(join(shop, "web", "package.json"), JSON.stringify({ scripts: { test: "jest", dev: "next dev", build: "next build", storybook: "storybook dev -p 6006" } }))
+writeFileSync(join(shop, "src", "Api", "Api.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk.Web\" />\n")
+execFileSync("git", ["init", "-q", shop])
+execFileSync("git", ["-C", shop, "add", "-A"])
+execFileSync("git", ["-C", shop, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init"])
+const g24 = await Guards({ client, directory: shop, worktree: shop })
+session("g24-pilot")
+session("g24-build")
+for (const name of ["coder", "test-guardian", "analyst", "checker", "debugger", "doc-writer"]) {
+  session("g24-" + name, { parentID: "g24-pilot" })
+  g24.agent("g24-" + name, name)
+}
+g24.agent("g24-pilot", "pilot")
+g24.agent("g24-build", "build")
+const run24 = async (who, command, extra = {}) => {
+  const output = { args: { command, ...extra } }
+  await g24.before({ tool: "bash", sessionID: "g24-" + who, callID: "n" + count }, output)
+  return output.args
+}
+const NEVER = /Refused by the pack: .* does not end by itself \(a server or a watch mode\).*build-test\.sh \[<folder>\]/
+for (const who of ["pilot", "coder", "test-guardian", "analyst", "checker", "debugger", "doc-writer"]) {
+  for (const command of ["cd ClientApp && npm start", "cd ClientApp && npm test", "timeout 60 npm run dev --prefix web", "npx ng serve", "dotnet watch run --project src/Api", "dotnet run --project src/Api"]) {
+    await check(`[24] ${who} is refused: ${command}`, () => assert.rejects(() => run24(who, command), (error) => NEVER.test(error.message) && !/in the conversation/.test(error.message)))
+  }
+}
+await check("[24] the background is no way out for an agent of the pack", () => assert.rejects(() => run24("coder", "npm run dev --prefix web", { background: true }), NEVER))
+await check("[24] the refusal of npm test names the script that watches", () =>
+  assert.rejects(() => run24("coder", "npm test", { workdir: "ClientApp" }), /npm test \(its script "ng test": ng test without --watch=false\)/))
+await check("[24] npm keeps for itself the options before --: the refusal says where they go", () =>
+  assert.rejects(() => run24("coder", "npm test --watch=false", { workdir: "ClientApp" }), /npm passes to the script only the options after --: npm test -- <option>/))
+for (const [command, workdir] of [["npm test -- --watch=false --browsers=ChromeHeadless", "ClientApp"], ["npm run test:ci", "ClientApp"], ["npm run build:dev", "ClientApp"],
+  ["npm run generate:api", "ClientApp"], ["npx ng test --watch=false", "ClientApp"], ["npm test", "web"], ["npm test -- src/cart.spec.ts", "web"], ["npm run build", "web"],
+  ["npm ci", "ClientApp"], ["dotnet test", ""], ["dotnet build src/Api", ""], [S + "build-test.sh ClientApp", ""]]) {
+  await check(`[24] the coder runs: ${command}${workdir ? " (in " + workdir + ")" : ""}`, () => run24("coder", command, workdir ? { workdir } : {}))
+}
+await check("[24] npm test of a package whose tests run once gets 20 minutes", async () => assert.equal((await run24("coder", "npm test", { workdir: "web" })).timeout, 1200000))
+// the free conversation: a server in the background, or bounded by timeout (5 minutes at most)
+await check("[24] the conversation is refused a server in the foreground, and told how", () =>
+  assert.rejects(() => run24("build", "npm run dev", { workdir: "web" }), /npm run dev does not end by itself.*Here, in the conversation: in the background \(background: true\), or bounded: timeout 60 <the command>/))
+await check("[24] the conversation runs a server in the background", () => run24("build", "npm run dev", { workdir: "web", background: true }))
+await check("[24] the conversation runs a server bounded by timeout", () => run24("build", "timeout 60 npm run storybook", { workdir: "web" }))
+await check("[24] the conversation is refused a bound longer than 5 minutes", () => assert.rejects(() => run24("build", "timeout 10m npm run dev", { workdir: "web" }), NEVER))
+await check("[24] the conversation runs a web API in the background", () => run24("build", "dotnet run --project src/Api", { background: true }))
+await check("[24] a refusal is written to the log of the plugin, never the scripts of package.json", () => {
+  const found = logs.filter((entry) => entry && entry.extra && /never ends/.test(String(entry.extra.reason)))
+  assert.ok(found.length > 0, "no log entry")
+  assert.ok(found.some((entry) => /npm test \(its script: ng test without --watch=false\)/.test(entry.extra.reason)), "the refusal of npm test")
+  assert.ok(!found.some((entry) => /"ng test"|storybook dev -p/.test(JSON.stringify(entry))), "a script in the log")
+})
 
 // ---------- every command the pack prescribes passes the guards of the plugin, for the agent that runs it ----------
 // (tools/permission-corpus.mjs, the cases noted "prescribed by the pack": the permission rules check them too)

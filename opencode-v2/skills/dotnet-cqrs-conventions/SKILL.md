@@ -1,6 +1,6 @@
 ---
 name: dotnet-cqrs-conventions
-description: Only for repositories whose AGENTS.md project type is cqrs-api. Conventions for .NET 10 Clean Architecture + CQRS APIs with an in-house mediator and FluentValidation. Load before writing, reviewing or testing commands, queries, handlers, validators, endpoints or their tests.
+description: Only for repositories whose project type is cqrs-api (AGENTS.md or the detection), whatever their .NET version (8, 9 or 10). Conventions for Clean Architecture + CQRS APIs with an in-house mediator and FluentValidation; never for a REST API with controllers or services. Load before writing, reviewing or testing commands, queries, handlers, validators, endpoints or their tests.
 compatibility: opencode
 ---
 # .NET Clean Architecture + CQRS conventions
