@@ -59,8 +59,10 @@ GIT_READ_GUARD = ["git branch -d*", "git branch -D*", "git branch -m*", "git bra
                   "git branch -C*", "git branch -f*", "git branch --delete*", "git branch --move*", "git branch --copy*",
                   "git branch --force*", "git branch * -D*", "git branch * -f*", "git branch * --force*",
                   "git diff*--output*", "git log*--output*", "git show*--output*"]
+# `dotnet package list` and `dotnet reference list`: the "noun first" forms of .NET 10 (`dotnet list package` and
+# `dotnet list reference` keep working)
 DOTNET_INFO = ["dotnet --info", "dotnet --version", "dotnet --list-sdks", "dotnet --list-runtimes", "dotnet list*",
-               "dotnet nuget why*"]
+               "dotnet package list*", "dotnet reference list*", "dotnet nuget why*"]
 DOTNET_RUN = ["dotnet build*", "dotnet test*", "dotnet restore*"]
 FRONT_TEST = ["npm test*", "npm run test*", "npx jest*", "npx vitest*", "npx ng test*", "yarn test*", "pnpm test*",
               "npm ls*", "node --version", "npm --version"]
@@ -248,11 +250,15 @@ CODER_BUILD = ["dotnet clean*", "dotnet format*", "dotnet build-server shutdown*
                # `migrations list` connect to one)
                "dotnet ef migrations add *", "dotnet ef migrations script*", "dotnet ef migrations list --no-connect*",
                "dotnet ef migrations has-pending-model-changes*", "dotnet ef --version",
-               # project references between projects of the repository (a PACKAGE reference is never added here)
+               # project references between projects of the repository (a PACKAGE reference is never added here),
+               # also in the "noun first" form of .NET 10 (`dotnet reference add <project> --project <project>`)
                "dotnet add * reference *", "dotnet add reference *", "dotnet remove * reference *",
-               "dotnet remove reference *", "dotnet sln list*", "dotnet sln * list*"]
+               "dotnet remove reference *", "dotnet reference add *", "dotnet reference remove *", "dotnet sln list*",
+               "dotnet sln * list*"]
+# The installs from the lockfile only (build-test.sh runs them when node_modules is missing): `npm install` rewrites
+# package-lock.json (another version of npm, a range resolved again), and the pack plugin (25) refuses it with what to do
 CODER_FRONT = ["npm run lint*", "npm run format*", "npx eslint *", "npx prettier *", "npx ng lint*", "npx ng generate *",
-               "npx ng g *", "npm ci*", "npm install", "npm i", "yarn install --frozen-lockfile*",
+               "npx ng g *", "npm ci*", "yarn install --frozen-lockfile*",
                "yarn install --immutable*", "pnpm install --frozen-lockfile*",
                # the scripts of package.json (a generated API client, a code generator, a check of the team): the
                # repository's own commands, as its build and its tests are; FRONT_SCRIPT_DENY refuses what publishes,

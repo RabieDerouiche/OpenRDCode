@@ -245,7 +245,7 @@ Les avertissements et erreurs récents :
 grep -E 'level=(ERROR|WARN)' ~/oc2/serve.log | tail -30 | cut -c1-300
 ```
 
-Les refus du plugin du pack (chemin hors du dépôt, dossier en lecture seule, commande qui écrit un identifiant, second `/go`, outil fermé de la v2, même appel répété trois fois), avec l'agent et le chemin, jamais la commande. C'est ce qu'il faut m'envoyer quand un agent bute sur un refus :
+Les refus du plugin du pack (chemin hors du dépôt, dossier en lecture seule, commande qui écrit un identifiant, second `/go`, outil fermé de la v2, même appel répété trois fois, commande qui ne finit jamais, changement des dépendances ou installation sur la machine par un agent), avec l'agent et le chemin, jamais la commande. C'est ce qu'il faut m'envoyer quand un agent bute sur un refus :
 ```sh
 grep 'refused by the pack' ~/oc2/data/opencode/log/openrd-pack.log | tail -20
 ```
@@ -728,9 +728,22 @@ lance `sh ~/.config/opencode/scripts/build-test.sh ClientApp`
 ```
 Il installe les dépendances quand elles manquent, depuis le lockfile seulement (`npm ci`, `yarn --frozen-lockfile`, `pnpm --frozen-lockfile` : jamais un paquet ajouté ni monté), lance le script `build`, puis les tests **une fois** : Karma dans ChromeHeadless avec `--watch=false` (Angular jusqu'à la 20), Vitest avec `--watch=false` (Angular 21), `--watchAll=false` (Create React App), `--run` (Vitest), Jest tel quel. Il finit par `BUILD:` et `TESTS:` comme pour .NET ; une spec seule : `build-test.sh ClientApp --filter src/app/x/x.component.spec.ts`. Un test focalisé (`fit`, `fdescribe`, `.only`) fait échouer le run : le reste de la suite ne tournerait pas. Les tests de bout en bout (Playwright, Cypress) sont laissés à la CI. Un run qui ne finit pas est arrêté au bout de 15 minutes (`HANG:`).
 
-Ce qu'il faut sur la machine d'OpenCode : node (une version que le projet accepte : `.nvmrc` ou `engines`, sinon un avertissement), le gestionnaire de paquets du lockfile (`corepack enable` pour yarn ou pnpm), Chrome ou Chromium pour Karma, et l'accès au registre npm (Artifactory). Une ligne `ENVIRONMENT PROBLEM` dit ce qui manque ; `STOP: the lockfile … is not in sync` veut dire que `package.json` a changé sans son lockfile (à toi de lancer `npm install`) ; `STOP: git does not ignore node_modules` veut dire que le `.gitignore` du dépôt doit ignorer `node_modules` avant toute installation.
+Ce qu'il faut sur la machine d'OpenCode : node (une version que le projet accepte : `.nvmrc` ou `engines`, sinon un avertissement), le gestionnaire de paquets du lockfile (`corepack enable` pour yarn ou pnpm), Chrome ou Chromium pour Karma, et l'accès au registre npm (Artifactory). Une ligne `ENVIRONMENT PROBLEM` dit ce qui manque ; `STOP: the lockfile … is not in sync` veut dire que `package.json` a changé sans son lockfile (à toi de lancer `npm install`) ; `STOP: git does not ignore node_modules` veut dire que le `.gitignore` du dépôt doit ignorer `node_modules` avant toute installation. `ENVIRONMENT PROBLEM: npm … failed inside itself` (« Cannot read properties of null (reading 'edgesOut') ») : un bug de npm 10, connu sur l'arbre de Vitest 4 (Angular 21) quand il résout les dépendances sans lockfile ; mets à jour npm sur la machine, hors d'OpenCode (sa dernière version que ta version de node accepte, ou node avec son npm) ; jamais `--legacy-peer-deps`, qui peut produire un lockfile que `npm ci` refuse ensuite.
+
+Un agent ne change jamais les dépendances : `npm install` (même sans paquet : il réécrit `package-lock.json`), `yarn add`, `dotnet add package` ou `dotnet package add` lui sont refusés en une phrase, comme une installation sur la machine (`npm i -g`, brew, `corepack enable`) ; une étape qui a besoin d'un paquet revient « BLOQUÉ » avec le paquet, sa version et pourquoi, et c'est toi qui l'ajoutes. En conversation, ces commandes restent les tiennes.
 
 **Les commandes qui ne finissent jamais sont refusées aux agents du pack** : `npm start`, `ng serve`, `vite`, `next dev`, un `--watch`, `ng test` sans `--watch=false`, `npm test` quand son script regarde les fichiers (le plugin lit `package.json` : `npm test` d'un projet Jest passe, celui d'un Angular avec Karma est refusé), `dotnet watch`, `dotnet run` d'une API. Le refus donne la bonne commande. À savoir : `npm test --watch=false` ne passe pas l'option au script (npm la garde pour lui) ; c'est `npm test -- --watch=false`, et le refus le dit. Dans la conversation, tu peux en lancer une toi-même : l'agent la lance en arrière-plan (l'option d'arrière-plan de l'outil shell de la v2), ou bornée : `timeout 60 npm run dev`.
+
+## Blazorise (DataGrid, langue, retrait)
+
+Quand le dépôt référence Blazorise, `detect-project-type.sh` le dit avec sa version (`Blazorise 2.2.2: the skill blazorise …`) et les agents chargent le skill `blazorise` dès que le code touche ses composants : la langue du DataGrid et de sa pagination, ses textes, l'API de la version installée (jamais un membre inventé : il se lit dans la documentation XML du paquet), puis son remplacement par du Razor natif. Par exemple :
+```text
+/go ABC-123            (« le DataGrid des commandes en français, pagination comprise »)
+/go sans ticket : remplacer Blazorise par du Razor natif dans la page Commandes
+```
+- La langue : les textes de Blazorise en français pour chaque utilisateur, sans changer les formats de dates et de nombres de l'application ; les textes à corriger (« items », « Sauvegarder »…) dans une seule instance de `DataGridLocalizers` que chaque grille reprend.
+- Le retrait : une page ou une famille de composants par étape, chacune avec un test de ce que voit l'utilisateur, vert avant et après ; les paquets retirés à la dernière étape. QuickGrid (Microsoft, gratuit) ou bUnit sont des paquets : c'est toi qui les ajoutes, l'analyste te le propose dans « Décisions ».
+- Blazorise est payant (une licence par développeur front) : aucun agent n'ajoute ni ne monte un paquet Blazorise.
 
 ## Versions de .NET, environnement et librairies
 
@@ -771,7 +784,8 @@ lance `sh ~/.config/opencode/scripts/test-lint.sh --changed origin/develop`
 Appliqués automatiquement, sans question ni réglage :
 - **Une seule porte pour builder et tester** (`build-test.sh`, .NET et front-end) : une exécution, des lignes `BUILD:`/`TESTS:` explicites, jamais un mode watch, un problème de la machine dit en une ligne.
 - **Échouer tôt, sur la machine et pas sur le code** : `dotnet-problem.sh` et les lignes de `detect-project-type.sh` (SDK, runtimes, node, Chrome) arrêtent un run avant qu'un agent « corrige » le dépôt pour une machine incomplète.
-- **Le lockfile fait foi** : `npm ci` et ses équivalents, jamais un paquet ajouté ou monté par un agent ; un lockfile désynchronisé arrête.
+- **Le lockfile fait foi** : `npm ci` et ses équivalents, jamais un paquet ajouté ou monté par un agent (le plugin refuse `npm install`, `yarn add`, `dotnet package add` en disant quoi faire) ; un lockfile désynchronisé arrête.
+- **Un savoir chargé seulement quand il sert** : les skills (CQRS, intégrations, Blazorise, Fortify) ne coûtent rien tant que le code n'en a pas besoin ; `detect-project-type.sh` nomme celui d'une bibliothèque qu'il trouve (« Blazorise 2.2.2: the skill blazorise »).
 - **La version du projet fait foi** : C# et API du framework cible ; une migration de framework est un ticket à part.
 - **Contrats d'abord** : `api-surface.sh` (API publique, routes, champs des DTO), la validation de paquet d'une librairie, la section « Contrat » des fiches entre dépôts liés.
 - **Des tests qui prouvent** : scénarios avec valeurs dans la fiche, `test-lint.sh`, le filet de non-régression avant un correctif, la preuve rouge puis verte deux fois d'un bug ou d'une faille.

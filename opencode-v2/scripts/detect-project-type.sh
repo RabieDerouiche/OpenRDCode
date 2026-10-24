@@ -89,8 +89,16 @@ if [ -n "$projects" ]; then
   if [ "$razor" -gt 0 ]; then
     add_type blazor
     ui_libs=$(git grep -h -o -i -E 'Include="(Blazorise|MudBlazor|Radzen\.Blazor|Syncfusion\.Blazor|Telerik\.UI\.for\.Blazor)[^"]*"' -- '*.csproj' 'Directory.Packages.props' 2>/dev/null | sed -E 's/Include="([^".]+).*/\1/' | sort -u | tr '\n' ' ')
+    # Blazorise: its version (its API changes with it: CurrentPage became Page in 2.0) and the skill that knows it
+    blazorise=""
+    case " $(printf '%s' "$ui_libs" | tr '[:upper:]' '[:lower:]')" in
+      *" blazorise "*)
+        blazorise=$(git grep -h -o -i -E 'Include="Blazorise[^"]*"[^>]*Version="[0-9][^"]*"' -- '*.csproj' 'Directory.Packages.props' 2>/dev/null |
+          sed -E 's/.*Version="([^"]+)".*/\1/' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)
+        blazorise="; Blazorise${blazorise:+ $blazorise}: the skill blazorise (the language of the DataGrid and of its pager, the API of this version, its replacement by native Razor)" ;;
+    esac
     evidence="$evidence
-- Blazor components: $razor .razor files, $code_behind with a .razor.cs code-behind${ui_libs:+; component library: $ui_libs}"
+- Blazor components: $razor .razor files, $code_behind with a .razor.cs code-behind${ui_libs:+; component library: ${ui_libs% }}$blazorise"
   fi
 
   if [ -n "$abp" ]; then

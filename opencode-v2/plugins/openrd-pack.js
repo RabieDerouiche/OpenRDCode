@@ -143,7 +143,16 @@
 //    build-test.sh, which builds a .NET or front-end folder and runs its tests once. The free conversation may run one
 //    in the background (OpenCode v2, background: true) or bounded by `timeout` (5 minutes at most); the agents of the
 //    pack never.
-// Every refusal of 6, 7, 9, 12, 16, 23 and 24 is written as "refused by the pack" to the log of the plugin,
+// 25. Refuses to the agents of the pack a command that changes the dependencies of the repository: `npm install` (with
+//    or without a package: it resolves the tree again and rewrites package-lock.json), `npm i`, `npm update`,
+//    `npm audit fix`, `yarn add`, `pnpm add`, a plain `yarn` or `pnpm install` without the frozen lockfile, through
+//    `npx npm@11`, corepack, `sh -c` or a script of package.json; `dotnet add package`, `dotnet package add` (.NET 10),
+//    `dotnet tool install`. And one that installs a tool on the machine: a global install, brew, apt, pip,
+//    `corepack enable`, `nvm install`. The permission rules refuse them too, but their refusal sends the model every
+//    bash rule (19 000 characters for the coder) and nothing it can do instead; this one says it in a sentence: a step
+//    that needs a package is « BLOQUÉ », the dependencies of the lockfile are installed by build-test.sh (npm ci), a
+//    missing tool is an ENVIRONMENT PROBLEM. `npm ci` and the frozen installs pass. The free conversation is mine.
+// Every refusal of 6, 7, 9, 12, 16, 23, 24 and 25 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
 // the summaries of a run (17), its automatic resumes (19), the loops cut (21), the resumes I ask for (22) and the end of a
@@ -897,6 +906,29 @@ export const Guards = async (input) => {
           }
         }
       }
+      // 25. the agents of the pack never change the dependencies of the repository, nor a tool of the machine
+      if (call.tool === "bash" && typeof output.args.command === "string" && PACK_AGENTS.has(call.agent || agents.get(call.sessionID) || "")) {
+        const cwd = typeof output.args.workdir === "string" && output.args.workdir ? resolve(directory, output.args.workdir) : directory
+        const found = dependencyChange(output.args.command, cwd, root)
+        if (found && found.machine) {
+          logRefusal(call, "an install on the machine: " + found.log)
+          throw new Error(
+            "Refused by the pack: " + found.what + " installs or changes a tool of this machine: an agent never does. A " +
+              "tool that is missing or in the wrong version (node, npm, Chrome, a .NET SDK) is an ENVIRONMENT PROBLEM: " +
+              "tell the user in one line and stop. Never try another form of this command.",
+          )
+        }
+        if (found) {
+          logRefusal(call, "a change of the dependencies: " + found.log)
+          throw new Error(
+            "Refused by the pack: " + found.what + " changes the dependencies of the repository (a package added, " +
+              "removed or upgraded, or the lockfile resolved again): the developer decides that, never an agent. A step " +
+              "that needs a package is « BLOQUÉ » with what is needed (the package, its version, why). The dependencies " +
+              "of the lockfile are installed by sh ~/.config/opencode/scripts/build-test.sh [<folder>] when they are " +
+              "missing (npm ci, dotnet restore). Never try another form of this command.",
+          )
+        }
+      }
       let outside = null
       try {
         outside = await escape(call.tool, call.sessionID, output.args)
@@ -1593,7 +1625,8 @@ function packageScript(cmd, rest, cwd) {
   let script = ""
   if (cmd === "npm") {
     if (need === 2) script = rest[named[1]]
-    else if (["test", "t", "tst"].includes(first)) script = "test"
+    // npm cit (install-ci-test): npm ci, then the test script
+    else if (["test", "t", "tst", "cit", "clean-install-test", "sit", "install-ci-test"].includes(first)) script = "test"
     else if (first === "start" || first === "restart") script = "start"
     else return null
   } else if (need === 2) script = rest[named[1]]
@@ -1612,46 +1645,59 @@ function packageScript(cmd, rest, cwd) {
 // may hold a credential; bounded: the seconds of a `timeout` before it), or "".
 // cwd: the folder of the command (a cd in the command moves it); root: the repository (a package.json is looked for up
 // to it); ci: CI is set for it (CI=true npm test: Create React App runs once).
+// What runs a command, taken off its words: VAR=value, env, nohup, setsid, time, nice, exec, command, sudo, cross-env,
+// timeout, npx and the exec commands of the package managers, corepack before one of them; a package manager run in a
+// version of its own (npx npm@11) by its name. As { words, bounded, ci }: bounded, the seconds of a `timeout` before
+// it; ci, CI set for it (CI=true npm test: Create React App runs once).
+function unwrap(all, inCi = false) {
+  let words = all.slice()
+  let bounded = 0
+  let ci = inCi
+  for (let guard = 0; guard < 12 && words.length; guard++) {
+    const [w0, w1] = words
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w0)) {
+      if (/^CI=(?!$|0$|false$)/i.test(w0)) ci = true
+      words = words.slice(1)
+    } else if (w0 === "env" || w0 === "cross-env" || w0 === "cross-env-shell") {
+      words = words.slice(1)
+      while (words[0] && words[0].startsWith("-")) words = words.slice(1)
+    } else if (["nohup", "setsid", "time", "exec", "command", "builtin", "stdbuf", "unbuffer", "nice", "ionice"].includes(w0)) {
+      words = words.slice(1)
+      while (words[0] && words[0].startsWith("-")) words = words.slice(/^-[nc]$/.test(words[0]) ? 2 : 1)
+    } else if (w0 === "sudo" || w0 === "doas") {
+      words = words.slice(1)
+      while (words[0] && words[0].startsWith("-")) words = words.slice(/^-[ugpCDhrt]$/.test(words[0]) ? 2 : 1)
+    } else if (w0 === "timeout") {
+      let i = 1
+      while (i < words.length && words[i].startsWith("-")) i += /^(?:-k|-s|--kill-after|--signal)$/.test(words[i]) ? 2 : 1
+      const time = /^(\d+(?:\.\d+)?)([smhd])?$/.exec(words[i] || "")
+      if (!time) {
+        words = []
+        break
+      }
+      const seconds = Number(time[1]) * { s: 1, m: 60, h: 3600, d: 86400 }[time[2] || "s"]
+      bounded = bounded ? Math.min(bounded, seconds) : seconds
+      words = words.slice(i + 1)
+    } else if (w0 === "npx" || w0 === "pnpx" || w0 === "bunx" || ((w0 === "pnpm" || w0 === "yarn" || w0 === "npm") && (w1 === "exec" || w1 === "dlx"))) {
+      words = words.slice(w0 === "npx" || w0 === "pnpx" || w0 === "bunx" ? 1 : 2)
+      while (words[0] && words[0].startsWith("-")) words = words.slice(/^(?:-p|--package)$/.test(words[0]) ? 2 : 1)
+    } else if (w0 === "corepack" && /^(?:npm|yarn|pnpm)(?:@|$)/.test(w1 || "")) {
+      words = words.slice(1)
+    } else break
+  }
+  if (words[0] && /^(?:npm|yarn|pnpm)@/.test(words[0])) words = [words[0].replace(/@.*$/, ""), ...words.slice(1)]
+  return { words, bounded, ci }
+}
 export function neverEnding(command, cwd = process.cwd(), root = "", depth = 0, inCi = false) {
   let here = cwd
   for (const all of commandWords(String(command || ""))) {
     if (all.after === ">" || all.after === "<") continue
-    let words = all.slice()
-    let bounded = 0
-    let ci = inCi
-    if ((words[0] === "cd" || words[0] === "pushd") && words.length <= 2) {
-      here = words[1] && words[1] !== "-" ? resolve(here, words[1].replace(/^~(?=\/|$)/, HOME)) : HOME
+    if ((all[0] === "cd" || all[0] === "pushd") && all.length <= 2) {
+      here = all[1] && all[1] !== "-" ? resolve(here, all[1].replace(/^~(?=\/|$)/, HOME)) : HOME
       continue
     }
-    // what runs the command: VAR=value, env, nohup, setsid, time, nice, exec, command, cross-env, timeout, npx and
-    // the exec commands of the package managers
-    for (let guard = 0; guard < 12 && words.length; guard++) {
-      const [w0, w1] = words
-      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w0)) {
-        if (/^CI=(?!$|0$|false$)/i.test(w0)) ci = true
-        words = words.slice(1)
-      } else if (w0 === "env" || w0 === "cross-env" || w0 === "cross-env-shell") {
-        words = words.slice(1)
-        while (words[0] && words[0].startsWith("-")) words = words.slice(1)
-      } else if (["nohup", "setsid", "time", "exec", "command", "builtin", "stdbuf", "unbuffer", "nice", "ionice"].includes(w0)) {
-        words = words.slice(1)
-        while (words[0] && words[0].startsWith("-")) words = words.slice(/^-[nc]$/.test(words[0]) ? 2 : 1)
-      } else if (w0 === "timeout") {
-        let i = 1
-        while (i < words.length && words[i].startsWith("-")) i += /^(?:-k|-s|--kill-after|--signal)$/.test(words[i]) ? 2 : 1
-        const time = /^(\d+(?:\.\d+)?)([smhd])?$/.exec(words[i] || "")
-        if (!time) {
-          words = []
-          break
-        }
-        const seconds = Number(time[1]) * { s: 1, m: 60, h: 3600, d: 86400 }[time[2] || "s"]
-        bounded = bounded ? Math.min(bounded, seconds) : seconds
-        words = words.slice(i + 1)
-      } else if (w0 === "npx" || w0 === "pnpx" || w0 === "bunx" || ((w0 === "pnpm" || w0 === "yarn" || w0 === "npm") && (w1 === "exec" || w1 === "dlx"))) {
-        words = words.slice(w0 === "npx" || w0 === "pnpx" || w0 === "bunx" ? 1 : 2)
-        while (words[0] && words[0].startsWith("-")) words = words.slice(/^(?:-p|--package)$/.test(words[0]) ? 2 : 1)
-      } else break
-    }
+    // what runs the command (VAR=value, env, nohup, timeout, npx…) is taken off
+    const { words, bounded, ci } = unwrap(all, inCi)
     const [cmd, ...rest] = words
     if (!cmd) continue
     const flag = (name) => rest.includes(name)
@@ -1717,6 +1763,109 @@ export function neverEnding(command, cwd = process.cwd(), root = "", depth = 0, 
     else if (cmd === "ping" && !rest.some((word) => /^-[A-Za-z]*[cw]/.test(word))) what = "ping without -c"
     if (inner) return { what: inner.what, log: inner.log || inner.what, bounded: bounded ? (inner.bounded ? Math.min(bounded, inner.bounded) : bounded) : inner.bounded }
     if (what) return { what, log: log || what, bounded }
+  }
+  return ""
+}
+
+// ---------- 25. a change of the dependencies, an install on the machine ----------
+// npm's commands (and their aliases) that add, remove, upgrade or link a package, or resolve the tree again and rewrite
+// package-lock.json: every install but `npm ci`, which installs the lockfile as it is
+const NPM_CHANGES = new Set(["install", "i", "in", "ins", "inst", "insta", "instal", "isnt", "isnta", "isntal", "isntall", "add",
+  "install-test", "it", "uninstall", "unlink", "remove", "rm", "r", "un", "update", "up", "upgrade", "udpate", "dedupe", "ddp",
+  "link", "ln", "prune"])
+// yarn's and pnpm's; their plain install (`yarn`, `yarn install`, `pnpm install`) without its frozen option too
+const PM_CHANGES = new Set(["add", "remove", "rm", "uninstall", "un", "update", "up", "upgrade", "upgrade-interactive", "dedupe",
+  "link", "unlink", "import", "patch-commit", "global"])
+const FROZEN = /^(?:--frozen-lockfile(?:=true)?|--immutable)$/
+const GLOBAL = /^(?:-g|--global|--location=global)$/
+// The tools of the machine: an agent never installs or changes one (a missing one is an ENVIRONMENT PROBLEM)
+const MACHINE_INSTALLS = {
+  brew: ["install", "reinstall", "upgrade", "uninstall", "remove", "rm", "link", "tap"],
+  "apt-get": ["install", "reinstall", "upgrade", "dist-upgrade", "remove", "purge"],
+  apt: ["install", "reinstall", "upgrade", "full-upgrade", "remove", "purge"],
+  pip: ["install", "uninstall"], pip3: ["install", "uninstall"], pipx: ["install", "upgrade", "uninstall"],
+  gem: ["install", "update", "uninstall"], corepack: ["enable", "disable", "prepare", "install", "use", "up"],
+  nvm: ["install", "uninstall", "alias"], fnm: ["install", "uninstall", "default"], volta: ["install", "pin", "uninstall"],
+  sdk: ["install", "uninstall", "default"],
+}
+// The command of a package manager after its options (npm --prefix web install: install), as { name, at }, or null
+function pmSubcommand(rest) {
+  for (let i = 0; i < rest.length; i++) {
+    const word = rest[i]
+    if (word === "--") return null
+    if (/^(?:--prefix|--dir|--cwd|-C|--workspace|-w|--filter|-F)$/.test(word)) {
+      i++
+      continue
+    }
+    if (word.startsWith("-")) continue
+    return { name: word, at: i }
+  }
+  return null
+}
+// What changes the dependencies of the repository, or a tool of the machine, in a shell command, as
+// { what, log, machine }, or "": every install of npm but `npm ci`, the add, remove and upgrade commands of npm, yarn
+// and pnpm, their install without the frozen lockfile (also through npx npm@11, corepack, sh -c or a script of
+// package.json), `dotnet add package`, `dotnet package add` (.NET 10), `dotnet tool install`; a global install, brew,
+// apt, pip, corepack enable, nvm install. log: what without the scripts of package.json (they may hold a credential).
+export function dependencyChange(command, cwd = process.cwd(), root = "", depth = 0) {
+  let here = cwd
+  for (const all of commandWords(String(command || ""))) {
+    if (all.after === ">" || all.after === "<") continue
+    if ((all[0] === "cd" || all[0] === "pushd") && all.length <= 2) {
+      here = all[1] && all[1] !== "-" ? resolve(here, all[1].replace(/^~(?=\/|$)/, HOME)) : HOME
+      continue
+    }
+    const [cmd, ...rest] = unwrap(all).words
+    if (!cmd) continue
+    if (/^(?:sh|bash|dash|zsh)$/.test(cmd) && rest[0] === "-c") {
+      const inner = depth < 3 ? dependencyChange(rest[1], here, root, depth + 1) : ""
+      if (inner) return inner
+      continue
+    }
+    let what = ""
+    let log = ""
+    let machine = false
+    if (cmd === "npm" || cmd === "yarn" || cmd === "pnpm") {
+      const sub = pmSubcommand(rest)
+      const name = sub ? sub.name : ""
+      const after = sub ? rest.slice(sub.at + 1) : []
+      const frozen = rest.some((word) => FROZEN.test(word))
+      const info = rest.some((word) => /^(?:-v|--version|-h|--help)$/.test(word))
+      machine = rest.some((word) => GLOBAL.test(word)) || (cmd === "yarn" && name === "global")
+      if (cmd === "npm" && NPM_CHANGES.has(name)) what = "npm " + name
+      else if (cmd === "npm" && name === "audit" && after.includes("fix")) what = "npm audit fix"
+      else if (cmd === "npm" && name === "pkg" && ["set", "delete", "fix"].includes(after[0])) what = "npm pkg " + after[0]
+      else if (cmd !== "npm" && PM_CHANGES.has(name)) what = cmd + " " + name
+      else if (cmd === "yarn" && name === "workspace" && PM_CHANGES.has((pmSubcommand(after.slice(1)) || {}).name)) what = "yarn workspace " + after[0] + " " + pmSubcommand(after.slice(1)).name
+      else if (cmd === "yarn" && (name === "install" || (name === "" && !info)) && !frozen) what = "yarn" + (name ? " install" : "") + " without --frozen-lockfile"
+      else if (cmd === "pnpm" && (name === "install" || name === "i") && !frozen) what = "pnpm " + name + " without --frozen-lockfile"
+      else if (depth < 3) {
+        // a script of package.json: what it runs
+        const run = packageScript(cmd, rest, here)
+        const pkg = run && run.dir ? readPackage(run.dir, root) : null
+        const body = pkg && typeof pkg.scripts[run.script] === "string" ? pkg.scripts[run.script] : null
+        const found = body !== null ? dependencyChange(body, pkg.dir, root, depth + 1) : ""
+        if (found) {
+          what = run.label + " (its script runs " + found.what + ")"
+          log = run.label + " (its script: " + found.log + ")"
+          machine = found.machine
+        }
+      }
+    } else if (cmd === "dotnet") {
+      if ((rest[0] === "add" || rest[0] === "remove") && (rest[1] === "package" || rest[2] === "package")) what = "dotnet " + rest[0] + " package"
+      else if (rest[0] === "package" && ["add", "remove", "update"].includes(rest[1])) what = "dotnet package " + rest[1]
+      else if (rest[0] === "tool" && ["install", "update", "uninstall"].includes(rest[1])) {
+        what = "dotnet tool " + rest[1]
+        machine = rest.some((word) => word === "-g" || word === "--global" || word === "--tool-path")
+      }
+    } else if (Object.hasOwn(MACHINE_INSTALLS, cmd)) {
+      const sub = pmSubcommand(rest)
+      if (sub && MACHINE_INSTALLS[cmd].includes(sub.name)) {
+        what = cmd + " " + sub.name
+        machine = true
+      }
+    }
+    if (what) return { what, log: log || what, machine }
   }
   return ""
 }

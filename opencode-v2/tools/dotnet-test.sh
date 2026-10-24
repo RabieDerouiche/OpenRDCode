@@ -468,6 +468,18 @@ run package-refs.sh --doc Missing.Package
 check "--doc: a package never restored" 0 '^XML documentation of Missing.Package: not in the package cache'
 run package-refs.sh
 check "the list says how to get the documentation of a public package" 0 '^nuget.org packages \(the XML documentation of one: package-refs.sh --doc <id>\):$'
+# detect-project-type.sh: the components of Blazorise, its version and its skill
+mkdir -p src/Web/Pages
+printf '<DataGrid TItem="Order" Data="@orders" ShowPager="true" />\n' > src/Web/Pages/Orders.razor
+git add -A && git commit -q -m page
+run detect-project-type.sh
+check "detect: Blazorise, its version and the skill that knows it" 0 '^- Blazor components: 1 \.razor files, 0 with a \.razor\.cs code-behind; component library: Blazorise; Blazorise 1\.6\.2: the skill blazorise \(the language of the DataGrid and of its pager'
+sed -i 's#Include="Blazorise.DataGrid" Version="1.6.2"#Include="Blazorise.DataGrid" Version="2.2.2"#' src/Web/Web.csproj
+printf '<Project>\n  <ItemGroup>\n    <PackageVersion Include="Blazorise.Bootstrap5" Version="2.10.1" />\n  </ItemGroup>\n</Project>\n' > Directory.Packages.props
+git add -A && git commit -q -m upgrade
+run detect-project-type.sh
+check "detect: the highest version of Blazorise, central versions included" 0 'Blazorise 2\.10\.1: the skill blazorise'
+git rm -q Directory.Packages.props && git commit -q -m central
 
 # ---------- the machine, not the code (dotnet-problem.sh): .NET 8, global.json, the runtimes of the tests ----------
 mkdir -p "$work/env"

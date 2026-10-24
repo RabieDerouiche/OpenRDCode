@@ -8,6 +8,8 @@
 # Markers, files next to package.json:
 #   fake-build-error       its build fails (a TypeScript error)
 #   fake-install-401       the registry refuses the install (Artifactory, 401)
+#   fake-install-crash     npm fails inside itself (Cannot read properties of null)
+#   fake-install-script-error  the install script of a package fails
 #   fake-lock-out-of-sync  the lockfile does not match package.json
 #   fake-chrome-missing    Karma finds no Chrome
 #   fake-hang              the tests never end
@@ -30,6 +32,21 @@ install() {
   if [ -f "$pkg/fake-install-401" ]; then
     echo "npm error code E401"
     echo "npm error Unable to authenticate, need: Basic realm=\"Artifactory Realm\""
+    exit 1
+  fi
+  if [ -f "$pkg/fake-install-crash" ]; then
+    # npm 10 resolving some trees (Vitest 4): npm/cli#9787
+    echo "npm error Cannot read properties of null (reading 'edgesOut')"
+    echo "npm error A complete log of this run can be found in: $HOME/.npm/_logs/2026-10-24T17_14_56_042Z-debug-0.log"
+    exit 1
+  fi
+  if [ -f "$pkg/fake-install-script-error" ]; then
+    # the install script of a package fails: its lines come after npm's
+    echo "npm error code 1"
+    echo "npm error path $pkg/node_modules/esbuild"
+    echo "npm error command failed"
+    echo "npm error command sh -c node install.js"
+    echo "npm error Cannot read properties of undefined (reading 'platform')"
     exit 1
   fi
   if [ -f "$pkg/fake-lock-out-of-sync" ]; then

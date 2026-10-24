@@ -2,11 +2,11 @@
 # Tests of the pack's front-end scripts (front-info.sh, front-test.sh, build-test.sh for a front-end folder,
 # detect-project-type.sh, test-lint.sh) with a fake npm, yarn and pnpm and fake test runners (tools/fake-npm.sh): Angular
 # with Karma (ng test watches by default), Angular 21 with Vitest, Create React App on yarn, Vitest, Jest, a test script
-# that watches, end-to-end tests, the registry that refuses access, a lockfile out of sync, Chrome missing, a run that
-# never ends. node is needed (front-info.sh reads package.json with it).
+# that watches, end-to-end tests, the registry that refuses access, a lockfile out of sync, npm failing inside itself,
+# Chrome missing, a run that never ends. node is needed (front-info.sh reads package.json with it).
 # --real: the same scripts on real packages installed from the npm registry (Jest, Vitest, an Angular application of
-# the current Angular CLI with Vitest and one of Angular 19 with Karma in ChromeHeadless): the CI runs it, with node,
-# the registry and Chrome.
+# the current Angular CLI with Vitest and one of Angular 19 with Karma in ChromeHeadless, then each installed again by
+# the pack from its lockfile): the CI runs it, with node, the registry and Chrome.
 # Usage, from opencode-v2/: sh tools/frontend-test.sh [--real] [<shell>] (default sh).
 real=0
 [ "$1" = --real ] && { real=1; shift; }
@@ -167,11 +167,19 @@ EOF
   # Angular of the current CLI (Vitest, Angular 21 and later), then Angular 19 (Karma in ChromeHeadless)
   for ng in 21 19; do
     repo "ng$ng"
-    # no prompt at all: --defaults and --interactive=false; the AI configuration prompt (Angular 20.2 and later) as none
-    ai=""
-    [ "$ng" -ge 21 ] && ai="--ai-config=none"
-    # shellcheck disable=SC2086 # an optional option
-    if ! NG_CLI_ANALYTICS=false npx --yes "@angular/cli@$ng" new shop --defaults --interactive=false $ai --skip-git --ssr=false --style=css --directory ClientApp > "$work/ng$ng.log" 2>&1; then
+    # no prompt at all: --defaults and --interactive=false; the AI configuration prompt (Angular 20.2 and later) as none.
+    # Angular 21 is installed by npm 11: npm 10 fails inside itself when it resolves the tree of Vitest 4 from nothing
+    # ("Cannot read properties of null (reading 'edgesOut')", npm/cli#9787); the npm of this machine installs it
+    # again below, from the lockfile, as the pack does
+    opts=""
+    [ "$ng" -ge 21 ] && opts="--ai-config=none --skip-install"
+    made=1
+    # shellcheck disable=SC2086 # optional options
+    NG_CLI_ANALYTICS=false npx --yes "@angular/cli@$ng" new shop --defaults --interactive=false $opts --skip-git --ssr=false --style=css --directory ClientApp > "$work/ng$ng.log" 2>&1 || made=0
+    if [ "$made" -eq 1 ] && [ "$ng" -ge 21 ]; then
+      (cd ClientApp && npx --yes npm@11 install --no-audit --no-fund) >> "$work/ng$ng.log" 2>&1 || made=0
+    fi
+    if [ "$made" -eq 0 ]; then
       fail=$((fail + 1))
       echo "FAIL: Angular $ng: ng new"
       tail -n 35 "$work/ng$ng.log" | sed 's/^/    /'
@@ -191,6 +199,18 @@ EOF
     run build-test.sh ClientApp
     check "real Angular $ng: a failed test is named" 1 'FAILED TESTS \([0-9]+\): ' 'HANG'
     git checkout -q -- ClientApp
+    # a fresh clone: the pack installs the dependencies itself, from the lockfile, with the npm of this machine
+    rm -rf ClientApp/node_modules
+    run build-test.sh ClientApp
+    if printf '%s\n' "$out" | grep -q 'ENVIRONMENT PROBLEM: npm .* failed inside itself'; then
+      # npm 10 failing inside itself is said as an environment problem: the contract of the pack, kept
+      check "real Angular $ng: npm ci of this machine (npm $(npm --version)) fails inside itself: said as such" 1 'BUILD: NOT RUN \(the install failed\)'
+      echo "NOTE: Angular $ng: npm $(npm --version) fails inside itself on the lockfile (npm ci): $(printf '%s\n' "$out" | grep -m 1 'ENVIRONMENT PROBLEM' | cut -c1-160)"
+    else
+      check "real Angular $ng: the pack installs from the lockfile (npm ci of npm $(npm --version))" 0 'INSTALL: npm ci \(node_modules'
+      check "real Angular $ng: the install passed" 0 'INSTALL: OK'
+      check "real Angular $ng: then builds and runs the tests once" 0 'TESTS: OK \([0-9]+ tests\)'
+    fi
     run detect-project-type.sh
     check "real Angular $ng: detect-project-type names the front-end" 0 "Front-end: ClientApp .*angular $ng"
   done
@@ -307,6 +327,14 @@ run build-test.sh ClientApp
 check "a lockfile out of sync stops the run" 1 'STOP: the lockfile \(ClientApp/package-lock.json\) is not in sync with package.json'
 called "and no package is added: npm ci only" '^npm ci$' 'npm install'
 rm ClientApp/fake-lock-out-of-sync
+touch ClientApp/fake-install-crash
+run build-test.sh ClientApp
+check "npm failing inside itself is an environment problem, never retried" 1 "ENVIRONMENT PROBLEM: npm 10\.9\.2 of this machine failed inside itself \(Cannot read properties of null \(reading 'edgesOut'\)\).*Never retry with --legacy-peer-deps" 'STOP: the install'
+rm ClientApp/fake-install-crash
+touch ClientApp/fake-install-script-error
+run build-test.sh ClientApp
+check "the install script of a package that fails is not npm's bug" 1 'STOP: the install of the dependencies failed: the lines above say why' 'ENVIRONMENT PROBLEM'
+rm ClientApp/fake-install-script-error
 
 # ---------- a .NET API and its Angular front-end in one repository ----------
 mkdir -p src/Api

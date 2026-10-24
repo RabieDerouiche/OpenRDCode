@@ -399,6 +399,8 @@
           "dotnet --list-sdks": "allow",
           "dotnet --list-runtimes": "allow",
           "dotnet list*": "allow",
+          "dotnet package list*": "allow",
+          "dotnet reference list*": "allow",
           "dotnet nuget why*": "allow",
           "* >*": "deny",
           "* >>*": "deny",

@@ -39,6 +39,8 @@ const READS = [
   "git log -- src/Infrastructure/credentials/", "git diff -- config/appsettings.json", "git log --oneline -- push-notifications/",
   "git diff -- src/app/api-key-form/x.ts",
   "dotnet nuget why src/App.sln Newtonsoft.Json",
+  // the "noun first" forms of .NET 10
+  "dotnet package list", "dotnet package list --vulnerable --include-transitive", "dotnet reference list --project src/Api/Api.csproj",
 ]
 
 // Secrets, environment dumps, credential-bearing git output: refused for EVERY agent, build and dev included
@@ -178,7 +180,9 @@ const CODER_ALLOW = [
   "dotnet add src/Api/Api.csproj reference src/Domain/Domain.csproj", "git diff", "git status --porcelain",
   "dotnet ef migrations add AddInvoiceStatus --project src/Infrastructure --startup-project src/Api",
   "dotnet ef migrations script --idempotent --project src/Infrastructure", "dotnet ef migrations has-pending-model-changes",
-  "dotnet tool restore", "npx ng generate component invoices/invoice-list", "npm ci", "npm install", "npx ng lint",
+  "dotnet tool restore", "npx ng generate component invoices/invoice-list", "npm ci", "npx ng lint",
+  "dotnet reference add src/Domain/Domain.csproj --project src/Api/Api.csproj",
+  "dotnet reference remove src/Old/Old.csproj --project src/Api/Api.csproj",
   "npm run lint -- --fix", "find src -name \"*.cs\" | xargs grep -l \"IStorageService\"", "touch src/Features/Orders/.gitkeep",
   "cp src/Templates/Base.cs src/Features/Orders/OrderTemplate.cs", "rm -f src/Features/Old/OldHandler.cs",
   "chmod +x scripts/generate.sh", "dotnet build-server shutdown", "dotnet sln list",
@@ -200,6 +204,9 @@ const CODER_DENY = [
   "curl -s https://example.com -o x", "wget https://example.com/x.zip", "dotnet add package Polly",
   "dotnet add src/Api/Api.csproj package Polly --version 8.5.0", "dotnet remove src/Api/Api.csproj package Newtonsoft.Json",
   "npm install lodash", "npm i -S axios", "yarn add dayjs", "pnpm add zod", "dotnet ef database update",
+  // the lockfile is rewritten: the dependencies are installed from it by build-test.sh (npm ci)
+  "npm install", "npm i", "npm install --legacy-peer-deps", "npx --yes npm@11 install", "npm update", "npm audit fix",
+  "dotnet package add Polly --project src/Api/Api.csproj", "dotnet package remove Newtonsoft.Json --project src/Api/Api.csproj",
   "dotnet ef database drop --force", "dotnet ef migrations remove", "dotnet ef migrations list",
   "bash -c 'cd ~ && cat .zshenv'", "sh -c \"git push\"", "eval \"git push\"",
   "python3 -c \"print(open('x').read())\"", "node -e \"require('fs').readFileSync('x')\"", "perl -e 'print 1'",

@@ -803,6 +803,9 @@ await check("[v2 7] the arguments of a command chosen in a question never name a
     await wait()
     assert.deepEqual(v2.calls.command.at(-1), { sessionID: "qcm-8", name: "outil", text: other })
     await assert.rejects(() => before("qcm-8", "shell", { command: "ls " + other }, "build"), /outside the repository/)
+    // the prompt of the chained command reaches the plugin first (a loaded machine delays it: the next prompt, mine,
+    // would otherwise be taken for it)
+    await wait(400)
     await prompt("qcm-8", "[[command outil " + other + "]]\nRun.")
     await before("qcm-8", "shell", { command: "ls " + other }, "build")
   } finally {
@@ -1400,7 +1403,7 @@ await check("[v2 19] a conversation that ends without a mark is never resumed", 
 
 // ---------- 21. an answer that repeats itself ----------
 const pack21 = await import(join(stub, "openrd-pack.js"))
-const { segmentsOf, loopAtEnd, collapseRepeats, sanitizeLoops, watchStream, isContinue, dotnetRunTarget } = pack21
+const { segmentsOf, loopAtEnd, collapseRepeats, sanitizeLoops, watchStream, isContinue, dotnetRunTarget, dependencyChange } = pack21
 const loopSentence = "Je vérifie l'API réelle de Blazorise.DataGrid 2.2.2 avant de trancher."
 const intro = "Le coder est BLOQUÉ : le mécanisme DataGridLocalization n'existe pas dans Blazorise.DataGrid 2.2.2. "
 const looping = intro + Array(20).fill(loopSentence).join(" ")
@@ -1914,6 +1917,58 @@ await check("[24] a refusal is written to the log of the plugin, never the scrip
   assert.ok(found.length > 0, "no log entry")
   assert.ok(found.some((entry) => /npm test \(its script: ng test without --watch=false\)/.test(entry.extra.reason)), "the refusal of npm test")
   assert.ok(!found.some((entry) => /"ng test"|storybook dev -p/.test(JSON.stringify(entry))), "a script in the log")
+})
+
+// ---------- 25. a change of the dependencies, an install on the machine ----------
+mkdirSync(join(shop, "tools-ui"), { recursive: true })
+writeFileSync(join(shop, "tools-ui", "package.json"), JSON.stringify({ scripts: { setup: "npm install && npm run build", build: "tsc -p .", lint: "eslint ." } }))
+await check("[25] what changes the dependencies of the repository, or a tool of the machine", () => {
+  const d = (command, cwd = shop) => dependencyChange(command, cwd, shop)
+  for (const [command, what] of [
+    ["npm install", "npm install"], ["npm i", "npm i"], ["npm install lodash", "npm install"], ["npm i -S axios", "npm i"],
+    ["npm --prefix ClientApp install", "npm install"], ["npm install --legacy-peer-deps", "npm install"], ["npm update", "npm update"],
+    ["npm audit fix --force", "npm audit fix"], ["npm pkg set dependencies.x=1.0.0", "npm pkg set"], ["npm uninstall rxjs", "npm uninstall"],
+    ["npm it", "npm it"], ["yarn add dayjs", "yarn add"], ["yarn", "yarn without --frozen-lockfile"],
+    ["yarn install", "yarn install without --frozen-lockfile"], ["yarn workspace web add zod", "yarn workspace web add"], ["pnpm add zod", "pnpm add"],
+    ["pnpm install", "pnpm install without --frozen-lockfile"], ["pnpm --filter web add zod", "pnpm add"], ["npx --yes npm@11 install", "npm install"],
+    ["npm exec --package=npm@11 -- npm install", "npm install"], ["corepack yarn add dayjs", "yarn add"], ["cd ClientApp && npm install", "npm install"],
+    ["sh -c \"cd ClientApp && npm i\"", "npm i"], ["CI=true npm install", "npm install"], ["timeout 300 npm install", "npm install"],
+    ["npm ci || npm install", "npm install"], ["dotnet add src/Api/Api.csproj package Polly --version 8.5.0", "dotnet add package"],
+    ["dotnet add package Polly", "dotnet add package"], ["dotnet package add Polly --project src/Api/Api.csproj", "dotnet package add"],
+    ["dotnet remove src/Api/Api.csproj package Newtonsoft.Json", "dotnet remove package"], ["dotnet tool install dotnet-ef", "dotnet tool install"],
+  ]) assert.equal(d(command).what, what, command)
+  assert.deepEqual(d("npm run setup", join(shop, "tools-ui")), { what: "npm run setup (its script runs npm install)", log: "npm run setup (its script: npm install)", machine: false })
+  for (const command of ["npm i -g npm@11", "npm install --global @angular/cli", "yarn global add serve", "pnpm add -g pnpm", "brew install --cask chromium",
+    "sudo apt-get install -y chromium", "pip install requests", "corepack enable", "nvm install 22", "dotnet tool install -g dotnet-ef"]) {
+    assert.equal(d(command).machine, true, command)
+  }
+  for (const command of ["npm ci", "npm ci --prefix ClientApp", "yarn install --frozen-lockfile", "yarn install --immutable", "pnpm install --frozen-lockfile",
+    "pnpm i --frozen-lockfile", "npm test", "npm run build", "npm ls", "npm outdated", "npm --version", "yarn --version", "yarn test", "pnpm test",
+    "dotnet restore", "dotnet tool restore", "dotnet package list --vulnerable", "dotnet list package", "dotnet reference add src/Domain/Domain.csproj --project src/Api/Api.csproj",
+    "git commit -m \"npm install lodash\"", "grep -rn \"npm install\" docs", "echo npm install", "dotnet build", "brew list", "pip list"]) {
+    assert.equal(d(command), "", command)
+  }
+  assert.equal(d("npm run lint", join(shop, "tools-ui")), "")
+})
+const DEPS = /Refused by the pack: .* changes the dependencies of the repository .*« BLOQUÉ » with what is needed.*build-test\.sh \[<folder>\] when they are missing \(npm ci, dotnet restore\)\. Never try another form/
+const MACHINE = /Refused by the pack: .* installs or changes a tool of this machine: an agent never does.*ENVIRONMENT PROBLEM: tell the user in one line and stop/
+for (const who of ["pilot", "coder", "test-guardian", "analyst", "checker", "debugger", "doc-writer"]) {
+  await check(`[25] ${who} is refused npm install, and told what to do`, () => assert.rejects(() => run24(who, "npm install", { workdir: "ClientApp" }), DEPS))
+}
+await check("[25] the coder is refused a package added through npx npm@11", () => assert.rejects(() => run24("coder", "npx --yes npm@11 install"), DEPS))
+await check("[25] the coder is refused dotnet package add (.NET 10)", () => assert.rejects(() => run24("coder", "dotnet package add Polly --project src/Api/Api.csproj"), DEPS))
+await check("[25] the coder is refused a tool of the machine", () => assert.rejects(() => run24("coder", "brew install --cask chromium"), MACHINE))
+await check("[25] a script of package.json that installs is refused, by its name", () =>
+  assert.rejects(() => run24("coder", "npm run setup", { workdir: "tools-ui" }), /npm run setup \(its script runs npm install\) changes the dependencies/))
+for (const command of ["npm ci", "npm ci --prefix ClientApp", "yarn install --frozen-lockfile", "dotnet restore", "dotnet reference add src/Domain/Domain.csproj --project src/Api/Api.csproj"]) {
+  await check(`[25] the coder runs: ${command}`, () => run24("coder", command))
+}
+await check("[25] the free conversation is mine: npm install lodash passes the plugin", () => run24("build", "npm install lodash", { workdir: "web" }))
+await check("[25] a refusal is written to the log of the plugin, never the scripts of package.json", () => {
+  const found = logs.filter((entry) => entry && entry.extra && /a change of the dependencies|an install on the machine/.test(String(entry.extra.reason)))
+  assert.ok(found.some((entry) => /npm run setup \(its script: npm install\)/.test(entry.extra.reason)), "the refusal of npm run setup")
+  assert.ok(found.some((entry) => /an install on the machine: brew install/.test(entry.extra.reason)), "the refusal of brew install")
+  assert.ok(!found.some((entry) => /npm install && npm run build|tsc -p/.test(JSON.stringify(entry))), "a script in the log")
 })
 
 // ---------- every command the pack prescribes passes the guards of the plugin, for the agent that runs it ----------

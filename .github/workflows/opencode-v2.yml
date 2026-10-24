@@ -153,6 +153,7 @@ jobs:
             { gsub(/%/, "%25"); gsub(/\r/, "") }
             /^FAIL/ { flush(); msg = $0; next }
             /^    / && msg != "" && n < 40 { msg = msg "%0A" $0; n++; next }
+            /^(NOTE: |node v|Angular [0-9]+: )/ { flush(); print "::notice title=" t "::" $0; next }
             { flush() }
             END { flush() }' "$log"
           echo "::notice title=frontend-test --real::$(tail -n 1 "$log")"

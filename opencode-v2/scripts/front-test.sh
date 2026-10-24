@@ -1,9 +1,9 @@
 #!/bin/sh
 # Builds a front-end package and runs its unit tests ONCE, never in a watch mode, in ONE call: what build-test.sh is for
 # .NET, with the same lines: "BUILD:", "TESTS:", "FAILED TESTS (<n>): <names>", "ENVIRONMENT PROBLEM:" when the
-# machine is the problem (node, the package registry, Chrome for Karma), "STOP:" when the package cannot be run as it
-# is. build-test.sh calls it for a front-end target: a folder with a package.json and no .NET project, or a repository
-# without .NET project.
+# machine is the problem (node, the package registry, Chrome for Karma, npm failing inside itself), "STOP:" when the
+# package cannot be run as it is. build-test.sh calls it for a front-end target: a folder with a package.json and no
+# .NET project, or a repository without .NET project.
 #   - the dependencies are installed when node_modules or the test runner is missing, from the lockfile only (npm ci,
 #     yarn --frozen-lockfile or --immutable, pnpm --frozen-lockfile): never a package added or upgraded;
 #   - the build is the "build" script of package.json (not with a filter: the tests compile what they import);
@@ -161,6 +161,10 @@ problem() {
     echo "ENVIRONMENT PROBLEM: the version of node of this machine ($f_node) does not fit this package (${f_nodewant}). Stop and tell the user in one line: install the version it asks for."
   elif grep -q -E "Executable doesn't exist at .*ms-playwright|npx playwright install" "$1"; then
     echo "ENVIRONMENT PROBLEM: the tests run in a Playwright browser that is not installed on this machine. Stop and tell the user in one line."
+  elif grep -q -E '^npm (error|ERR!) (Cannot read propert(y|ies) of (null|undefined)|Exit handler never called)' "$1" &&
+    ! grep -q -E '^npm (error|ERR!) command failed' "$1"; then
+    # npm itself failed, not a script of a package ("command failed"): npm 10 on some trees, npm/cli#9787
+    echo "ENVIRONMENT PROBLEM: npm $(npm --version 2>/dev/null) of this machine failed inside itself ($(grep -m 1 -o -E '(Cannot read propert(y|ies) of (null|undefined)[^)]*\)?|Exit handler never called)' "$1")): a bug of npm, not of the code (npm 10 fails so on some dependency trees, Vitest 4 among them). Stop and tell the user in one line: update npm on this machine, outside OpenCode (the latest version its node accepts). Never retry with --legacy-peer-deps or --force (the lockfile would no longer install the same everywhere), never delete package-lock.json or node_modules."
   else
     return 1
   fi
