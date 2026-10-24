@@ -32,14 +32,18 @@
 #   park <label>, unpark <label>   (the pilot) takes the sealed test files of a proof out of the working tree until its
 #                                  turn, and brings them back as sealed: the proofs of a wave are written together,
 #                                  their fixes one after the other, each commit with its own tests only
-#   setup xunit|mstest|nunit <file.cs or project>...
+#   setup [--integration] xunit|mstest|nunit <file.cs or project>...
 #                                  (the pilot, once the developer agreed) creates the unit test project of these files:
 #                                  the dotnet new template of the SDK, coverlet.collector, the versions this machine's
 #                                  NuGet cache already holds (otherwise the template's), the central versions when the
 #                                  repository has them, the project references and the solution, then a build; or adds
 #                                  the coverage collector to the test projects that lack it (coverlet.collector, or
 #                                  Microsoft.Testing.Extensions.CodeCoverage for a Microsoft.Testing.Platform project). A
-#                                  failure undoes everything
+#                                  failure undoes everything. --integration: the integration test project of an ASP.NET
+#                                  Core API (/tests api), <solution>.IntegrationTests, with Microsoft.AspNetCore.Mvc.Testing
+#                                  of the major version of its target framework (WebApplicationFactory), and, before
+#                                  .NET 10, `public partial class Program { }` at the end of a Program.cs of top-level
+#                                  statements; nothing when a test project has Microsoft.AspNetCore.Mvc.Testing already
 #   changes <base> [<solution, project or folder>]
 #                                  the whole suite once, with coverlet (the BUILD, TESTS and FAILED TESTS lines of
 #                                  build-test.sh), then the lines the branch changed since <base> that no test runs:
@@ -61,7 +65,7 @@
 # Usage: test-guardian.sh deps <file> | coverage <label> <proj> <file>... | compare <a> <b>
 #        | net <label> [--min <pct>] <file>:<method>... | red|green <proj> <filter>
 #        | build <proj> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label>
-#        | setup xunit|mstest|nunit <file>... | changes <base> [<target>] | folder
+#        | setup [--integration] xunit|mstest|nunit <file>... | changes <base> [<target>] | folder
 
 LC_ALL=C
 export LC_ALL
@@ -205,6 +209,15 @@ cache_version() {
   best=$(for d in "$cache/$id"/*; do [ -d "$d" ] && basename "$d"; done | grep -E '^[0-9]+(\.[0-9]+)*$' |
     awk -F. '{ printf "%09d%09d%09d%09d %s\n", $1, $2, $3, $4, $0 }' | sort | tail -n 1 | cut -d' ' -f2)
   printf '%s\n' "${best:-$2}"
+}
+
+# The highest version of a package in the NuGet cache of this machine whose major version is <major>, otherwise <default>
+cache_version_major() {
+  cache=${NUGET_PACKAGES:-$HOME/.nuget/packages}
+  id=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  best=$(for d in "$cache/$id"/*; do [ -d "$d" ] && basename "$d"; done | grep -E "^$2\.[0-9]+\.[0-9]+\$" |
+    awk -F. '{ printf "%09d%09d%09d %s\n", $1, $2, $3, $0 }' | sort | tail -n 1 | cut -d' ' -f2)
+  printf '%s\n' "${best:-$3}"
 }
 
 # Adds <PackageReference Include="id"[ Version="v"] /> to a project, next to its other package references
@@ -844,13 +857,15 @@ case "$1" in
     exit 0 ;;
 
   setup)
+    kind=unit
+    if [ "$2" = --integration ]; then kind=integration; shift; fi
     framework=$2
     case "$framework" in
       xunit|mstest|nunit) ;;
-      *) stop "usage: test-guardian.sh setup xunit|mstest|nunit <file.cs or project>..." ;;
+      *) stop "usage: test-guardian.sh setup [--integration] xunit|mstest|nunit <file.cs or project>..." ;;
     esac
     shift 2
-    [ $# -ge 1 ] || stop "usage: test-guardian.sh setup xunit|mstest|nunit <file.cs or project>..."
+    [ $# -ge 1 ] || stop "usage: test-guardian.sh setup [--integration] xunit|mstest|nunit <file.cs or project>..."
     need_dotnet
     [ -z "$(git status --porcelain)" ] || stop "uncommitted changes: setup runs on a clean working tree, so that a failure undoes all it did"
     # the production projects of the files
@@ -865,6 +880,15 @@ case "$1" in
     [ -z "$missing" ] || stop "no project file for: $missing"
     prods=$(printf '%s\n' "$prods" | while IFS= read -r p; do in_tests "$p" || printf '%s\n' "$p"; done)
     [ -n "$prods" ] || stop "these files belong to test projects only"
+    webs=""
+    if [ "$kind" = integration ]; then
+      # the API tests run an ASP.NET Core project in memory: its web projects only
+      webs=$(printf '%s\n' "$prods" | while IFS= read -r p; do grep -q 'Sdk="Microsoft.NET.Sdk.Web"' "$p" 2>/dev/null && printf '%s\n' "$p"; done)
+      [ -n "$webs" ] || stop "$(printf '%s\n' "$prods" | tr '\n' ' ')is not an ASP.NET Core project (Sdk=\"Microsoft.NET.Sdk.Web\"): the API tests run one"
+      prods=$webs
+      done_already=$(test_projects | while IFS= read -r t; do grep -qi 'Microsoft.AspNetCore.Mvc.Testing' "$t" && { printf '%s\n' "$t"; break; }; done)
+      [ -z "$done_already" ] || { echo "SETUP: nothing to do, $done_already has Microsoft.AspNetCore.Mvc.Testing (WebApplicationFactory)"; exit 0; }
+    fi
     mkdir -p "$folder" || stop "cannot create $folder"
     log="$folder/setup.log"
     take_lock
@@ -877,7 +901,7 @@ case "$1" in
     # Test projects already there: the coverage collector where it lacks, nothing else (coverlet.collector for VSTest,
     # Microsoft.Testing.Extensions.CodeCoverage for Microsoft.Testing.Platform)
     existing=$(test_projects)
-    if [ -n "$existing" ]; then
+    if [ -n "$existing" ] && [ "$kind" = unit ]; then
       added="" props="" ids=""
       while IFS= read -r t; do
         has_coverage "$t" && continue
@@ -930,6 +954,7 @@ EOF
       base=$(basename "$first" .csproj); home=.
     fi
     name="$base.UnitTests"
+    [ "$kind" = integration ] && name="$base.IntegrationTests"
     if [ -d "$home/test" ] && [ ! -d "$home/tests" ]; then dir="$home/test/$name"
     elif [ -d "$home/tests" ] || [ -d "$home/src" ]; then dir="$home/tests/$name"
     else dir="$home/$name"; fi
@@ -960,6 +985,10 @@ EOF
     else
       grep -qi 'coverlet.collector' "$csproj" || add_package_ref "$csproj" coverlet.collector 6.0.4
     fi
+    # WebApplicationFactory: Microsoft.AspNetCore.Mvc.Testing of the major version of the target framework (8.0.x for
+    # net8.0: a later one targets a later .NET only)
+    major=$(printf '%s' "$tfm" | sed -n 's/^net\([0-9][0-9]*\)\..*/\1/p')
+    [ "$kind" = integration ] && add_package_ref "$csproj" Microsoft.AspNetCore.Mvc.Testing "${major:-10}.0.0"
     # the versions this machine already uses, otherwise the template's; the central versions file when there is one
     props=$(central_props "$dir")
     versions=""
@@ -967,7 +996,10 @@ EOF
     while IFS= read -r pv; do
       [ -n "$pv" ] || continue
       id=${pv%%=*} v=${pv#*=}
-      nv=$(cache_version "$id" "$v")
+      case "$id" in
+        Microsoft.AspNetCore.Mvc.Testing) nv=$(cache_version_major "$id" "${major:-10}" "$v") ;;
+        *) nv=$(cache_version "$id" "$v") ;;
+      esac
       how=""
       [ "$nv" = "$v" ] || how=" (cache)"
       if [ -n "$props" ]; then
@@ -999,13 +1031,30 @@ EOF
     done <<EOF
 $slns
 EOF
+    # before .NET 10, the Program class of top-level statements is internal: WebApplicationFactory<Program> needs it
+    # public (.NET 10 makes it public itself)
+    program=""
+    if [ "$kind" = integration ] && [ "${major:-10}" -lt 10 ]; then
+      while IFS= read -r w; do
+        [ -n "$w" ] || continue
+        d=$(dirname "$w")
+        pf="$d/Program.cs"
+        [ -f "$pf" ] || continue
+        git grep -q -E 'class[[:space:]]+Program([^A-Za-z0-9_]|$)' -- "$d" 2>/dev/null && continue
+        grep -q -E 'WebApplication\.Create' "$pf" || continue
+        printf '\n// WebApplicationFactory<Program> of the integration tests needs a public entry point before .NET 10\npublic partial class Program { }\n' >> "$pf"
+        program="$program${program:+, }$pf"
+      done <<EOF
+$webs
+EOF
+    fi
     if ! dotnet build "$csproj" -nologo -v q > "$log" 2>&1; then
       undo
       environment "$log"
       grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5
       stop "the new test project does not build: nothing created"
     fi
-    echo "SETUP: $csproj created ($framework${tfm:+, $tfm}), it references $(printf '%s\n' "$prods" | tr '\n' ' ' | sed 's/ $//'); packages:${versions#,}${props:+; versions in $props}${slns:+; added to $(printf '%s\n' "$slns" | tr '\n' ' ' | sed 's/ $//')}; build OK"
+    echo "SETUP: $csproj created ($framework${tfm:+, $tfm}), it references $(printf '%s\n' "$prods" | tr '\n' ' ' | sed 's/ $//'); packages:${versions#,}${props:+; versions in $props}${slns:+; added to $(printf '%s\n' "$slns" | tr '\n' ' ' | sed 's/ $//')}${program:+; public partial class Program added to $program}; build OK"
     exit 0 ;;
 
   changes)
@@ -1082,5 +1131,5 @@ EOF
       }'
     exit "$status" ;;
 
-  *) stop "usage: test-guardian.sh deps <file> | coverage <label> <project> <file>... | compare <a> <b> | red|green <project> <filter> | build <project> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label> | setup xunit|mstest|nunit <file>... | changes <base> [<target>] | folder" ;;
+  *) stop "usage: test-guardian.sh deps <file> | coverage <label> <project> <file>... | compare <a> <b> | red|green <project> <filter> | build <project> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label> | setup [--integration] xunit|mstest|nunit <file>... | changes <base> [<target>] | folder" ;;
 esac

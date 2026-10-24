@@ -17,6 +17,12 @@
 - `[front-factures]` (`[~/repos/front-factures]`) : [le front Angular qui appelle cette API]
 - `[lib-commun]` : [la librairie NuGet interne des montants, utilisée en version [2.3]]
 
+## Environnements
+(optional, an API only: where it is deployed, for /tests env and /outil http. One line each: its name, its base URL, then « jeton : `<VARIABLE>` », the variable of the developer's machine (~/.zshenv) that holds its token, never the token itself; « écriture permise » where tests that write may run; « production » for production, where no test of the pack ever runs. Keep the heading exactly « ## Environnements ».)
+- `[recette]` : [https://api-recette.example.com] (jeton : `[API_TOKEN_RECETTE]`, écriture permise)
+- `[preprod]` : [https://api-preprod.example.com] (jeton : `[API_TOKEN_PREPROD]`)
+- `[prod]` : [https://api.example.com] (production)
+
 ## Build & test
 - Solution : `[src/App.sln]` (only when the root has several solutions or none)
 - Tests locaux : `[--filter "Category!=Integration"]` (only when some tests need Docker, a database or the network)

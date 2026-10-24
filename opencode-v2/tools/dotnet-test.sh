@@ -770,6 +770,171 @@ cd "$work/apps/front-factures" || exit 1
 run detect-project-type.sh
 check "detect-project-type: the related repositories" any '^Related repositories \(AGENTS\.md\): api-factures, lib-commun \(~/nowhere/lib-commun\) — sh ~/.config/opencode/scripts/related-repos\.sh <KEY>'
 
+# ---------- /tests api: the integration test project; env-tests.sh, environments.sh, http-files.sh, schedule.sh ----------
+mkdir -p "$work/apitests" "$NUGET_PACKAGES/microsoft.aspnetcore.mvc.testing/8.0.11" "$NUGET_PACKAGES/microsoft.aspnetcore.mvc.testing/10.0.0"
+cd "$work/apitests" || exit 1
+git init -q
+project src/Api/Api.csproj Microsoft.NET.Sdk.Web
+sed -i 's#net10.0#net8.0#' src/Api/Api.csproj
+printf 'var builder = WebApplication.CreateBuilder(args);\nvar app = builder.Build();\napp.MapGet("/api/orders", () => Results.Ok());\napp.MapHealthChecks("/health");\napp.Run();\n' > src/Api/Program.cs
+project src/Lib/Lib.csproj Microsoft.NET.Sdk
+printf '<Solution>\n  <Project Path="src/Api/Api.csproj" />\n  <Project Path="src/Lib/Lib.csproj" />\n</Solution>\n' > Shop.slnx
+printf 'bin/\nobj/\n' > .gitignore
+git add -A && git commit -q -m init
+run test-guardian.sh setup --integration xunit src/Lib/Lib.csproj
+check "setup --integration: a project that is not an API" 1 '^STOP: src/Lib/Lib\.csproj is not an ASP\.NET Core project'
+run test-guardian.sh setup --integration xunit src/Api/Program.cs
+check "setup --integration: the integration test project of the API" 0 '^SETUP: tests/Shop\.IntegrationTests/Shop\.IntegrationTests\.csproj created \(xunit, net8\.0\), it references src/Api/Api\.csproj; .*Microsoft\.AspNetCore\.Mvc\.Testing 8\.0\.11 \(cache\).*added to Shop\.slnx; public partial class Program added to src/Api/Program\.cs; build OK'
+truth "setup --integration: WebApplicationFactory of the major version of the target framework" 'grep -q "Microsoft.AspNetCore.Mvc.Testing\" Version=\"8.0.11\"" tests/Shop.IntegrationTests/Shop.IntegrationTests.csproj'
+truth "setup --integration: Program made public before .NET 10" 'grep -q "^public partial class Program { }$" src/Api/Program.cs'
+git add -A && git commit -q -m setup
+run test-guardian.sh setup --integration xunit src/Api/Api.csproj
+check "setup --integration: nothing when a test project has WebApplicationFactory" 0 '^SETUP: nothing to do, tests/Shop\.IntegrationTests/Shop\.IntegrationTests\.csproj has Microsoft\.AspNetCore\.Mvc\.Testing'
+mkdir -p "$work/api10"
+cd "$work/api10" || exit 1
+git init -q
+project src/Api/Api.csproj Microsoft.NET.Sdk.Web
+printf 'var app = WebApplication.CreateBuilder(args).Build();\napp.Run();\n' > src/Api/Program.cs
+git add -A && git commit -q -m init
+run test-guardian.sh setup --integration xunit src/Api/Api.csproj
+check "setup --integration: .NET 10 makes Program public itself" 0 'Microsoft\.AspNetCore\.Mvc\.Testing 10\.0\.0; build OK$' 'public partial class Program'
+cd "$work/apitests" || exit 1
+
+# the environment tests: one class with the category, in memory tests beside them
+cat > tests/Shop.IntegrationTests/OrdersEnvironmentTests.cs <<'EOF'
+using Xunit;
+namespace Shop.IntegrationTests;
+[Trait("Category", "Environment")]
+public class OrdersEnvironmentTests { }
+// <!-- fake-test: Shop.IntegrationTests.OrdersEnvironmentTests.Get_Orders_OnItsUrl env API_BASE_URL=https://api-recette.example.com category=Environment -->
+// <!-- fake-test: Shop.IntegrationTests.OrdersEnvironmentTests.Get_Orders_WithItsToken env API_TOKEN=s3cr3t-value category=Environment -->
+// <!-- fake-test: Shop.IntegrationTests.OrdersEnvironmentTests.Get_Orders_OnItsName env API_ENVIRONMENT=recette category=Environment -->
+// <!-- fake-test: Shop.IntegrationTests.OrdersEnvironmentTests.Post_Orders_CreatesThenDeletes pass category=EnvironmentWrites -->
+EOF
+cat > tests/Shop.IntegrationTests/OrdersTests.cs <<'EOF'
+namespace Shop.IntegrationTests;
+public class OrdersTests { }
+// <!-- fake-test: Shop.IntegrationTests.OrdersTests.Get_Orders_Returns200 pass -->
+EOF
+mkdir -p tests/Edge.Tests
+project tests/Edge.Tests/Edge.Tests.csproj Microsoft.NET.Sdk '<ItemGroup>' '  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />' '  <PackageReference Include="xunit" Version="2.9.2" />' '</ItemGroup>'
+cat > tests/Edge.Tests/EdgeTests.cs <<'EOF'
+[Xunit.Trait("Category", "Environment")]
+public class EdgeTests { }
+// <!-- fake-test: Edge.Tests.EdgeTests.Echoes fail The API refused the header Authorization: Bearer s3cr3t-value category=Environment -->
+// <!-- fake-test: Edge.Tests.EdgeTests.Unreachable fail System.Net.Http.HttpRequestException : Name or service not known (api-recette.example.com:443) category=Environment -->
+EOF
+git add -A && git commit -q -m tests
+run env-tests.sh recette
+check "env-tests: no environment declared, how to declare one" 1 '^STOP: no environment declared in AGENTS\.md\. Add a section « ## Environnements »'
+cat > AGENTS.md <<'EOF'
+# Shop
+
+## Environnements
+- `recette` : https://api-recette.example.com/ (jeton : `API_TOKEN_RECETTE`, écriture permise)
+- `preprod` : https://api-preprod.example.com (jeton : `API_TOKEN_PREPROD`)
+- `prod` : https://api.example.com (production)
+- `leak` : https://user:secret@api.example.com
+EOF
+git add -A && git commit -q -m env
+run environments.sh
+check "environments: each line, its token variable, writes, production" 0 "^recette	https://api-recette\.example\.com	API_TOKEN_RECETTE	yes	no$"
+check "environments: production, no writes" 0 "^prod	https://api\.example\.com	-	no	yes$"
+check "environments: a URL with a password is refused" 0 '^WARNING: leak: a user or a password in its URL' 'secret@'
+run env-tests.sh
+check "env-tests: which environment" 1 '^STOP: which environment\? env-tests\.sh <environment>: recette preprod prod$'
+run env-tests.sh qa
+check "env-tests: an environment that is not declared" 1 '^STOP: no environment qa in AGENTS\.md \(declared: recette preprod prod\)'
+run env-tests.sh prod
+check "env-tests: never production" 1 '^STOP: prod is a production environment: the pack never runs tests there'
+run env-tests.sh preprod --ecriture
+check "env-tests: writes only where AGENTS.md allows them" 1 '^STOP: preprod does not allow writes'
+run env-tests.sh recette tests/Shop.IntegrationTests/Shop.IntegrationTests.csproj
+check "env-tests: its token variable not set is the machine's problem" 1 '^ENVIRONMENT PROBLEM: the variable API_TOKEN_RECETTE, which holds the token of recette, is not set in the environment of OpenCode'
+API_TOKEN_RECETTE=s3cr3t-value
+# a machine with the runtimes of these net8.0 tests
+FAKE_DOTNET_RUNTIMES="Microsoft.AspNetCore.App 8.0.11
+Microsoft.NETCore.App 8.0.11
+Microsoft.AspNetCore.App 10.0.0
+Microsoft.NETCore.App 10.0.0"
+export API_TOKEN_RECETTE FAKE_DOTNET_RUNTIMES
+run env-tests.sh recette tests/Shop.IntegrationTests/Shop.IntegrationTests.csproj
+check "env-tests: the environment tests, read only, with the URL, token and name of the environment" 0 '^ENVIRONMENT: recette https://api-recette\.example\.com \(read only\)'
+check "env-tests: one line per test" 0 '^  OK  Shop\.IntegrationTests\.OrdersEnvironmentTests\.Get_Orders_WithItsToken \([0-9]+\.[0-9]{2} s\)$' 'CreatesThenDeletes|OrdersTests\.Get_Orders_Returns200'
+check "env-tests: the build and tests of build-test.sh" 0 '^TESTS: OK$' 'TESTS: FAILED'
+called "env-tests: the filter of the category" '^dotnet test tests/Shop\.IntegrationTests/Shop\.IntegrationTests\.csproj .*--filter Category=Environment '
+run env-tests.sh recette --ecriture tests/Shop.IntegrationTests/Shop.IntegrationTests.csproj
+check "env-tests: --ecriture adds the tests that write, where they are allowed" 0 '^  OK  Shop\.IntegrationTests\.OrdersEnvironmentTests\.Post_Orders_CreatesThenDeletes'
+check "env-tests: with writes, said" 0 '^ENVIRONMENT: recette https://api-recette\.example\.com \(writes allowed\)'
+run env-tests.sh recette tests/Edge.Tests/Edge.Tests.csproj
+check "env-tests: the token is never printed" 1 'Bearer \*\*\* ' 's3cr3t-value'
+check "env-tests: an environment out of reach is the machine's problem" 1 '^ENVIRONMENT PROBLEM: recette \(https://api-recette\.example\.com\) cannot be reached from this machine'
+run env-tests.sh recette
+check "env-tests: every project with environment tests" 1 '^PROJECT: tests/Edge\.Tests/Edge\.Tests\.csproj$'
+unset API_TOKEN_RECETTE FAKE_DOTNET_RUNTIMES
+
+# test-lint: the HTTP calls and the conditional skip of environment tests are their purpose
+cat > tests/Shop.IntegrationTests/HealthEnvironmentTests.cs <<'EOF'
+using Xunit;
+[Trait("Category", "Environment")]
+public class HealthEnvironmentTests
+{
+    [Fact]
+    public async Task Get_Health()
+    {
+        using var client = new HttpClient();
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("API_BASE_URL"))) Assert.Inconclusive("no environment");
+        var response = await client.GetAsync("https://api-recette.example.com/health");
+        Assert.True(response.IsSuccessStatusCode);
+    }
+}
+EOF
+run test-lint.sh tests/Shop.IntegrationTests/HealthEnvironmentTests.cs
+check "test-lint: an environment test calls the deployed API" 0 '^TEST LINT: OK'
+sed 's/\[Trait("Category", "Environment")\]//' tests/Shop.IntegrationTests/HealthEnvironmentTests.cs > tests/Shop.IntegrationTests/HealthTests.cs
+run test-lint.sh tests/Shop.IntegrationTests/HealthTests.cs
+check "test-lint: the same calls in another test are findings" 0 'HealthTests\.cs:[0-9]+: major: real HTTP call'
+check "test-lint: and its skip too" 0 'HealthTests\.cs:[0-9]+: major: skipped test'
+rm tests/Shop.IntegrationTests/HealthEnvironmentTests.cs tests/Shop.IntegrationTests/HealthTests.cs
+
+# http-files.sh: the requests of the API for the HTTP client of Rider
+mkdir -p src/Api/Properties
+printf '{ "profiles": { "https": { "applicationUrl": "https://localhost:7123;http://localhost:5123" } } }\n' > src/Api/Properties/launchSettings.json
+git add -A && git commit -q -m launch
+run http-files.sh
+check "http-files: one file per group of endpoints" 0 '^HTTP: src/Api/http/Program\.http \(2 requests\)$'
+check "http-files: the environments, never production" 0 '^ENVIRONMENTS: local recette preprod in src/Api/http/http-client\.env\.json \(production left out: prod\)$'
+check "http-files: the private file of the tokens never committed" 0 '^IGNORED: src/Api/http/http-client\.private\.env\.json added to \.gitignore'
+truth "http-files: git ignores the tokens" 'git check-ignore -q src/Api/http/http-client.private.env.json'
+truth "http-files: each request checks its status" 'grep -q "client.assert(response.status >= 200 && response.status < 300" src/Api/http/Program.http'
+truth "http-files: the base URL of each environment" 'grep -q "\"baseUrl\": \"https://api-recette.example.com\"" src/Api/http/http-client.env.json && ! grep -q "api.example.com\"" src/Api/http/http-client.env.json'
+run http-files.sh
+check "http-files: a file that exists is never overwritten" 0 '^KEPT: src/Api/http/Program\.http \(exists\)$' '^HTTP:'
+
+# schedule.sh: what /outil planifier writes for the plugin
+OPENCODE_SCHEDULES="$work/schedules.md"
+export OPENCODE_SCHEDULES
+run schedule.sh --raw "8h45 lun-ven /daily"
+check "schedule: a command that writes nothing, at its time, in the main folder of the repository" 0 "^Planifiée : #1, /daily à 08:45 \(lun,mar,mer,jeu,ven\), dans $work/apitests$"
+run schedule.sh --raw "22h /tests env recette"
+check "schedule: the environment tests, read only" 0 '^Planifiée : #2, /tests env recette à 22:00'
+run schedule.sh --raw "22h /tests env prod"
+check "schedule: never on production" 1 '^Refusé : prod est la production'
+run schedule.sh --raw "7h /go ABC-1"
+check "schedule: never a command that writes" 1 '^Refusé : /go ABC-1 ne se planifie pas'
+run schedule.sh --raw "suppr 1"
+check "schedule: removed" 0 '^Retirée : #1$' '#1 08:45'
+truth "schedule: the line the plugin reads" "grep -q '^- #2 22:00 lun,mar,mer,jeu,ven /tests env recette — $work/apitests (ajoutée le ' '$work/schedules.md'"
+unset OPENCODE_SCHEDULES
+
+# the category filter of xUnit v3 on Microsoft.Testing.Platform: --filter-trait
+cd "$work/mtp" || exit 1
+printf '// <!-- fake-test: Core.Tests.HealthEnvironmentTests.Get pass category=Environment -->\n' > tests/Core.Tests/HealthEnvironmentTests.cs
+run build-test.sh tests/Core.Tests/Core.Tests.csproj --filter "Category=Environment"
+check "xUnit v3: the category as a trait filter" 0 'TESTS: OK \(1 tests?\)'
+called "xUnit v3: --filter-trait" '^dotnet exec .*--filter-trait Category=Environment'
+rm tests/Core.Tests/HealthEnvironmentTests.cs
+
 # never dotnet run, in any of these runs
 truth "never dotnet run" '! grep -q "^dotnet run" "$work/all-calls.log"'
 truth "no output file left in the temporary folder" '[ -z "$(ls "$TMPDIR")" ]'

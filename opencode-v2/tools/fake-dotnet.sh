@@ -6,6 +6,9 @@
 # A test project declares its fake tests in comments, in its project file or in the .cs files of its folder (a test
 # file declares the tests it holds: sealing, parking or deleting it changes what runs):
 #   <!-- fake-test: <fully qualified name> pass|fail <message>|hang|flaky -->
+#   <!-- fake-test: <fully qualified name> env <VARIABLE>=<value> <message> -->
+#                                                          (passes when the variable has that value: env-tests.sh)
+#   ... category=<name> in the message: its category (a filter Category=<name> or TestCategory=<name> selects it)
 #   <!-- fake-test: <fully qualified name> requires <file>:<text> <message> -->
 #                                                          (passes when <file> of the repository holds <text>, fails
 #                                                          with <message> otherwise: a test of the production code)
@@ -153,8 +156,11 @@ selected() {
     if [ "$mode" = vstest ] && [ -n "$1" ]; then
       keep=0
       for term in $(printf '%s' "$1" | tr '|' ' '); do
-        v=${term#FullyQualifiedName~}
-        case "$n" in *"$v"*) keep=1 ;; esac
+        case "$term" in
+          # a category (xUnit trait, NUnit Category, MSTest TestCategory): "category=<name>" in the fake-test line
+          Category=*|TestCategory=*) case " $m " in *" category=${term#*=} "*) keep=1 ;; esac ;;
+          *) v=${term#FullyQualifiedName~}; case "$n" in *"$v"*) keep=1 ;; esac ;;
+        esac
       done
     elif [ "$mode" = method ] && [ $# -gt 0 ]; then
       keep=0
@@ -191,6 +197,12 @@ segment() {
 }
 
 outcome() {
+  # env <VARIABLE>=<value>: the test passes when the variable has that value in its environment (env-tests.sh)
+  if [ "$2" = env ]; then
+    spec=${3%% *} var=${3%%=*}
+    [ "$(printenv "$var" 2>/dev/null)" = "${spec#*=}" ] && echo pass || echo fail
+    return
+  fi
   # requires <file>:<text>: the test passes when the production code holds the text
   if [ "$2" = requires ]; then
     spec=${3%% *} top=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
@@ -381,10 +393,21 @@ case "$1" in
       list=$(selected "$p" vstest "$filter")
       if [ -z "$list" ]; then echo "No test matches the given testcase filter \`$filter\` in $(dll_of "$p")"; continue; fi
       passed=0 failed=0
+      # a TRX report (--logger "trx;LogFileName=<name>" with --results-directory): one result per test
+      trx=""
+      case "$logger" in
+        trx*) [ -n "$results" ] && { mkdir -p "$results"; trx=$results/$(printf '%s' "$logger" | sed -n 's/.*LogFileName=\([^;]*\).*/\1/p'); }
+              [ "$trx" = "$results/" ] && trx=$results/fake.trx
+              printf '<?xml version="1.0" encoding="utf-8"?>\n<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">\n  <Results>\n' > "$trx" ;;
+      esac
       while IFS='|' read -r n o m; do
         [ -n "$n" ] || continue
-        [ "$o" = requires ] && { r=$(outcome "$p" "$o" "$m"); m=${m#* }; o=$r; }
+        case "$o" in
+          requires|env) r=$(outcome "$p" "$o" "$m"); m=${m#* }; o=$r ;;
+        esac
         o=$(outcome "$p" "$o")
+        [ -n "$trx" ] && printf '    <UnitTestResult executionId="x" testId="y" testName="%s" computerName="fake" duration="00:00:00.0%s" startTime="2026-10-24T10:00:00" endTime="2026-10-24T10:00:01" testType="z" outcome="%s" testListId="w" />\n' \
+          "$n" "$( [ "$o" = pass ] && echo 120000 || echo 150000)" "$( [ "$o" = pass ] && echo Passed || echo Failed)" >> "$trx"
         case "$o" in
           pass) passed=$((passed + 1)); case "$logger" in *normal*) echo "  Passed $n [12 ms]" ;; esac ;;
           hang)
@@ -400,6 +423,7 @@ case "$1" in
       done <<EOF
 $list
 EOF
+      [ -n "$trx" ] && printf '  </Results>\n</TestRun>\n' >> "$trx"
       [ "$failed" -gt 0 ] && { verdict=Failed; status=1; } || verdict=Passed
       echo "$verdict!  - Failed:     $failed, Passed:     $passed, Skipped:     0, Total:     $((passed + failed)), Duration: 30 ms - $(name_of "$p").dll (net10.0)"
       [ "$collect" -eq 1 ] && [ -n "$results" ] && cobertura "$p" "$results/$(name_of "$p")-guid/coverage.cobertura.xml"
@@ -418,6 +442,7 @@ EOF
         --filter) mode=vstest; values=$2; shift 2 ;;
         --filter-method) mode=method; shift; values=""; while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do values="$values $1"; shift; done ;;
         --treenode-filter) mode=tree; values=$2; shift 2 ;;
+        --filter-trait) mode=vstest; values="${values:+$values|}$2"; shift 2 ;;
         --timeout)
           grep -q 'fake-mtp-old' "$p" && { echo "Unknown option '--timeout'"; exit 5; }
           timeout=$2; shift 2 ;;
@@ -440,7 +465,9 @@ EOF
     passed=0 failed=0
     while IFS='|' read -r n o m; do
       [ -n "$n" ] || continue
-      [ "$o" = requires ] && { r=$(outcome "$p" "$o" "$m"); m=${m#* }; o=$r; }
+      case "$o" in
+        requires|env) r=$(outcome "$p" "$o" "$m"); m=${m#* }; o=$r ;;
+      esac
       o=$(outcome "$p" "$o")
       case "$o" in
         pass) passed=$((passed + 1)) ;;

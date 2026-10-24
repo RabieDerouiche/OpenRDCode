@@ -362,7 +362,7 @@ function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcp
     }),
   }
   const push = (type, data) => { queue.push({ type, data }); if (wake) { const w = wake; wake = undefined; w() } }
-  const calls = { update: [], command: [], prompt: [] }
+  const calls = { update: [], command: [], prompt: [], create: [] }
   const servers = [["gitlab", { type: "local", command: ["node", "x"] }], ["jira", { type: "remote", url: "https://jira.invalid/mcp", codemode: true }]]
   const mcpState = { status: "connected" }
   const domain = (name) => ({ hook: async (hook, fn) => { hooks[name + "." + hook] = fn } })
@@ -373,6 +373,13 @@ function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcp
     shell: domain("shell"),
     session: {
       hook: async (hook, fn) => { hooks["session." + hook] = fn },
+      // a new session (26: the scheduled commands), in the location it is given
+      create: async (input) => {
+        calls.create.push(input)
+        const id = "created-" + calls.create.length
+        sessionsAt.set(id, { id })
+        return { id }
+      },
       get: async ({ sessionID }) => {
         const s = sessionsAt.get(sessionID)
         if (!s) throw new Error("Session not found: " + sessionID)
@@ -1403,7 +1410,7 @@ await check("[v2 19] a conversation that ends without a mark is never resumed", 
 
 // ---------- 21. an answer that repeats itself ----------
 const pack21 = await import(join(stub, "openrd-pack.js"))
-const { segmentsOf, loopAtEnd, collapseRepeats, sanitizeLoops, watchStream, isContinue, dotnetRunTarget, dependencyChange } = pack21
+const { segmentsOf, loopAtEnd, collapseRepeats, sanitizeLoops, watchStream, isContinue, dotnetRunTarget, dependencyChange, scheduleEntries, scheduleAllowed, dueSchedules } = pack21
 const loopSentence = "Je vérifie l'API réelle de Blazorise.DataGrid 2.2.2 avant de trancher."
 const intro = "Le coder est BLOQUÉ : le mécanisme DataGridLocalization n'existe pas dans Blazorise.DataGrid 2.2.2. "
 const looping = intro + Array(20).fill(loopSentence).join(" ")
@@ -1969,6 +1976,55 @@ await check("[25] a refusal is written to the log of the plugin, never the scrip
   assert.ok(found.some((entry) => /npm run setup \(its script: npm install\)/.test(entry.extra.reason)), "the refusal of npm run setup")
   assert.ok(found.some((entry) => /an install on the machine: brew install/.test(entry.extra.reason)), "the refusal of brew install")
   assert.ok(!found.some((entry) => /npm install && npm run build|tsc -p/.test(JSON.stringify(entry))), "a script in the log")
+})
+
+// ---------- 26. scheduled commands ----------
+await check("[26] the schedules of /outil planifier, as schedule.sh writes them", () => {
+  const text = "# Planifications\n\n- #1 08:45 lun,mar,mer,jeu,ven /daily — /home/dev/repos/api (ajoutée le 2026-10-24)\n" +
+    "- #2 22:00 lun,ven /tests env recette — /home/dev/repos/api (ajoutée le 2026-10-24)\n- #3 07:00 lun /outil audit tests — /home/dev/repos/x y (ajoutée le 2026-10-24)\nnot a line\n"
+  const entries = scheduleEntries(text)
+  assert.equal(entries.length, 3)
+  assert.deepEqual({ ...entries[0], days: [...entries[0].days] }, { id: "1", hour: 8, minute: 45, days: [1, 2, 3, 4, 5], command: "daily", args: "", directory: "/home/dev/repos/api" })
+  assert.equal(entries[1].args, "env recette")
+  assert.equal(entries[2].directory, "/home/dev/repos/x y")
+  // Monday 26 October 2026 at 08:45 (local time), then the Sunday before
+  assert.deepEqual(dueSchedules(text, new Date(2026, 9, 26, 8, 45, 10)).map((e) => e.id), ["1"])
+  assert.deepEqual(dueSchedules(text, new Date(2026, 9, 25, 8, 45, 10)).map((e) => e.id), [])
+  assert.deepEqual(dueSchedules(text, new Date(2026, 9, 26, 8, 46, 0)).map((e) => e.id), [])
+})
+await check("[26] only what writes nothing starts without the developer, even a line written by hand", () => {
+  const ok = (command) => scheduleAllowed(scheduleEntries("- #1 08:00 lun " + command + " — /r (ajoutée le 2026-10-24)")[0])
+  for (const command of ["/daily", "/outil audit", "/outil licences branche", "/tests env recette"]) assert.equal(ok(command), true, command)
+  for (const command of ["/go ABC-1", "/push", "/fix", "/sync", "/fortify", "/outil setup", "/outil abandon", "/tests api", "/tests InvoiceService",
+    "/tests env", "/tests env recette --ecriture", "/tests env recette écriture", "/tests env recette --allow-writes"]) assert.equal(ok(command), false, command)
+})
+await check("[26] a schedule due now starts once, in a new session of its repository, whatever the number of instances", async () => {
+  let now = new Date()
+  if (now.getSeconds() >= 56) {
+    await wait(4500)
+    now = new Date()
+  }
+  const day = ["dim", "lun", "mar", "mer", "jeu", "ven", "sam"][now.getDay()]
+  const at = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0")
+  const file = join(home, "schedules-test.md")
+  writeFileSync(file, "- #1 " + at + " " + day + " /daily — " + repo + " (ajoutée le 2026-10-24)\n" +
+    "- #2 " + at + " " + day + " /go ABC-1 — " + repo + " (ajoutée le 2026-10-24)\n" +
+    "- #3 " + at + " " + day + " /outil audit — " + join(home, "nowhere") + " (ajoutée le 2026-10-24)\n")
+  const options = { tickMs: 25, mcpWaitMs: 600, resumeFailureMs: [600000], resumeUnfinishedMs: 600000, schedulesFile: file, scheduleMs: 40 }
+  const first = fakeV2(repo, { options })
+  const stopFirst = await v2Plugin.setup(first.ctx)
+  const second = fakeV2(repo, { options })
+  const stopSecond = await v2Plugin.setup(second.ctx)
+  await wait(500)
+  if (typeof stopFirst === "function") stopFirst()
+  if (typeof stopSecond === "function") stopSecond()
+  const created = [...first.calls.create, ...second.calls.create]
+  const commands = [...first.calls.command, ...second.calls.command]
+  assert.deepEqual(created, [{ location: { directory: repo } }])
+  assert.deepEqual(commands, [{ sessionID: "created-1", name: "daily", text: "" }])
+  assert.match(pluginLog(), /scheduled command started .*"command":"\/daily"/)
+  assert.match(pluginLog(), /scheduled command refused: it may write .*"command":"\/go ABC-1"/)
+  assert.match(pluginLog(), /scheduled command not started: its folder is missing .*"command":"\/outil audit"/)
 })
 
 // ---------- every command the pack prescribes passes the guards of the plugin, for the agent that runs it ----------

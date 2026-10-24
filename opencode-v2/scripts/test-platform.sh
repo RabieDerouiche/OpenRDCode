@@ -12,8 +12,8 @@
 #   run <project> [<options of dotnet test>]
 #                                           runs the tests of an MTP project (built already): --filter (VSTest
 #                                           syntax: as is for MSTest and NUnit, translated for xUnit v3 into
-#                                           --filter-method and for TUnit into --treenode-filter: the class, then
-#                                           the method), --collect "XPlat Code Coverage" (the coverage extension
+#                                           --filter-method (Category=<name>: --filter-trait) and for TUnit into
+#                                           --treenode-filter: the class, then the method), --collect "XPlat Code Coverage" (the coverage extension
 #                                           of the project, Cobertura), --results-directory, and a time limit for
 #                                           the run (5 minutes with a filter, 18 without; none on a platform older
 #                                           than 1.5, which lacks --timeout); the other VSTest options are dropped
@@ -217,6 +217,13 @@ case "$1" in
           filtered=1
           case "$framework" in
             xunit3)
+              # traits (Category=Environment of env-tests.sh): --filter-trait, once per value (they are or'ed)
+              if printf '%s' "$filter" | grep -q -E '^[[:space:]]*Category=[A-Za-z0-9_.-]+([[:space:]]*[|][[:space:]]*Category=[A-Za-z0-9_.-]+)*[[:space:]]*$'; then
+                printf '%s\n' "$filter" | tr '|' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | while IFS= read -r term; do
+                  printf '%s\n%s\n' --filter-trait "$term"
+                done >> "$args"
+                continue
+              fi
               names=$(names_of "$filter")
               if printf '%s\n' "$names" | grep -q '^UNTRANSLATED$'; then
                 untranslated=$filter

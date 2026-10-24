@@ -6,7 +6,9 @@
 #   blocking  a focused test (fdescribe, fit, .only): the other tests of the suite silently stop running;
 #             a test without any assertion: it passes whatever the code does
 #   major     a real clock (DateTime.Now, Date.now()), a sleep or a real delay (Thread.Sleep, Task.Delay, setTimeout),
-#             a real HTTP client or call, an unseeded Random, a skipped test (Skip, [Ignore], xit, it.skip)
+#             a real HTTP client or call, an unseeded Random, a skipped test (Skip, [Ignore], xit, it.skip); a file of
+#             environment tests (the category Environment, run by env-tests.sh) calls the deployed API and skips
+#             itself without API_BASE_URL: neither is a finding there
 #   minor     an assertion that cannot fail (Assert.True(true), expect(true).toBe(true))
 # With --changed <base>: the test files the branch adds or changes (committed or not), and only what its lines
 # brought; a focused test is reported wherever it is.
@@ -73,7 +75,11 @@ report=$(for f in $files; do
   lines=""
   [ -n "$base" ] && lines=$(added "$f" | tr '\n' ' ')
   case "$f" in *.cs) lang=cs ;; *) lang=ts ;; esac
-  awk -v file="$f" -v lang="$lang" -v lines=" $lines " -v all="$([ -z "$base" ] && echo 1 || echo 0)" '
+  # environment tests (env-tests.sh): their HTTP calls to the deployed API are what they test, and they are skipped
+  # without API_BASE_URL
+  envtests=0
+  grep -q -E '(Trait|Category|TestCategory)[[:space:]]*\([[:space:]]*("Category",[[:space:]]*)?"Environment(Writes)?"' "$src" 2>/dev/null && envtests=1
+  awk -v file="$f" -v lang="$lang" -v envtests="$envtests" -v lines=" $lines " -v all="$([ -z "$base" ] && echo 1 || echo 0)" '
     function brought(n) { return all == 1 || index(lines, " " n " ") > 0 }
     function say(n, sev, what) { print file ":" n ": " sev ": " what }
     function braces(s,   t, o, c) { t = s; gsub(/"([^"\\]|\\.)*"|'"'"'([^'"'"'\\]|\\.)*'"'"'|\/\/.*$/, "", t); o = gsub(/\{/, "{", t); c = gsub(/\}/, "}", t); return o - c }
@@ -105,9 +111,9 @@ report=$(for f in $files; do
           if (!brought(i)) continue
           if (l ~ /Thread\.Sleep[[:space:]]*\(|Task\.Delay[[:space:]]*\(/) say(i, "major", "sleep or real delay in a test: a fake clock (FakeTimeProvider) or a synchronous seam instead")
           if (!fake && l ~ /DateTime(Offset)?\.(Now|UtcNow|Today)/) say(i, "major", "real clock in a test: a fixed date, or a FakeTimeProvider (Microsoft.Extensions.TimeProvider.Testing) when the code takes a TimeProvider")
-          if (l ~ /new HttpClient[[:space:]]*\([[:space:]]*\)/ || l ~ /https?:\/\/[A-Za-z0-9.-]+\.(com|net|org|fr|io)/ && l ~ /GetAsync|PostAsync|SendAsync|GetStringAsync/) say(i, "major", "real HTTP call in a unit test: a fake HttpMessageHandler, or WebApplicationFactory for the API itself")
+          if (!envtests && (l ~ /new HttpClient[[:space:]]*\([[:space:]]*\)/ || l ~ /https?:\/\/[A-Za-z0-9.-]+\.(com|net|org|fr|io)/ && l ~ /GetAsync|PostAsync|SendAsync|GetStringAsync/)) say(i, "major", "real HTTP call in a unit test: a fake HttpMessageHandler, or WebApplicationFactory for the API itself")
           if (l ~ /new Random[[:space:]]*\([[:space:]]*\)/) say(i, "major", "unseeded Random: a test that changes from run to run; give it a seed, or fixed values")
-          if (l ~ /\[(Fact|Theory|Test|TestMethod)[^]]*Skip[[:space:]]*=/ || l ~ /\[(Ignore|Explicit)[^]]*\]/ || l ~ /Assert\.Inconclusive/) say(i, "major", "skipped test: it never runs; remove it or make it pass")
+          if (l ~ /\[(Fact|Theory|Test|TestMethod)[^]]*Skip[[:space:]]*=/ || l ~ /\[(Ignore|Explicit)[^]]*\]/ || !envtests && l ~ /Assert\.(Inconclusive|Ignore)\(/) say(i, "major", "skipped test: it never runs; remove it or make it pass")
           if (l ~ /Assert\.(True|IsTrue)\([[:space:]]*true[[:space:]]*\)|Assert\.(False|IsFalse)\([[:space:]]*false[[:space:]]*\)/) say(i, "minor", "an assertion that cannot fail")
           if (l ~ /\[(Fact|Theory|Test|TestCase|TestMethod|DataTestMethod)([^A-Za-z]|$)/) {
             expected = 0

@@ -10,6 +10,8 @@
 #   - a C# 13 feature in a net8.0 project (CS9202) and an API that netstandard2.0 lacks: the errors shown once each
 #   - a library with package validation: a public member removed against the published version (CP0002)
 #   - the code of the skill blazorise (its localizers, its French pager of QuickGrid): built against the real packages
+#   - the API tests of the skill api-tests: test-guardian.sh setup --integration, the tests in memory, then
+#     env-tests.sh against the API running on this machine, and against one that does not answer
 # Usage, from opencode-v2/: sh tools/real-dotnet-test.sh [<shell>] (default sh).
 SHELL_UNDER_TEST=${1:-sh}
 pack=$(cd "$(dirname "$0")/.." && pwd)
@@ -239,6 +241,115 @@ rm -rf blocks
 commit
 run build-test.sh --build-only Web/Web.csproj
 check "the code of the skill blazorise builds against Blazorise.DataGrid 2.2.2 and QuickGrid 10" 0 '^BUILD: OK'
+
+# ---------- the API tests of the skill api-tests: the project of /tests api, in memory, then on a running API ----------
+# Its code blocks, in order: 1 the factory, 2 the test authentication, 3 the environment attribute, 4 the environment
+# client, 5 environment tests (/health, /api/orders). The API: .NET 10, top-level statements (Program public by itself).
+repo apitests
+mkdir -p src/Api blocks
+cat > src/Api/Api.csproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>
+EOF
+cat > src/Api/Program.cs <<'EOF'
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddHealthChecks();
+builder.Services.AddAuthorization();
+var app = builder.Build();
+app.UseAuthorization();
+app.MapHealthChecks("/health");
+app.MapGet("/api/orders", () => Results.Ok(new[] { new { id = 1, total = 12.5m } }));
+app.MapGet("/api/orders/{id:int}", (int id) => id == 1 ? Results.Ok(new { id = 1, total = 12.5m }) : Results.NotFound())
+    .RequireAuthorization();
+app.Run();
+EOF
+commit
+run test-guardian.sh setup --integration xunit src/Api/Api.csproj
+check "setup --integration with the real SDK: the project of the API tests" 0 '^SETUP: tests/Api\.IntegrationTests/Api\.IntegrationTests\.csproj created \(xunit, net10\.0\).*Microsoft\.AspNetCore\.Mvc\.Testing 10\.[0-9.]+.*build OK' 'public partial class Program'
+awk -v dir="$PWD/blocks" '
+  /^ *```[a-z]+$/ { n++; inblock = 1; file = dir "/" n; next }
+  /^ *```$/ && inblock { inblock = 0; close(file); next }
+  inblock { sub(/^   /, ""); print > file }' "$pack/skills/api-tests/SKILL.md"
+if [ -s blocks/5 ] && [ ! -e blocks/6 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL: the skill api-tests has not its 5 code blocks"; ls blocks; fi
+t=tests/Api.IntegrationTests
+cp blocks/1 "$t/ApiFactory.cs"
+cp blocks/2 "$t/TestAuthHandler.cs"
+cp blocks/3 "$t/EnvironmentFactAttribute.cs"
+cp blocks/4 "$t/EnvironmentClient.cs"
+cp blocks/5 "$t/HealthEnvironmentTests.cs"
+rm -rf blocks
+cat > "$t/OrdersEndpointsTests.cs" <<'EOF'
+using System.Net;
+using System.Net.Http.Json;
+using Xunit;
+
+public class OrdersEndpointsTests : IClassFixture<ApiFactory>
+{
+    private readonly ApiFactory factory;
+
+    public OrdersEndpointsTests(ApiFactory factory) => this.factory = factory;
+
+    [Fact]
+    public async Task Get_OrderById_WithoutUser_Returns401()
+    {
+        var response = await factory.CreateClient().GetAsync("/api/orders/1");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_OrderById_Known_Returns200WithItsTotal()
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "dev");
+        var order = await client.GetFromJsonAsync<OrderDto>("/api/orders/1");
+        Assert.Equal(12.5m, order!.Total);
+    }
+
+    [Fact]
+    public async Task Get_OrderById_Unknown_Returns404()
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "dev");
+        var response = await client.GetAsync("/api/orders/2");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+}
+
+public record OrderDto(int Id, decimal Total);
+EOF
+commit
+run build-test.sh "$t/Api.IntegrationTests.csproj"
+check "the API tests in memory: green, the environment tests skipped without an environment" 0 '^TESTS: OK' 'FAILED TESTS'
+run test-lint.sh "$t/OrdersEndpointsTests.cs" "$t/HealthEnvironmentTests.cs"
+check "test-lint: the API tests of the skill" 0 '^TEST LINT: OK'
+# the API running on this machine, as a deployed environment; and one that does not answer
+printf '# Api\n\n## Environnements\n- `ci` : http://127.0.0.1:5199 (écriture permise)\n- `down` : http://127.0.0.1:5198\n' > AGENTS.md
+commit
+# the built API itself (dotnet run would leave its child process running after a kill)
+dotnet src/Api/bin/Debug/net10.0/Api.dll --urls http://127.0.0.1:5199 > "$work/api.log" 2>&1 &
+api=$!
+up=0
+for _ in $(seq 1 90); do
+  curl -fs http://127.0.0.1:5199/health > /dev/null 2>&1 && { up=1; break; }
+  sleep 1
+done
+if [ "$up" -eq 1 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL: the API did not start"; tail -n 20 "$work/api.log" | sed 's/^/    /'; fi
+run env-tests.sh ci
+# one line per test on VSTest (the TRX report); a template of the SDK on Microsoft.Testing.Platform gives its summary
+case "$(sh "$scripts/test-platform.sh" kind "$t/Api.IntegrationTests.csproj" 2>/dev/null)" in
+  vstest*) check "env-tests on a running API: its environment tests, one line each" 0 '^  OK  .*HealthEnvironmentTests\.Get_Orders_ReturnsAJsonArray \([0-9.]+ s\)$' '^  (FAILED|SKIPPED)  ' ;;
+  *) check "env-tests on a running API: its environment tests" 0 '^TESTS: OK' ;;
+esac
+check "env-tests on a running API: read only" 0 '^ENVIRONMENT: ci http://127\.0\.0\.1:5199 \(read only\)'
+kill "$api" 2>/dev/null
+wait "$api" 2>/dev/null
+run env-tests.sh down
+check "env-tests: the real message of an environment that does not answer" 1 '^ENVIRONMENT PROBLEM: down \(http://127\.0\.0\.1:5198\) cannot be reached from this machine'
 
 echo "real-dotnet-test ($SHELL_UNDER_TEST): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

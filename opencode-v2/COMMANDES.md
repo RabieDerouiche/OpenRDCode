@@ -357,7 +357,7 @@ Les fichiers ignorés par git du dépôt principal (un `.env`, des réglages loc
 
 Un espace de travail démarre sur une HEAD détachée (c'est ainsi que la v2 crée ses worktrees). `/go` y crée la branche du ticket ; un travail sans ticket (un POC, un essai) se pousse avec `/push`, qui lui crée d'abord une branche `poc/<résumé>` à partir de ce qui est là (`/push branche essai-cache` pour choisir le nom, `/push feature …` pour un autre préfixe).
 
-**Deux dossiers qui poussent en même temps**, chacun sur sa branche : rien à faire de spécial. Chaque dossier a son verrou de build, son dossier de mesures et sa fiche ; leurs `git fetch` simultanés sont relancés tout seuls s'ils se croisent. Si les deux branches modifient la même ligne, rien ne se voit au push (deux branches différentes) : le conflit apparaît quand la première MR est fusionnée, au prochain `/sync develop` ou `/fix` de la seconde, qui annulent la fusion et nomment le fichier. Tu la refais dans Rider, dans le dossier de la seconde (`git merge origin/develop`), puis `/push`.
+**Deux dossiers qui poussent en même temps**, chacun sur sa branche : rien à faire de spécial. Chaque dossier a son verrou de build, son dossier de mesures et sa fiche ; leurs `git fetch` simultanés sont relancés tout seuls s'ils se croisent. Si les deux branches modifient la même ligne, rien ne se voit au push (deux branches différentes) : le conflit apparaît quand la première MR est fusionnée, au prochain `/sync develop` ou `/fix` de la seconde, qui annulent la fusion et nomment le fichier. Tu la refais dans Rider, dans le dossier de la seconde (`git merge origin/develop`), puis `/push`. Une fusion sans conflit (les deux branches touchent des fichiers ou des lignes différents, le cas courant) n'arrête rien : `/fix` ou `/go` de la seconde fusionnent develop tout seuls, puis le build et les tests de toute la suite tournent sur le résultat avant le push. Seul un vrai conflit, ou des tests que la fusion casse, arrête le run, avec le fichier ou le test nommé.
 
 **2. Le lendemain.** Les sessions du dossier sont listées avec celles du projet. Pour reprendre : ouvre une de ses sessions, puis `/go` seul ; après la CI, `/fix` dans la même session.
 
@@ -525,7 +525,12 @@ Déclare-les une fois, dans l'`AGENTS.md` de chaque dépôt (`/outil setup` le f
 - `front-factures` (`~/repos/front-factures`) : le front Angular qui appelle cette API
 - `lib-commun` : la librairie NuGet interne des montants
 ```
-Ensuite, pour un ticket qui touche les deux (la même clé Jira, ou deux tickets liés) :
+Un front et son API, chacun dans son dépôt : la même section des deux côtés, chacun nommant l'autre. Dans l'`AGENTS.md` du front :
+```text
+## Dépôts liés
+- `api-factures` (`~/repos/api-factures`) : l'API .NET que ce front appelle
+```
+Rien d'autre à déclarer : c'est la même application parce que chacun nomme l'autre ; le rôle (« le front Angular qui appelle cette API », « l'API que ce front appelle ») dit qui fournit le contrat. Ensuite, pour un ticket qui touche les deux (la même clé Jira, ou deux tickets liés) :
 1. **Le dépôt qui fournit le contrat d'abord** (l'API, la librairie) : `/go ABC-123` dans une session de ce dépôt. L'analyste écrit dans la fiche une section « ## Contrat » : chaque route, champ ou membre public ajouté, modifié ou retiré, et ce que les consommateurs doivent faire. L'auto-review compare avec ce que la branche change vraiment (`api-surface.sh`) : une rupture non annoncée est un point bloquant. La MR a une section « Contrat », et la réponse finale dit ce que l'autre dépôt doit suivre.
 2. **Le consommateur ensuite** : `/go ABC-123` dans une session du front (ou de l'application qui utilise la librairie). L'analyste lit, par `related-repos.sh ABC-123`, la branche de l'API pour ce ticket, sa fiche, sa ligne « livré » et son « Contrat » : le plan s'appuie sur ce que l'API donne vraiment, jamais sur un champ qu'elle ne donne pas.
 3. **Une librairie consommée en paquet** : son changement est livré et publié d'abord (sa propre MR, sa CI, sa version) ; dans le consommateur, monter la version du paquet est une étape du plan que tu valides, jamais un paquet ajouté par le coder.
@@ -651,6 +656,7 @@ Des tests unitaires sans ticket : `/tests` avec une classe, un fichier ou un dos
 ```text
 /tests src/Billing seulement les cas d'erreur
 ```
+Les endpoints d'une API, scénario par scénario : `/tests api` ; les tests d'un environnement déployé : `/tests env recette` (section « Tests d'API »).
 Récupérer ce que tu as poussé depuis ton Mac (Rider), sans rien commiter ni pousser : tes modifications non commitées restent là. Avec « develop », les nouveaux commits de la base aussi ; « merge <branche> » pour une autre branche. Sur develop lui-même : une avance rapide sur origin, jamais une fusion. Un conflit : la fusion est annulée et les fichiers listés, tu la fais dans Rider :
 ```text
 /sync
@@ -706,6 +712,14 @@ Capturer une implémentation d'un autre dépôt en pattern d'équipe (section «
 Ce que `/go` et `/fix` ont fait sur tes tickets de ce dépôt : étapes, lancements, réponses aux questions, décisions de l'agent, arrêts, temps de l'analyse à la MR (plusieurs dépôts : leurs chemins après `stats`) :
 ```text
 /outil stats
+```
+
+Les requêtes de chaque endpoint pour Rider, et `/daily` ou les tests d'un environnement lancés tout seuls chaque matin (sections « Requêtes `.http` pour Rider » et « Planifier une commande ») :
+```text
+/outil http
+```
+```text
+/outil planifier 8h45 lun-ven /daily
 ```
 
 Les autres outils (audit, licences, release notes, cqrs, AGENTS.md du dépôt, abandon d'un ticket) :
@@ -778,6 +792,87 @@ La couverture n'est pas le but : un test qui exécute des lignes sans rien véri
 ```text
 lance `sh ~/.config/opencode/scripts/test-lint.sh --changed origin/develop`
 ```
+
+## Tests d'API (`/tests api`) et tests d'un environnement (`/tests env`)
+
+Deux sortes de tests d'intégration, jamais mêlées (skill `api-tests`) :
+- **En mémoire**, la preuve du comportement : l'API tourne dans le processus des tests (`WebApplicationFactory<Program>`), chaque endpoint est appelé en HTTP (routage, validation, autorisation, sérialisation pour de vrai), ses ports (dépôts de données, clients d'autres systèmes, horloge) remplacés par des fakes. Aucune base, aucun réseau : ils tournent à chaque build, dans la CI, comme les tests unitaires.
+- **Sur un environnement**, la preuve du déploiement : les mêmes endpoints appelés sur l'URL d'une recette ou d'une préproduction, avec des contrôles vrais quelles que soient ses données (statut, type de contenu, champs promis, 401 sans jeton). Lecture seule ; jamais la production.
+
+Les endpoints d'une API, un à un, depuis le code. `/tests api` lit les routes (`api-routes.sh`), propose pour chaque endpoint ses scénarios (nominal avec des valeurs, 400 par règle de validation, 401, 403, 404, 409 quand le code le renvoie) dans UNE question où tu coches ceux à écrire ; sans projet de tests d'intégration, la même question propose de le créer en premier commit (`Microsoft.AspNetCore.Mvc.Testing` de ta version de .NET ; avant .NET 10, `public partial class Program { }` ajouté à ton `Program.cs`). Le test-guardian les écrit, les prouve verts deux fois ; un test qui révèle un bug n'est pas gardé, le bug est dans la réponse. Un commit, rien n'est poussé :
+```text
+/tests api
+```
+```text
+/tests api OrdersController
+```
+```text
+/tests api src/Api/Features/Orders seulement les erreurs
+```
+
+Les environnements, une fois par dépôt, dans son `AGENTS.md` (le jeton n'y est jamais : seulement le nom de la variable de ta machine qui le tient) :
+```text
+## Environnements
+- `recette` : https://api-recette.example.com (jeton : `API_TOKEN_RECETTE`, écriture permise)
+- `preprod` : https://api-preprod.example.com (jeton : `API_TOKEN_PREPROD`)
+- `prod` : https://api.example.com (production)
+```
+La variable du jeton, dans `~/.zshenv`, hors d'OpenCode (un jeton de service de l'environnement, jamais le tien) :
+```sh
+export API_TOKEN_RECETTE='…'
+```
+`~/.zshenv` est relu à chaque commande d'un agent : rien à redémarrer ; le contrôle avant push arrête tout commit qui contiendrait sa valeur, et `env-tests.sh` la masque dans ce qu'il affiche. Avec un environnement déclaré, `/tests api` propose aussi d'écrire leurs tests d'environnement. Pour les lancer, à la demande, n'importe quand :
+```text
+/tests env recette
+```
+Un tableau test par test (OK, en échec, durée) ; un échec dit ce que l'environnement a répondu : c'est un fait sur ce déploiement (sa version, sa configuration, ses données), pas un correctif à faire. Les tests qui écrivent (`EnvironmentWrites` : créer, relire, supprimer ce qu'ils ont créé) ne tournent qu'avec `--écriture`, sur un environnement marqué « écriture permise » :
+```text
+/tests env recette --écriture
+```
+Pour le voir sans agent, dans une session :
+```text
+lance `sh ~/.config/opencode/scripts/env-tests.sh recette`
+```
+`ENVIRONMENT PROBLEM` : la variable du jeton n'est pas définie, ou l'environnement ne répond pas depuis ta machine (VPN, proxy, certificat) ; l'agent s'arrête et te le dit, il ne réessaie jamais autrement. La production est toujours refusée.
+
+**Dans la CI, chaque nuit** (sans OpenCode) : la convention est le contrat, pas le script. Dans GitLab, un pipeline planifié (CI/CD > Schedules) et des variables masquées du projet `API_BASE_URL` et `API_TOKEN` (Settings > CI/CD > Variables, « Masked », par environnement) :
+```yaml
+env-tests:
+  image: mcr.microsoft.com/dotnet/sdk:10.0
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - dotnet test tests/Api.IntegrationTests --filter "Category=Environment"
+```
+Un projet xUnit v3 sur Microsoft.Testing.Platform filtre par `--filter-trait "Category=Environment"` ; MSTest, par `--filter "TestCategory=Environment"`.
+
+## Requêtes `.http` pour Rider (`/outil http`)
+
+Pour appeler toi-même chaque endpoint dans Rider (ou Visual Studio), sans Postman : `/outil http` écrit, depuis le code, un fichier `.http` par contrôleur dans `<projet de l'API>/http/`, chaque requête avec sa route, son jeton quand l'endpoint l'exige, un corps rempli depuis son DTO et un contrôle de son statut ; `http-client.env.json` avec `local` (l'URL de `launchSettings.json`) et tes environnements d'AGENTS.md (jamais la production) ; `http-client.private.env.json` pour tes jetons, ajouté au `.gitignore`. Un fichier qui existe n'est jamais réécrit.
+```text
+/outil http
+```
+Dans Rider : ouvre un `.http`, choisis l'environnement en haut de l'éditeur, puis ▶ sur une requête ou « Run All Requests in File ». Ton jeton, une fois, dans `http-client.private.env.json` (jamais commité) :
+```json
+{ "recette": { "token": "…" } }
+```
+
+## Planifier une commande (`/outil planifier`)
+
+OpenCode v2 n'a pas de planificateur : le plugin du pack en fait un (fonction 26). À l'heure dite, il ouvre une nouvelle session dans le dépôt et y lance la commande ; la session est sur l'accueil, avec son issue dans le titre. Seulement ce qui n'écrit rien, ni dans git ni dans Jira : `/daily`, `/outil audit`, `/outil licences`, `/tests env <environnement>` (lecture seule) ; `/go`, `/fix`, `/push` et les autres sont refusés, même écrits à la main dans le fichier. Depuis le dossier principal du dépôt :
+```text
+/outil planifier 8h45 lun-ven /daily
+```
+```text
+/outil planifier 7h30 tous les jours /tests env recette
+```
+```text
+/outil planifier
+```
+```text
+/outil planifier suppr 2
+```
+Les planifications sont dans `~/.config/opencode/schedules.md` (modifiable à la main), à l'heure de la machine d'OpenCode. OpenCode doit tourner à cette heure (son service, COMMANDES.md « Redémarrer OpenCode ») : ce qu'il a manqué n'est pas rattrapé. Chaque lancement, ou la raison pour laquelle il n'est pas parti, est dans le journal du plugin (« Logs d'OpenCode » : `grep scheduled ~/.local/share/opencode/log/openrd-pack.log`). Pour tout arrêter, vide le fichier.
 
 ## Bonnes pratiques et patterns du pack
 

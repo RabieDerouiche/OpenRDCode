@@ -372,6 +372,19 @@ for (const a of ["build", "pilot", "analyst", "coder", "checker", "debugger", "d
 // ---------- every command the pack prescribes, run by the agent it prescribes it to (commands, agents, skills,
 // AGENTS.global.md: tools/prescribed inventory). A refusal here is a run that stops on a rule of the pack itself. ----------
 const P = (agents, cmds) => add(agents, cmds, "allow", { note: "prescribed by the pack" })
+// ---------- the API tests, the environments, the .http files and the schedules ----------
+P(["pilot"], [S + "api-routes.sh", S + "api-routes.sh src/Api/Features/Orders", S + "environments.sh",
+  S + "env-tests.sh recette", S + "env-tests.sh recette --ecriture",
+  S + "test-guardian.sh setup --integration xunit src/Api/Api.csproj && " + S + "ship.sh --no-push \"test: add the integration test project\""])
+P(["test-guardian"], [S + "env-tests.sh recette"])
+add(["debugger", "checker"], [S + "env-tests.sh recette", S + "environments.sh"], "allow")
+add(["coder", "test-guardian", "analyst", "checker", "debugger", "doc-writer"],
+  [S + "env-tests.sh recette --ecriture", S + "env-tests.sh recette --écriture", S + "env-tests.sh recette --allow-writes"], "deny")
+add(["pilot", "coder", "test-guardian", "analyst", "checker", "debugger", "doc-writer"],
+  [S + "schedule.sh add 8h45 lun-ven /daily", S + "schedule.sh remove 2", S + "http-files.sh", S + "http-files.sh src/Api"], "deny")
+add(["build"], [S + "schedule.sh --raw \"8h45 lun-ven /daily\"", S + "schedule.sh", S + "http-files.sh",
+  S + "env-tests.sh recette --ecriture", S + "environments.sh"], "allow")
+
 // /go, /fix, /fortify, /push, /sync, /tests: the pilot
 P(["pilot"], [
   S + "ticket-sheet.sh suivi \"/go - reprise à l'étape 2\"",

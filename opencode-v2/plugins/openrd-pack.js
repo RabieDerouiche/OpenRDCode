@@ -152,6 +152,12 @@
 //    bash rule (19 000 characters for the coder) and nothing it can do instead; this one says it in a sentence: a step
 //    that needs a package is « BLOQUÉ », the dependencies of the lockfile are installed by build-test.sh (npm ci), a
 //    missing tool is an ENVIRONMENT PROBLEM. `npm ci` and the frozen installs pass. The free conversation is mine.
+// 26. Starts the commands of /outil planifier at their time (schedule.sh, ~/.config/opencode/schedules.md): each in a
+//    new session of its repository (ctx.session.create, then the command), once per day and time even when several
+//    instances of the plugin run (a marker file per schedule and minute, in the data folder of OpenCode). Only what
+//    writes nothing in git or in Jira: /daily, /outil audit, /outil licences, /tests env <environment> (read only);
+//    another line, even written by hand, is refused. The OpenCode service must run at that time; what it missed is not
+//    started later. Each start, or why it did not start, goes to the log of the plugin.
 // Every refusal of 6, 7, 9, 12, 16, 23, 24 and 25 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
@@ -230,7 +236,7 @@ const SETS_ENVIRONMENT = new RegExp(ASSIGN + String.raw`(?:PATH|DOTNET_ROOT\w*)=
 const SETS_SECRET = new RegExp(ASSIGN + String.raw`(?:\w*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_?KEY|CREDENTIALS?)\w*|ARTIFACTORY\w*)=`, "i")
 const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
 // Commands that take minutes (8): a build or tests, a restore, the front-end tooling; the pack's git scripts
-const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*front-test\.sh|\S*fortify\.sh\s+prereq|\S*test-guardian\.sh\s+(?:coverage|red|green|changes|build|setup)|dotnet\s+(?:build|test|restore|format|ef|clean|pack)|npm\s+(?:test|ci|install|i|run\s+\S+)|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint|generate|g))|yarn\s+(?:test|install|build|lint|run\s+\S+)|pnpm\s+(?:test|install|build|lint|run\s+\S+))(?=\s|$|[;&|)])/
+const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*front-test\.sh|\S*env-tests\.sh|\S*fortify\.sh\s+prereq|\S*test-guardian\.sh\s+(?:coverage|red|green|changes|build|setup)|dotnet\s+(?:build|test|restore|format|ef|clean|pack)|npm\s+(?:test|ci|install|i|run\s+\S+)|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint|generate|g))|yarn\s+(?:test|install|build|lint|run\s+\S+)|pnpm\s+(?:test|install|build|lint|run\s+\S+))(?=\s|$|[;&|)])/
 const GIT_SCRIPT = /(?:^|[\s;&|(])\S*(?:ship|branch)\.sh(?=\s|$)/
 // A build tool called by its full path at the start of a command (11): ~/.bin/dotnet, $HOME/.dotnet/dotnet, /usr/bin/git
 const TOOL_PATH = /(^\s*|[;&|(`\n]\s*)((?:~|\$\{HOME\}|\$HOME)?\/(?:[^\s;&|()<>'"`]*\/)?)(dotnet|node|npm|npx|yarn|pnpm|git)(?=$|[\s;&|)`])/g
@@ -1020,6 +1026,37 @@ function writeLog(line) {
     // the log is best-effort
   }
 }
+// ---------- 26. scheduled commands ----------
+// The schedules of /outil planifier (schedule.sh), one per line of ~/.config/opencode/schedules.md
+// ($OPENCODE_SCHEDULES): "- #1 08:45 lun,mar,mer,jeu,ven /daily — /home/dev/repos/api (ajoutée le 2026-10-24)"
+const SCHEDULE_MS = 20000
+const SCHEDULE_DAYS = ["dim", "lun", "mar", "mer", "jeu", "ven", "sam"]
+const SCHEDULE_LINE = /^- #(\d+) (\d{2}):(\d{2}) ([a-z,]+) \/([a-z][a-z0-9-]*)((?: [^\n]*?)?) — (\/.*?) \(ajoutée le [0-9-]+\)\s*$/
+export function scheduleEntries(text) {
+  const entries = []
+  for (const line of String(text || "").split("\n")) {
+    const m = SCHEDULE_LINE.exec(line.replace(/\r$/, ""))
+    if (!m) continue
+    const days = new Set(m[4].split(",").map((d) => SCHEDULE_DAYS.indexOf(d)).filter((d) => d >= 0))
+    entries.push({ id: m[1], hour: Number(m[2]), minute: Number(m[3]), days, command: m[5], args: m[6].trim(), directory: m[7] })
+  }
+  return entries
+}
+// What may start without the developer: what writes nothing in git or in Jira (schedule.sh refuses the others; a line
+// edited by hand is checked again here)
+export function scheduleAllowed(entry) {
+  const args = entry.args.split(/\s+/).filter(Boolean)
+  if (entry.command === "daily") return true
+  if (entry.command === "outil") return args[0] === "audit" || args[0] === "licences"
+  if (entry.command === "tests") return args[0] === "env" && args.length >= 2 && !args.some((word) => /^(?:--)?(?:writes|allow-writes|[eé]criture)$/i.test(word))
+  return false
+}
+// The schedules due at this minute of the local time of the machine
+export function dueSchedules(text, now = new Date()) {
+  return scheduleEntries(text).filter((e) => e.hour === now.getHours() && e.minute === now.getMinutes() && e.days.has(now.getDay()))
+}
+const pad2 = (n) => String(n).padStart(2, "0")
+
 // v2 names the shell tool "shell" (1.19: "bash") and the subagent tool "subagent" (1.19: "task"), and the file path
 // "path" (1.19: "filePath")
 const V2_TOOLS = { shell: "bash", subagent: "task" }
@@ -3030,8 +3067,60 @@ export default Plugin.define({
       }
     }
 
+    // 26. the scheduled commands: each instance of the plugin looks every 20 s; a marker file per schedule and minute,
+    // created by one instance only, starts it once, in a new session of its repository
+    const schedulesFile = options.schedulesFile || process.env.OPENCODE_SCHEDULES || join(HOME, ".config", "opencode", "schedules.md")
+    const firedDir = join(process.env.XDG_DATA_HOME || join(HOME, ".local", "share"), "opencode", "openrd-pack", "scheduled")
+    const startScheduled = async (now) => {
+      let text = ""
+      try {
+        text = readFileSync(schedulesFile, "utf8")
+      } catch {
+        return
+      }
+      const day = now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate())
+      for (const entry of dueSchedules(text, now)) {
+        const label = "/" + entry.command + (entry.args ? " " + entry.args : "")
+        const marker = join(firedDir, entry.id + "-" + day + "-" + pad2(entry.hour) + pad2(entry.minute))
+        try {
+          mkdirSync(firedDir, { recursive: true })
+          closeSync(openSync(marker, "wx"))
+        } catch {
+          continue
+        }
+        // the markers of the days before
+        try {
+          for (const name of readdirSync(firedDir)) if (!name.includes("-" + day + "-")) unlinkSync(join(firedDir, name))
+        } catch {
+          // kept
+        }
+        if (!scheduleAllowed(entry)) {
+          log("scheduled command refused: it may write", { schedule: entry.id, command: label })
+          continue
+        }
+        if (!existsSync(entry.directory)) {
+          log("scheduled command not started: its folder is missing", { schedule: entry.id, command: label, directory: entry.directory })
+          continue
+        }
+        try {
+          if (typeof api.create !== "function") throw new Error("this OpenCode cannot create a session from a plugin")
+          const created = await api.create({ location: { directory: entry.directory } })
+          const sessionID = created && (created.id || (created.data && created.data.id))
+          if (!sessionID) throw new Error("no session id")
+          await api.command({ sessionID, name: entry.command, text: entry.args })
+          log("scheduled command started", { schedule: entry.id, command: label, directory: entry.directory, sessionID })
+        } catch (error) {
+          log("scheduled command not started", { schedule: entry.id, command: label, error: String((error && error.message) || error).slice(0, 200) })
+        }
+      }
+    }
+    const scheduleMs = Number(options.scheduleMs) > 0 ? Number(options.scheduleMs) : SCHEDULE_MS
+    const scheduler = options.schedules === false ? undefined : setInterval(() => void startScheduled(new Date()), scheduleMs)
+    if (scheduler && typeof scheduler.unref === "function") scheduler.unref()
+
     // the lock file of a run that goes on stays until its turn ends (an instance loaded again frees it then)
     return () => {
+      if (scheduler) clearInterval(scheduler)
       if (ticker) clearInterval(ticker)
       for (const timer of resumeTimers.values()) clearTimeout(timer)
     }

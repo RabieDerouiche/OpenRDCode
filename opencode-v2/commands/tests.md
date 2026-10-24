@@ -1,5 +1,5 @@
 ---
-description: "Tests unitaires sans ticket : pour les classes, fichiers ou dossiers que tu nommes, le test-guardian mesure la couverture, écrit les tests du comportement actuel dans le style du dépôt, les prouve (verts deux fois, aucun test instable), mesure la couverture après, puis un commit sur une branche test/… (ou ta branche). Rien n'est poussé : /push ensuite. Sans projet de tests, propose de le créer. Usage: /tests <classe, fichier ou dossier>… [directives, e.g. « seulement les cas d'erreur »]"
+description: "Tests sans ticket. /tests <classe, fichier ou dossier>… : tests unitaires du comportement actuel, prouvés, couverture avant et après. /tests api [contrôleur, route ou dossier] : tests d'intégration des endpoints en mémoire (WebApplicationFactory), scénarios validés un à un, et leurs tests d'environnement. /tests env <environnement> : lance les tests d'environnement sur un environnement d'AGENTS.md (lecture seule, jamais la production). Un commit sur une branche test/… (ou ta branche) ; rien n'est poussé : /push ensuite."
 agent: pilot
 subtask: false
 ---
@@ -12,7 +12,33 @@ Workflow state (no fetch: nothing is pushed here):
 Prerequisites (dotnet, the unit test projects and their coverage collector):
 [[run fortify.sh prereq --tests]]
 
-Write the missing unit tests of the code the request names, with their proof, in this single run, without a ticket: no ticket sheet, no Jira call, no merge request. The developer may be watching, but the run asks at most the one question of step 1, and its « Suite » at the end. The test-guardian writes and proves the tests; you never write a test yourself.
+Write the missing tests of the code the request names, with their proof, in this single run, without a ticket: no ticket sheet, no Jira call, no merge request. The developer may be watching, but the run asks at most the one question call of its first steps, and its « Suite » at the end. The test-guardian writes and proves the tests; you never write a test yourself.
+
+## 0. The mode
+- The request starts with `env` (`/tests env recette`, `/tests env recette --écriture`): section E only.
+- The request starts with `api` (`/tests api`, `/tests api OrdersController`, `/tests api src/Api/Features/Orders « seulement les erreurs »`): section A only.
+- Otherwise: the unit tests, steps 1 to 4.
+
+## E. The environment tests on an environment
+Nothing is written, committed or pushed; the prerequisites above do not matter here.
+1. ONE shell call: `sh ~/.config/opencode/scripts/env-tests.sh <the environment> [--ecriture, only when the request says « --écriture » or « écriture »]`. It builds the test project and runs the tests marked Environment against the URL AGENTS.md gives, with the token of this machine: never set a URL, a token or a variable yourself, never call the API yourself (curl, a script). A "STOP:" or "ENVIRONMENT PROBLEM:" line: stop with it, word for word (a missing token variable or an unreachable environment is the developer's to fix, never retried another way).
+2. The answer, in French: header « **/tests env** — <environment> (<URL>) », then « ✅ <n> tests passés » or « ⛔ <k> en échec sur <n> », a table | Test | Résultat | Durée | from its lines « OK » and « FAILED », and for each failure its message (the status received, what was expected). A failure on an environment is a fact about that deployment (its version, its configuration, its data): say which, never a fix. Last, the « Suite » question: « Rien pour l'instant (recommandé) », « /tests env <the same environment> » (« relancer plus tard »).
+
+## A. The API tests (integration tests of the endpoints)
+1. Before any work: "Merge in progress: yes": stop as in step 1. An "ENVIRONMENT PROBLEM" line: stop with it. A repository without ASP.NET Core project (`Sdk="Microsoft.NET.Sdk.Web"`): stop with « ⛔ /tests api teste les endpoints d'une API ASP.NET Core : ce dépôt n'en a pas. » Uncommitted files outside the test projects: the question « Modifications » of step 1, in the call of 4. The prerequisites of the unit test projects (« PREREQ: SETUP NEEDED ») do not matter here: the integration test project is the question of 4.
+2. ONE shell call: `sh ~/.config/opencode/scripts/api-routes.sh [<the folder of the request>] && sh ~/.config/opencode/scripts/environments.sh && git grep -l "Microsoft.AspNetCore.Mvc.Testing" -- '*.csproj'`. The endpoints of the request (a controller, a route prefix, a folder, or all), 12 at most: more, the first 12 in the order of the table, the others listed in the answer for the next run. None: stop with « ⛔ Aucun endpoint trouvé : <request> ».
+3. The scenarios, from each endpoint's row (verb, route, authorization, parameters, statuses) and its code (the action or handler, its validator, what it returns: read them in one turn of reads): its nominal case with values, 400 for each validation rule, 401 without user when it is authenticated, 403 with a user without its role or policy, 404 for an unknown id, 409 when the code answers it. 4 scenarios at most per endpoint, the most telling first.
+4. ONE question call, the only question of the run before its « Suite », with together:
+   - one question per controller or group (header: its name, 12 characters at most; `multiple: true`), one option per scenario: label « <VERB> <route> : <condition> → <status> » (60 characters at most), description: what the test checks (the values); the developer checks the scenarios to write, one by one;
+   - when no test project has Microsoft.AspNetCore.Mvc.Testing: « Tests d'API » « Ce dépôt n'a pas de projet de tests d'intégration. Je le crée en premier commit (WebApplicationFactory) ? » with « Oui, xUnit (recommandé) », « Oui, MSTest », « Oui, NUnit », « Non, j'arrête »;
+   - when environments.sh printed an environment that is not production: « Environnement » « J'écris aussi les tests d'environnement de ces endpoints (lecture seule, lancés par /tests env) ? » with « Oui (recommandé) », « Non, seulement en mémoire ».
+   No scenario checked, or « Non, j'arrête »: stop with « ⛔ Aucun scénario choisi : rien n'est écrit. »
+5. The branch, then the setup: as step 3 (`branch.sh --here test "api tests of <scope>"`), then, when the developer said « Oui » to the project: `sh ~/.config/opencode/scripts/test-guardian.sh setup --integration <xunit | mstest | nunit> <the ASP.NET Core project> && sh ~/.config/opencode/scripts/ship.sh --no-push "test: add the integration test project"` (its SETUP line says when it made `Program` public, before .NET 10: say it in the answer).
+6. One line « Tests d'API de <n> endpoints (test-guardian)… », then the `test-guardian` (description « Tests d'API »): "Mission « api ». Scenarios validated by the developer, one per line: <each « <VERB> <route> : <condition> → <status> » with its description>. Integration test project: <path>. Environment tests: <oui (environment for the proof: <the first environment that is not production>) | non>. Repository root: <root>. Developer's directives: <directives or « aucune »>. Report in your format."
+7. Its report OK (or OK with tests « écrits, non lancés » on the environment): in ONE shell call, `sh ~/.config/opencode/scripts/test-guardian.sh tests-only && sh ~/.config/opencode/scripts/ship.sh --no-push "test(api): add integration tests of <scope, in English>"`; ÉCHEC or BLOQUÉ: as step 4 of the unit tests.
+8. The answer, in French: header « **/tests api** — <branch> », « ✅ Tests d'API ajoutés et prouvés » (or the « ⛔ » line), a table | Endpoint | Scénarios | En mémoire | Environnement | (« vert ×2 », « écrit, non lancé : <reason> », « — »), the filter of the tests in memory, the bugs found (endpoint, request, observed, expected), the endpoints left for another run, the commit. Last, the « Suite » question: « /push (recommandé) », « /tests env <environment> » when environment tests were written, « Rien pour l'instant ».
+
+## Unit tests
 
 ## 1. Before any work
 - Nothing named in the request: stop with « ⛔ Dis-moi quoi tester : /tests <classe, fichier ou dossier> ».

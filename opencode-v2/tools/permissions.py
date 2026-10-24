@@ -136,7 +136,12 @@ DEVELOPER_SCRIPTS = ["*scripts/workspace.sh*"]
 WRITE_SCRIPTS = ["*ship.sh*", "*branch.sh*", "*ticket-sheet.sh*", "*fortify.sh discard*"] + DEVELOPER_SCRIPTS
 # /outil abandon (build, once the developer confirmed): deletes the branch of a ticket started by mistake and its sheet,
 # after its own checks; no agent of a run ever does it
-CONVERSATION_SCRIPTS = ["*scripts/abandon.sh*"]
+# /outil planifier writes the schedules the plugin starts (schedule.sh), /outil http writes the .http files of the API
+# (http-files.sh): the developer's own commands
+CONVERSATION_SCRIPTS = ["*scripts/abandon.sh*", "*scripts/schedule.sh*", "*scripts/http-files.sh*"]
+# The environment tests that write (env-tests.sh --ecriture, on an environment AGENTS.md allows): the pilot of /tests env
+# when the developer asked for them, and the conversation; the other agents run them read only
+ENV_WRITES = ["*env-tests.sh*criture*", "*env-tests.sh*allow-writes*"]
 # The seal of a proof (test-guardian.sh seal and restore): the test-guardian's only. The coder never seals its own
 # version of the tests it is checked against, nor puts them back; a read-only agent never writes a test file. Checking
 # a seal (test-guardian.sh sealed) stays open: the pilot does it before each commit. The conversation agents keep it
@@ -200,7 +205,7 @@ def read_only_bash(extra_allows=(), after_secrets=(), package_guard=True):
     rules = [("*", "deny")]
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + list(extra_allows))
     rules += REDIRECT
-    rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS + WRITE_SCRIPTS + CONVERSATION_SCRIPTS
+    rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS + WRITE_SCRIPTS + CONVERSATION_SCRIPTS + ENV_WRITES
                   + (PACKAGE_GUARD if package_guard else [])
                   + (FRONT_TEST_DENY if any(p in extra_allows for p in FRONT_TEST) else []))
     rules += allow(after_secrets)
@@ -295,7 +300,7 @@ def coder_bash(guardian=False):
     # (the commands of CREDENTIAL_STORES and DECOMPILE are not in the allowlist; their paths are outside the repository)
     # the test-guardian seals its proofs and puts them back; the coder never does; setup, park and unpark are the pilot's
     rules += deny(GIT_READ_GUARD + CODER_OTHER_DENY + CODER_RM_GUARD + SECRETS + WRITE_SCRIPTS + CONVERSATION_SCRIPTS
-                  + ([] if guardian else SEAL_SCRIPTS) + PILOT_SCRIPTS + PACKAGE_GUARD + FRONT_SCRIPT_DENY
+                  + ENV_WRITES + ([] if guardian else SEAL_SCRIPTS) + PILOT_SCRIPTS + PACKAGE_GUARD + FRONT_SCRIPT_DENY
                   + ["* /tmp/*", "* /tmp", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*"] + SUBST)
     return rules
 

@@ -31,6 +31,8 @@ case "$name" in
   abandon|abandonner) name=abandon ;;
   todo) ;;
   stats|statistiques|stat) name=stats ;;
+  http|requetes|requêtes|requests) name=http ;;
+  planifier|planification|planifie|planifications|schedule) name=planifier ;;
   *)
     [ -n "$name" ] && echo "Outil inconnu : $name"
     cat <<'EOF'
@@ -45,6 +47,8 @@ Outils disponibles (/outil <nom> [arguments]) :
 - abandon : annule un ticket lancé par erreur (branche et fiche supprimées, avec ta validation)
 - todo [texte | fait <n> | suppr <n> | rappels] : ta todo list personnelle, hors Jira
 - stats [<dépôt>...] : ce que /go et /fix ont fait sur tes tickets (étapes, interventions, décisions, arrêts, temps jusqu'à la MR)
+- http [dossier] : les requêtes des endpoints de l'API pour le client HTTP de Rider (un fichier .http par contrôleur, les environnements d'AGENTS.md, tes jetons dans un fichier privé jamais commité)
+- planifier [<heure> <jours> /commande | suppr <n>] : /daily, /outil audit, /outil licences ou /tests env <environnement> lancés tout seuls à heure fixe
 EOF
     exit 0 ;;
 esac
@@ -52,6 +56,10 @@ esac
 # todo and stats: the result is shown to me at once, above the line that the pack plugin turns into my message
 if [ "$name" = todo ]; then
   sh "$here/todo.sh" --raw "$rest"
+  echo "[[visible]]"
+fi
+if [ "$name" = planifier ]; then
+  sh "$here/schedule.sh" --raw "$rest"
   echo "[[visible]]"
 fi
 if [ "$name" = stats ]; then
@@ -137,7 +145,10 @@ case "$name" in
   abandon)
     echo "État git (une récupération, puis l'état de la branche et de sa fiche) :"
     sh "$here/workflow-state.sh" ;;
-  todo|stats)
+  todo|stats|planifier)
     echo "Résultat : déjà affiché au-dessus, tel quel" ;;
+  http)
+    echo "Requêtes écrites (http-files.sh) :"
+    sh "$here/http-files.sh" ${1:+"$1"} ;;
 esac
 exit 0
