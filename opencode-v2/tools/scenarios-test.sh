@@ -4,32 +4,54 @@
 # /push, /sync and /tests run, in the order their command files give, on several repositories (with and without unit
 # tests, a build that passes or breaks, a branch up to date or behind its copy on GitLab, commits pushed from the Mac)
 # and in two worktrees of one repository that work and push at the same time, each on its own branch. GitLab is a
-# bare repository, the Mac a second clone, dotnet the fake of tools/fake-dotnet.sh; the part of the model (the code it
-# writes, the names it chooses) is played here with fixed answers. Each scenario checks what the developer sees and
-# what git holds afterwards: nothing pushed when it must not be, nothing lost when it stops.
-# Usage, from opencode-v2/: sh tools/scenarios-test.sh [<shell>] (default sh; dash and bash).
+# bare repository, the Mac a second clone; the part of the model (the code it writes, the names it chooses) is played
+# here with fixed answers, real C# code and real xUnit tests. Each scenario checks what the developer sees and what
+# git holds afterwards: nothing pushed when it must not be, nothing lost when it stops.
+#   --real   with the dotnet of this machine (real builds and tests, NuGet packages from the feed of this machine):
+#            run it on the machine of OpenCode; no repository, no git or NuGet setting of this machine is changed
+#   (none)   with tools/fake-dotnet.sh, for a machine without the .NET SDK (the test files carry, in comments, what the
+#            fake runs: the same results as their real code)
+# Usage, from opencode-v2/: sh tools/scenarios-test.sh [--real] [<shell>] (default sh; dash and bash).
+REAL=0
+[ "$1" = --real ] && { REAL=1; shift; }
 SHELL_UNDER_TEST=${1:-sh}
 SH=$SHELL_UNDER_TEST
 pack=$(cd "$(dirname "$0")/.." && pwd)
 scripts="$pack/scripts"
 work=$(mktemp -d "${TMPDIR:-/tmp}/scenarios-test.XXXXXX") || exit 1
 trap 'rm -rf "$work"' EXIT
-HOME="$work/home"
-mkdir -p "$HOME" "$work/bin" "$work/state" "$work/tmp"
-export HOME
-cp "$pack/tools/fake-dotnet.sh" "$work/bin/dotnet"
+mkdir -p "$work/bin" "$work/state" "$work/tmp" "$work/nodotnet"
+FAKE_DOTNET_LOG="$work/dotnet.log"
+if [ "$REAL" -eq 1 ]; then
+  real_dotnet=$(command -v dotnet) || { echo "scenarios-test --real: dotnet is not on the PATH of this machine"; exit 2; }
+  # every call logged, then the real one
+  printf '#!/bin/sh\nprintf "dotnet %%s\\n" "$*" >> "%s"\nexec "%s" "$@"\n' "$FAKE_DOTNET_LOG" "$real_dotnet" > "$work/bin/dotnet"
+  TFM="net$(dotnet --version | cut -d. -f1).0"
+  MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+  export MSBUILDDISABLENODEREUSE DOTNET_CLI_TELEMETRY_OPTOUT DOTNET_NOLOGO
+  echo "scenarios-test --real: $(dotnet --version) ($TFM), in $work"
+else
+  HOME="$work/home"
+  mkdir -p "$HOME"
+  export HOME
+  cp "$pack/tools/fake-dotnet.sh" "$work/bin/dotnet"
+  TFM=net10.0
+fi
 chmod +x "$work/bin/dotnet"
 PATH="$work/bin:$PATH"
-FAKE_DOTNET_LOG="$work/dotnet.log"
 FAKE_DOTNET_STATE="$work/state"
 TMPDIR="$work/tmp"
 export PATH FAKE_DOTNET_LOG FAKE_DOTNET_STATE TMPDIR
-GIT_CONFIG_NOSYSTEM=1
+# git: a global configuration of its own (git 2.32 and later), never the one of this machine, which is never written
+GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$work/gitconfig"
 GIT_AUTHOR_NAME=dev GIT_AUTHOR_EMAIL=dev@example.com GIT_COMMITTER_NAME=dev GIT_COMMITTER_EMAIL=dev@example.com
-export GIT_CONFIG_NOSYSTEM GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
-git config --global init.defaultBranch develop
-git config --global advice.detachedHead false
-git config --global pull.rebase false
+export GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+printf '[init]\n\tdefaultBranch = develop\n[advice]\n\tdetachedHead = false\n[pull]\n\trebase = false\n' > "$GIT_CONFIG_GLOBAL"
+# the tools of this machine without dotnet, for the case where it is missing
+for f in /usr/local/bin/* /usr/bin/* /bin/*; do
+  n=$(basename "$f")
+  [ "$n" = dotnet ] || [ -e "$work/nodotnet/$n" ] || ln -s "$f" "$work/nodotnet/$n" 2>/dev/null
+done
 
 pass=0
 fail=0
@@ -69,10 +91,36 @@ project() {
   shift 2
   { echo "<Project Sdk=\"$sdk\">"
     echo "  <PropertyGroup>"
-    echo "    <TargetFramework>net10.0</TargetFramework>"
+    echo "    <TargetFramework>$TFM</TargetFramework>"
+    echo "    <Nullable>enable</Nullable>"
+    echo "    <ImplicitUsings>enable</ImplicitUsings>"
+    echo "    <IsPackable>false</IsPackable>"
     echo "  </PropertyGroup>"
     for l in "$@"; do echo "  $l"; done
     echo "</Project>"; } > "$f"
+}
+# a solution file that MSBuild reads: sln <file> "<name> <path with backslashes> <guid>"...
+sln() {
+  f=$1
+  shift
+  { echo "Microsoft Visual Studio Solution File, Format Version 12.00"
+    echo "# Visual Studio Version 17"
+    echo "VisualStudioVersion = 17.0.31903.59"
+    echo "MinimumVisualStudioVersion = 10.0.40219.1"
+    for p in "$@"; do
+      set -- $p
+      echo "Project(\"{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}\") = \"$1\", \"$2\", \"{$3}\""
+      echo "EndProject"
+    done
+    printf 'Global\n\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n\t\tDebug|Any CPU = Debug|Any CPU\n\t\tRelease|Any CPU = Release|Any CPU\n\tEndGlobalSection\n'
+    printf '\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\n'
+    for p in "$@"; do
+      set -- $p
+      for c in Debug Release; do
+        printf '\t\t{%s}.%s|Any CPU.ActiveCfg = %s|Any CPU\n\t\t{%s}.%s|Any CPU.Build.0 = %s|Any CPU\n' "$3" "$c" "$c" "$3" "$c" "$c"
+      done
+    done
+    printf '\tEndGlobalSection\nEndGlobal\n'; } > "$f"
 }
 on_origin() {
   # on_origin <repo.git> <branch>: the branch exists on "GitLab"
@@ -184,23 +232,45 @@ $out"
 
 # ---------- GitLab, the Mac, the machine of OpenCode: the repository "api", with its unit tests ----------
 git init -q --bare "$work/api.git"
+git --git-dir="$work/api.git" symbolic-ref HEAD refs/heads/develop
 git clone -q "$work/api.git" "$work/seed" 2>/dev/null
 cd "$work/seed" || exit 1
+git checkout -q -b develop 2>/dev/null
 project src/App/App.csproj Microsoft.NET.Sdk
 printf 'namespace App;\npublic class Invoice\n{\n    public decimal Total(decimal amount) => amount;\n    public decimal Vat(decimal amount) => amount * 0.2m;\n}\n' > src/App/Invoice.cs
 printf 'namespace App;\npublic class Order\n{\n    public int Lines => 0;\n}\n' > src/App/Order.cs
 project tests/App.Tests/App.Tests.csproj Microsoft.NET.Sdk \
   '<ItemGroup>' '  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />' \
-  '  <PackageReference Include="xunit" Version="2.9.2" />' '  <PackageReference Include="coverlet.collector" Version="6.0.2" />' '</ItemGroup>' \
-  '<!-- fake-test: App.Tests.InvoiceTests.Total pass -->' '<!-- fake-test: App.Tests.InvoiceTests.Vat pass -->' \
-  '<!-- fake-test: App.Tests.OrderTests.Lines pass -->' '<!-- fake-cover: src/App/Invoice.cs 4:1 5:1 -->'
-cat > App.sln <<'EOF'
-Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App", "src\App\App.csproj", "{11111111-1111-1111-1111-111111111111}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.Tests", "tests\App.Tests\App.Tests.csproj", "{22222222-2222-2222-2222-222222222222}"
-EndProject
+  '  <PackageReference Include="xunit" Version="2.9.2" />' '  <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />' \
+  '  <PackageReference Include="coverlet.collector" Version="6.0.2" />' '  <ProjectReference Include="../../src/App/App.csproj" />' \
+  '  <Using Include="Xunit" />' '</ItemGroup>' '<!-- fake-cover: src/App/Invoice.cs 4:1 5:1 -->'
+# the tests of the team (a total stays positive whatever the business rule of the moment)
+cat > tests/App.Tests/InvoiceTests.cs <<'EOF'
+namespace App.Tests;
+
+// <!-- fake-test: App.Tests.InvoiceTests.Total pass -->
+// <!-- fake-test: App.Tests.InvoiceTests.Vat pass -->
+public class InvoiceTests
+{
+    [Fact]
+    public void Total() => Assert.True(new Invoice().Total(10m) > 0m);
+
+    [Fact]
+    public void Vat() => Assert.Equal(2m, new Invoice().Vat(10m));
+}
 EOF
+cat > tests/App.Tests/OrderTests.cs <<'EOF'
+namespace App.Tests;
+
+// <!-- fake-test: App.Tests.OrderTests.Lines pass -->
+public class OrderTests
+{
+    [Fact]
+    public void Lines() => Assert.Equal(0, new Order().Lines);
+}
+EOF
+sln App.sln 'App src\App\App.csproj 11111111-1111-1111-1111-111111111111' \
+  'App.Tests tests\App.Tests\App.Tests.csproj 22222222-2222-2222-2222-222222222222'
 printf '# API\n' > README.md
 echo 'APPSEC_PROJECT_NAME=api' > appsec-ci.env
 printf 'bin/\nobj/\n' > .gitignore
@@ -265,17 +335,17 @@ truth "no build, no test for a documentation change" '[ -z "$calls" ]'
 # ---------- 5. The build breaks, then the tests: nothing pushed, nothing lost ----------
 scenario="/push qui casse"
 git switch -q develop
-sed -i 's#</Project>#  <!-- fake-build-error -->\n</Project>#' src/App/App.csproj
+printf 'namespace App;\n\n// <!-- fake-build-error -->\npublic class Broken\n{\n    public int X() => ;\n}\n' > src/App/Broken.cs
 before=$(git rev-parse HEAD)
 push_run --name feature/wip-broken --msg "feat: broken"
 check "stopped by the build" 1 '^BUILD: FAILED'
 truth "nothing committed" '[ "$(git rev-parse HEAD)" = "$before" ] && [ "$(git branch --show-current)" = develop ]'
-truth "the change is still there" 'grep -q fake-build-error src/App/App.csproj'
+truth "the change is still there" '[ -f src/App/Broken.cs ]'
 truth "nothing on GitLab" '! on_origin "$work/api.git" feature/wip-broken'
 push_run --name feature/wip-broken --msg "wip: broken build, to finish" --no-tests
 check "« sans les tests »: pushed anyway, a work in progress" 0 '^PUSH: OK, origin/feature/wip-broken'
 git switch -q develop
-sed -i 's/OrderTests.Lines pass/OrderTests.Lines fail Assert.Equal() Failure: Expected 1, Actual 0/' tests/App.Tests/App.Tests.csproj
+sed -i 's/OrderTests.Lines pass/OrderTests.Lines fail Assert.Equal() Failure: Values differ/; s/Assert.Equal(0, new Order().Lines)/Assert.Equal(1, new Order().Lines)/' tests/App.Tests/OrderTests.cs
 push_run --name feature/red-test --msg "test: a red test"
 check "stopped by a red test, named" 1 '^FAILED TESTS \(1\): App.Tests.OrderTests.Lines$'
 truth "nothing committed, nothing on GitLab" '[ "$(git branch --show-current)" = develop ] && ! on_origin "$work/api.git" feature/red-test'
@@ -376,7 +446,8 @@ scenario="dotnet absent"
 git switch -q develop
 printf 'namespace App;\npublic class Export\n{\n}\n' > src/App/Export.cs
 saved=$PATH
-PATH=$(printf '%s' "$PATH" | sed "s#$work/bin:##")
+# shellcheck disable=SC2123 # on purpose: the tools of this machine, without dotnet
+PATH="$work/nodotnet"
 push_run --name feature/export --msg "feat: export"
 check "stopped, an environment problem" 1 '^ENVIRONMENT PROBLEM: dotnet is not in the PATH'
 push_run --name feature/export --msg "feat(export): add the export class" --no-tests
@@ -403,15 +474,13 @@ check "pushed" 0 '^PUSH: OK, origin/poc/essai-cache'
 # ---------- 13. A repository without unit tests: /push builds, /tests creates them ----------
 scenario="sans tests"
 git init -q --bare "$work/lib.git"
+git --git-dir="$work/lib.git" symbolic-ref HEAD refs/heads/develop
 git clone -q "$work/lib.git" "$work/lib-seed" 2>/dev/null
 cd "$work/lib-seed" || exit 1
+git checkout -q -b develop 2>/dev/null
 project src/Lib/Lib.csproj Microsoft.NET.Sdk
 printf 'namespace Lib;\npublic static class Slug\n{\n    public static string Of(string s) => s.ToLowerInvariant();\n}\n' > src/Lib/Slug.cs
-cat > Lib.sln <<'EOF'
-Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lib", "src\Lib\Lib.csproj", "{33333333-3333-3333-3333-333333333333}"
-EndProject
-EOF
+sln Lib.sln 'Lib src\Lib\Lib.csproj 33333333-3333-3333-3333-333333333333'
 printf 'bin/\nobj/\n' > .gitignore
 git add -A && git commit -q -m init && git push -q origin develop
 git clone -q "$work/lib.git" "$work/lib" 2>/dev/null
@@ -433,12 +502,21 @@ check "/tests: the branch of the work in progress" 0 '^BRANCH: feature/slug-hyph
 run ship.sh --no-push "feat(slug): join the words with hyphens"
 check "/tests: the work in progress committed alone" 0 '^COMMIT: .* feat\(slug\): join the words with hyphens'
 run test-guardian.sh setup xunit src/Lib/Slug.cs
-check "/tests: the test project created" 0 '^SETUP: tests/Lib.UnitTests/Lib.UnitTests.csproj created \(xunit, net10.0\)'
+check "/tests: the test project created" 0 "^SETUP: tests/Lib.UnitTests/Lib.UnitTests.csproj created \\(xunit, $TFM\\)"
 run ship.sh --no-push "test: add the unit test project"
 check "/tests: its own commit" 0 '^COMMIT: .* test: add the unit test project'
 # the test-guardian's tests (mission « tests »), then its proof and the commit
-sed -i 's#</Project>#  <!-- fake-test: Lib.UnitTests.SlugTests.Of_TrimsAndJoins pass -->\n  <!-- fake-cover: src/Lib/Slug.cs 4:1 -->\n</Project>#' tests/Lib.UnitTests/Lib.UnitTests.csproj
-printf 'namespace Lib.UnitTests;\npublic class SlugTests\n{\n}\n' > tests/Lib.UnitTests/SlugTests.cs
+sed -i 's#</Project>#  <!-- fake-cover: src/Lib/Slug.cs 4:1 -->\n</Project>#' tests/Lib.UnitTests/Lib.UnitTests.csproj
+cat > tests/Lib.UnitTests/SlugTests.cs <<'EOF'
+namespace Lib.UnitTests;
+
+// <!-- fake-test: Lib.UnitTests.SlugTests.Of_TrimsAndJoins pass -->
+public class SlugTests
+{
+    [Xunit.Fact]
+    public void Of_TrimsAndJoins() => Xunit.Assert.Equal("a-b", Slug.Of(" A B "));
+}
+EOF
 run test-guardian.sh green tests/Lib.UnitTests/Lib.UnitTests.csproj FullyQualifiedName~SlugTests
 check "/tests: green twice" 0 '^GREEN: 1 tests pass, twice$'
 run test-guardian.sh tests-only
@@ -585,5 +663,6 @@ git add -A && git commit -q -m init
 run detect-project-type.sh
 check "the detection says legacy (/push does not build it)" 0 'legacy'
 
-echo "scenarios ($SHELL_UNDER_TEST): $pass passed, $fail failed"
+[ "$REAL" -eq 1 ] && dotnet build-server shutdown >/dev/null 2>&1
+echo "scenarios ($([ "$REAL" -eq 1 ] && echo "real dotnet $(dotnet --version), " || echo "fake dotnet, ")$SHELL_UNDER_TEST): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

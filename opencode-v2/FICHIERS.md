@@ -363,7 +363,7 @@ Ce document.
 
 ## Les outils de vérification (`tools/`)
 
-Jamais copiés dans ta configuration. Ils vérifient le pack avant chaque push ; `README.md`, « Pour la maintenance du pack », donne leurs commandes. Hors de `opencode-v2/`, `.github/workflows/opencode-v2.yml` les lance sur GitHub à chaque push qui change le pack, et le flux Fortify avec le vrai SDK .NET.
+Jamais copiés dans ta configuration. Ils vérifient le pack avant chaque push ; `README.md`, « Pour la maintenance du pack », donne leurs commandes. Hors de `opencode-v2/`, `.github/workflows/opencode-v2.yml` les lance sur GitHub à chaque push qui change le pack, puis `fortify-test.sh` et `scenarios-test.sh` avec le vrai SDK .NET.
 
 ### `tools/permissions.py`
 Génère la ligne `permission:` de chaque agent et les règles d'`opencode.snippet.json`, depuis des listes nommées (lectures permises, git en lecture, scripts d'écriture réservés au pilote, secrets, décompilation, `dotnet run`…). Jamais de règle « ask » sur le shell, la lecture ou l'écriture : une réponse « toujours » vaudrait pour tous les agents. À relancer après chaque changement de règle.
@@ -381,7 +381,7 @@ Les 695 vérifications du plugin, contre un faux OpenCode v2 dans un faux dossie
 Les 69 contrôles des scripts git (`branch.sh`, `base.sh`, `ship.sh`, `workflow-state.sh`, `diff-guard.sh`, `abandon.sh`) contre un dépôt nu qui joue GitLab, avec dash, bash ou busybox sh.
 
 ### `tools/scenarios-test.sh`
-Les 104 contrôles des journées d'un développeur, au niveau des scripts : `/go`, `/fix`, `/push`, `/sync`, `/tests` dans l'ordre de leurs commandes, sur un dépôt avec tests, un sans tests, un second poste qui pousse aussi, puis deux et quatre espaces de travail d'un même dépôt qui buildent, fetchent et poussent en même temps, chacun sur sa branche, jusqu'au conflit et sa résolution. La part du modèle (le code qu'il écrit, les noms qu'il choisit) y est jouée par des réponses fixes.
+Les 104 contrôles des journées d'un développeur, au niveau des scripts, avec de vrais tests xUnit (`--real` : le vrai SDK .NET de la machine ; sans, le `dotnet` simulé) : `/go`, `/fix`, `/push`, `/sync`, `/tests` dans l'ordre de leurs commandes, sur un dépôt avec tests, un sans tests, un second poste qui pousse aussi, puis deux et quatre espaces de travail d'un même dépôt qui buildent, fetchent et poussent en même temps, chacun sur sa branche, jusqu'au conflit et sa résolution. La part du modèle (le code qu'il écrit, les noms qu'il choisit) y est jouée par des réponses fixes.
 
 ### `tools/fortify-test.sh`
 Les 157 contrôles du flux de `/fortify` et de son test-guardian, de A à Z, avec les lignes de commande de `commands/fortify.md` dans l'ordre de ses étapes, sur de vrais projets C# et de vrais tests (xUnit, et MSTest sur Microsoft.Testing.Platform) : prérequis, mise en place des tests, branche et fiche du lot, mesure de develop, preuves d'une vague en parallèle, rouge, instable, bloqué, preuves rangées, correctifs, tests scellés remis, couverture perdue, le code qui résiste, preuve vide d'une faille non démontrable, abandon mis de côté, chaque reprise, livraison ; un second lot dans un espace de travail. Avec `--real`, le vrai SDK .NET de la machine (à lancer sur la machine d'OpenCode : rien de ta configuration n'est touché) ; sans, le `dotnet` simulé. GitHub le lance avec le vrai SDK à chaque push.

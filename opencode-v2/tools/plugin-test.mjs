@@ -13,7 +13,12 @@ import { join, resolve } from "node:path"
 const pack = resolve(process.argv[2] || ".")
 const home = mkdtempSync(join(tmpdir(), "plugin-test-"))
 process.env.HOME = home
+// the folders of the fake home only, whatever this machine sets (a CI runner sets XDG_CONFIG_HOME)
 process.env.XDG_DATA_HOME = join(home, ".local", "share")
+process.env.XDG_CONFIG_HOME = join(home, ".config")
+process.env.XDG_CACHE_HOME = join(home, ".cache")
+process.env.XDG_STATE_HOME = join(home, ".local", "state")
+delete process.env.OPENCODE_CONFIG_DIR
 const repo = join(home, "repos", "my-api")
 const other = join(home, "repos", "old-api")
 const legacy = join(home, "repos", "legacy")
