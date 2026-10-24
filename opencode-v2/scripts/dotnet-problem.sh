@@ -22,7 +22,9 @@ if grep -q 'A compatible \.NET SDK was not found' "$log"; then
   file=$(sed -n 's/^[[:space:]]*global\.json file:[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*$/\1/p' "$log" | head -n 1)
   root=$(git rev-parse --show-toplevel 2>/dev/null)
   [ -n "$root" ] && file=${file#"$root"/}
-  have=$(awk '/^Installed SDKs:/ { on = 1; next } on && /^[0-9]/ { printf "%s%s", sep, $1; sep = ", " } on && !NF { exit }' "$log")
+  # the list of the host ("8.0.425 [/usr/share/dotnet/sdk]"): wherever it lands in the output (the host writes it on
+  # another stream than its message, so it often comes last)
+  have=$(awk '/^[0-9]+\.[0-9]+\.[0-9]+[^ ]* \[.*\]$/ { printf "%s%s", sep, $1; sep = ", " }' "$log")
   echo "ENVIRONMENT PROBLEM: ${file:-global.json} asks for the .NET SDK ${want:-of its version}, which is not installed on this machine (installed: ${have:-none}). Stop and tell the user in one line: install that SDK (or the team moves global.json to an installed one). Never change global.json or its rollForward yourself."
   exit 0
 fi

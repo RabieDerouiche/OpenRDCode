@@ -69,14 +69,15 @@ if [ -n "$g" ]; then
       echo "Requested SDK version: $want"
       echo "global.json file: $g"
       echo ""
+      # as the real host (10.0): the list of the SDKs on its own stream, after the message
       echo "Installed SDKs:"
-      for s in $sdks; do echo "$s [/usr/share/dotnet/sdk]"; done
       echo ""
       echo "Install the [$want] .NET SDK or update [$g] to match an installed SDK."
       echo ""
       echo "Learn about SDK resolution:"
       echo "https://aka.ms/dotnet/sdk-not-found"
-      exit 145
+      for s in $sdks; do echo "$s [/usr/share/dotnet/sdk]"; done
+      exit 155
     fi
   fi
 fi

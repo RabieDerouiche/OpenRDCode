@@ -485,7 +485,7 @@ Ce que `/go` et `/fix` ont fait sur les tickets du dépôt, dans OpenCode :
 
 ## Contrôle avant push
 
-Avant chaque push de `/go` et `/fix`, un script, sans le modèle, relit tout ce qui va partir : chaque commit pas encore poussé (même un secret retiré par un commit suivant part avec l'historique) et l'état de la branche. Il arrête tout, rien n'est poussé, sur : une clé privée, un token GitLab, GitHub, AWS ou Slack, un utilisateur et un mot de passe dans une URL, un mot de passe dans une chaîne de connexion, une valeur secrète dans un fichier de configuration, un fichier de clé ou `.env` ajouté, un marqueur de conflit, une version payante d'un package, et la valeur exacte d'une variable secrète de ton environnement (un nom avec PASSWORD, TOKEN, SECRET, API_KEY ou CREDENTIAL : le mot de passe Artifactory de `~/.zshenv`), où qu'elle soit. Dans un fichier de test, c'est un avertissement (valeurs factices), sauf pour la valeur d'une variable secrète : elle n'est jamais factice. La valeur n'est jamais affichée : seulement le type et l'endroit.
+Avant chaque push de `/go` et `/fix`, un script, sans le modèle, relit tout ce qui va partir : chaque commit pas encore poussé (même un secret retiré par un commit suivant part avec l'historique) et l'état de la branche. Il arrête tout, rien n'est poussé, sur : une clé privée, un token GitLab, GitHub, AWS ou Slack, un utilisateur et un mot de passe dans une URL, un mot de passe dans une chaîne de connexion, une valeur secrète dans un fichier de configuration, un fichier de clé ou `.env` ajouté, un marqueur de conflit, une version payante d'un package, des dépendances installées ou des sorties de build qu'un `.gitignore` oublie (`node_modules`, `obj`, `bin/Debug`, `TestResults` ; `dist` et `coverage` : un avertissement), et la valeur exacte d'une variable secrète de ton environnement (un nom avec PASSWORD, TOKEN, SECRET, API_KEY ou CREDENTIAL : le mot de passe Artifactory de `~/.zshenv`), où qu'elle soit. Dans un fichier de test, c'est un avertissement (valeurs factices), sauf pour la valeur d'une variable secrète : elle n'est jamais factice. La valeur n'est jamais affichée : seulement le type et l'endroit.
 
 Il tourne tout seul avant chaque push de `/go` et `/fix`. Pour le lancer sans pousser, dans OpenCode, dans une session du dépôt :
 ```text
@@ -494,6 +494,7 @@ lance `sh ~/.config/opencode/scripts/diff-guard.sh`
 
 - Faux positif : ajoute le commentaire `gitleaks:allow` en fin de la ligne signalée (dans Rider), puis relance `/go` (ou `/fix`). Il ne lève pas « value of the environment variable » : cette valeur est réellement ton secret.
 - Marqueur de conflit ou package payant : corrige dans Rider (le package : son option gratuite, `/outil licences <package>`), puis relance.
+- `node_modules`, `obj`… : ajoute le dossier au `.gitignore` du dépôt, puis retire-le des commits pas encore poussés comme pour un secret (ci-dessous), et relance.
 - Vrai secret : il n'est que dans tes commits locaux. Réécris-les sans lui : les commits locaux redeviennent des modifications non commitées, tu remplaces le secret (variable d'environnement, coffre de secrets, valeur factice), puis `/go` fait un seul commit propre et pousse. Branche déjà poussée une fois :
 ```sh
 git reset --soft "@{u}"
@@ -515,6 +516,24 @@ Le dossier que tu cites, dans un message ou dans les arguments d'une commande qu
 },
 ```
 Pour réutiliser la même implémentation sur plusieurs tickets ou la partager à l'équipe, capture-la plutôt en pattern (section suivante) : `/go` s'en sert ensuite tout seul.
+
+## Plusieurs dépôts d'une même application (une API et son front, une librairie et ses consommateurs)
+
+Déclare-les une fois, dans l'`AGENTS.md` de chaque dépôt (`/outil setup` le fait depuis le code) : une ligne par autre dépôt, son nom, son chemin quand il n'est pas à côté de celui-ci, ce qui les lie.
+```text
+## Dépôts liés
+- `front-factures` (`~/repos/front-factures`) : le front Angular qui appelle cette API
+- `lib-commun` : la librairie NuGet interne des montants
+```
+Ensuite, pour un ticket qui touche les deux (la même clé Jira, ou deux tickets liés) :
+1. **Le dépôt qui fournit le contrat d'abord** (l'API, la librairie) : `/go ABC-123` dans une session de ce dépôt. L'analyste écrit dans la fiche une section « ## Contrat » : chaque route, champ ou membre public ajouté, modifié ou retiré, et ce que les consommateurs doivent faire. L'auto-review compare avec ce que la branche change vraiment (`api-surface.sh`) : une rupture non annoncée est un point bloquant. La MR a une section « Contrat », et la réponse finale dit ce que l'autre dépôt doit suivre.
+2. **Le consommateur ensuite** : `/go ABC-123` dans une session du front (ou de l'application qui utilise la librairie). L'analyste lit, par `related-repos.sh ABC-123`, la branche de l'API pour ce ticket, sa fiche, sa ligne « livré » et son « Contrat » : le plan s'appuie sur ce que l'API donne vraiment, jamais sur un champ qu'elle ne donne pas.
+3. **Une librairie consommée en paquet** : son changement est livré et publié d'abord (sa propre MR, sa CI, sa version) ; dans le consommateur, monter la version du paquet est une étape du plan que tu valides, jamais un paquet ajouté par le coder.
+
+Les agents lisent toujours la fiche de l'autre dépôt (elle est dans son dossier git). Pour qu'ils lisent aussi son code, déclare-le en référence d'`opencode.json` (section précédente). Pour voir ce qu'ils voient, dans une session :
+```text
+lance `sh ~/.config/opencode/scripts/related-repos.sh ABC-123`
+```
 
 ## Documentation (/outil doc)
 
@@ -700,6 +719,67 @@ Ajouter un skill ou une référence à ton message : tape `@`, la liste s'affich
 ```text
 @build-fix pourquoi ce build casse ?
 ```
+
+## Front-end (Angular, React, Vue)
+
+Les agents buildent et testent un front avec le même script que .NET, en lui donnant le dossier de son `package.json` (`.` pour un dépôt sans .NET) :
+```text
+lance `sh ~/.config/opencode/scripts/build-test.sh ClientApp`
+```
+Il installe les dépendances quand elles manquent, depuis le lockfile seulement (`npm ci`, `yarn --frozen-lockfile`, `pnpm --frozen-lockfile` : jamais un paquet ajouté ni monté), lance le script `build`, puis les tests **une fois** : Karma dans ChromeHeadless avec `--watch=false` (Angular jusqu'à la 20), Vitest avec `--watch=false` (Angular 21), `--watchAll=false` (Create React App), `--run` (Vitest), Jest tel quel. Il finit par `BUILD:` et `TESTS:` comme pour .NET ; une spec seule : `build-test.sh ClientApp --filter src/app/x/x.component.spec.ts`. Un test focalisé (`fit`, `fdescribe`, `.only`) fait échouer le run : le reste de la suite ne tournerait pas. Les tests de bout en bout (Playwright, Cypress) sont laissés à la CI. Un run qui ne finit pas est arrêté au bout de 15 minutes (`HANG:`).
+
+Ce qu'il faut sur la machine d'OpenCode : node (une version que le projet accepte : `.nvmrc` ou `engines`, sinon un avertissement), le gestionnaire de paquets du lockfile (`corepack enable` pour yarn ou pnpm), Chrome ou Chromium pour Karma, et l'accès au registre npm (Artifactory). Une ligne `ENVIRONMENT PROBLEM` dit ce qui manque ; `STOP: the lockfile … is not in sync` veut dire que `package.json` a changé sans son lockfile (à toi de lancer `npm install`) ; `STOP: git does not ignore node_modules` veut dire que le `.gitignore` du dépôt doit ignorer `node_modules` avant toute installation.
+
+**Les commandes qui ne finissent jamais sont refusées aux agents du pack** : `npm start`, `ng serve`, `vite`, `next dev`, un `--watch`, `ng test` sans `--watch=false`, `npm test` quand son script regarde les fichiers (le plugin lit `package.json` : `npm test` d'un projet Jest passe, celui d'un Angular avec Karma est refusé), `dotnet watch`, `dotnet run` d'une API. Le refus donne la bonne commande. À savoir : `npm test --watch=false` ne passe pas l'option au script (npm la garde pour lui) ; c'est `npm test -- --watch=false`, et le refus le dit. Dans la conversation, tu peux en lancer une toi-même : l'agent la lance en arrière-plan (l'option d'arrière-plan de l'outil shell de la v2), ou bornée : `timeout 60 npm run dev`.
+
+## Versions de .NET, environnement et librairies
+
+`detect-project-type.sh` (en tête de chaque `/go`, `/fix`, `/push`) donne, depuis les fichiers du dépôt :
+```text
+Target frameworks: net8.0 (src/Api, tests/Api.Tests), netstandard2.0 (src/Contracts)
+C#: 12 for net8.0, 7.3 for netstandard2.0 (the defaults: no LangVersion): never a feature of a newer C# version; a project with several targets compiles for each
+.NET SDK: global.json asks for 8.0.400 (rollForward latestFeature): 8.0.404 is installed
+Test runtimes: installed (net8.0: Microsoft.AspNetCore.App, Microsoft.NETCore.App)
+Support: net8.0 (ends on 2026-11-10); .NET 10 (LTS) is supported until 2028-11-10. Moving to it is a ticket of its own, never part of another change
+Front-end: ClientApp — angular 19, npm, tests: Karma through the Angular CLI (ChromeHeadless, --watch=false); Node: v22.12.0
+```
+Et pour une librairie :
+```text
+Library: src/Lib/Lib.csproj packable; version: 2.3.0 (Version in src/Lib/Lib.csproj); package validation: on, against 2.2.0: dotnet pack fails on a breaking change (build-test.sh --pack)
+```
+Le coder écrit pour cette version : C# 12 et les API de .NET 8 dans un projet net8.0 (jamais `LangVersion` relevé, jamais un framework cible ni `global.json` changés, jamais un paquet ajouté pour une fonctionnalité plus récente). Une machine incomplète s'arrête en une ligne `ENVIRONMENT PROBLEM` au lieu d'être « réparée » dans le dépôt : le SDK que demande `global.json` absent, le runtime des tests absent (un projet net8.0 sur une machine qui n'a que .NET 10 : installe le runtime .NET 8, et ASP.NET Core 8 pour les tests d'une API), un workload, un projet Windows, un projet .NET Framework, Docker arrêté pour des tests Testcontainers, LocalDB, Artifactory.
+
+**Une librairie** (un paquet NuGet interne) : son API publique est un contrat. Les agents ajoutent (une surcharge, un membre) et ne retirent ni ne changent jamais un membre public sans que le ticket le dise ; un nouveau membre public va dans `PublicAPI.Unshipped.txt` quand le projet suit son API (RS0016). Pour que le build lui-même vérifie la compatibilité avec la dernière version publiée, ajoute au projet (une décision d'équipe) :
+```xml
+<EnablePackageValidation>true</EnablePackageValidation>
+<PackageValidationBaselineVersion>2.2.0</PackageValidationBaselineVersion>
+```
+Puis `/go` et `/fix` lancent `build-test.sh --build-only --pack` : une rupture donne des lignes `BREAKING CHANGE: CP0002 …` et `PACK: FAILED`, corrigées avant le push (ou annoncées comme version majeure dans la fiche, jamais cachées par un fichier de suppression). Le paquet est fait dans le dossier git, jamais dans le dépôt.
+
+## Des tests qui prouvent quelque chose
+
+La couverture n'est pas le but : un test qui exécute des lignes sans rien vérifier fait monter Sonar et ne protège de rien. Les agents écrivent des tests qui prouvent un comportement :
+- la fiche donne pour chaque critère d'acceptation son test attendu, avec son niveau (unitaire, intégration avec `WebApplicationFactory`, composant front) et un scénario avec des valeurs : « 2 lignes à 10 € et 20 €, TVA 20 % → total 36 € » ; puis les cas limites et d'erreur qu'il implique ;
+- le résultat attendu est écrit dans le test, jamais recalculé avec le code testé ; l'assertion porte sur ce que le comportement décide (la valeur, l'état, l'appel au port avec ses arguments), jamais seulement « pas d'exception » ;
+- `test-lint.sh` relit les tests avant chaque rapport et dans l'auto-review : un test sans assertion ou focalisé est bloquant ; une horloge réelle (`DateTime.Now`, `Date.now()`), une attente (`Thread.Sleep`, `Task.Delay`, `setTimeout`), un appel HTTP réel, un `Random` sans graine ou un test ignoré est majeur. Pour le lancer toi-même sur ta branche :
+```text
+lance `sh ~/.config/opencode/scripts/test-lint.sh --changed origin/develop`
+```
+
+## Bonnes pratiques et patterns du pack
+
+Appliqués automatiquement, sans question ni réglage :
+- **Une seule porte pour builder et tester** (`build-test.sh`, .NET et front-end) : une exécution, des lignes `BUILD:`/`TESTS:` explicites, jamais un mode watch, un problème de la machine dit en une ligne.
+- **Échouer tôt, sur la machine et pas sur le code** : `dotnet-problem.sh` et les lignes de `detect-project-type.sh` (SDK, runtimes, node, Chrome) arrêtent un run avant qu'un agent « corrige » le dépôt pour une machine incomplète.
+- **Le lockfile fait foi** : `npm ci` et ses équivalents, jamais un paquet ajouté ou monté par un agent ; un lockfile désynchronisé arrête.
+- **La version du projet fait foi** : C# et API du framework cible ; une migration de framework est un ticket à part.
+- **Contrats d'abord** : `api-surface.sh` (API publique, routes, champs des DTO), la validation de paquet d'une librairie, la section « Contrat » des fiches entre dépôts liés.
+- **Des tests qui prouvent** : scénarios avec valeurs dans la fiche, `test-lint.sh`, le filet de non-régression avant un correctif, la preuve rouge puis verte deux fois d'un bug ou d'une faille.
+- **Le temps injectable** : un test ne lit jamais l'horloge réelle ; `FakeTimeProvider` quand le code prend un `TimeProvider` (.NET 8 et plus).
+- **Rien d'inutile dans un push** : `node_modules`, `obj`, `bin/Debug`, `TestResults` arrêtés par le contrôle avant push, une installation refusée quand git n'ignore pas `node_modules`.
+- **Les commandes bornées** : ce qui ne finit jamais est refusé aux agents ; le reste a 20 minutes, un test bloqué est arrêté et nommé.
+
+Proposés par `/outil audit` (skill `best-practices`), chacun avec sa preuve dans le dépôt et le plus petit changement qui l'apporte, jamais imposés : validation de paquet et `PublicApiAnalyzers` pour une librairie, Source Link, `TimeProvider` au lieu de `DateTime.Now`, un client front généré depuis l'OpenAPI de l'API, tests d'intégration avec `WebApplicationFactory`, health checks, ProblemDetails, options validées au démarrage, `IHttpClientFactory` et résilience, et les autres pratiques par type de projet du skill.
 
 ## Le filet de non-régression
 

@@ -167,10 +167,14 @@ EOF
   # Angular of the current CLI (Vitest, Angular 21 and later), then Angular 19 (Karma in ChromeHeadless)
   for ng in 21 19; do
     repo "ng$ng"
-    if ! NG_CLI_ANALYTICS=false npx --yes "@angular/cli@$ng" new shop --defaults --skip-git --ssr=false --style=css --directory ClientApp > "$work/ng$ng.log" 2>&1; then
-      tail -30 "$work/ng$ng.log"
+    # no prompt at all: --defaults and --interactive=false; the AI configuration prompt (Angular 20.2 and later) as none
+    ai=""
+    [ "$ng" -ge 21 ] && ai="--ai-config=none"
+    # shellcheck disable=SC2086 # an optional option
+    if ! NG_CLI_ANALYTICS=false npx --yes "@angular/cli@$ng" new shop --defaults --interactive=false $ai --skip-git --ssr=false --style=css --directory ClientApp > "$work/ng$ng.log" 2>&1; then
       fail=$((fail + 1))
       echo "FAIL: Angular $ng: ng new"
+      tail -n 35 "$work/ng$ng.log" | sed 's/^/    /'
       continue
     fi
     printf 'node_modules/\ndist/\nbuild/\n' > .gitignore

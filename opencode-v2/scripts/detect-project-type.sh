@@ -218,7 +218,7 @@ if [ -n "${ui:-}" ]; then
     while IFS= read -r line; do
       case "${line%%=*}" in
         framework) fi_framework=${line#*=} ;; pm) fi_pm=${line#*=} ;; runner) fi_runner=${line#*=} ;;
-        node) fi_node=${line#*=} ;; nodewant) fi_want=${line#*=} ;; watch) fi_watch=${line#*=} ;;
+        node) fi_node=${line#*=}; [ "$fi_node" = none ] && fi_node="" ;; nodewant) fi_want=${line#*=}; [ "$fi_want" = none ] && fi_want="" ;; watch) fi_watch=${line#*=} ;;
       esac
     done <<EOF
 $(sh "$here/front-info.sh" "$d")
