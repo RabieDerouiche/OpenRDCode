@@ -101,7 +101,7 @@ fi
 if [ "$if_changed" -eq 1 ] && [ -n "$runkey" ] && [ "$(head -n 1 "$green" 2>/dev/null)" = "$runkey" ]; then
   echo "BUILD: OK (not run again: this same code passed this build on $(sed -n 2p "$green"))"
   if [ "$(sed -n 3p "$green")" = none ]; then
-    echo "TESTS: NONE RUN (not run again: same code, same target and options; no test project for this target, or no test matches the filter)"
+    echo "TESTS: NONE RUN (not run again: same code, same target and options; $(sed -n 4p "$green" | grep . || echo "no test project for this target, or no test matches the filter"))"
   else
     echo "TESTS: OK (not run again: same code, same target and options)"
   fi
@@ -202,6 +202,18 @@ LIST
 }
 mixed=0
 tests_ok=0
+why=""
+# why no test ran: no test project, a filter that matches nothing, or test projects whose tests did not run (none
+# written yet, or a solution that does not build them)
+none_run() {
+  n=$(printf '%s\n' "$scope" | grep -c .)
+  case " $* " in
+    *" --filter "*|*" --filter="*) why="no test matches the filter" ;;
+    *) if [ "$n" -eq 0 ]; then why="no test project for this target"
+       else why="$n test project(s) in this target, but no test ran: none written yet, or the build skipped them"; fi ;;
+  esac
+  echo "TESTS: NONE RUN ($why)"
+}
 if [ -z "$mtp" ]; then
   vstest_run "$target" "$@" > "$out" 2>&1
   status=$?
@@ -275,13 +287,13 @@ elif [ "$mixed" -eq 1 ]; then
              /^ *total: *[0-9]+/ { s = $0; gsub(/[^0-9]/, "", s); n += s }
              END { print n + 0 }' "$out")
   if [ "$ran" -eq 0 ]; then
-    echo "TESTS: NONE RUN (no test project for this target, or no test matches the filter)"
+    none_run "$@"
   else
     echo "TESTS: OK ($ran test$([ "$ran" -eq 1 ] || echo s))"
     tests_ok=1
   fi
 elif ! grep -q '[^[:space:]]' "$out" || grep -q -E 'No test matches|No test is available|No test source files' "$out"; then
-  echo "TESTS: NONE RUN (no test project for this target, or no test matches the filter)"
+  none_run "$@"
 else
   echo "TESTS: OK"
   tests_ok=1
@@ -289,8 +301,13 @@ fi
 if [ -n "$fingerprint" ] && [ "$whole" -eq 1 ]; then
   echo "Code fingerprint of this run: $fingerprint (whole solution)"
 fi
-# a green run is remembered for --if-changed, with what its tests said (a build without any test to run included)
+# a green run is remembered for --if-changed, with what its tests said (a build without any test to run included, with
+# why no test ran)
 if [ -n "$runkey" ] && [ "$status" -eq 0 ]; then
-  printf '%s\n%s\n%s\n' "$runkey" "$(date '+%Y-%m-%d %H:%M')" "$([ "$tests_ok" -eq 1 ] && echo ok || echo none)" > "$green" 2>/dev/null
+  if [ "$tests_ok" -eq 1 ]; then
+    printf '%s\n%s\nok\n' "$runkey" "$(date '+%Y-%m-%d %H:%M')"
+  else
+    printf '%s\n%s\nnone\n%s\n' "$runkey" "$(date '+%Y-%m-%d %H:%M')" "$why"
+  fi > "$green" 2>/dev/null
 fi
 exit "$status"

@@ -116,6 +116,15 @@ truth "VSTest: one dotnet test call" '[ "$(printf "%s\n" "$calls" | grep -c "^do
 run build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~InvoiceTests
 check "VSTest: a filter" 0 '^TESTS: OK$'
 called "VSTest: the filter as given" '^dotnet test tests/App.Tests/App.Tests.csproj --no-build .*--filter FullyQualifiedName~InvoiceTests'
+run build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~Nothing
+check "VSTest: a filter that matches nothing, said so" 0 '^TESTS: NONE RUN \(no test matches the filter\)$'
+# a test project without any test yet (just set up): not « no test project »
+mkdir -p tests/Empty.Tests
+printf '<Project Sdk="Microsoft.NET.Sdk">\n  <ItemGroup>\n    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />\n  </ItemGroup>\n</Project>\n' > tests/Empty.Tests/Empty.Tests.csproj
+git add -A && git commit -q -m "test: an empty test project"
+run build-test.sh tests/Empty.Tests/Empty.Tests.csproj
+check "VSTest: a test project without tests, said so" 0 '^TESTS: NONE RUN \(1 test project\(s\) in this target, but no test ran'
+git reset -q --hard HEAD~1
 
 # --if-changed (/push): the code that already passed is not built and tested again
 run build-test.sh --if-changed

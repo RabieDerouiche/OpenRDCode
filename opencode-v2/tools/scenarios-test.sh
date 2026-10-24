@@ -103,21 +103,19 @@ project() {
 sln() {
   f=$1
   shift
+  specs=$(printf '%s\n' "$@")
   { echo "Microsoft Visual Studio Solution File, Format Version 12.00"
     echo "# Visual Studio Version 17"
     echo "VisualStudioVersion = 17.0.31903.59"
     echo "MinimumVisualStudioVersion = 10.0.40219.1"
-    for p in "$@"; do
-      set -- $p
-      echo "Project(\"{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}\") = \"$1\", \"$2\", \"{$3}\""
-      echo "EndProject"
+    printf '%s\n' "$specs" | while read -r name path guid; do
+      printf 'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "%s", "%s", "{%s}"\nEndProject\n' "$name" "$path" "$guid"
     done
     printf 'Global\n\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n\t\tDebug|Any CPU = Debug|Any CPU\n\t\tRelease|Any CPU = Release|Any CPU\n\tEndGlobalSection\n'
     printf '\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\n'
-    for p in "$@"; do
-      set -- $p
+    printf '%s\n' "$specs" | while read -r name path guid; do
       for c in Debug Release; do
-        printf '\t\t{%s}.%s|Any CPU.ActiveCfg = %s|Any CPU\n\t\t{%s}.%s|Any CPU.Build.0 = %s|Any CPU\n' "$3" "$c" "$c" "$3" "$c" "$c"
+        printf '\t\t{%s}.%s|Any CPU.ActiveCfg = %s|Any CPU\n\t\t{%s}.%s|Any CPU.Build.0 = %s|Any CPU\n' "$guid" "$c" "$c" "$guid" "$c" "$c"
       done
     done
     printf '\tEndGlobalSection\nEndGlobal\n'; } > "$f"
@@ -487,11 +485,16 @@ git clone -q "$work/lib.git" "$work/lib" 2>/dev/null
 cd "$work/lib" || exit 1
 printf 'namespace Lib;\npublic static class Slug\n{\n    public static string Of(string s) => s.Trim().ToLowerInvariant();\n}\n' > src/Lib/Slug.cs
 push_run --name bugfix/slug-trim --msg "fix(slug): trim the text first"
-check "built, no test project: said, not a failure" 0 '^TESTS: NONE RUN'
+check "built, no test project: said, not a failure" 0 '^TESTS: NONE RUN \(no test project for this target\)$'
 check "pushed" 0 '^PUSH: OK, origin/bugfix/slug-trim'
 run build-test.sh --if-changed
-check "the same code without tests: not built again" 0 '^TESTS: NONE RUN \(not run again'
+check "the same code without tests: not built again, and why" 0 '^TESTS: NONE RUN \(not run again: same code, same target and options; no test project for this target\)$'
 truth "no dotnet call" '[ -z "$calls" ]'
+# a memory written by the previous version of the pack (without the reason): the general reason
+g="$(git rev-parse --absolute-git-dir)/opencode-green"
+head -n 3 "$g" > "$g.old" && mv "$g.old" "$g"
+run build-test.sh --if-changed
+check "a memory of the previous pack: the general reason" 0 '^TESTS: NONE RUN \(not run again: same code, same target and options; no test project for this target, or no test matches the filter\)$'
 git switch -q develop
 printf 'namespace Lib;\npublic static class Slug\n{\n    public static string Of(string s) => s.Trim().ToLowerInvariant().Replace(" ", "-");\n}\n' > src/Lib/Slug.cs
 run fortify.sh prereq --tests
