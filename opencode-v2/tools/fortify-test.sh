@@ -101,6 +101,9 @@ check() {
 truth() {
   if eval "$2"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL: [$scenario] $1 ($2)"; fi
 }
+# note <text>: with the real dotnet, a value the checks leave open (a count of lines that coverlet decides), in the
+# log as « NOTE: » (an annotation of the run on GitHub)
+note() { [ "$REAL" -eq 1 ] && printf 'NOTE: [%s] %s\n' "$scenario" "$1"; return 0; }
 # pick <with the fake> <with the real dotnet>: a figure that only the real tools decide (coverage, a version)
 pick() { if [ "$REAL" -eq 1 ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
 # run <script> <arguments>: a script of the pack, as the pilot or a subagent runs it
@@ -131,7 +134,8 @@ bg() {
 }
 got() { out=$(cat "$work/$1"); status=$(cat "$work/$1.s"); }
 # cover "<file> <line>:<hits>…"…: with the fake, the coverage the next runs measure; the real tools measure their own
-cover() { for l in "$@"; do printf '<!-- fake-cover: %s -->\n' "$l"; done > "$FAKE_DOTNET_COVER"; }
+# (at once: the guardians of a wave read it while another one changes it)
+cover() { for l in "$@"; do printf '<!-- fake-cover: %s -->\n' "$l"; done > "$FAKE_DOTNET_COVER.part" && mv "$FAKE_DOTNET_COVER.part" "$FAKE_DOTNET_COVER"; }
 on_origin() { git --git-dir="$1" rev-parse -q --verify "refs/heads/$2" >/dev/null; }
 # put <file>: a test file written at once (a build of another test-guardian never reads half of it)
 put() { cat > "$1.part" && mv "$1.part" "$1"; }
@@ -311,6 +315,16 @@ public class RedirectControllerTests
     public void Go_LocalUrl_Kept() => Assert.Equal("/home", new RedirectController().Go("/home"));
 }
 EOF
+cat > tests/App.Tests/StartupTests.cs <<'EOF'
+namespace App.Tests;
+
+// <!-- fake-test: App.Tests.StartupTests.Configure_Runs pass -->
+public class StartupTests
+{
+    [Fact]
+    public void Configure_Runs() => Startup.Configure();
+}
+EOF
 # a test that already fails on develop: never the batch's to fix
 cat > tests/App.Tests/LegacyTests.cs <<'EOF'
 namespace App.Tests;
@@ -353,9 +367,15 @@ printf 'APPSEC_PROJECT_NAME=app-api\nAPPSEC_TOKEN=s3cr3t-never-printed\n' > apps
 printf 'bin/\nobj/\n' > .gitignore
 git add -A && git commit -q -m "chore: the api" && git push -q origin develop 2>/dev/null
 git branch -q -u origin/develop
-cover "src/App/PathService.cs 7:1 10:0 11:0" "src/App/FileStore.cs 5:0" "src/App/DownloadController.cs 5:0" \
-  "src/App/RedirectController.cs 5:1" "src/App/LogService.cs 5:0" "src/App/Startup.cs 5:0" "src/App/Hasher.cs 5:0" \
-  "src/App/TokenService.cs 5:0" "src/App/Report.cs 5:0"
+# the coverage of develop, method by method as coverlet reports it (the test files written later add what they run)
+develop_cover() {
+  cover "src/App/PathService.cs c=App.PathService m=.ctor 3:1 5:1 m=Read 7:1 m=Preview 10:0 11:0 12:0:0/2 13:0" \
+    "src/App/FileStore.cs c=App.FileStore m=ReadAll 5:0" "src/App/DownloadController.cs c=App.DownloadController m=.ctor 3:0 m=Get 5:0" \
+    "src/App/RedirectController.cs c=App.RedirectController m=Go 5:1" "src/App/LogService.cs c=App.LogService m=Line 5:0" \
+    "src/App/Startup.cs c=App.Startup m=Configure 5:1" "src/App/Hasher.cs c=App.Hasher m=Hash 5:0" \
+    "src/App/TokenService.cs c=App.TokenService m=NewToken 5:0" "src/App/Report.cs c=App.Report m=Export 5:0"
+}
+develop_cover
 
 # ======================================================================================================================
 # A. The prerequisites (fortify.sh prereq), each case of step 1
@@ -486,10 +506,17 @@ step "D. vague 1 : preuves en parallèle"
 guardian_v1() {
   "$SH" "$scripts/test-guardian.sh" deps src/App/PathService.cs
   "$SH" "$scripts/test-guardian.sh" coverage V1-before "$T" src/App/PathService.cs src/App/FileStore.cs || return 1
+  # the safety net of the card: the method the fix changes, and the public method that leads to it
+  "$SH" "$scripts/test-guardian.sh" net V1-before src/App/PathService.cs:Read src/App/PathService.cs:Preview || return 1
+  # the non-regression tests of the current behavior (what each runs, before and after V1's fix, for the fake)
   put tests/App.Tests/PathServiceContextTests.cs <<'EOF'
 namespace App.Tests;
 
 // <!-- fake-test: App.Tests.PathServiceContextTests.Read_Name_CombinesRoot pass -->
+// <!-- fake-test: App.Tests.PathServiceContextTests.Preview_LongText_FirstTenCharacters pass -->
+// <!-- fake-test: App.Tests.PathServiceContextTests.Preview_ShortText_Whole pass -->
+// <!-- fake-cover: src/App/PathService.cs unless=src/App/PathService.cs:GetFullPath c=App.PathService m=Preview 10:1 11:1 12:1:2/2 13:1 -->
+// <!-- fake-cover: src/App/PathService.cs if=src/App/PathService.cs:GetFullPath c=App.PathService m=Preview 18:1 19:1 20:1:2/2 21:1 -->
 public class PathServiceContextTests
 {
     [Fact]
@@ -499,9 +526,22 @@ public class PathServiceContextTests
         new PathService(store).Read("a.txt");
         Assert.Equal("/data/a.txt", store.LastPath);
     }
+
+    [Fact]
+    public void Preview_LongText_FirstTenCharacters() => Assert.Equal("content of", new PathService(new FakeStore()).Preview("a.txt"));
+
+    [Fact]
+    public void Preview_ShortText_Whole() => Assert.Equal("short", new PathService(new ShortStore()).Preview("a.txt"));
+
+    private sealed class ShortStore : IFileStore
+    {
+        public string ReadAll(string path) => "short";
+    }
 }
 EOF
   "$SH" "$scripts/test-guardian.sh" green "$T" FullyQualifiedName~PathServiceContextTests || return 1
+  "$SH" "$scripts/test-guardian.sh" coverage V1-net "$T" src/App/PathService.cs src/App/FileStore.cs || return 1
+  "$SH" "$scripts/test-guardian.sh" net V1-net src/App/PathService.cs:Read src/App/PathService.cs:Preview || return 1
   put tests/App.Tests/PathServiceSecurityTests.cs <<'EOF'
 namespace App.Tests;
 
@@ -514,11 +554,27 @@ public class PathServiceSecurityTests
 }
 EOF
   "$SH" "$scripts/test-guardian.sh" red "$T" FullyQualifiedName~Security_PathManipulation_V1 || return 1
-  "$SH" "$scripts/test-guardian.sh" coverage V1-tests "$T" src/App/PathService.cs src/App/FileStore.cs || return 1
+  "$SH" "$scripts/test-guardian.sh" tests-only || return 1
   "$SH" "$scripts/test-guardian.sh" seal V1 tests/App.Tests/PathServiceContextTests.cs tests/App.Tests/PathServiceSecurityTests.cs
 }
 guardian_v2() {
   "$SH" "$scripts/test-guardian.sh" coverage V2-before "$T" src/App/DownloadController.cs || return 1
+  "$SH" "$scripts/test-guardian.sh" net V2-before src/App/DownloadController.cs:Get || return 1
+  put tests/App.Tests/DownloadContextTests.cs <<'EOF'
+namespace App.Tests;
+
+// <!-- fake-test: App.Tests.DownloadContextTests.Get_Name_ReadsThroughPathService pass -->
+// <!-- fake-cover: src/App/DownloadController.cs c=App.DownloadController m=.ctor 3:1 m=Get 5:1 -->
+public class DownloadContextTests
+{
+    [Fact]
+    public void Get_Name_ReadsThroughPathService() =>
+        Assert.Equal("content of /data/a.txt", new DownloadController(new PathService(new FakeStore())).Get("a.txt"));
+}
+EOF
+  "$SH" "$scripts/test-guardian.sh" green "$T" FullyQualifiedName~DownloadContextTests || return 1
+  "$SH" "$scripts/test-guardian.sh" coverage V2-net "$T" src/App/DownloadController.cs || return 1
+  "$SH" "$scripts/test-guardian.sh" net V2-net src/App/DownloadController.cs:Get || return 1
   put tests/App.Tests/DownloadSecurityTests.cs <<'EOF'
 namespace App.Tests;
 
@@ -531,11 +587,12 @@ public class DownloadSecurityTests
 }
 EOF
   "$SH" "$scripts/test-guardian.sh" red "$T" FullyQualifiedName~Security_PathManipulation_V2 || return 1
-  "$SH" "$scripts/test-guardian.sh" seal V2 tests/App.Tests/DownloadSecurityTests.cs
+  "$SH" "$scripts/test-guardian.sh" seal V2 tests/App.Tests/DownloadContextTests.cs tests/App.Tests/DownloadSecurityTests.cs
 }
 # V3: its first test is flaky (a file left by the run before it), then deterministic
 guardian_v3() {
   "$SH" "$scripts/test-guardian.sh" coverage V3-before "$T" src/App/RedirectController.cs || return 1
+  "$SH" "$scripts/test-guardian.sh" net V3-before src/App/RedirectController.cs:Go || return 1
   put tests/App.Tests/RedirectSecurityTests.cs <<'EOF'
 namespace App.Tests;
 
@@ -578,15 +635,23 @@ wait
 unset FAKE_DOTNET_SLOW_TEST
 got g1
 check "V1: its module and its dependency" 0 '^DEPENDS: IFileStore -> src/App/FileStore.cs$'
-check "V1: coverage before" 0 "^src/App/PathService.cs lines $(pick '1/3 \(33%\) branches 0/0 uncovered 10-11$' '[0-9]+/[0-9]+ \([0-9]+%\)')"
-check "V1: context tests green twice" 0 '^GREEN: 1 tests pass, twice$'
+check "V1: coverage before" 0 "^src/App/PathService.cs lines $(pick '3/7 \(42%\) branches 0/2 uncovered 10-13$' '[0-9]+/[0-9]+ \([0-9]+%\)')"
+check "V1: Preview, that no test runs" 0 "^NET: src/App/PathService.cs:Preview lines 0/$(pick '4 \(0%\) branches 0/2 uncovered 10-13$' '[0-9]+ \(0%\)')"
+check "V1: Read, that a test of develop runs" 0 "^NET: src/App/PathService.cs:Read lines $(pick '1/1' '[0-9]+/[0-9]+') \(100%\)"
+check "V1: the safety net before: THIN" 0 "^SAFETY NET: THIN \($(pick '1/5 lines of these 2 methods run by the tests, 20% < 80%\)' '[0-9]+/[0-9]+ lines of these 2 methods run by the tests, [0-9]+% < 80%\)')"
+check "V1: its non-regression tests, green twice" 0 '^GREEN: 3 tests pass, twice$'
+note "V1 avant : $(printf '%s\n' "$out" | grep -E '^(NET|SAFETY)' | tr '\n' ' ')"
+check "V1: the safety net with them: OK" 0 "^SAFETY NET: OK \($(pick '5/5' '[0-9]+/[0-9]+') lines of these 2 methods run by the tests, 100%; minimum 80%\)$"
 check "V1: red for the reason of the vulnerability" 0 'Security_PathManipulation_V1_Traversal: Assert.Throws\(\) Failure: No exception was thrown'
 check "V1: RED twice" 0 '^RED: 1 tests fail on the current code, twice the same way, as expected$'
 check "V1: sealed" 0 '^SEALED: 2 test files'
 got g2
+check "V2: no test runs Get: THIN" 0 '^SAFETY NET: THIN \(0/[0-9]+ lines of this method run by the tests, 0% < 80%\)'
+check "V2: its non-regression test, then OK" 0 '^SAFETY NET: OK \([0-9]+/[0-9]+ lines of this method run by the tests, 100%; minimum 80%\)$'
 check "V2: RED" 0 '^RED: 1 tests fail on the current code'
-check "V2: sealed" 0 '^SEALED: 1 test files'
+check "V2: sealed, its net with its proof" 0 '^SEALED: 2 test files'
 got g3
+check "V3: a test of develop runs Go: the net is there" 0 '^SAFETY NET: OK \(1/1 lines of this method run by the tests, 100%; minimum 80%\)$'
 check "V3: a flaky test is refused" 0 '^FLAKY: App.Tests.RedirectSecurityTests.Security_OpenRedirect_V3_External'
 check "V3: then RED once deterministic" 0 '^RED: 1 tests fail on the current code'
 check "V3: sealed" 0 '^SEALED: 1 test files'
@@ -618,7 +683,9 @@ check "the same red once more: RED" 0 '^RED: 1 tests fail'
 # E. The proofs put away (step 5.2): the working tree is clean, each fix starts from its own proof only
 # ======================================================================================================================
 step "E. preuves rangées"
-for v in V1 V2 V3; do etat "$B1" "$v" "- tests : RED - contexte ajouté - couverture avant - test-guardian ses_$v"; done
+etat "$B1" V1 "- tests : RED - filet 20 % -> 100 % OK - contexte 3 ajoutés - couverture avant - test-guardian ses_V1"
+etat "$B1" V2 "- tests : RED - filet 0 % -> 100 % OK - contexte 1 ajouté - couverture avant - test-guardian ses_V2"
+etat "$B1" V3 "- tests : RED - filet 100 % OK - contexte déjà couvert - couverture avant - test-guardian ses_V3"
 chain "test-guardian.sh park V1" "test-guardian.sh park V2" "test-guardian.sh park V3"
 check "three proofs parked" 0 '^PARKED: 1 test files of the proof V3 out of the working tree'
 truth "the working tree is clean" 'clean'
@@ -659,22 +726,28 @@ public class PathService(IFileStore store)
     }
 }
 EOF
-run test-guardian.sh green "$T" FullyQualifiedName~Security_PathManipulation_V1
-check "4b: the coder's done condition, GREEN" 0 '^GREEN: 1 tests pass, twice$'
+run test-guardian.sh green "$T" "FullyQualifiedName~Security_PathManipulation_V1|FullyQualifiedName~PathServiceContextTests"
+check "4b: the coder's done condition, the proof and the net GREEN" 0 '^GREEN: 4 tests pass, twice$'
 etat "$B1" V1 "- correctif : src/App/PathService.cs - coder ses_c1"
 # 4c: the same test-guardian, phase « après le correctif »
-cover "src/App/PathService.cs 9:1 10:1 11:1 12:1 14:1 19:0 20:0" "src/App/FileStore.cs 5:0" "src/App/RedirectController.cs 5:1"
+# what the tests of develop and the proof run after the fix (the net of V1 adds Preview)
+cover "src/App/PathService.cs c=App.PathService m=.ctor 3:1 5:1 m=Read 8:1 9:1 10:1:2/2 11:1 12:1 13:1 14:1 15:1 m=Preview 18:0 19:0 20:0:0/2 21:0" \
+  "src/App/FileStore.cs c=App.FileStore m=ReadAll 5:0" "src/App/RedirectController.cs c=App.RedirectController m=Go 5:1"
 run test-guardian.sh sealed V1
 check "4c: the tests as sealed" 0 '^SEAL: OK, 2 test files as sealed$'
 run test-guardian.sh green "$T" "FullyQualifiedName~Security_PathManipulation_V1|FullyQualifiedName~PathServiceContextTests"
-check "4c: the proof and the context, green twice" 0 '^GREEN: 2 tests pass, twice$'
+check "4c: the proof and the context, green twice" 0 '^GREEN: 4 tests pass, twice$'
 run test-guardian.sh coverage V1-after "$T" src/App/PathService.cs src/App/FileStore.cs
-check "4c: coverage after" 0 "^src/App/PathService.cs lines $(pick '5/7 \(71%\)' '[0-9]+/[0-9]+ \([0-9]+%\)')"
+check "4c: coverage after" 0 "^src/App/PathService.cs lines $(pick '14/14 \(100%\)' '[0-9]+/[0-9]+ \([0-9]+%\)')"
 run test-guardian.sh compare V1-before V1-after
 check "4c: no file lost coverage" 0 '^COVERAGE: no file lost coverage$'
-etat "$B1" V1 "- après : GREEN deux fois - couverture après - perte aucune"
+run test-guardian.sh net V1-after src/App/PathService.cs:Read src/App/PathService.cs:Preview
+check "4c: the net after the fix: the new lines of Read run too" 0 "^NET: src/App/PathService.cs:Read lines $(pick '8/8 \(100%\)' '[0-9]+/[0-9]+ \([0-9]+%\)')"
+check "4c: the net kept" 0 "^SAFETY NET: OK \($(pick '12/12 lines of these 2 methods run by the tests, 100%' '[0-9]+/[0-9]+ lines of these 2 methods run by the tests, [0-9]+%'); minimum 80%\)$"
+note "V1 après le correctif : $(printf '%s\n' "$out" | grep -E '^(NET|SAFETY)' | tr '\n' ' ')"
+etat "$B1" V1 "- après : GREEN deux fois - filet 100 % - couverture après - perte aucune"
 # 4d: the commit, the fix and its tests together
-chain "test-guardian.sh sealed V1" "ship.sh --no-push 'fix(security): path manipulation in PathService.cs (V1, LOCAL-1)' '- Fortify 1001' '- tests: 1 context, 1 vulnerability (red before, green after, twice each)'" "ticket-sheet.sh tick 1 '/fortify V1 - corrigée - tests 1+1 - couverture sans perte'"
+chain "test-guardian.sh sealed V1" "ship.sh --no-push 'fix(security): path manipulation in PathService.cs (V1, LOCAL-1)' '- Fortify 1001' '- tests: 3 context, 1 vulnerability (red before, green after, twice each)' '- safety net: 20% -> 100% of the lines of 2 methods'" "ticket-sheet.sh tick 1 '/fortify V1 - corrigée - tests 3+1 - filet 100 % - couverture sans perte'"
 check "4d: committed" 0 '^COMMIT: .*fix\(security\): path manipulation in PathService.cs \(V1, LOCAL-1\)'
 check "4d: ticked" 0 '^- \[x\] 1\. V1'
 truth "4d: the commit holds V1's fix and tests only" '[ "$(git show --name-only --format= HEAD | sort | tr "\n" " ")" = "src/App/PathService.cs tests/App.Tests/PathServiceContextTests.cs tests/App.Tests/PathServiceSecurityTests.cs " ]'
@@ -685,10 +758,10 @@ truth "4d: nothing left" 'clean'
 # ======================================================================================================================
 step "G. V2 fermée par V1"
 chain "test-guardian.sh unpark V2" "test-guardian.sh red $T FullyQualifiedName~Security_PathManipulation_V2"
-check "4a: back" 1 '^UNPARKED: 1 test files of the proof V2 back'
+check "4a: back, its net with it" 1 '^UNPARKED: 2 test files of the proof V2 back'
 check "4a: its test passes now: a fix before it closed it" 1 '^STOP: 1 of these tests PASS on the current code: they do not show the problem$'
-run test-guardian.sh green "$T" FullyQualifiedName~Security_PathManipulation_V2
-check "c: green twice" 0 '^GREEN: 1 tests pass, twice$'
+run test-guardian.sh green "$T" "FullyQualifiedName~Security_PathManipulation_V2|FullyQualifiedName~DownloadContextTests"
+check "c: the proof and the net, green twice" 0 '^GREEN: 2 tests pass, twice$'
 chain "test-guardian.sh sealed V2" "ship.sh --no-push 'test(security): show that path manipulation in DownloadController.cs is fixed by V1 (V2, LOCAL-1)' '- Fortify 1002'" "ticket-sheet.sh tick 2 '/fortify V2 - corrigée par V1 - tests 1'"
 check "committed as a proof of V1's fix" 0 '^COMMIT: .*is fixed by V1 \(V2, LOCAL-1\)'
 check "ticked" 0 '^- \[x\] 2\. V2'
@@ -740,7 +813,7 @@ public class RedirectController
 EOF
 run test-guardian.sh green "$T" FullyQualifiedName~Security_OpenRedirect_V3
 check "after the coder's round: GREEN" 0 '^GREEN: 1 tests pass, twice$'
-cover "src/App/RedirectController.cs 5:1 8:0 9:0 10:0 11:0 13:0 16:1"
+cover "src/App/RedirectController.cs c=App.RedirectController m=Go 5:1:2/2 m=GoOrFallback 8:0 9:0:0/2 10:0 11:0 12:0 13:0:0/2 14:0 m=IsLocalUrl 16:1:2/2"
 run test-guardian.sh coverage V3-after "$T" src/App/RedirectController.cs
 run test-guardian.sh compare V3-before V3-after
 check "4c: a file lost coverage: STOP" 1 '^STOP: coverage lost after the change in src/App/RedirectController.cs$'
@@ -755,10 +828,12 @@ public class RedirectController
     private static bool IsLocalUrl(string url) => url.StartsWith('/') && !url.StartsWith("//", StringComparison.Ordinal);
 }
 EOF
-cover "src/App/RedirectController.cs 5:1 7:1"
+cover "src/App/RedirectController.cs c=App.RedirectController m=Go 5:1:2/2 m=IsLocalUrl 7:1:2/2"
 run test-guardian.sh coverage V3-after "$T" src/App/RedirectController.cs
 run test-guardian.sh compare V3-before V3-after
 check "4c: then no loss" 0 '^COVERAGE: no file lost coverage$'
+run test-guardian.sh net V3-after src/App/RedirectController.cs:Go
+check "4c: the net of Go kept" 0 '^SAFETY NET: OK \(1/1 lines of this method run by the tests, 100%; minimum 80%\)$'
 chain "test-guardian.sh sealed V3" "ship.sh --no-push 'fix(security): open redirect in RedirectController.cs (V3, LOCAL-1)' '- Fortify 1003'" "ticket-sheet.sh tick 3 '/fortify V3 - corrigée - tests 0+1 - couverture sans perte'"
 check "4d: committed" 0 '^COMMIT: .*open redirect in RedirectController.cs \(V3, LOCAL-1\)'
 truth "4d: the sealed test, as sealed, in the commit" 'git show HEAD:tests/App.Tests/RedirectSecurityTests.cs | grep -q "Assert.Equal(\"/\""'
@@ -767,8 +842,14 @@ truth "4d: the sealed test, as sealed, in the commit" 'git show HEAD:tests/App.T
 # I. Wave 2 (V4 shares PathService.cs with V1: a wave of its own; V5): the code resists (step 5.3)
 # ======================================================================================================================
 step "I. vague 2 : le code résiste"
+# what the tests of develop run once batch 1 is fixed (the tests of the batch add what they run)
+cover "src/App/PathService.cs c=App.PathService m=.ctor 3:1 5:1 m=Read 8:1 9:1 10:1:2/2 11:1 12:1 13:1 14:1 15:1 m=Preview 18:0 19:0 20:0:0/2 21:0" \
+  "src/App/RedirectController.cs c=App.RedirectController m=Go 5:1:2/2 m=IsLocalUrl 7:1:2/2" "src/App/LogService.cs c=App.LogService m=Line 5:0" \
+  "src/App/DownloadController.cs c=App.DownloadController m=.ctor 3:0 m=Get 5:0"
 guardian_v4() {
   "$SH" "$scripts/test-guardian.sh" coverage V4-before "$T" src/App/PathService.cs || return 1
+  # the net of Preview: the non-regression tests of V1 run it already
+  "$SH" "$scripts/test-guardian.sh" net V4-before src/App/PathService.cs:Preview || return 1
   put tests/App.Tests/PreviewSecurityTests.cs <<'EOF'
 namespace App.Tests;
 
@@ -787,6 +868,21 @@ EOF
 }
 guardian_v5() {
   "$SH" "$scripts/test-guardian.sh" coverage V5-before "$T" src/App/LogService.cs || return 1
+  "$SH" "$scripts/test-guardian.sh" net V5-before src/App/LogService.cs:Line || return 1
+  put tests/App.Tests/LogContextTests.cs <<'EOF'
+namespace App.Tests;
+
+// <!-- fake-test: App.Tests.LogContextTests.Line_PlainUser_Prefixed pass -->
+// <!-- fake-cover: src/App/LogService.cs c=App.LogService m=Line 5:1 -->
+public class LogContextTests
+{
+    [Fact]
+    public void Line_PlainUser_Prefixed() => Assert.Equal("login bob", new LogService().Line("bob"));
+}
+EOF
+  "$SH" "$scripts/test-guardian.sh" green "$T" FullyQualifiedName~LogContextTests || return 1
+  "$SH" "$scripts/test-guardian.sh" coverage V5-net "$T" src/App/LogService.cs || return 1
+  "$SH" "$scripts/test-guardian.sh" net V5-net src/App/LogService.cs:Line || return 1
   # a fake token in a test fixture: a warning of the check before the push, never a stop
   put tests/App.Tests/LogSecurityTests.cs <<'EOF'
 namespace App.Tests;
@@ -801,19 +897,23 @@ public class LogSecurityTests
 EOF
   "$SH" "$scripts/test-guardian.sh" red "$T" FullyQualifiedName~Security_LogForging_V5
   "$SH" "$scripts/test-guardian.sh" green "$T" FullyQualifiedName~Security_LogForging_V5 || return 1
-  "$SH" "$scripts/test-guardian.sh" seal V5 tests/App.Tests/LogSecurityTests.cs
+  "$SH" "$scripts/test-guardian.sh" seal V5 tests/App.Tests/LogContextTests.cs tests/App.Tests/LogSecurityTests.cs
 }
 bg g4 guardian_v4
 bg g5 guardian_v5
 wait
 got g4
+check "V4: the net of Preview is there (the tests of V1)" 0 "^SAFETY NET: OK \($(pick '4/4' '[0-9]+/[0-9]+') lines of this method run by the tests, 100%; minimum 80%\)$"
 check "V4: its test passes on the current code (V1's fix covers Preview)" 0 'STOP: 1 of these tests PASS on the current code'
 check "V4: résiste, sealed" 0 '^SEALED: 1 test files'
 got g5
-check "V5: résiste, sealed" 0 '^SEALED: 1 test files'
-for v in V4 V5; do etat "$B1" "$v" "- tests : résiste - contexte déjà couvert - test-guardian ses_$v"; done
+check "V5: no test runs Line: THIN" 0 '^SAFETY NET: THIN \(0/1 lines of this method run by the tests, 0% < 80%\)'
+check "V5: its non-regression test, then OK" 0 '^SAFETY NET: OK \(1/1 lines of this method run by the tests, 100%; minimum 80%\)$'
+check "V5: résiste, sealed with its net" 0 '^SEALED: 2 test files'
+etat "$B1" V4 "- tests : résiste - filet 100 % OK - contexte déjà couvert - test-guardian ses_V4"
+etat "$B1" V5 "- tests : résiste - filet 0 % -> 100 % OK - contexte 1 ajouté - test-guardian ses_V5"
 chain "test-guardian.sh park V4" "test-guardian.sh park V5"
-check "parked" 0 '^PARKED: 1 test files of the proof V5'
+check "parked" 0 '^PARKED: 2 test files of the proof V5'
 truth "clean" 'clean'
 chain "test-guardian.sh unpark V4" "ship.sh --no-push 'test(security): show that path manipulation in PathService.cs is not exploitable (V4, LOCAL-1)' '- Fortify 1004'" "ticket-sheet.sh tick 4 '/fortify V4 - non exploitable - tests 1 - à déclarer dans SSC par toi'"
 check "5.3: V4 committed as not exploitable" 0 '^COMMIT: .*is not exploitable \(V4, LOCAL-1\)'
@@ -825,7 +925,8 @@ truth "every vulnerability of the plan ticked" '! grep -q "^- \[ \]" "$SHEET"'
 # J. Verify and deliver (step 6): the full suite and the coverage of the changes, the check, the push
 # ======================================================================================================================
 step "J. vérification et livraison du lot 1"
-cover "src/App/PathService.cs 9:1 10:1 11:1 12:1 14:1 19:1 20:1" "src/App/RedirectController.cs 5:1 7:1"
+cover "src/App/PathService.cs c=App.PathService m=.ctor 3:1 5:1 m=Read 8:1 9:1 10:1:2/2 11:1 12:1 13:1 14:1 15:1 m=Preview 18:0 19:0 20:0:0/2 21:0" \
+  "src/App/RedirectController.cs c=App.RedirectController m=Go 5:1:2/2 m=IsLocalUrl 7:1:2/2"
 run test-guardian.sh changes origin/develop App.sln
 check "the suite: the only failure is the one of develop" 1 '^FAILED TESTS \(1\): App.Tests.LegacyTests.Old_Rounding$'
 check "the coverage of the changes" 1 '^COVERAGE OF THE CHANGES: [0-9]+/[0-9]+ changed lines covered'
@@ -866,7 +967,7 @@ cat > "$SHEET2" <<'EOF'
 EOF
 run test-guardian.sh folder
 check "measures of SEC-7: a folder of their own" 0 "^FOLDER: $work/api/.git/opencode-tickets/SEC-7.tests$"
-cover "src/App/PathService.cs 7:1 10:0 11:0" "src/App/Startup.cs 5:0" "src/App/Hasher.cs 5:0" "src/App/TokenService.cs 5:0" "src/App/Report.cs 5:0"
+develop_cover
 card "$B2" V1 "Missing Security Headers" "src/App/Startup.cs:5" "vraie faille" "src/App/Startup.cs" "non démontrable par un test unitaire : configuration du pipeline HTTP"
 card "$B2" V2 "Weak Cryptographic Hash" "src/App/Hasher.cs:5" "vraie faille" "src/App/Hasher.cs" "$T ; le hachage n'est pas MD5"
 card "$B2" V3 "Insecure Randomness" "src/App/TokenService.cs:5" "vraie faille" "src/App/TokenService.cs" "$T ; deux jetons diffèrent"
@@ -886,7 +987,10 @@ check "two worktrees: the second measured without waiting" 0 '^src/App/Hasher.cs
 # ======================================================================================================================
 step "L. non démontrable"
 run test-guardian.sh coverage V1-before "$T" src/App/Startup.cs
-check "V1: coverage before" 0 '^src/App/Startup.cs lines 0/[0-9]+'
+check "V1: coverage before" 0 "^src/App/Startup.cs lines $(pick '1/1 \(100%\)' '[0-9]+/[0-9]+ \([0-9]+%\)')"
+check "V1: the coverage run names the tests that fail (develop's)" 0 '^FAILED TESTS \(1\): App.Tests.LegacyTests.Old_Rounding$'
+run test-guardian.sh net V1-before src/App/Startup.cs:Configure
+check "V1: a test of develop runs Configure: the net is there" 0 "^SAFETY NET: OK \($(pick '1/1' '[0-9]+/[0-9]+') lines of this method run by the tests, 100%; minimum 80%\)$"
 run test-guardian.sh seal V1
 check "V1: an empty proof is sealed (nothing a unit test can show)" 0 '^SEALED: 0 test files: this proof holds no test'
 etat "$B2" V1 "- tests : non démontrable - contexte déjà couvert - test-guardian ses_w1"
@@ -895,6 +999,26 @@ etat "$B2" V1 "- tests : non démontrable - contexte déjà couvert - test-guard
 # M. V2 (RED, but the coder never makes it green) and V3 (RED) in the same wave as V1; V2 given up and put aside
 # ======================================================================================================================
 step "M. abandon d'une faille"
+run test-guardian.sh coverage V2-before "$T" src/App/Hasher.cs
+run test-guardian.sh net V2-before src/App/Hasher.cs:Hash
+check "V2: no test runs Hash: THIN" 0 '^SAFETY NET: THIN \(0/1 lines of this method run by the tests, 0% < 80%\)'
+# its current behavior, but never the weak hash itself (the proof asserts it): a property the fix keeps
+cat > tests/App.Tests/HasherContextTests.cs <<'EOF'
+namespace App.Tests;
+
+// <!-- fake-test: App.Tests.HasherContextTests.Hash_SameInput_SameOutput pass -->
+// <!-- fake-cover: src/App/Hasher.cs c=App.Hasher m=Hash 5:1 -->
+public class HasherContextTests
+{
+    [Fact]
+    public void Hash_SameInput_SameOutput() => Assert.Equal(Hasher.Hash("secret"), Hasher.Hash("secret"));
+}
+EOF
+run test-guardian.sh green "$T" FullyQualifiedName~HasherContextTests
+check "V2: its non-regression test, green twice" 0 '^GREEN: 1 tests pass, twice$'
+run test-guardian.sh coverage V2-net "$T" src/App/Hasher.cs
+run test-guardian.sh net V2-net src/App/Hasher.cs:Hash
+check "V2: the net OK" 0 '^SAFETY NET: OK \(1/1 lines of this method run by the tests, 100%; minimum 80%\)$'
 cat > tests/App.Tests/HasherSecurityTests.cs <<'EOF'
 namespace App.Tests;
 
@@ -907,7 +1031,25 @@ public class HasherSecurityTests
 EOF
 run test-guardian.sh red "$T" FullyQualifiedName~Security_WeakCryptographicHash_V2
 check "V2: RED" 0 '^RED: 1 tests fail'
-run test-guardian.sh seal V2 tests/App.Tests/HasherSecurityTests.cs
+run test-guardian.sh seal V2 tests/App.Tests/HasherContextTests.cs tests/App.Tests/HasherSecurityTests.cs
+run test-guardian.sh coverage V3-before "$T" src/App/TokenService.cs
+run test-guardian.sh net V3-before src/App/TokenService.cs:NewToken
+check "V3: no test runs NewToken: THIN" 0 '^SAFETY NET: THIN \(0/1 lines of this method run by the tests, 0% < 80%\)'
+cat > tests/App.Tests/TokenContextTests.cs <<'EOF'
+namespace App.Tests;
+
+// <!-- fake-test: App.Tests.TokenContextTests.NewToken_NotEmpty pass -->
+// <!-- fake-cover: src/App/TokenService.cs c=App.TokenService m=NewToken 5:1 -->
+public class TokenContextTests
+{
+    [Fact]
+    public void NewToken_NotEmpty() => Assert.False(string.IsNullOrEmpty(TokenService.NewToken()));
+}
+EOF
+run test-guardian.sh green "$T" FullyQualifiedName~TokenContextTests
+run test-guardian.sh coverage V3-net "$T" src/App/TokenService.cs
+run test-guardian.sh net V3-net src/App/TokenService.cs:NewToken
+check "V3: the net OK" 0 '^SAFETY NET: OK \(1/1 lines of this method run by the tests, 100%; minimum 80%\)$'
 cat > tests/App.Tests/TokenSecurityTests.cs <<'EOF'
 namespace App.Tests;
 
@@ -920,10 +1062,10 @@ public class TokenSecurityTests
 EOF
 run test-guardian.sh red "$T" FullyQualifiedName~Security_InsecureRandomness_V3
 check "V3: RED" 0 '^RED: 1 tests fail'
-run test-guardian.sh seal V3 tests/App.Tests/TokenSecurityTests.cs
-for v in V2 V3; do etat "$B2" "$v" "- tests : RED - contexte déjà couvert - test-guardian ses_w$v"; done
+run test-guardian.sh seal V3 tests/App.Tests/TokenContextTests.cs tests/App.Tests/TokenSecurityTests.cs
+for v in V2 V3; do etat "$B2" "$v" "- tests : RED - filet 0 % -> 100 % OK - contexte 1 ajouté - test-guardian ses_w$v"; done
 chain "test-guardian.sh park V1" "test-guardian.sh park V2" "test-guardian.sh park V3"
-check "the wave parked, the empty proof included" 0 '^PARKED: 1 test files of the proof V3'
+check "the wave parked, the empty proof included" 0 '^PARKED: 2 test files of the proof V3'
 truth "clean" 'clean'
 for v in V1 V2 V3; do etat "$B2" "$v" "- preuve rangée"; done
 # V1: its proof back (nothing), the fix, the build and the tests of the module, the commit
@@ -960,7 +1102,7 @@ EOF
 run test-guardian.sh green "$T" FullyQualifiedName~Security_WeakCryptographicHash_V2
 check "V2: the coder's fix does not make it green" 1 '^STOP: 1 of these tests FAIL'
 run fortify.sh discard V2
-check "V2: put aside, recoverable" 0 '^DISCARDED: 2 files put aside in git stash « fortify SEC-7 V2 \(wt\) », commit [0-9a-f]{40}'
+check "V2: put aside, recoverable, its net with it" 0 '^DISCARDED: 3 files put aside in git stash « fortify SEC-7 V2 \(wt\) », commit [0-9a-f]{40}'
 STASH=$(printf '%s\n' "$out" | sed -n 's/.*, commit \([0-9a-f]\{40\}\)\..*/\1/p')
 truth "V2: the working tree is clean" 'clean'
 truth "V2: its fix is in the stash" 'git stash show -p "$STASH" | grep -q "sha1"'
@@ -991,11 +1133,11 @@ check "resume: the batch sheet" 0 '^- Lot Fortify : app-api / develop'
 check "resume: uncommitted files" 0 'src/App/TokenService.cs'
 # V3 has « preuve rangée » and « correctif » but no « après »: case (3), what remains is put aside
 run fortify.sh discard reprise
-check "resume: the interrupted work put aside" 0 '^DISCARDED: 2 files put aside in git stash « fortify SEC-7 reprise \(wt\) »'
+check "resume: the interrupted work put aside" 0 '^DISCARDED: 3 files put aside in git stash « fortify SEC-7 reprise \(wt\) »'
 truth "resume: clean" 'clean'
 # then 4a: its proof comes back from its seal, its fix is made again
 chain "test-guardian.sh unpark V3" "test-guardian.sh red $T FullyQualifiedName~Security_InsecureRandomness_V3"
-check "resume 4a: the proof back from its seal" 0 '^UNPARKED: 1 test files of the proof V3 back, as sealed$'
+check "resume 4a: the proof and its net back from their seal" 0 '^UNPARKED: 2 test files of the proof V3 back, as sealed$'
 check "resume 4a: red again (the fix was put aside)" 0 '^RED: 1 tests fail'
 fix_token
 run test-guardian.sh green "$T" FullyQualifiedName~Security_InsecureRandomness_V3
@@ -1009,6 +1151,25 @@ check "resume (1): committed" 0 '^COMMIT: .*insecure randomness in TokenService.
 # O. V4: a test that hangs; a wave cut before its proofs were parked: the resume of step 1, case (2)
 # ======================================================================================================================
 step "O. test bloqué, reprise avant rangement"
+run test-guardian.sh coverage V4-before "$T" src/App/Report.cs
+run test-guardian.sh net V4-before src/App/Report.cs:Export
+check "V4: no test runs Export: THIN" 0 '^SAFETY NET: THIN \(0/1 lines of this method run by the tests, 0% < 80%\)'
+cat > tests/App.Tests/ReportContextTests.cs <<'EOF'
+namespace App.Tests;
+
+// <!-- fake-test: App.Tests.ReportContextTests.Export_Name_EndsWithName pass -->
+// <!-- fake-cover: src/App/Report.cs unless=src/App/Report.cs:GetFullPath c=App.Report m=Export 5:1 -->
+// <!-- fake-cover: src/App/Report.cs if=src/App/Report.cs:GetFullPath c=App.Report m=Export 6:1 7:1 8:1:1/2 12:1 13:1 -->
+public class ReportContextTests
+{
+    [Fact]
+    public void Export_Name_EndsWithName() => Assert.EndsWith("a.csv", Report.Export("a.csv"));
+}
+EOF
+run test-guardian.sh green "$T" FullyQualifiedName~ReportContextTests
+run test-guardian.sh coverage V4-net "$T" src/App/Report.cs
+run test-guardian.sh net V4-net src/App/Report.cs:Export
+check "V4: the net OK" 0 '^SAFETY NET: OK \(1/1 lines of this method run by the tests, 100%; minimum 80%\)$'
 cat > tests/App.Tests/ReportSecurityTests.cs <<'EOF'
 namespace App.Tests;
 
@@ -1033,11 +1194,11 @@ public class ReportSecurityTests
 EOF
 run test-guardian.sh red "$T" FullyQualifiedName~Security_PathManipulation_V4
 check "bounded: RED" 0 '^RED: 1 tests fail'
-run test-guardian.sh seal V4 tests/App.Tests/ReportSecurityTests.cs
-etat "$B2" V4 "- tests : RED - contexte déjà couvert - test-guardian ses_w4"
+run test-guardian.sh seal V4 tests/App.Tests/ReportContextTests.cs tests/App.Tests/ReportSecurityTests.cs
+etat "$B2" V4 "- tests : RED - filet 0 % -> 100 % OK - contexte 1 ajouté - test-guardian ses_w4"
 # --- OpenCode restarts: V4 has « tests : » but neither « preuve rangée » nor « correctif »: case (2), park it
 run test-guardian.sh park V4
-check "resume (2): parked" 0 '^PARKED: 1 test files of the proof V4'
+check "resume (2): parked, with its net" 0 '^PARKED: 2 test files of the proof V4'
 truth "resume (2): clean" 'clean'
 chain "test-guardian.sh unpark V4" "test-guardian.sh red $T FullyQualifiedName~Security_PathManipulation_V4"
 check "V4: red" 0 '^RED: 1 tests fail'
@@ -1145,7 +1306,7 @@ EOF
 printf 'APPSEC_PROJECT_NAME=core-api\n' > appsec-ci.env
 printf 'bin/\nobj/\n' > .gitignore
 git add -A && git commit -q -m "chore: core" && git push -q origin develop 2>/dev/null
-cover "src/Core/UrlHelper.cs 5:1"
+cover "src/Core/UrlHelper.cs c=Core.UrlHelper m=Next 5:1"
 run fortify.sh prereq
 check "MTP: its coverage extension is enough" 0 "^PREREQ: test project $MT \(Microsoft.Testing.Platform, coverage: codecoverage\)$"
 check "MTP: OK" 0 '^PREREQ: OK$'
@@ -1153,6 +1314,9 @@ chain "branch.sh LOCAL bugfix 'Fortify Open Redirect lot 2026-10-24'" "fortify.s
 check "MTP: the batch" 0 '^BATCH: .*/opencode-tickets/LOCAL-1.fortify$'
 run test-guardian.sh coverage V1-before "$MT" src/Core/UrlHelper.cs
 check "MTP: coverage before, through its extension" 0 "^src/Core/UrlHelper.cs lines $(pick '1/1 \(100%\)' '[0-9]+/[0-9]+')"
+run test-guardian.sh net V1-before src/Core/UrlHelper.cs:Next
+check "MTP: the net, from the report of its extension" 0 '^SAFETY NET: OK \([0-9]+/[0-9]+ lines of this method run by the tests, 100%; minimum 80%\)$'
+note "MTP : $(printf '%s\n' "$out" | tr '\n' ' ')"
 cat > tests/Core.Tests/UrlHelperSecurityTests.cs <<'EOF'
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -1186,9 +1350,229 @@ check "MTP: green twice" 0 '^GREEN: 1 tests pass, twice$'
 run test-guardian.sh coverage V1-after "$MT" src/Core/UrlHelper.cs
 run test-guardian.sh compare V1-before V1-after
 check "MTP: no loss" 0 '^COVERAGE: no file lost coverage$'
+run test-guardian.sh net V1-after src/Core/UrlHelper.cs:Next
+check "MTP: the net after the fix" 0 '^SAFETY NET: OK \([0-9]+/[0-9]+ lines of this method run by the tests, 100%; minimum 80%\)$'
 chain "test-guardian.sh sealed V1" "ship.sh --no-push 'fix(security): open redirect in UrlHelper.cs (V1, LOCAL-1)'"
 check "MTP: committed" 0 '^COMMIT: .*open redirect in UrlHelper.cs'
 truth "never dotnet run" '! grep -q "^dotnet run" "$FAKE_DOTNET_LOG"'
+
+# ======================================================================================================================
+# R. The safety net of methods the compiler splits (an async method, an iterator, a lambda, a local function, an
+#    overload, a property, a constructor), and a net that no test can complete (the real clock): « INSUFFISANT »
+# ======================================================================================================================
+step "R. filet : méthodes découpées, filet insuffisant"
+gitlab "$work/shop"
+cd "$work/shop" || exit 1
+csproj src/Shop/Shop.csproj Microsoft.NET.Sdk
+cat > src/Shop/IPriceSource.cs <<'EOF'
+namespace Shop;
+
+public interface IPriceSource
+{
+    decimal Get(string sku);
+
+    Task<decimal> FetchAsync(string sku);
+}
+EOF
+cat > src/Shop/Catalog.cs <<'EOF'
+namespace Shop;
+
+public class Catalog(IPriceSource prices)
+{
+    private readonly Dictionary<string, decimal> cache = new();
+
+    public decimal Price(string sku) => Price(sku, 1);
+
+    public decimal Price(string sku, int quantity)
+    {
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity));
+        }
+        return Unit(sku) * quantity;
+    }
+
+    public async Task<decimal> TotalAsync(IEnumerable<string> skus)
+    {
+        decimal total = 0;
+        foreach (var sku in skus)
+        {
+            total += await prices.FetchAsync(sku);
+        }
+        return total;
+    }
+
+    public IEnumerable<string> Cheap(IEnumerable<string> skus, decimal max) => skus.Where(s => Unit(s) <= max);
+
+    public string Label(string sku)
+    {
+        return Format(Unit(sku));
+
+        static string Format(decimal value) => value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public IEnumerable<string> Expensive(IEnumerable<string> skus)
+    {
+        foreach (var sku in skus)
+        {
+            if (Unit(sku) > 100)
+            {
+                yield return sku;
+            }
+        }
+    }
+
+    public int Count => cache.Count;
+
+    private decimal Unit(string sku)
+    {
+        if (!cache.TryGetValue(sku, out var value))
+        {
+            value = prices.Get(sku);
+            cache[sku] = value;
+        }
+        return value;
+    }
+}
+EOF
+cat > src/Shop/Greeting.cs <<'EOF'
+namespace Shop;
+
+public static class Greeting
+{
+    public static string For(string name)
+    {
+        if (DateTime.Now.Year < 2000)
+        {
+            var archived = "Archive " + name;
+            var stamp = DateTime.Now.ToString("yyyy");
+            return archived + " " + stamp;
+        }
+        return "Bonjour " + name.Trim();
+    }
+}
+EOF
+ST=tests/Shop.Tests/Shop.Tests.csproj
+csproj "$ST" Microsoft.NET.Sdk '<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />' \
+  '<PackageReference Include="xunit" Version="2.9.2" />' '<PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />' \
+  '<PackageReference Include="coverlet.collector" Version="6.0.2" />' '<ProjectReference Include="../../src/Shop/Shop.csproj" />' \
+  '<Using Include="Xunit" />'
+# the test of develop: one price (with the fake, what it runs, as coverlet would report it)
+cat > tests/Shop.Tests/CatalogTests.cs <<'EOF'
+namespace Shop.Tests;
+
+// <!-- fake-test: Shop.Tests.CatalogTests.Price_OneUnit_IsTheUnitPrice pass -->
+// <!-- fake-cover: src/Shop/Catalog.cs c=Shop.Catalog m=.ctor 3:1 5:1 m=Price 7:1 10:1 11:1:1/2 15:1 16:1 m=Unit 51:1 52:1:1/2 53:1 54:1 55:1 56:1 57:1 58:1 -->
+public class CatalogTests
+{
+    [Fact]
+    public void Price_OneUnit_IsTheUnitPrice() => Assert.Equal(12.5m, new Catalog(new FixedPrices()).Price("a"));
+}
+
+internal sealed class FixedPrices : IPriceSource
+{
+    public decimal Get(string sku) => sku == "big" ? 150m : 12.5m;
+
+    public Task<decimal> FetchAsync(string sku) => Task.FromResult(Get(sku));
+}
+EOF
+printf 'bin/\nobj/\n' > .gitignore
+git add -A && git commit -q -m "chore: the shop" && git push -q origin develop 2>/dev/null
+git switch -q -c bugfix/SHOP-1-prices
+# every line of the code, as coverlet lists them (no test runs them: the test files add what they run)
+cover "src/Shop/Catalog.cs c=Shop.Catalog m=.ctor 3:0 5:0 m=Price 7:0 10:0 11:0:0/2 12:0 13:0 14:0 15:0 16:0 m=Cheap 28:0 m=Label 31:0 32:0 35:0 m=<Label>g__Format|7_0 34:0 m=get_Count 48:0 m=Unit 51:0 52:0:0/2 53:0 54:0 55:0 56:0 57:0 58:0 c=Shop.Catalog/<>c__DisplayClass6_0 m=<Cheap>b__0 28:0 c=Shop.Catalog/<TotalAsync>d__5 m=MoveNext 19:0 20:0 21:0:0/2 22:0 23:0 24:0 25:0 26:0 c=Shop.Catalog/<Expensive>d__8 m=MoveNext 38:0 39:0:0/2 40:0 41:0:0/2 42:0 43:0 44:0 45:0 46:0" \
+  "src/Shop/Greeting.cs c=Shop.Greeting m=For 6:0 7:0:0/2 8:0 9:0 10:0 11:0 12:0 13:0 14:0"
+run test-guardian.sh coverage N1-before "$ST" src/Shop/Catalog.cs src/Shop/Greeting.cs
+check "the measure of develop" 0 '^TESTS: 1 passed, 0 failed$'
+run test-guardian.sh net N1-before src/Shop/Catalog.cs:Totals
+check "a name that is not in the code: STOP, with the methods of the file" 1 '^STOP: not in the coverage report: src/Shop/Catalog.cs:Totals \(the methods of this file in the report: .*TotalAsync.*\)'
+check "…the async method, the iterator, the lambda and the local function by the names of the code" 1 'methods of this file in the report: [^)]*Expensive[^)]*\)' 'b__|d__|g__|MoveNext'
+note "les méthodes de Catalog.cs : $(printf '%s\n' "$out" | sed -n 's/.*in the report: \(.*\))\..*/\1/p')"
+run test-guardian.sh net N1-before src/Shop/Catalog.cs:TotalAsync src/Shop/Catalog.cs:Expensive src/Shop/Catalog.cs:Cheap src/Shop/Catalog.cs:Label src/Shop/Catalog.cs:Catalog
+check "an async method: its state machine" 0 "^NET: src/Shop/Catalog.cs:TotalAsync lines 0/$(pick '8 \(0%\) branches 0/2 uncovered 19-26$' '[0-9]+ \(0%\)')"
+check "an iterator: its state machine" 0 "^NET: src/Shop/Catalog.cs:Expensive lines 0/$(pick '9 \(0%\) branches 0/4 uncovered 38-46$' '[0-9]+ \(0%\)')"
+check "a lambda: in the method that writes it" 0 "^NET: src/Shop/Catalog.cs:Cheap lines 0/$(pick '1' '[0-9]+') \(0%\)"
+check "a local function: in its method" 0 "^NET: src/Shop/Catalog.cs:Label lines 0/$(pick '4 \(0%\) branches 0/0 uncovered 31-32 34-35$' '[0-9]+ \(0%\)')"
+check "a constructor, by the name of its class" 0 "^NET: src/Shop/Catalog.cs:Catalog lines $(pick '2/2' '[0-9]+/[0-9]+') \(100%\)"
+check "five methods that no test runs: THIN" 0 '^SAFETY NET: THIN \([0-9]+/[0-9]+ lines of these 5 methods run by the tests, [0-9]+% < 80%\)'
+note "avant : $(printf '%s\n' "$out" | grep -E '^(NET|SAFETY)' | tr '\n' ' ')"
+run test-guardian.sh net N1-before src/Shop/Catalog.cs:Price src/Shop/Catalog.cs:Count src/Shop/Catalog.cs:Catalog.Label
+check "two overloads together, the case of the error not run" 0 "^NET: src/Shop/Catalog.cs:Price lines $(pick '5/8 \(62%\) branches 1/2 uncovered 12-14$' '[0-9]+/[0-9]+ \([0-9]+%\) branches [0-9]+/[0-9]+ uncovered [0-9]')"
+check "a property, by its name" 0 '^NET: src/Shop/Catalog.cs:Count lines 0/[0-9]+ \(0%\)'
+check "a method named with its class" 0 '^NET: src/Shop/Catalog.cs:Catalog.Label lines 0/[0-9]+ \(0%\)'
+# the non-regression tests of their current behavior (what they run, for the fake)
+cat > tests/Shop.Tests/CatalogContextTests.cs <<'EOF'
+namespace Shop.Tests;
+
+// <!-- fake-test: Shop.Tests.CatalogContextTests.TotalAsync_TwoSkus_Sum pass -->
+// <!-- fake-test: Shop.Tests.CatalogContextTests.Cheap_Max20_KeepsTheCheapOnes pass -->
+// <!-- fake-test: Shop.Tests.CatalogContextTests.Label_Sku_TwoDecimals pass -->
+// <!-- fake-test: Shop.Tests.CatalogContextTests.Expensive_Skus_OnlyAbove100 pass -->
+// <!-- fake-test: Shop.Tests.CatalogContextTests.Price_ZeroQuantity_Throws pass -->
+// <!-- fake-test: Shop.Tests.CatalogContextTests.Count_TwoSkus_Two pass -->
+// <!-- fake-cover: src/Shop/Catalog.cs c=Shop.Catalog m=.ctor 3:1 5:1 m=Price 7:1 10:1 11:1:2/2 12:1 13:1 14:1 15:1 16:1 m=Cheap 28:1 m=Label 31:1 32:1 35:1 m=<Label>g__Format|7_0 34:1 m=get_Count 48:1 m=Unit 51:1 52:1:2/2 53:1 54:1 55:1 56:1 57:1 58:1 c=Shop.Catalog/<>c__DisplayClass6_0 m=<Cheap>b__0 28:1 c=Shop.Catalog/<TotalAsync>d__5 m=MoveNext 19:1 20:1 21:1:2/2 22:1 23:1 24:1 25:1 26:1 c=Shop.Catalog/<Expensive>d__8 m=MoveNext 38:1 39:1:2/2 40:1 41:1:2/2 42:1 43:1 44:1 45:1 46:1 -->
+public class CatalogContextTests
+{
+    [Fact]
+    public async Task TotalAsync_TwoSkus_Sum() => Assert.Equal(25m, await new Catalog(new FixedPrices()).TotalAsync(new[] { "a", "b" }));
+
+    [Fact]
+    public void Cheap_Max20_KeepsTheCheapOnes() => Assert.Equal(new[] { "a" }, new Catalog(new FixedPrices()).Cheap(new[] { "a", "big" }, 20m));
+
+    [Fact]
+    public void Label_Sku_TwoDecimals() => Assert.Equal("12.50", new Catalog(new FixedPrices()).Label("a"));
+
+    [Fact]
+    public void Expensive_Skus_OnlyAbove100() => Assert.Equal(new[] { "big" }, new Catalog(new FixedPrices()).Expensive(new[] { "a", "big" }));
+
+    [Fact]
+    public void Price_ZeroQuantity_Throws() => Assert.Throws<ArgumentOutOfRangeException>(() => new Catalog(new FixedPrices()).Price("a", 0));
+
+    [Fact]
+    public void Count_TwoSkus_Two()
+    {
+        var catalog = new Catalog(new FixedPrices());
+        catalog.Price("a");
+        catalog.Price("big");
+        Assert.Equal(2, catalog.Count);
+    }
+}
+EOF
+cat > tests/Shop.Tests/GreetingContextTests.cs <<'EOF'
+namespace Shop.Tests;
+
+// <!-- fake-test: Shop.Tests.GreetingContextTests.For_Name_Trimmed pass -->
+// <!-- fake-cover: src/Shop/Greeting.cs c=Shop.Greeting m=For 6:1 7:1:1/2 13:1 14:1 -->
+public class GreetingContextTests
+{
+    [Fact]
+    public void For_Name_Trimmed() => Assert.Equal("Bonjour Ana", Greeting.For(" Ana "));
+}
+EOF
+run test-guardian.sh green "$ST" "FullyQualifiedName~CatalogContextTests|FullyQualifiedName~GreetingContextTests"
+check "the non-regression tests, green twice" 0 '^GREEN: 7 tests pass, twice$'
+run test-guardian.sh coverage N1-net "$ST" src/Shop/Catalog.cs src/Shop/Greeting.cs
+run test-guardian.sh net N1-net src/Shop/Catalog.cs:TotalAsync src/Shop/Catalog.cs:Expensive src/Shop/Catalog.cs:Cheap src/Shop/Catalog.cs:Label src/Shop/Catalog.cs:Catalog src/Shop/Catalog.cs:Price
+check "with them: the six methods run (a brace after a throw is no line to run)" 0 "^SAFETY NET: OK \([0-9]+/[0-9]+ lines of these 6 methods run by the tests, $(pick '100' '[0-9]+')%; minimum 80%\)$"
+note "avec les tests : $(printf '%s\n' "$out" | grep -E '^(NET|SAFETY)' | tr '\n' ' ')"
+run test-guardian.sh net N1-net src/Shop/Greeting.cs:For
+check "the branch of the real clock: no test can run it" 0 "^NET: src/Shop/Greeting.cs:For lines $(pick '4/9 \(44%\) branches 1/2 uncovered 8-12$' '[0-9]+/[0-9]+ \([0-9]+%\) branches [0-9]+/[0-9]+ uncovered [0-9]')"
+check "…THIN: the test-guardian reports it « INSUFFISANT », with these lines and why" 0 '^SAFETY NET: THIN \([0-9]+/[0-9]+ lines of this method run by the tests, [0-9]+% < 80%\)'
+note "Greeting.For : $(printf '%s\n' "$out" | grep -E '^(NET|SAFETY)' | tr '\n' ' ')"
+run test-guardian.sh net N1-net --min 30 src/Shop/Greeting.cs:For
+check "the minimum of AGENTS.md (« Filet de non-régression : 30 % »)" 0 '^SAFETY NET: OK \([0-9]+/[0-9]+ lines of this method run by the tests, [0-9]+%; minimum 30%\)$'
+run test-guardian.sh net N9 src/Shop/Greeting.cs:For
+check "no measure under that label: STOP" 1 '^STOP: no coverage measured as N9: test-guardian.sh coverage N9 <test project> <files> first$'
+run test-guardian.sh net N1-net src/Shop/Pricing.cs:For
+check "a file that does not exist: STOP" 1 '^STOP: no file src/Shop/Pricing.cs in this repository$'
+run test-guardian.sh net N1-net src/Shop/Greeting.cs
+check "a file without its method: STOP" 1 '^STOP: bad method src/Shop/Greeting.cs: <file.cs>:<method>, or <file.cs>:<class>.<method>$'
+run test-guardian.sh net N1-net --min 120 src/Shop/Greeting.cs:For
+check "a minimum that is no percentage: STOP" 1 '^STOP: bad minimum 120: a percentage, from 0 to 100$'
+run test-guardian.sh tests-only
+check "the net in the test projects only" 0 '^TESTS-ONLY: OK$'
+run test-guardian.sh seal N1 tests/Shop.Tests/CatalogContextTests.cs tests/Shop.Tests/GreetingContextTests.cs
+check "the net sealed" 0 '^SEALED: 2 test files'
 
 [ "$REAL" -eq 1 ] && dotnet build-server shutdown >/dev/null 2>&1
 echo "fortify-test ($([ "$REAL" -eq 1 ] && echo "real dotnet $(dotnet --version), " || echo "fake dotnet, ")$SHELL_UNDER_TEST): $pass passed, $fail failed"

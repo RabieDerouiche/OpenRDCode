@@ -27,4 +27,4 @@ Rules:
 - Do not modify existing files, except the DI registration or the endpoint mapping when strictly required; list every existing file you modified.
 - A handler that needs a new port for an external system: declare it in Application and implement the Infrastructure side too, following the existing adapters; say so in the answer.
 - Then `sh ~/.config/opencode/scripts/build-test.sh` (with the solution or project of AGENTS.md "Build & test") and report. Fix only the compilation or test errors of the files you created.
-- Nothing is committed: on a ticket branch, `/fix` commits and pushes it with the rest.
+- Nothing is committed. Last, the « Suite » question (question tool, header « Suite »): « /push (recommandé) » (« il propose la branche, le message de commit et la MR, ou pousse sur la branche du ticket »), « Rien pour l'instant »; the pack starts the command I choose: answer only « Je lance /push. ».

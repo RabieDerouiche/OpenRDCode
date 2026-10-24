@@ -19,7 +19,11 @@
 //    A command run in a session that has no title yet names it ("/go ABC-123"): no model request for the title.
 // 4. Starts the command I choose in a multiple-choice question: an option whose label is a command of the pack
 //    ("/go ABC-123", "/fix (recommandé)", "/push") runs by itself in the same session as soon as the agent's turn ends, unless
-//    that turn failed or was stopped, and never in a subagent's session. Agents cannot run a command.
+//    that turn failed or was stopped, and never in a subagent's session. Agents cannot run a command. A run of /go, /fix,
+//    /fortify, /tests, /push or /sync ends with its « Suite » question (header "Suite", after its final answer): the run
+//    is over while it waits for me, so the folder is free at once (9), the title keeps the outcome of the final answer
+//    (10) and the run is never resumed (19), whatever ends the turn after it (the question closed, the model server down
+//    once I answered: the command I chose still starts, unless I stopped the turn).
 // 5. Shows the progress of the agent in the session title while it works, for example
 //    "⏳ 1:42 réflexion 2,3k tokens — <title>", and while a subagent works, what it waits for ("⏳ 31:02 outil ·
 //    Auto-review · nouvel essai 3 dans 45 s (serveur du modèle)", "… · rien reçu depuis 4 min", "❓ … · autorisation
@@ -1615,6 +1619,10 @@ export default Plugin.define({
     // tool call id -> tool name (the v2 events give it once); session id -> the texts of its last answer (10)
     const toolNames = new Map()
     const answers = new Map()
+    // 4. session id -> the outcome mark of the last text of its turn that has one (the final answer of a run, before
+    // its « Suite » question); session id -> that mark, once the « Suite » question of the run is asked
+    const lastMarks = new Map()
+    const suites = new Map()
     let ticker
 
     // ---------- 9. the lock of the folder, in this process and in the git folder for the other ones ----------
@@ -1800,7 +1808,7 @@ export default Plugin.define({
         if (current !== state.written) state.original = current.replace(PROGRESS, "").replace(OUTCOME, "")
         // never on a session OpenCode has not named yet: its title generation would be thrown away
         if (!state.original || DEFAULT_TITLE.test(state.original)) return
-        const title = progressLabel(state, Date.now(), subagents) + " — " + tagged(state.original)
+        const title = progressLabel(state, Date.now(), subagents) + " — " + tagged((state.mark || "") + state.original)
         if (title === current) return
         await rename(sessionID, title)
         state.written = title
@@ -1854,14 +1862,39 @@ export default Plugin.define({
     // The mark of the last answer of a pilot run: "⛔ " (stopped), "⏸ " (waits for me), "✅ " (delivered, or nothing
     // left to do), "" (no final answer: 19). The marks of the final answers start a line (a ✅ in a table cell is no
     // outcome); a ⛔ anywhere is a stop.
-    const outcomeOf = (sessionID) => {
-      const text = ((answers.get(sessionID) || {}).texts || []).join("\n")
+    const markOf = (text) => {
       const marks = text.split("\n").map((line) => (MARK_LINE.exec(line) || [])[1]).filter(Boolean)
       // a stop wins over everything else of the answer (a table of done steps may hold ✅ before it)
       if (text.includes("⛔")) return "⛔ "
       if (marks.includes("⏸")) return "⏸ "
       if (marks.length) return "✅ "
       return ""
+    }
+    const outcomeOf = (sessionID) => markOf(((answers.get(sessionID) || {}).texts || []).join("\n"))
+
+    // 4, 9, 10 and 19. The « Suite » question of a run, after its final answer: the run is over and waits for nothing
+    const suiteAsked = async (event) => {
+      const run = commandRuns.get(event.sessionID)
+      if (!run || suites.has(event.sessionID)) return
+      const questions = event.input && Array.isArray(event.input.questions) ? event.input.questions : []
+      if (!questions.some((q) => q && /^suite$/i.test(String(q.header || "").trim()))) return
+      // the events of the final answer come by the event stream: a second at most behind the call
+      let mark = ""
+      for (let i = 0; i < 5 && run.pilot && !mark; i++) {
+        mark = outcomeOf(event.sessionID) || lastMarks.get(event.sessionID) || ""
+        if (!mark && i < 4) await new Promise((done) => setTimeout(done, 200))
+      }
+      // a question of the run itself, before its final answer: the run goes on after it
+      if (run.pilot && !mark) return
+      if (commandRuns.get(event.sessionID) !== run || suites.has(event.sessionID)) return
+      suites.set(event.sessionID, mark)
+      release(event.sessionID)
+      const state = runs.get(event.sessionID)
+      if (state && mark) {
+        state.mark = mark
+        nudge(event.sessionID, state)
+      }
+      log("the run ended with its « Suite » question: the folder is free", { command: "/" + run.command })
     }
 
     // ---------- 19. a run that ended before its final answer resumes by itself ----------
@@ -1936,20 +1969,33 @@ export default Plugin.define({
       release(sessionID)
       const next = chosen.get(sessionID)
       chosen.delete(sessionID)
+      const suite = suites.get(sessionID)
+      suites.delete(sessionID)
+      lastMarks.delete(sessionID)
       const limited = stepLimited.delete(sessionID)
       const reason = data && data.reason
       const stopped = type === "session.execution.failed" || (type === "session.execution.interrupted" && reason !== "superseded")
       void (async () => {
         await finish(sessionID)
         if (run && run.pilot && reason !== "superseded") {
-          let mark = stopped ? "⛔ " : outcomeOf(sessionID)
-          const why = next ? undefined : resumeReason(type, data, mark, limited)
-          if (why) mark = scheduleResume(sessionID, run, why) ? "↻ " : "⛔ "
-          // a final answer of the run: the next failure may be resumed again
-          else if (!stopped) resumes.delete(sessionID)
+          let mark
+          if (suite !== undefined) {
+            // 4. its final answer came before its « Suite » question: that outcome, never a resume
+            mark = suite
+            resumes.delete(sessionID)
+          } else {
+            mark = stopped ? "⛔ " : outcomeOf(sessionID)
+            const why = next ? undefined : resumeReason(type, data, mark, limited)
+            if (why) mark = scheduleResume(sessionID, run, why) ? "↻ " : "⛔ "
+            // a final answer of the run: the next failure may be resumed again
+            else if (!stopped) resumes.delete(sessionID)
+          }
           await markOutcome(sessionID, mark)
         }
-        if (next && type === "session.execution.succeeded" && typeof api.command === "function") {
+        // the command I chose: after a turn that ended well, or after the « Suite » question of a run whatever
+        // failed then (never after a stop I asked for)
+        const startable = type === "session.execution.succeeded" || (suite !== undefined && type === "session.execution.failed")
+        if (next && startable && typeof api.command === "function") {
           chained.add(sessionID)
           try {
             await api.command({ sessionID, name: next.command, text: next.arguments })
@@ -2018,6 +2064,7 @@ export default Plugin.define({
       if (TURN_END.has(type)) return end(sessionID, type, data)
       if (type === "session.execution.started") {
         track(sessionID)
+        lastMarks.delete(sessionID)
         return
       }
       const state = runs.get(sessionID)
@@ -2033,6 +2080,8 @@ export default Plugin.define({
         case "session.text.ended": {
           const answer = answers.get(sessionID)
           if (answer && answer.message === data.assistantMessageID) answer.texts.push(String(data.text || ""))
+          const mark = markOf(String(data.text || ""))
+          if (mark) lastMarks.set(sessionID, mark)
           return
         }
         case "session.reasoning.started":
@@ -2257,6 +2306,7 @@ export default Plugin.define({
       if (refusedRuns.has(event.sessionID)) {
         throw new Error("Refused by the pack: this run was refused (another /go, /fix, /fortify, /tests, /push or /sync runs in this folder). Answer with the sentence of the request only.")
       }
+      if (event.tool === "question") await suiteAsked(event)
       const tool = V2_TOOLS[event.tool] || event.tool
       const input = event.input && typeof event.input === "object" ? event.input : {}
       // 8. the agents of the pack wait for each command and each subagent

@@ -161,6 +161,11 @@ git checkout -q -- .
 run test-guardian.sh coverage before tests/App.Tests/App.Tests.csproj src/App/Invoice.cs
 check "VSTest coverage of a file" 0 '^src/App/Invoice.cs lines 2/3 \(66%\) branches 0/0 uncovered 4$'
 check "VSTest coverage: the counts" 0 '^TESTS: 3 passed, 0 failed$'
+called "VSTest coverage: each test named in its log" '^dotnet test tests/App.Tests/App.Tests.csproj --collect:XPlat Code Coverage .*--logger console;verbosity=normal'
+sed -i 's/InvoiceTests.Tax pass/InvoiceTests.Tax fail Assert.Equal() Failure: Expected 2, Actual 3/' tests/App.Tests/App.Tests.csproj
+run test-guardian.sh coverage with-failure tests/App.Tests/App.Tests.csproj src/App/Invoice.cs
+check "VSTest coverage: a test that fails, named" 0 '^FAILED TESTS \(1\): App.Tests.InvoiceTests.Tax$'
+git checkout -q -- .
 
 run fortify.sh prereq
 check "VSTest prereq" 0 '^PREREQ: OK$'
@@ -301,6 +306,7 @@ git checkout -q -- .
 run test-guardian.sh coverage before tests/Core.Tests/Core.Tests.csproj src/Core/Price.cs
 check "MTP coverage of a file" 0 '^src/Core/Price.cs lines 1/2 \(50%\) branches 0/0 uncovered 3$'
 check "MTP coverage: the counts" 0 '^TESTS: 3 passed, 0 failed$'
+check "MTP coverage: no failed test, no line" 0 '^TESTS: 3 passed' '^FAILED TESTS'
 called "MTP coverage: the CodeCoverage extension, Cobertura" '--coverage --coverage-output-format cobertura --coverage-output /.*/Core.Tests/coverage.cobertura.xml'
 
 git switch -q -c feature/CORE-7-round

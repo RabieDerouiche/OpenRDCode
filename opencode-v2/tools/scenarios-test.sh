@@ -666,6 +666,134 @@ git add -A && git commit -q -m init
 run detect-project-type.sh
 check "the detection says legacy (/push does not build it)" 0 'legacy'
 
+# ---------- 18. /go: a step « (filet d'abord) »: the safety net of a refactoring, and the regression it catches ----------
+scenario="/go ABC-5 (filet d'abord)"
+git init -q --bare "$work/billing.git"
+git --git-dir="$work/billing.git" symbolic-ref HEAD refs/heads/develop
+git clone -q "$work/billing.git" "$work/billing" 2>/dev/null
+cd "$work/billing" || exit 1
+git checkout -q -b develop 2>/dev/null
+project src/App/App.csproj Microsoft.NET.Sdk
+# a discount that no test runs yet (a teammate's code)
+cat > src/App/Invoice.cs <<'EOF'
+namespace App;
+public class Invoice
+{
+    public decimal Total(decimal amount) => amount;
+    public decimal Vat(decimal amount) => amount * 0.2m;
+    public decimal Discount(decimal amount, int percent)
+    {
+        if (percent <= 0)
+        {
+            return amount;
+        }
+        return amount - amount * percent / 100m;
+    }
+}
+EOF
+# what the tests of the team run (for the fake: the lines of Discount before and after it is rewritten)
+project tests/App.Tests/App.Tests.csproj Microsoft.NET.Sdk \
+  '<ItemGroup>' '  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />' \
+  '  <PackageReference Include="xunit" Version="2.9.2" />' '  <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />' \
+  '  <PackageReference Include="coverlet.collector" Version="6.0.2" />' '  <ProjectReference Include="../../src/App/App.csproj" />' \
+  '  <Using Include="Xunit" />' '</ItemGroup>' \
+  '<!-- fake-cover: src/App/Invoice.cs c=App.Invoice m=Total 4:1 m=Vat 5:1 -->' \
+  '<!-- fake-cover: src/App/Invoice.cs if=src/App/Invoice.cs:return c=App.Invoice m=Discount 7:0 8:0:0/2 9:0 10:0 11:0 12:0 13:0 -->' \
+  '<!-- fake-cover: src/App/Invoice.cs unless=src/App/Invoice.cs:return c=App.Invoice m=Discount 6:0:0/2 -->'
+cat > tests/App.Tests/InvoiceTests.cs <<'EOF'
+namespace App.Tests;
+
+// <!-- fake-test: App.Tests.InvoiceTests.Total pass -->
+// <!-- fake-test: App.Tests.InvoiceTests.Vat pass -->
+public class InvoiceTests
+{
+    [Fact]
+    public void Total() => Assert.True(new Invoice().Total(10m) > 0m);
+
+    [Fact]
+    public void Vat() => Assert.Equal(2m, new Invoice().Vat(10m));
+}
+EOF
+sln App.sln 'App src\App\App.csproj 11111111-1111-1111-1111-111111111111' \
+  'App.Tests tests\App.Tests\App.Tests.csproj 22222222-2222-2222-2222-222222222222'
+printf 'bin/\nobj/\n' > .gitignore
+git add -A && git commit -q -m init && git push -q origin develop
+git branch -q -u origin/develop
+go_start ABC-5 "Remise en une expression"
+check "the ticket branch" 0 '^BRANCH: feature/ABC-5-remise-expression'
+# the step of the analyst ends with « (filet d'abord) »: the test-guardian, mission « filet », phase « avant la modification »
+T5=tests/App.Tests/App.Tests.csproj
+run test-guardian.sh coverage S1-before "$T5" src/App/Invoice.cs
+run test-guardian.sh net S1-before src/App/Invoice.cs:Discount
+check "the net of the method to rewrite: no test runs it" 0 '^SAFETY NET: THIN \(0/[0-9]+ lines of this method run by the tests, 0% < 80%\)'
+cat > tests/App.Tests/InvoiceDiscountTests.cs <<'EOF'
+namespace App.Tests;
+
+// <!-- fake-test: App.Tests.InvoiceDiscountTests.Discount_TenPercent_TakesTenOff pass -->
+// <!-- fake-test: App.Tests.InvoiceDiscountTests.Discount_ZeroPercent_Unchanged pass -->
+// <!-- fake-test: App.Tests.InvoiceDiscountTests.Discount_NegativePercent_Unchanged requires src/App/Invoice.cs:<= Assert.Equal() Failure: Values differ -->
+// <!-- fake-cover: src/App/Invoice.cs if=src/App/Invoice.cs:return c=App.Invoice m=Discount 7:1 8:1:2/2 9:1 10:1 11:1 12:1 13:1 -->
+// <!-- fake-cover: src/App/Invoice.cs unless=src/App/Invoice.cs:return c=App.Invoice m=Discount 6:1:2/2 -->
+public class InvoiceDiscountTests
+{
+    [Fact]
+    public void Discount_TenPercent_TakesTenOff() => Assert.Equal(90m, new Invoice().Discount(100m, 10));
+
+    [Fact]
+    public void Discount_ZeroPercent_Unchanged() => Assert.Equal(100m, new Invoice().Discount(100m, 0));
+
+    [Fact]
+    public void Discount_NegativePercent_Unchanged() => Assert.Equal(100m, new Invoice().Discount(100m, -5));
+}
+EOF
+run test-guardian.sh green "$T5" FullyQualifiedName~InvoiceDiscountTests
+check "its non-regression tests: the current behavior, green twice" 0 '^GREEN: 3 tests pass, twice$'
+run test-guardian.sh coverage S1-net "$T5" src/App/Invoice.cs
+run test-guardian.sh net S1-net src/App/Invoice.cs:Discount
+check "the net, then OK" 0 '^SAFETY NET: OK \([0-9]+/[0-9]+ lines of this method run by the tests, 100%; minimum 80%\)$'
+run test-guardian.sh tests-only
+run test-guardian.sh seal S1 tests/App.Tests/InvoiceDiscountTests.cs
+check "the net sealed" 0 '^SEALED: 1 test files'
+# the coder rewrites the method, and forgets the negative percentages: the net shows it
+cat > src/App/Invoice.cs <<'EOF'
+namespace App;
+public class Invoice
+{
+    public decimal Total(decimal amount) => amount;
+    public decimal Vat(decimal amount) => amount * 0.2m;
+    public decimal Discount(decimal amount, int percent) => amount * (100 - percent) / 100m;
+}
+EOF
+run test-guardian.sh green "$T5" FullyQualifiedName~InvoiceDiscountTests
+check "the coder's done condition: the net catches the regression" 1 '^STOP: 1 of these tests FAIL'
+check "…and names it" 1 'App.Tests.InvoiceDiscountTests.Discount_NegativePercent_Unchanged'
+cat > src/App/Invoice.cs <<'EOF'
+namespace App;
+public class Invoice
+{
+    public decimal Total(decimal amount) => amount;
+    public decimal Vat(decimal amount) => amount * 0.2m;
+    public decimal Discount(decimal amount, int percent) => percent <= 0 ? amount : amount * (100 - percent) / 100m;
+}
+EOF
+run test-guardian.sh green "$T5" FullyQualifiedName~InvoiceDiscountTests
+check "its next round: the net green" 0 '^GREEN: 3 tests pass, twice$'
+# the same test-guardian, phase « après la modification »
+run test-guardian.sh sealed S1
+check "after: the net as sealed" 0 '^SEAL: OK, 1 test files as sealed$'
+run test-guardian.sh coverage S1-after "$T5" src/App/Invoice.cs
+check "after: no test fails" 0 '^TESTS: [0-9]+ passed, 0 failed$' '^FAILED TESTS'
+run test-guardian.sh compare S1-before S1-after
+check "after: no file lost coverage" 0 '^COVERAGE: no file lost coverage$'
+run test-guardian.sh net S1-after src/App/Invoice.cs:Discount
+check "after: the net kept" 0 '^SAFETY NET: OK \([0-9]+/[0-9]+ lines of this method run by the tests, 100%; minimum 80%\)$'
+# the commit of the step (go.md 5.4): its net with it
+run test-guardian.sh sealed S1
+run ship.sh --no-push "refactor(billing): compute the discount in one expression (ABC-5)" "- src/App: Invoice.Discount" "- safety net: 0% -> 100% of the lines of 1 methods"
+check "the step committed" 0 '^COMMIT: .* refactor\(billing\): compute the discount in one expression \(ABC-5\)'
+truth "the commit holds the change and its net" '[ "$(git show --name-only --format= HEAD | sort | tr "\n" " ")" = "src/App/Invoice.cs tests/App.Tests/InvoiceDiscountTests.cs " ]'
+truth "the commit says the net" 'git log -1 --format=%B | grep -q "^- safety net: 0% -> 100%"'
+
 [ "$REAL" -eq 1 ] && dotnet build-server shutdown >/dev/null 2>&1
 echo "scenarios ($([ "$REAL" -eq 1 ] && echo "real dotnet $(dotnet --version), " || echo "fake dotnet, ")$SHELL_UNDER_TEST): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

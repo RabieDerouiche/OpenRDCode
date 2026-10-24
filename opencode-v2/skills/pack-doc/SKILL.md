@@ -60,4 +60,4 @@ Only these lines: one per file created or updated, with what changed; the topics
 ## Answer, in French
 - The lines of the doc-writer's report.
 - Confluence: one line per page, with its link.
-- Last line: on a ticket branch « Les fichiers de docs/ sont des modifications locales : /fix les commite et les pousse avec la branche. »; on develop, master or main « Pour les livrer : /go <KEY> d'un ticket de documentation (les fichiers suivent la nouvelle branche). »
+- Last, the « Suite » question (question tool, header « Suite »): on a ticket branch « /fix (recommandé) » (« il commite et pousse les fichiers de docs/ avec la branche »); on develop, master or main « /push (recommandé) » (« une branche docs/… pour ces fichiers, son commit et sa MR »); then « Rien pour l'instant ». The pack starts the command I choose: answer only « Je lance <the command>. ».

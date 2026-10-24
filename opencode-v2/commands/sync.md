@@ -9,7 +9,7 @@ Request: « $ARGUMENTS »
 Workflow state (no fetch here: ship.sh fetches what it needs):
 [[run workflow-state.sh --no-fetch]]
 
-Bring the branch up to date now, in this single run, without asking anything. Nothing is committed and nothing is pushed: the uncommitted changes stay as they are.
+Bring the branch up to date now, in this single run, without asking anything (only its « Suite » question at the end). Nothing is committed and nothing is pushed: the uncommitted changes stay as they are.
 
 1. Stop at once, with its line, when:
    - the HEAD is detached ("Current branch: (detached HEAD)", an OpenCode workspace starts so): « ⛔ HEAD détachée : il n'y a pas de branche à synchroniser. /push crée une branche pour ce travail et la pousse. »
@@ -18,4 +18,4 @@ Bring the branch up to date now, in this single run, without asking anything. No
 3. A "STOP:" line: stop with it. A conflict: « ⛔ Conflit avec <what was merged> dans <files> : fusion annulée, rien n'est perdu. Résous-la dans Rider (git merge <ref>), puis relance /sync. ». A merge that git refuses because of uncommitted changes on the same files: « ⛔ Tes modifications non commitées touchent les mêmes fichiers : /push d'abord, puis /sync. »
 
 ## Answer, in French
-Header line « **/sync** — <branch> », then « ✅ À jour » with what came in (the REMOTE, BASE and MERGED lines of ship.sh, said simply: « 3 commits poussés depuis l'autre poste », « 5 nouveaux commits de develop fusionnés »), or the « ⛔ » line. When something came in that changes the code, the last line is « Rien n'est poussé : /push quand tu veux l'envoyer. »
+Header line « **/sync** — <branch> », then « ✅ À jour » with what came in (the REMOTE, BASE and MERGED lines of ship.sh, said simply: « 3 commits poussés depuis l'autre poste », « 5 nouveaux commits de develop fusionnés »), or the « ⛔ » line. When something came in that changes the code, the last line is « Rien n'est poussé. », then the « Suite » question: « Rien pour l'instant (recommandé) » (« je continue de travailler »), « /push » (« envoyer cette branche à jour, avec ton travail »).

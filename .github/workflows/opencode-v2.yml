@@ -23,8 +23,8 @@ jobs:
       run:
         working-directory: opencode-v2
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
       - name: Dépendances des simulateurs
@@ -47,15 +47,19 @@ jobs:
               { flush() }
               END { flush() }' "$2"
           }
+          # the last line of each suite, all in one notice at the end (a step keeps 10 notices at most)
+          results="$logs/results.txt"
+          : > "$results"
           suite() {
             title=$1 log="$logs/$2.log"
             shift 2
             if "$@" > "$log" 2>&1; then
-              echo "::notice title=$title::$(tail -n 1 "$log")"
+              echo "✅ $title : $(tail -n 1 "$log")" >> "$results"
             else
               failed=1
               annotate "$title" "$log"
               echo "::error title=$title::$(tail -n 1 "$log")"
+              echo "❌ $title : $(tail -n 1 "$log")" >> "$results"
             fi
           }
           suite "shellcheck" shellcheck sh -c 'shellcheck -S warning scripts/*.sh tools/*.sh && echo "shellcheck: OK"'
@@ -68,8 +72,9 @@ jobs:
             suite "scenarios-test $s" "scenarios-$s" sh tools/scenarios-test.sh "$s"
             suite "fortify-test $s" "fortify-$s" sh tools/fortify-test.sh "$s"
           done
+          echo "::notice title=Suites du pack::$(awk '{ gsub(/%/, "%25"); printf "%s%s", (NR > 1 ? "%0A" : ""), $0 }' "$results")"
           exit "$failed"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: logs-suites
@@ -83,8 +88,8 @@ jobs:
       run:
         working-directory: opencode-v2
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
       - name: fortify-test --real et scenarios-test --real
@@ -99,14 +104,16 @@ jobs:
             awk -v t="$t-test --real" '
               function flush() { if (msg != "") { print "::error title=" t "::" msg; msg = ""; n = 0 } }
               { gsub(/%/, "%25"); gsub(/\r/, "") }
+              # the values the checks leave open (counts of lines that coverlet decides): one notice
+              /^NOTE: / { notes = notes (notes == "" ? "" : "%0A") substr($0, 7); flush(); next }
               /^FAIL/ { flush(); msg = $0; next }
               /^    / && msg != "" && n < 30 { msg = msg "%0A" $0; n++; next }
               { flush() }
-              END { flush() }' "$log"
+              END { flush(); if (notes != "") print "::notice title=" t " (valeurs réelles)::" notes }' "$log"
             echo "::notice title=$t-test --real::$(tail -n 1 "$log")"
           done
           exit "$failed"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: logs-real-dotnet

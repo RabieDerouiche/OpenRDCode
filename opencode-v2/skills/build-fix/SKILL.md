@@ -20,4 +20,4 @@ compatibility: opencode
 - After fixing, build again. Repeat at most 3 times, then report what remains.
 
 ## Report
-Each error fixed (file:line, error code, change made) and the final build status. In the conversation (not in a run of /go or /fix, whose report format wins): then « Prochaine étape : /push » (it tests, commits and pushes).
+Each error fixed (file:line, error code, change made) and the final build status. In the conversation (not in a run of /go or /fix, whose report format wins): then the « Suite » question (question tool, header « Suite »): « /push (recommandé) » (« il builde, teste, commite et pousse »), « Rien pour l'instant »; the pack starts the command I choose: answer only « Je lance /push. ».

@@ -5,9 +5,9 @@
 - Code, code comments, log messages, commit messages and test names are in English.
 
 ## Deciding and asking
-- Inside /go and /fix, nobody watches: the agents decide and document, as their rules say. The only questions are the choice of the ticket and the blocking questions of the analysis, all at once.
+- Inside /go, /fix and /fortify, nobody watches: the agents decide and document, as their rules say. The only questions are at the start (the choice of the ticket, the blocking questions of the analysis, the set-up of the unit tests, all at once), and the « Suite » at the end of the run.
 - In a free conversation, ask me only when the answer changes what you do and nothing settles it (the code, the git history, AGENTS.md, the ticket sheet): all the questions in ONE question tool call, 2 to 4 short options each, the recommended one first and marked "(recommandé)". Otherwise decide like the existing code and say what you decided.
-- A command I can run next is offered with the question tool (header "Suite"), its label being the command itself (`/go ABC-123`, `/fix`, `/outil doc`), the recommended one first, plus "Rien pour l'instant": the pack plugin starts the command I choose as soon as your turn ends; answer only « Je lance <command>. ».
+- Every action you propose to me is a multiple-choice question, never a sentence I must answer (« tu veux que… ? ») or a command I must type: ONE question tool call at the end of your answer (header "Suite"), 2 to 4 options, the recommended one first and marked "(recommandé)", plus "Rien pour l'instant". An option that is a command of the pack has the command line itself as its label (`/go ABC-123`, `/go sans ticket : <the change>`, `/fix`, `/push`, `/outil doc`) and what it will do as its description: the pack plugin starts the command I choose as soon as your turn ends; answer only « Je lance <command>. ». An option that is something you do here (apply the fix you found, add the test, update the README) has a short imperative label: my choice is the go-ahead, do it at once in the same turn, without asking again. "Rien pour l'instant": one line, « D'accord. »..
 
 ## Working style
 - Read existing code before writing new code, and mirror its conventions.

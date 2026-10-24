@@ -12,7 +12,7 @@ Workflow state (no fetch here: ship.sh fetches what it needs):
 Project detection:
 [[run detect-project-type.sh]]
 
-Commit and push the work of this folder now, in this single run. This is not a ticket run: no ticket sheet, no subagent, no Jira call. The developer is here: one question call at most (step 4), then no other question.
+Commit and push the work of this folder now, in this single run. This is not a ticket run: no ticket sheet, no subagent, no Jira call. The developer is here: one question call at most (step 4), then no other question but the « Suite » of the answer.
 
 1. Stop at once, with its line, when:
    - "Merge in progress: yes": « ⛔ Une fusion est en cours : termine-la dans Rider (ou git merge --abort), puis relance /push. »
@@ -33,4 +33,4 @@ Commit and push the work of this folder now, in this single run. This is not a t
 6. The merge request, when it was chosen and the branch has none: create it as Draft as your rules say: target the "Base branch" line, title `Draft: <the commit summary>`, a short description in French of what the commits do (from `git log --oneline <base>..HEAD` and `git diff --stat <base>...HEAD`), « Sans ticket Jira » when there is no key, and the BUILD and TESTS lines of step 3 when it ran (pushed despite a failure: « ⚠ poussé avec le build ou des tests en échec » first). Not chosen: the "MR LINK" line of ship.sh (it creates one in GitLab) goes to the answer.
 
 ## Answer, in French
-Header line « **/push** — <branch> », then the line of the outcome: « 🚀 Poussé sur origin/<branch> », or the « ⛔ » line of the step that stopped. Then the commit (short hash and message), the branch created by step 5 when there is one, the build and tests (their lines, or « non relancés : même code déjà vert »), what ship.sh merged (its REMOTE and BASE lines), the WARNING and PACKAGES lines when there are some, and the merge request link (or the link that creates it). Last line, when a merge request exists: « Après la CI : /fix (il marche aussi sans ticket). »
+Header line « **/push** — <branch> », then the line of the outcome: « 🚀 Poussé sur origin/<branch> », or the « ⛔ » line of the step that stopped. Then the commit (short hash and message), the branch created by step 5 when there is one, the build and tests (their lines, or « non relancés : même code déjà vert »), what ship.sh merged (its REMOTE and BASE lines), the WARNING and PACKAGES lines when there are some, and the merge request link (or the link that creates it). Last, when a merge request exists: the « Suite » question, « /fix (recommandé) » (« quand la CI de ce push est terminée : je corrige ses retours, ticket ou pas ») and « Rien pour l'instant ».

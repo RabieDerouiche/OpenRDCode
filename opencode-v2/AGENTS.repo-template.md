@@ -20,6 +20,7 @@
 - Lanceur de tests : `[VSTest | Microsoft.Testing.Platform (xUnit v3 | MSTest | NUnit | TUnit)]`
 - Terminal (développeurs) : `[dotnet build src/App.sln]`, `[dotnet test src/App.sln]` (with Microsoft.Testing.Platform on the .NET 10 SDK, `dotnet test` needs `"test": { "runner": "Microsoft.Testing.Platform" }` in global.json; the agents run the tests with the pack's build-test.sh either way)
 - La CI vérifie aussi : `[dotnet format --verify-no-changes | npx eslint src | coverage >= 80%]`
+- Filet de non-régression : `[80 %]` (only to change the pack's minimum: the share of the lines of the methods a fix touches that tests must run before it)
 - EF Core migration : `[dotnet tool restore && dotnet ef migrations add <Name> --project src/[Project].Infrastructure --startup-project src/[Project].Api]`
 - Front-end : `[npm run build]`, `[npm test -- --watch=false --browsers=ChromeHeadless | npx vitest run]` (one run that ends)
 

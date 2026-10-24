@@ -9,7 +9,11 @@
 #   <!-- fake-test: <fully qualified name> requires <file>:<text> <message> -->
 #                                                          (passes when <file> of the repository holds <text>, fails
 #                                                          with <message> otherwise: a test of the production code)
-#   <!-- fake-cover: <source file> <line>:<hits> ... -->   (the coverage report of a run with coverage)
+#   <!-- fake-cover: <source file> [if=|unless=<file>:<text>] [c=<class>] [m=<method>] <line>:<hits>[:<cov>/<total>] ... -->
+#                                                          (the coverage of a run with coverage: c= a class of the file
+#                                                          as coverlet names it, m= a method as it names it; in a test
+#                                                          file, what that test runs, while the code holds or lacks
+#                                                          a text)
 #   <!-- fake-mtp-v2 -->                                   (dotnet test in VSTest mode refuses it, as the .NET 10 SDK)
 #   <!-- fake-build-error -->                              (its build fails; in a .cs file: that file does not compile)
 #   <!-- fake-mtp-old -->                                  (a platform older than 1.5: no --timeout)
@@ -125,18 +129,102 @@ outcome() {
 }
 
 cobertura() {
-  # cobertura <project> <file>
+  # cobertura <project> <file>: the report of coverlet's format, one element per line, each line of the code in its
+  # method and again in the lines of its class, the names of the compiler (<Read>d__2, <Preview>b__3_0) escaped. What
+  # it covers: the fake-cover lines of FAKE_DOTNET_COVER (otherwise of the project file), and those of the test files
+  # of the project (a test written adds what it runs); a line listed several times keeps its most hits
   mkdir -p "$(dirname "$2")"
   top=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
   {
     echo '<?xml version="1.0" encoding="utf-8"?>'
-    echo '<coverage line-rate="0.5" branch-rate="0" version="1.9"><packages><package name="p"><classes>'
-    sed -n 's/.*<!-- fake-cover: \(.*\) -->.*/\1/p' "${FAKE_DOTNET_COVER:-$1}" | while read -r file rest; do
-      echo "<class name=\"C\" filename=\"$top/$file\" line-rate=\"0.5\"><lines>"
-      for lh in $rest; do echo "<line number=\"${lh%%:*}\" hits=\"${lh#*:}\" branch=\"False\" />"; done
-      echo "</lines></class>"
-    done
-    echo '</classes></package></packages></coverage>'
+    echo '<coverage line-rate="0.5" branch-rate="0" version="1.9" timestamp="0" lines-covered="0" lines-valid="0">'
+    echo '  <sources />'
+    echo '  <packages>'
+    echo '    <package name="p" line-rate="0.5" branch-rate="0" complexity="1">'
+    echo '      <classes>'
+    { if [ -n "${FAKE_DOTNET_COVER:-}" ]; then cat "$FAKE_DOTNET_COVER" 2>/dev/null; else cat "$1"; fi
+      sources_of "$1" | sed 1d | while IFS= read -r src; do cat "$src"; done
+    } | sed -n 's/.*<!-- fake-cover: \(.*\) -->.*/\1/p' | while IFS= read -r l; do
+      # if=<file>:<text>, unless=<file>:<text>: lines that hold only while the code holds (or lacks) a text (a test
+      # file that runs other lines once a fix changed the code)
+      keep=1
+      set -f
+      for t in $l; do
+        case "$t" in
+          if=*) c=${t#if=}; grep -qF -- "${c#*:}" "$top/${c%%:*}" 2>/dev/null || keep=0 ;;
+          unless=*) c=${t#unless=}; grep -qF -- "${c#*:}" "$top/${c%%:*}" 2>/dev/null && keep=0 ;;
+        esac
+      done
+      set +f
+      [ "$keep" -eq 1 ] && printf '%s\n' "$l" | sed -e 's/ if=[^ ]*//g' -e 's/ unless=[^ ]*//g'
+    done | awk -v top="$top" '
+      function esc(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); return s }
+      function element(k, n) {
+        if (btot[k] == "") return "<line number=\"" n "\" hits=\"" hits[k] "\" branch=\"False\" />"
+        return "<line number=\"" n "\" hits=\"" hits[k] "\" branch=\"True\" condition-coverage=\"" int(100 * bcov[k] / btot[k]) "% (" bcov[k] "/" btot[k] ")\" />"
+      }
+      function sorted(list,   a, n, i, j, x, out) {
+        n = split(list, a, " ")
+        for (i = 2; i <= n; i++) { x = a[i] + 0; for (j = i - 1; j >= 1 && a[j] + 0 > x; j--) a[j + 1] = a[j]; a[j + 1] = x }
+        out = ""; for (i = 1; i <= n; i++) out = out " " a[i]
+        return out
+      }
+      # a line of <file> [c=<class>] [m=<method>] <line>:<hits>[:<covered>/<total>]…: c= a class of the file as coverlet
+      # names it (C when none), m= one of its methods (none: lines of the class only)
+      {
+        file = $1; cls = "C"; meth = ""
+        if (!(file in fseen)) { fseen[file] = 1; files[++nf] = file }
+        for (i = 2; i <= NF; i++) {
+          t = $i
+          if (t ~ /^c=/) { cls = substr(t, 3); meth = ""; continue }
+          if (t ~ /^m=/) { meth = substr(t, 3); continue }
+          ck = file SUBSEP cls
+          if (!(ck in cseen)) { cseen[ck] = 1; classes[file] = classes[file] SUBSEP cls }
+          mk = ck SUBSEP meth
+          if (!(mk in mseen)) { mseen[mk] = 1; methods[ck] = methods[ck] SUBSEP meth }
+          split(t, a, ":")
+          n = a[1] + 0
+          # the line in its method, and in its class
+          for (scope = 1; scope <= 2; scope++) {
+            k = (scope == 1 ? mk : ck SUBSEP "\001") SUBSEP n
+            if (!(k in hits)) { hits[k] = 0; if (scope == 1) mlines[mk] = mlines[mk] " " n; else clines[ck] = clines[ck] " " n }
+            if (a[2] + 0 > hits[k]) hits[k] = a[2] + 0
+            if (a[3] != "") { split(a[3], b, "/"); if (btot[k] == "" || b[1] + 0 > bcov[k]) { bcov[k] = b[1] + 0; btot[k] = b[2] + 0 } }
+          }
+        }
+      }
+      END {
+        for (f = 1; f <= nf; f++) {
+          file = files[f]
+          nc = split(substr(classes[file], 2), cl, SUBSEP)
+          for (c = 1; c <= nc; c++) {
+            ck = file SUBSEP cl[c]
+            print "        <class name=\"" esc(cl[c]) "\" filename=\"" top "/" file "\" line-rate=\"0.5\" branch-rate=\"0\" complexity=\"1\">"
+            print "          <methods>"
+            nmeth = split(substr(methods[ck], 2), ml, SUBSEP)
+            for (m = 1; m <= nmeth; m++) {
+              if (ml[m] == "") continue
+              mk = ck SUBSEP ml[m]
+              print "            <method name=\"" esc(ml[m]) "\" signature=\"()\" line-rate=\"0.5\" branch-rate=\"0\" complexity=\"1\">"
+              print "              <lines>"
+              nl = split(sorted(mlines[mk]), ln, " ")
+              for (l = 1; l <= nl; l++) print "                " element(mk SUBSEP ln[l], ln[l])
+              print "              </lines>"
+              print "            </method>"
+            }
+            print "          </methods>"
+            print "          <lines>"
+            nl = split(sorted(clines[ck]), ln, " ")
+            for (l = 1; l <= nl; l++) print "            " element(ck SUBSEP "\001" SUBSEP ln[l], ln[l])
+            print "          </lines>"
+            print "        </class>"
+          }
+        }
+      }'
+    echo '      </classes>'
+    echo '    </package>'
+    echo '  </packages>'
+    echo '</coverage>'
   } > "$2"
 }
 

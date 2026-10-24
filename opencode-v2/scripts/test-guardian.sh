@@ -6,9 +6,18 @@
 #                                  "DEPENDS:", "UNRESOLVED:" lines
 #   coverage <label> <test project> <file.cs>...
 #                                  runs the tests of the project with coverlet and prints the line and branch coverage
-#                                  of each file, with its uncovered lines; kept as <label> in the measures folder
+#                                  of each file, with its uncovered lines, and the tests that fail; kept as <label> in
+#                                  the measures folder
 #   compare <label before> <label after>
 #                                  coverage after a change, file by file: "STOP:" when a file lost coverage
+#   net <label> [--min <percent>] <file.cs>:<method>...
+#                                  the safety net of a fix (no test run: the report of coverage <label>): the line and
+#                                  branch coverage of each method the fix will change or that leads to it, its async
+#                                  state machine, lambdas and local functions included, with its uncovered lines, then
+#                                  "SAFETY NET: OK" or "SAFETY NET: THIN" against the minimum (80 % of their lines when
+#                                  none is given): below it, the non-regression tests of the current behavior come
+#                                  before the fix. <method>: its name as the code writes it, <class>.<method> when the
+#                                  file has several classes; a constructor: the name of its class
 #   red <test project> <filter>    the new tests must FAIL on the current code (and compile), the same way twice
 #   green <test project> <filter>  the same tests must PASS, twice: a test whose result changes is FLAKY
 #   build <project>                builds a project (the test-guardian never runs dotnet itself): "BUILD: OK", or the
@@ -47,7 +56,8 @@
 # A seal is the proof of the test-guardian: the coder makes the sealed tests pass as they are, and the test-guardian
 # checks them before its proof after the fix. Only the test-guardian may seal or restore, only the pilot may park,
 # unpark and set up (permission rules).
-# Usage: test-guardian.sh deps <file> | coverage <label> <proj> <file>... | compare <a> <b> | red|green <proj> <filter>
+# Usage: test-guardian.sh deps <file> | coverage <label> <proj> <file>... | compare <a> <b>
+#        | net <label> [--min <pct>] <file>:<method>... | red|green <proj> <filter>
 #        | build <proj> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label>
 #        | setup xunit|mstest|nunit <file>... | changes <base> [<target>] | folder
 
@@ -412,7 +422,7 @@ case "$1" in
       sh "$scripts/build-test.sh" "$project" --collect:"XPlat Code Coverage" --results-directory "$results" > "$folder/test-$label.log" 2>&1
     else
       dotnet test "$project" --collect:"XPlat Code Coverage" --results-directory "$results" --nologo -v q \
-        --blame-hang-timeout "$HANG" --blame-hang-dump-type none > "$folder/test-$label.log" 2>&1
+        --logger "console;verbosity=normal" --blame-hang-timeout "$HANG" --blame-hang-dump-type none > "$folder/test-$label.log" 2>&1
     fi
     environment "$folder/test-$label.log"
     aborted "$folder/test-$label.log"
@@ -424,6 +434,12 @@ case "$1" in
     fi
     pf=$(counts "$folder/test-$label.log")
     echo "TESTS: ${pf% *} passed, ${pf#* } failed"
+    # the tests that fail: those that already fail on develop, or a regression (after a change)
+    if [ "${pf#* }" -gt 0 ]; then
+      names=$(sed -n 's/^FAILED TESTS ([0-9]*): //p' "$folder/test-$label.log" | head -n 1)
+      [ -n "$names" ] || names=$(outcomes "$folder/test-$label.log" | sed -n 's/^Failed //p' | head -n 8 | tr '\n' ' ' | sed 's/ $//')
+      echo "FAILED TESTS (${pf#* }): $names"
+    fi
     # One line per file asked: "<file> lines <covered>/<total> (<pct>%) branches <covered>/<total> uncovered <ranges>"
     for f in "$@"; do echo "WANT $f"; done | cat - "$report" | awk '
       /^WANT / { want[++w] = substr($0, 6); next }
@@ -475,6 +491,147 @@ case "$1" in
            status = pa + 0.0001 < pb ? "LOST" : "ok"; if (status == "LOST") lost = lost " " $1
            was = (before[$1] == "") ? "new" : before[$1]; printf "%s %s -> %s %s\n", $1, was, $3, status }
          END { if (lost != "") { print "STOP: coverage lost after the change in" lost; exit 1 } print "COVERAGE: no file lost coverage" }' "$a" "$b"
+    exit $? ;;
+
+  net)
+    [ $# -ge 3 ] || stop "usage: test-guardian.sh net <label> [--min <percent>] <file.cs>:<method>..."
+    label=$2
+    shift 2
+    min=80
+    if [ "$1" = --min ]; then
+      min=${2%%%}
+      shift 2
+    fi
+    { printf '%s' "$min" | grep -qE '^[0-9]{1,3}$' && [ "$min" -le 100 ]; } || stop "bad minimum $min: a percentage, from 0 to 100"
+    [ $# -ge 1 ] || stop "usage: test-guardian.sh net <label> [--min <percent>] <file.cs>:<method>..."
+    printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
+    report=$(find "$folder/results-$label" -name '*.cobertura.xml' 2>/dev/null | head -n 1)
+    [ -n "$report" ] || stop "no coverage measured as $label: test-guardian.sh coverage $label <test project> <files> first"
+    # one "WANT<tab><file><tab><class or -><tab><method><tab><as given>" line per method asked
+    wants=""
+    for m in "$@"; do
+      case "$m" in
+        *.cs:?*) ;;
+        *) stop "bad method $m: <file.cs>:<method>, or <file.cs>:<class>.<method>" ;;
+      esac
+      f="${m%%.cs:*}.cs" spec=${m#*.cs:}
+      f=${f#./}
+      [ -f "$f" ] || [ -f "$root/$f" ] || stop "no file $f in this repository"
+      case "$spec" in
+        *[!A-Za-z0-9_.]*) stop "bad method $spec in $m: the name of a method, or <class>.<method>" ;;
+      esac
+      case "$spec" in
+        .ctor|.cctor) qual=- name=$spec ;;
+        *..ctor|*..cctor) qual=${spec%..*} name=.${spec##*..} ;;
+        *.*) qual=${spec%.*} name=${spec##*.} ;;
+        *) qual=- name=$spec ;;
+      esac
+      [ -n "$qual" ] && [ -n "$name" ] || stop "bad method $spec in $m"
+      wants="${wants}WANT	$f	$qual	$name	$m
+"
+    done
+    printf '%s' "$wants" | cat - "$report" | awk -v min="$min" '
+      function unesc(s) { gsub(/&lt;/, "<", s); gsub(/&gt;/, ">", s); gsub(/&quot;/, "\"", s); gsub(/&apos;/, "'"'"'", s); gsub(/&amp;/, "\\&", s); return s }
+      function attr(line, name) { if (!match(line, " " name "=\"[^\"]*\"")) return ""; return substr(line, RSTART + length(name) + 3, RLENGTH - length(name) - 4) }
+      # the method a name made by the compiler belongs to: <Read>b__3_0 (a lambda), <Read>g__Local|3_0 (a local
+      # function), <.ctor>b__0_0; never a generic method of the code (Map<T>)
+      function ownerof(s,   t) { if (!match(s, /^<+\.?[A-Za-z_][A-Za-z0-9_]*>/)) return ""; t = substr(s, 1, RLENGTH - 1); sub(/^<+/, "", t); return t }
+      # the same for a type made by the compiler: <ReadAsync>d__2 (async method or iterator), <>c/<<Preview>b__3_0>d__0
+      # (an async lambda); <>c and <>c__DisplayClass3_0 (closures) belong to no method: their methods say it
+      function genowner(s) { if (match(s, /<\.?[A-Za-z_][A-Za-z0-9_]*>/)) return substr(s, RSTART + 1, RLENGTH - 2); return "" }
+      function ends(a, b) { return length(a) >= length(b) && substr(a, length(a) - length(b) + 1) == b && (length(a) == length(b) || substr(a, length(a) - length(b), 1) == "/") }
+      function simple(t,   n, p) { n = split(t, p, "."); return p[n] }
+      function qualifies(t, q) { return t == q || (length(t) > length(q) && substr(t, length(t) - length(q)) == "." q) }
+      function sorted(s,   a, n, i, j, x, out) {
+        n = split(s, a, " ")
+        for (i = 2; i <= n; i++) { x = a[i] + 0; for (j = i - 1; j >= 1 && a[j] + 0 > x; j--) a[j + 1] = a[j]; a[j + 1] = x }
+        out = ""; for (i = 1; i <= n; i++) out = out " " a[i]
+        return out
+      }
+      function ranges(s,   a, n, i, out, start, prev) {
+        n = split(sorted(s), a, " "); if (n == 0) return " none"
+        out = ""; start = a[1]; prev = a[1]
+        for (i = 2; i <= n + 1; i++) {
+          if (i <= n && a[i] == prev + 1) { prev = a[i]; continue }
+          out = out " " (start == prev ? start : start "-" prev)
+          if (i <= n) { start = a[i]; prev = a[i] }
+        }
+        return out
+      }
+      /^WANT\t/ { w++; split($0, f, "\t"); wfile[w] = f[2]; wqual[w] = (f[3] == "-" ? "" : f[3]); wname[w] = f[4]; wspec[w] = f[5]; next }
+      /<class / {
+        cur = ""; active = ""
+        fn = attr($0, "filename"); gsub(/\\/, "/", fn)
+        cls = unesc(attr($0, "name"))
+        # the type of the code, and the method of a type the compiler made for it (coverlet nests types with /,
+        # other tools with + or .)
+        gen = ""; user = cls
+        i = index(cls, "/<"); if (!i) i = index(cls, "+<"); if (!i) i = index(cls, ".<")
+        if (i) { gen = substr(cls, i + 1); user = substr(cls, 1, i - 1) }
+        gsub(/`[0-9]+/, "", user); gsub(/[\/+]/, ".", user)
+        cowner = genowner(gen)
+        for (k = 1; k <= w; k++) if (ends(fn, wfile[k]) || ends(wfile[k], fn)) { cur = wfile[k]; seenfile[cur] = 1; break }
+        next
+      }
+      cur != "" && /<method / {
+        active = ""
+        raw = unesc(attr($0, "name"))
+        o = cowner
+        if (o == "") o = ownerof(raw)
+        if (o == "") {
+          o = raw
+          sub(/<.*$/, "", o)
+          if (o !~ /^\./) { n = split(o, part, "."); o = part[n] }
+          if (o ~ /^(get|set|add|remove)_./) o = substr(o, index(o, "_") + 1)
+        }
+        if (!((cur SUBSEP o) in listed)) { listed[cur SUBSEP o] = 1; names[cur] = names[cur] (names[cur] == "" ? "" : ", ") o }
+        for (k = 1; k <= w; k++) {
+          if (wfile[k] != cur) continue
+          if (!(o == wname[k] || raw == wname[k] || (o == ".ctor" && wname[k] == simple(user)))) continue
+          if (wqual[k] != "" && !qualifies(user, wqual[k])) continue
+          active = active " " k; found[k] = 1
+        }
+        if ($0 ~ /\/>[[:space:]]*$/) active = ""
+        next
+      }
+      cur != "" && /<\/method>/ { active = ""; next }
+      active != "" && /<line / {
+        if (!match($0, /number="[0-9]+"/)) next
+        num = substr($0, RSTART + 8, RLENGTH - 9) + 0
+        hits = 0; if (match($0, /hits="[0-9]+"/)) hits = substr($0, RSTART + 6, RLENGTH - 7) + 0
+        bc[1] = 0; bc[2] = 0
+        if (match($0, /condition-coverage="[0-9.]+% \([0-9]+\/[0-9]+\)"/)) {
+          c = substr($0, RSTART, RLENGTH); sub(/.*\(/, "", c); sub(/\).*/, "", c); split(c, bc, "/")
+        }
+        n = split(active, ks, " ")
+        for (x = 1; x <= n; x++) {
+          k = ks[x]
+          if ((k SUBSEP num) in seen) continue
+          seen[k SUBSEP num] = 1; tot[k]++
+          if (hits > 0) cov[k]++; else miss[k] = miss[k] " " num
+          bcov[k] += bc[1]; btot[k] += bc[2]
+        }
+        if (!((cur SUBSEP num) in union)) { union[cur SUBSEP num] = 1; utot++; if (hits > 0) ucov++ }
+        next
+      }
+      END {
+        bad = ""
+        for (k = 1; k <= w; k++) {
+          if (!found[k]) {
+            bad = bad "; " wspec[k] " (" (seenfile[wfile[k]] ? "the methods of this file in the report: " (names[wfile[k]] == "" ? "none" : names[wfile[k]]) : "this file is not in the report: no project the tests reference holds it") ")"
+            continue
+          }
+          printf "NET: %s lines %d/%d (%d%%) branches %d/%d uncovered%s\n", wspec[k], cov[k], tot[k], int(100 * cov[k] / tot[k]), bcov[k], btot[k], ranges(miss[k])
+        }
+        if (bad != "") {
+          print "STOP: not in the coverage report: " substr(bad, 3) ". Give each method by its name in the code (<class>.<method> when the file has several classes; a constructor: the name of its class)"
+          exit 1
+        }
+        pct = int(100 * ucov / utot)
+        what = (ucov + 0) "/" utot " lines of " (w == 1 ? "this method" : "these " w " methods") " run by the tests, " pct "%"
+        if (ucov * 100 >= min * utot) print "SAFETY NET: OK (" what "; minimum " min "%)"
+        else print "SAFETY NET: THIN (" what " < " min "%): before the fix, the non-regression tests of their current behavior that run the uncovered lines above (green twice), then coverage and net again"
+      }'
     exit $? ;;
 
   red|green)

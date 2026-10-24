@@ -359,6 +359,9 @@ P(["pilot"], [
   S + "test-guardian.sh green tests/App.Tests/App.Tests.csproj FullyQualifiedName~InvoiceServiceTests",
   S + "test-guardian.sh sealed S2 && " + S + "ship.sh --no-push \"fix(billing): round the VAT per line (ABC-123)\" \"- src/Billing: VatCalculator\" && " +
     S + "ticket-sheet.sh tick 2 \"/go étape 2 - 2 fichiers - build ok, tests 14/14\" && " + S + "ticket-sheet.sh decision \"Arrondi : par ligne — comme la facture papier (étape 2)\"",
+  // /go: a step « (filet d'abord) », committed with its net
+  S + "test-guardian.sh sealed S3 && " + S + "ship.sh --no-push \"refactor(billing): compute the discount in one expression (ABC-123)\" \"- src/Billing: Invoice\" \"- safety net: 0% -> 100% of the lines of 1 methods\" && " +
+    S + "ticket-sheet.sh tick 3 \"/go étape 3 - 1 fichiers - build ok, tests 17/17 - filet 0 -> 100 %\"",
   S + "package-refs.sh --doc Blazorise.DataGrid",
   S + "test-guardian.sh changes origin/develop src/App.sln", "git diff origin/develop...HEAD", "git diff --stat origin/develop...HEAD",
   S + "ship.sh --sync-only --base", S + "ship.sh --sync-only --base --merge hotfix/ABC-130-urgent",
@@ -369,7 +372,12 @@ P(["pilot"], [
   S + "test-guardian.sh park F1 && " + S + "test-guardian.sh park F2", S + "fortify.sh discard F1",
   S + "test-guardian.sh unpark F2 && " + S + "ship.sh --no-push \"test(security): show that path manipulation in FileStore.cs is not exploitable (ABC-123)\"",
   S + "test-guardian.sh unpark F2 && " + S + "test-guardian.sh red tests/App.Tests/App.Tests.csproj FullyQualifiedName~Security_PathManipulation_F2",
-  S + "test-guardian.sh sealed F2 && " + S + "ship.sh --no-push \"fix(security): path manipulation in FileStore.cs (ABC-123)\" \"- tests: 3 context, 2 vulnerability (red before, green after, twice each)\"",
+  S + "test-guardian.sh sealed F2 && " + S + "ship.sh --no-push \"fix(security): path manipulation in FileStore.cs (ABC-123)\" \"- tests: 3 context, 2 vulnerability (red before, green after, twice each)\" \"- safety net: 20% -> 100% of the lines of 2 methods\"",
+  // /fix: the bugs with their net and their proof, the groups with a net
+  S + "test-guardian.sh park F1 && " + S + "test-guardian.sh park B2", S + "fortify.sh discard B2 N1",
+  S + "test-guardian.sh unpark B2 && " + S + "test-guardian.sh red tests/App.Tests/App.Tests.csproj \"FullyQualifiedName~InvoiceTests.Discount_Negative\"",
+  S + "test-guardian.sh sealed B2 && " + S + "ship.sh --no-push \"fix(billing): keep the amount of a negative discount (ABC-123)\" \"- tests: 2 context, 1 bug (red before, green after, twice each)\" \"- safety net: 40% -> 100% of the lines of 2 methods\"",
+  S + "test-guardian.sh sealed N1 && " + S + "ship.sh --no-push \"fix(billing): split the VAT computation (ABC-123)\" \"- safety net: 50% -> 90% of the lines of 3 methods\" && " + S + "ticket-sheet.sh decision \"Découpage : une méthode par taux — demande de la review (/fix)\"",
   S + "ship.sh --no-push \"fix(billing): address the review (ABC-123)\" && " + S + "ticket-sheet.sh decision \"Nommage : Total plutôt que Sum — demande de la review (/fix)\"",
   "git diff abc1234..HEAD", S + "ship.sh --base \"fix(billing): address the CI, scan and review feedback (ABC-123)\"",
   S + "ticket-sheet.sh suivi \"/fix - 3 corrigés, 1 réponses, 0 hors périmètre - build ok - tests 14/14\"",
@@ -395,6 +403,7 @@ add(["pilot", "coder", "test-guardian", ...RO], [S + "abandon.sh", S + "abandon.
 P(["coder"], [
   S + "pattern-skills.sh", S + "package-refs.sh --doc Blazorise.DataGrid", S + "package-refs.sh",
   S + "test-guardian.sh green tests/App.Tests/App.Tests.csproj FullyQualifiedName~InvoiceServiceTests",
+  S + "test-guardian.sh green tests/App.Tests/App.Tests.csproj \"FullyQualifiedName~Security_PathManipulation_V1|FullyQualifiedName~PathServiceContextTests\"",
   "dotnet format --include src/Billing/VatCalculator.cs", "npx prettier --write src/app/invoice.ts", "npx eslint --fix src/app/invoice.ts",
   S + "build-test.sh tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~InvoiceServiceTests", S + "build-test.sh --build-only src/App.sln",
   S + "build-test.sh tests/App.Tests/App.Tests.csproj",
@@ -404,6 +413,9 @@ P(["coder"], [
 ])
 P(["test-guardian"], [
   S + "test-guardian.sh deps src/Billing/FileStore.cs", S + "test-guardian.sh coverage V2-before tests/App.Tests/App.Tests.csproj src/Billing/FileStore.cs",
+  S + "test-guardian.sh net V2-before src/Billing/FileStore.cs:Read src/Billing/FileStore.cs:FileStore.Open",
+  S + "test-guardian.sh coverage V2-net tests/App.Tests/App.Tests.csproj src/Billing/FileStore.cs", S + "test-guardian.sh net S3-net --min 70 src/Billing/Invoice.cs:Discount",
+  S + "test-guardian.sh seal N1", S + "test-guardian.sh seal B2 tests/App.Tests/InvoiceDiscountTests.cs tests/App.Tests/InvoiceTests.cs",
   S + "test-guardian.sh red tests/App.Tests/App.Tests.csproj FullyQualifiedName~Security_PathManipulation_V2",
   S + "test-guardian.sh green tests/App.Tests/App.Tests.csproj FullyQualifiedName~Security_PathManipulation_V2",
   S + "test-guardian.sh seal V2 tests/App.Tests/Security/FileStoreTests.cs", S + "test-guardian.sh seal V3", S + "test-guardian.sh sealed V2", S + "test-guardian.sh restore V2",
