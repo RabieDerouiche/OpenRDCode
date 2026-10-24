@@ -359,6 +359,12 @@ P(["pilot"], [
   S + "test-guardian.sh green tests/App.Tests/App.Tests.csproj FullyQualifiedName~InvoiceServiceTests",
   S + "test-guardian.sh sealed S2 && " + S + "ship.sh --no-push \"fix(billing): round the VAT per line (ABC-123)\" \"- src/Billing: VatCalculator\" && " +
     S + "ticket-sheet.sh tick 2 \"/go étape 2 - 2 fichiers - build ok, tests 14/14\" && " + S + "ticket-sheet.sh decision \"Arrondi : par ligne — comme la facture papier (étape 2)\"",
+  // /go and /fix: the unit tests of a repository that has none, or no coverage collector, asked before any fix
+  S + "fortify.sh prereq --tests",
+  S + "test-guardian.sh setup xunit src/Billing/Invoice.cs && " + S + "ship.sh --no-push \"test: add the coverage collector to the unit test projects (ABC-123)\" \"- SETUP: coverlet.collector 6.0.4 added to tests/App.Tests/App.Tests.csproj; build OK\"",
+  S + "test-guardian.sh setup nunit src/Billing/Invoice.cs src/Billing/Vat.cs && " + S + "ship.sh --no-push \"test: add the unit test project\" \"- SETUP: tests/App.UnitTests/App.UnitTests.csproj created (nunit, net10.0)\"",
+  S + "ticket-sheet.sh decision \"Tests unitaires : projet App.UnitTests créé (réponse du dev)\"",
+  S + "ticket-sheet.sh decision \"Tests unitaires : aucun projet, correctifs sans test ni filet (réponse du dev)\"",
   // /go: a step « (filet d'abord) », committed with its net
   S + "test-guardian.sh sealed S3 && " + S + "ship.sh --no-push \"refactor(billing): compute the discount in one expression (ABC-123)\" \"- src/Billing: Invoice\" \"- safety net: 0% -> 100% of the lines of 1 methods\" && " +
     S + "ticket-sheet.sh tick 3 \"/go étape 3 - 1 fichiers - build ok, tests 17/17 - filet 0 -> 100 %\"",

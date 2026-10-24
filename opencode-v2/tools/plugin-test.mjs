@@ -1788,6 +1788,43 @@ await check("[v2 4] /compare ends with its « Suite »: the command chosen start
   assert.doesNotMatch(pluginLog().slice(logged), /the folder is free/)
 })
 
+await check("[v2 4] /outil setup: its rules to add and its « Suite » in one call; the rules chosen are no command, /push starts", async () => {
+  const logged = pluginLog().length
+  ct.sessions.set("ct-25", { id: "ct-25", title: "/outil setup", agent: "build" })
+  await ctPrompt("ct-25", "[[command outil setup]]\nSkill : pack-setup")
+  ct.push("session.execution.started", { sessionID: "ct-25" })
+  ct.push("session.step.started", { sessionID: "ct-25", assistantMessageID: "u1" })
+  ct.push("session.text.ended", { sessionID: "ct-25", assistantMessageID: "u1", ordinal: 0, text: "| Section | Statut |\n…\n1. Jamais S3 en direct : IStorageService." })
+  await ct.hooks["tool.execute.before"]({ tool: "question", sessionID: "ct-25", agent: "build", messageID: "m", id: "q-ct-25",
+    input: { questions: [
+      { header: "Règles", question: "Quelles règles proposées j'ajoute à AGENTS.md ?", multiple: true,
+        options: [{ label: "Règle 1 : jamais S3 en direct", description: "…" }, { label: "Règle 2 : dates en UTC", description: "…" }, { label: "Aucune", description: "…" }] },
+      { header: "Suite", question: "Et maintenant ?", options: [{ label: "Rien pour l'instant (recommandé)", description: "…" }, { label: "/push", description: "…" }] },
+    ] } })
+  await ct.hooks["tool.execute.after"]({ tool: "question", sessionID: "ct-25", status: "completed",
+    result: { output: { answers: [["Règle 1 : jamais S3 en direct", "Règle 2 : dates en UTC"], ["/push"]] } } })
+  // the rules added in the same turn, after the question
+  ct.push("session.step.started", { sessionID: "ct-25", assistantMessageID: "u2" })
+  ct.push("session.text.ended", { sessionID: "ct-25", assistantMessageID: "u2", ordinal: 0, text: "Ajouté à AGENTS.md : règles 1, 2\nJe lance /push." })
+  ct.push("session.execution.succeeded", { sessionID: "ct-25" })
+  await wait(150)
+  assert.deepEqual(ct.calls.command.at(-1), { sessionID: "ct-25", name: "push", text: "" })
+  assert.doesNotMatch(pluginLog().slice(logged), /the folder is free/)
+})
+
+await check("[v2 4] /outil audit: « /go sans ticket : … » chosen in its « Suite » starts /go", async () => {
+  ct.sessions.set("ct-26", { id: "ct-26", title: "/outil audit", agent: "build" })
+  await ctPrompt("ct-26", "[[command outil audit]]\nSkill : pack-audit")
+  ct.push("session.execution.started", { sessionID: "ct-26" })
+  ct.push("session.step.started", { sessionID: "ct-26", assistantMessageID: "a1" })
+  ct.push("session.text.ended", { sessionID: "ct-26", assistantMessageID: "a1", ordinal: 0, text: "Type de projet : api\n« À faire en premier » : 1. health checks" })
+  await suiteQuestion("ct-26", ["/go sans ticket : ajouter les health checks de la base (recommandé)", "/go sans ticket : journaliser les erreurs des jobs", "Rien pour l'instant"])
+  await suiteAnswer("ct-26", ["/go sans ticket : ajouter les health checks de la base (recommandé)"])
+  ct.push("session.execution.succeeded", { sessionID: "ct-26" })
+  await wait(150)
+  assert.deepEqual(ct.calls.command.at(-1), { sessionID: "ct-26", name: "go", text: "sans ticket : ajouter les health checks de la base" })
+})
+
 // ---------- 23. dotnet run: a project of the repository that the last commit holds ----------
 const runRepo = join(home, "repos", "run-api")
 mkdirSync(join(runRepo, "src", "Api"), { recursive: true })

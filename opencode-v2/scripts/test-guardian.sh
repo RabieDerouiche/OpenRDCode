@@ -7,7 +7,8 @@
 #   coverage <label> <test project> <file.cs>...
 #                                  runs the tests of the project with coverlet and prints the line and branch coverage
 #                                  of each file, with its uncovered lines, and the tests that fail; kept as <label> in
-#                                  the measures folder
+#                                  the measures folder. A test project with no test yet (just set up): "no test in
+#                                  <project> yet", each file at 0/0 (no line of it runs)
 #   compare <label before> <label after>
 #                                  coverage after a change, file by file: "STOP:" when a file lost coverage
 #   net <label> [--min <percent>] <file.cs>:<method>...
@@ -17,7 +18,8 @@
 #                                  "SAFETY NET: OK" or "SAFETY NET: THIN" against the minimum (80 % of their lines when
 #                                  none is given): below it, the non-regression tests of the current behavior come
 #                                  before the fix. <method>: its name as the code writes it, <class>.<method> when the
-#                                  file has several classes; a constructor: the name of its class
+#                                  file has several classes; a constructor: the name of its class. Measured with no
+#                                  test yet: THIN, every line of these methods to run
 #   red <test project> <filter>    the new tests must FAIL on the current code (and compile), the same way twice
 #   green <test project> <filter>  the same tests must PASS, twice: a test whose result changes is FLAKY
 #   build <project>                builds a project (the test-guardian never runs dotnet itself): "BUILD: OK", or the
@@ -427,6 +429,14 @@ case "$1" in
     environment "$folder/test-$label.log"
     aborted "$folder/test-$label.log"
     report=$(find "$results" -name '*.cobertura.xml' 2>/dev/null | head -n 1)
+    # a test project with no test yet (just set up): nothing runs these files, which is their net (0 %), not a failure
+    if [ -z "$report" ] && [ "$(counts "$folder/test-$label.log")" = "0 0" ] && ! grep -qE 'error (CS|MSB)|^COVERAGE: NOT MEASURED' "$folder/test-$label.log" &&
+      grep -qE 'No test is available|No test source files|Zero tests ran|NONE RUN' "$folder/test-$label.log"; then
+      mkdir -p "$results" && : > "$results/no-test-yet"
+      echo "TESTS: 0 passed, 0 failed (no test in $project yet)"
+      for f in "$@"; do echo "$f lines 0/0 (no test yet: none of its lines runs)"; done | tee "$folder/coverage-$label.txt"
+      exit 0
+    fi
     if [ -z "$report" ]; then
       grep -m 3 'error CS\|error MSB' "$folder/test-$label.log"
       grep -m 1 '^COVERAGE: NOT MEASURED' "$folder/test-$label.log"
@@ -506,6 +516,28 @@ case "$1" in
     [ $# -ge 1 ] || stop "usage: test-guardian.sh net <label> [--min <percent>] <file.cs>:<method>..."
     printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
     report=$(find "$folder/results-$label" -name '*.cobertura.xml' 2>/dev/null | head -n 1)
+    if [ -z "$report" ] && [ -f "$folder/results-$label/no-test-yet" ]; then
+      # measured before any test exists: every line of these methods is to run
+      n=0
+      for m in "$@"; do
+        case "$m" in
+          *.cs:?*) ;;
+          *) stop "bad method $m: <file.cs>:<method>, or <file.cs>:<class>.<method>" ;;
+        esac
+        f="${m%%.cs:*}.cs"
+        f=${f#./}
+        [ -f "$f" ] || [ -f "$root/$f" ] || stop "no file $f in this repository"
+        n=$((n + 1))
+      done
+      for m in "$@"; do echo "NET: ${m#./} no test yet: none of its lines runs"; done
+      if [ "$n" -eq 1 ]; then what="this method"; else what="these $n methods"; fi
+      if [ "$min" -eq 0 ]; then
+        echo "SAFETY NET: OK (no test runs $what yet, 0%; minimum 0%)"
+      else
+        echo "SAFETY NET: THIN (no test runs $what yet, 0% < $min%): before the fix, the non-regression tests of their current behavior that run all their lines (green twice), then coverage and net again"
+      fi
+      exit 0
+    fi
     [ -n "$report" ] || stop "no coverage measured as $label: test-guardian.sh coverage $label <test project> <files> first"
     # one "WANT<tab><file><tab><class or -><tab><method><tab><as given>" line per method asked
     wants=""

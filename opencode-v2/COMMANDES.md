@@ -712,6 +712,8 @@ Sous le minimum (80 % de leurs lignes), il écrit d'abord les tests du comportem
 
 Ce qu'aucun test ne peut exécuter sans changer le code de production (l'horloge réelle, une dépendance que le code crée lui-même, le réseau) est nommé : « Filet : INSUFFISANT (lignes … : raison) ». Le run continue, et la MR le montre pour que la review le regarde de près. Le filet ne pose aucune question.
 
+Sans projet de tests unitaires (ou sans collecteur de couverture), aucun filet ne peut se mesurer. La question de le créer est posée au début, jamais en cours de route : `/fortify` et `/tests` d'abord, `/go` avec les questions de son analyse quand le plan corrige un bug ou modifie du code existant, `/fix` avant son premier correctif. « Oui » : `test-guardian.sh setup` crée le projet (ou ajoute le collecteur) en premier commit, puis le filet est mesuré sur ce projet encore vide (« no test in <projet> yet », 0 %) et ses tests sont écrits avant le correctif. « Non » : la décision est notée dans la fiche (plus redemandée pour ce ticket), les correctifs se font sans filet ni preuve, et la MR le dit dans « Points d'attention ».
+
 Le minimum se change par dépôt, dans la section « Build & test » de son `AGENTS.md` :
 ```text
 - Filet de non-régression : 70 %
@@ -720,7 +722,7 @@ Dans la MR : la colonne « Filet » du tableau de `/fortify` (avant → avec ses
 
 ## Fortify (`/fortify`)
 
-Prérequis, vérifiés au début de chaque `/fortify`. S'il manque `dotnet` ou l'application Fortify SSC, le run s'arrête avec une ligne `STOP:` disant ce qui manque. S'il manque **le projet de tests** (le dépôt n'en a aucun) ou **coverlet** dans un projet de tests, le run ne s'arrête plus : sa première action est une question (la seule du run) qui te propose de le mettre en place en premier commit du lot — xUnit, MSTest ou NUnit s'il n'y a pas de projet, l'ajout de coverlet sinon — ou d'arrêter. « Oui » : le pilote lance `test-guardian.sh setup`, qui crée le projet (modèle `dotnet new`, `coverlet.collector`, référence au projet testé, ajout à la solution) ou ajoute coverlet, le compile, et le commite (« test: add the unit test project (CLÉ) ») ; puis le lot continue. « Non » : le run s'arrête et renvoie à la mise en place manuelle ci-dessous. Pour voir les prérequis avant, dans le dossier du dépôt, sans script :
+Prérequis, vérifiés au début de chaque `/fortify`. S'il manque `dotnet` ou l'application Fortify SSC, le run s'arrête avec une ligne `STOP:` disant ce qui manque. S'il manque **le projet de tests** (le dépôt n'en a aucun) ou **coverlet** dans un projet de tests, le run ne s'arrête plus : sa première action est une question (la seule du run avant son QCM « Suite ») qui te propose de le mettre en place en premier commit du lot — xUnit, MSTest ou NUnit s'il n'y a pas de projet, l'ajout de coverlet sinon — ou d'arrêter. « Oui » : le pilote lance `test-guardian.sh setup`, qui crée le projet (modèle `dotnet new`, `coverlet.collector`, référence au projet testé, ajout à la solution) ou ajoute coverlet, le compile, et le commite (« test: add the unit test project (CLÉ) ») ; puis le lot continue. « Non » : le run s'arrête et renvoie à la mise en place manuelle ci-dessous. Pour voir les prérequis avant, dans le dossier du dépôt, sans script :
 
 `dotnet` (une version s'affiche) :
 ```sh

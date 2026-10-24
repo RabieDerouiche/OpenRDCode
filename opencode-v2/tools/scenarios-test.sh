@@ -120,6 +120,10 @@ sln() {
     done
     printf '\tEndGlobalSection\nEndGlobal\n'; } > "$f"
 }
+# note <text>: with the real dotnet, a value only the real tools decide, shown by the CI (lines « NOTE: »)
+note() { [ "$REAL" -eq 1 ] && printf 'NOTE: [%s] %s\n' "$scenario" "$1"; return 0; }
+# pick <with the fake> <with the real dotnet>: a pattern for what only the real tools decide
+pick() { if [ "$REAL" -eq 1 ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
 on_origin() {
   # on_origin <repo.git> <branch>: the branch exists on "GitLab"
   git --git-dir="$1" rev-parse -q --verify "refs/heads/$2" >/dev/null
@@ -793,6 +797,101 @@ run ship.sh --no-push "refactor(billing): compute the discount in one expression
 check "the step committed" 0 '^COMMIT: .* refactor\(billing\): compute the discount in one expression \(ABC-5\)'
 truth "the commit holds the change and its net" '[ "$(git show --name-only --format= HEAD | sort | tr "\n" " ")" = "src/App/Invoice.cs tests/App.Tests/InvoiceDiscountTests.cs " ]'
 truth "the commit says the net" 'git log -1 --format=%B | grep -q "^- safety net: 0% -> 100%"'
+
+# ---------- 19. /go without a ticket in a repository without unit tests: a step « (filet d'abord) » ----------
+# go.md 4: the prerequisites of the unit tests with the analysis; the set-up asked with its blocking questions, then
+# the net measured on a test project that has no test yet
+scenario="/go sans ticket, sans tests (filet d'abord)"
+git init -q --bare "$work/rules.git"
+git --git-dir="$work/rules.git" symbolic-ref HEAD refs/heads/develop
+git clone -q "$work/rules.git" "$work/rules" 2>/dev/null
+cd "$work/rules" || exit 1
+git checkout -q -b develop 2>/dev/null
+project src/Rules/Rules.csproj Microsoft.NET.Sdk
+cat > src/Rules/Shipping.cs <<'EOF'
+namespace Rules;
+public static class Shipping
+{
+    public static decimal Fee(decimal total)
+    {
+        if (total >= 50m)
+        {
+            return 0m;
+        }
+        return 4.9m;
+    }
+}
+EOF
+sln Rules.sln 'Rules src\Rules\Rules.csproj 44444444-4444-4444-4444-444444444444'
+printf 'bin/\nobj/\n' > .gitignore
+git add -A && git commit -q -m init && git push -q origin develop
+git branch -q -u origin/develop
+run branch.sh LOCAL feature "Frais de port en une expression"
+check "the branch of a change without a ticket" 0 '^KEY: LOCAL-1$'
+# the analysis, and in the same turn the measure of the base and the prerequisites of the unit tests
+run build-test.sh Rules.sln
+check "the measure: built, no test project" 0 '^TESTS: NONE RUN \(no test project for this target\)$'
+run fortify.sh prereq --tests
+check "the prerequisites: no test project" 0 '^PREREQ: NO TEST PROJECT'
+check "…so the question of the set-up, with the blocking questions" 0 '^PREREQ: SETUP NEEDED$'
+# « Oui, xUnit »: the first commit of the branch
+run test-guardian.sh setup xunit src/Rules/Shipping.cs
+check "the test project created" 0 "^SETUP: tests/Rules.UnitTests/Rules.UnitTests.csproj created \\(xunit, $TFM\\)"
+run ship.sh --no-push "test: add the unit test project (LOCAL-1)" "- tests/Rules.UnitTests (xunit)"
+check "its own commit" 0 '^COMMIT: .* test: add the unit test project \(LOCAL-1\)'
+# the step « (filet d'abord) »: the test-guardian, mission « filet », phase « avant la modification »
+T6=tests/Rules.UnitTests/Rules.UnitTests.csproj
+run test-guardian.sh coverage S1-before "$T6" src/Rules/Shipping.cs
+check "no test yet: the measure says it, never a missing collector" 0 "$(pick '^TESTS: 0 passed, 0 failed \(no test in tests/Rules.UnitTests/Rules.UnitTests.csproj yet\)$' '^TESTS: 0 passed, 0 failed')" '^STOP'
+note "couverture d'un projet de tests sans test : $(printf '%s\n' "$out" | tr '\n' ' ')"
+run test-guardian.sh net S1-before src/Rules/Shipping.cs:Fee
+check "the net: THIN, every line of the method to run" 0 "$(pick '^SAFETY NET: THIN \(no test runs this method yet, 0% < 80%\)' '^SAFETY NET: THIN \((no test runs this method yet, 0%|0/6 lines of this method run by the tests, 0%) < 80%\)')"
+note "filet avant tout test : $(printf '%s\n' "$out" | tr '\n' ' ')"
+cat > tests/Rules.UnitTests/ShippingFeeTests.cs <<'EOF'
+namespace Rules.UnitTests;
+
+// <!-- fake-test: Rules.UnitTests.ShippingFeeTests.Fee_Under50_FourNinety pass -->
+// <!-- fake-test: Rules.UnitTests.ShippingFeeTests.Fee_From50_Free pass -->
+// <!-- fake-cover: src/Rules/Shipping.cs if=src/Rules/Shipping.cs:return c=Rules.Shipping m=Fee 5:1 6:1:2/2 7:1 8:1 10:1 11:1 -->
+// <!-- fake-cover: src/Rules/Shipping.cs unless=src/Rules/Shipping.cs:return c=Rules.Shipping m=Fee 4:1:2/2 -->
+public class ShippingFeeTests
+{
+    [Xunit.Fact]
+    public void Fee_Under50_FourNinety() => Xunit.Assert.Equal(4.9m, Shipping.Fee(49.99m));
+
+    [Xunit.Fact]
+    public void Fee_From50_Free() => Xunit.Assert.Equal(0m, Shipping.Fee(50m));
+}
+EOF
+run test-guardian.sh green "$T6" FullyQualifiedName~ShippingFeeTests
+check "its non-regression tests: green twice" 0 '^GREEN: 2 tests pass, twice$'
+run test-guardian.sh coverage S1-net "$T6" src/Rules/Shipping.cs
+run test-guardian.sh net S1-net src/Rules/Shipping.cs:Fee
+check "the net, then OK: each line of the method" 0 '^SAFETY NET: OK \(6/6 lines of this method run by the tests, 100%; minimum 80%\)$'
+run test-guardian.sh tests-only
+check "only test files" 0 '^TESTS-ONLY: OK$'
+run test-guardian.sh seal S1 tests/Rules.UnitTests/ShippingFeeTests.cs
+check "the net sealed" 0 '^SEALED: 1 test files'
+# the coder rewrites the method; the net stays green
+cat > src/Rules/Shipping.cs <<'EOF'
+namespace Rules;
+public static class Shipping
+{
+    public static decimal Fee(decimal total) => total >= 50m ? 0m : 4.9m;
+}
+EOF
+run test-guardian.sh green "$T6" FullyQualifiedName~ShippingFeeTests
+check "the coder's done condition: the net green" 0 '^GREEN: 2 tests pass, twice$'
+run test-guardian.sh sealed S1
+check "after: the net as sealed" 0 '^SEAL: OK, 1 test files as sealed$'
+run test-guardian.sh coverage S1-after "$T6" src/Rules/Shipping.cs
+run test-guardian.sh compare S1-before S1-after
+check "after: no file lost coverage, from no test at all" 0 '^COVERAGE: no file lost coverage$'
+run test-guardian.sh net S1-after src/Rules/Shipping.cs:Fee
+check "after: the net kept" 0 '^SAFETY NET: OK \(1/1 lines of this method run by the tests, 100%; minimum 80%\)$'
+run ship.sh --no-push "refactor(shipping): compute the fee in one expression (LOCAL-1)" "- src/Rules: Shipping.Fee" "- safety net: 0% -> 100% of the lines of 1 methods"
+check "the step committed with its net" 0 '^COMMIT: .* refactor\(shipping\): compute the fee in one expression \(LOCAL-1\)'
+truth "two commits: the test project, then the step and its net" '[ "$(git log --format=%s origin/develop..HEAD | tr "\n" "|")" = "refactor(shipping): compute the fee in one expression (LOCAL-1)|test: add the unit test project (LOCAL-1)|" ] && [ "$(git show --name-only --format= HEAD | sort | tr "\n" " ")" = "src/Rules/Shipping.cs tests/Rules.UnitTests/ShippingFeeTests.cs " ]'
 
 [ "$REAL" -eq 1 ] && dotnet build-server shutdown >/dev/null 2>&1
 echo "scenarios ($([ "$REAL" -eq 1 ] && echo "real dotnet $(dotnet --version), " || echo "fake dotnet, ")$SHELL_UNDER_TEST): $pass passed, $fail failed"

@@ -124,6 +124,19 @@ printf '<Project Sdk="Microsoft.NET.Sdk">\n  <ItemGroup>\n    <PackageReference 
 git add -A && git commit -q -m "test: an empty test project"
 run build-test.sh tests/Empty.Tests/Empty.Tests.csproj
 check "VSTest: a test project without tests, said so" 0 '^TESTS: NONE RUN \(1 test project\(s\) in this target, but no test ran'
+# its coverage and the net of a fix, before its first test (just set up): 0 %, never a missing collector
+run test-guardian.sh coverage empty tests/Empty.Tests/Empty.Tests.csproj src/App/Invoice.cs
+check "coverage with no test yet: said, not a STOP" 0 '^TESTS: 0 passed, 0 failed \(no test in tests/Empty.Tests/Empty.Tests.csproj yet\)$' '^STOP'
+check "…each file at 0/0" 0 '^src/App/Invoice.cs lines 0/0 \(no test yet: none of its lines runs\)$'
+run test-guardian.sh net empty src/App/Invoice.cs:Total src/App/Invoice.cs:Invoice
+check "its net: THIN, every line of the methods to run" 0 '^SAFETY NET: THIN \(no test runs these 2 methods yet, 0% < 80%\): before the fix'
+check "…each method named" 0 '^NET: src/App/Invoice.cs:Total no test yet: none of its lines runs$'
+run test-guardian.sh net empty --min 0 src/App/Invoice.cs:Total
+check "…a minimum of 0 %: OK" 0 '^SAFETY NET: OK \(no test runs this method yet, 0%; minimum 0%\)$'
+run test-guardian.sh net empty src/App/Nothing.cs:Total
+check "…a file that does not exist: STOP" 1 '^STOP: no file src/App/Nothing.cs in this repository$'
+run test-guardian.sh compare empty empty
+check "…compared: nothing to lose" 0 '^COVERAGE: no file lost coverage$'
 git reset -q --hard HEAD~1
 
 # --if-changed (/push): the code that already passed is not built and tested again
