@@ -832,7 +832,7 @@ Une fois par environnement, dans une session du dépôt :
 /tests env config recette
 ```
 Ses questions partent de ce que le code dit déjà (`env-setup.sh scan`) : les URL des jobs de déploiement de `.gitlab-ci.yml`, l'autorité et l'audience que l'API vérifie dans ses appsettings, le scope Entra ID qu'elles donnent, le proxy de ta machine. Deux QCM :
-1. le nom, l'URL de base de l'API, l'accès (un client OpenID Connect, recommandé quand l'API vérifie des jetons ; un jeton fixe dans une variable ; ou aucun), le proxy (celui de la machine, aucun, ou un autre) et s'il demande des identifiants, l'usage (lecture seule, écriture permise, production : jamais testée) ;
+1. le nom, l'URL de base de l'API, l'accès (un client OpenID Connect, recommandé quand l'API vérifie des jetons ; un jeton fixe dans une variable ; ou aucun), le proxy (celui de ta machine, avec les identifiants que porte déjà son `HTTPS_PROXY` ; aucun ; ou un autre, et alors s'il demande des identifiants), l'usage (lecture seule, écriture permise, production : jamais testée) ;
 2. avec OIDC : l'autorité (Keycloak : `https://<hôte>/realms/<realm>` ; Entra ID : `https://login.microsoftonline.com/<tenant>/v2.0`), le client id (dans une variable, ou tel quel : ce n'est pas un secret), le scope (Entra ID : `api://<application>/.default`), le fichier PEM des autorités de certification internes quand un proxy re-signe le TLS ou que le certificat est interne, et l'authentification du client en Basic quand le fournisseur l'exige.
 
 Il écrit le bloc de cet environnement dans la section « ## Environnements » d'AGENTS.md, jamais un secret : seulement les noms des variables de ta machine, déduits du nom de l'environnement. Pour `recette` :
@@ -862,7 +862,7 @@ export RECETTE_PROXY_CREDENTIALS='jdupont:…'
 
 ### `/tests env` : lancer les tests d'un environnement
 
-Sans environnement nommé, un QCM : lequel (ses variables présentes ou non), tous ses tests ou une classe, avec ou sans les tests qui écrivent :
+Sans environnement nommé, un QCM : lequel (son URL et son accès), tous ses tests ou une classe, avec ou sans les tests qui écrivent. Une variable qu'OpenCode n'a pas vue à son démarrage ne l'arrête pas (`~/.zshenv` est relu à chaque commande) : si l'une manque vraiment, `env-tests.sh` le dit, avec sa ligne `export` :
 ```text
 /tests env
 ```
