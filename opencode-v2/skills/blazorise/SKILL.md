@@ -74,11 +74,11 @@ Native Razor: the components of ASP.NET Core (`EditForm` and its `Input…` comp
 
 How the pack runs it (`/go sans ticket : remplacer Blazorise par du Razor natif dans la page Commandes`, or a ticket):
 - the analyst: the inventory below, then one step per page or family of components, each « (filet d'abord) » and « (s'appuyer sur le skill blazorise) », the leaves first (icons, buttons, layout), then forms, dialogs and messages, then grids; the last step removes the packages, the registrations and the links. A package the plan needs (QuickGrid) goes to « Décisions », the free option first (a native `<table>` and the pager below need none).
-- the test-guardian, before each step (mission « filet »): the tests of what the users see on the page, green on Blazorise, then sealed; its net is measured on the page itself (`test-guardian.sh net <label> <page>.razor:BuildRenderTree <page>.razor:<a method of its @code>`). No bUnit in the unit test projects (`fortify.sh prereq --tests` says « COMPONENT TESTS: none »): the pilot asks the developer, then `test-guardian.sh setup --components` adds it.
-- the coder: the page in native Razor; the sealed tests pass as they are; the test base class below is the only test file that changes, at the last step.
+- the test-guardian, before each step (mission « filet »): the tests of what the users see on the page, green on Blazorise, then sealed, whatever its measured net says; `test-guardian.sh net <label> <page>.razor:OnInitialized <page>.razor:BuildRenderTree` measures the C# of the page (its @code, the @if, @foreach and event handlers of its markup: coverlet never measures tags and their attributes). No bUnit in the unit test projects (`fortify.sh prereq --tests` says « COMPONENT TESTS: none »): the pilot asks the developer, then `test-guardian.sh setup --components` adds it.
+- the coder: the page in native Razor; the sealed tests pass as they are; the test helper below is the only test file that changes, at the last step.
 
 1. The inventory, before any change, three reads: `git grep -h -o -E '<[A-Z][A-Za-z0-9]*' -- '*.razor' | sort | uniq -c | sort -rn` (every component tag of the pages, with its count), `git ls-files '*.razor' | sed -E 's#.*/##; s#\.razor$##' | sort -u` (the components of the application, one per file), and `git grep -n -E 'INotificationService|IMessageService|IModalService|IToastService|IPageProgressService|ITextLocalizer|AddBlazorise|ProductToken|_content/Blazorise' -- '*.cs' '*.razor' '*.cshtml' '*.html'` (its services, registrations and links). The tags of the first that are neither the application's (the second) nor of ASP.NET Core (`EditForm`, `Input…`, `DataAnnotationsValidator`, `ValidationMessage`, `ValidationSummary`, `NavLink`, `PageTitle`, `HeadOutlet`, `HeadContent`, `Router`, `RouteView`, `Found`, `NotFound`, `AuthorizeView`, `Authorized`, `NotAuthorized`, `CascadingValue`, `CascadingAuthenticationState`, `DynamicComponent`, `ErrorBoundary`, `Virtualize`, `QuickGrid`, `PropertyColumn`, `TemplateColumn`, `Paginator`, `LayoutView`, `ChildContent`) are Blazorise, its templates (`DisplayTemplate`, `EmptyTemplate`…) included. The plan lists them per page.
-2. The safety net of a step: bUnit tests of what the users see, written on the Blazorise version, kept as they are on the native one. They find what a user sees (the texts of the headers and of the cells through `thead th`, `tbody tr`, `td`, the text of a button), never a CSS class, an id or a component type of Blazorise (they leave with it); the culture of the users is fixed; `WaitForAssertion` waits for the rows (a grid renders them after its data). One base class registers what the pages need (the version of bUnit of the test project decides the API: `BunitContext` and `Render` from 2.0, `TestContext` and `RenderComponent` before):
+2. The safety net of a step: bUnit tests of what the users see, written on the Blazorise version, kept as they are on the native one. They find what a user sees (the texts of the headers and of the cells through `thead th`, `tbody tr`, `td`, the text of a button), never a CSS class, an id or a component type of Blazorise (they leave with it); the culture of the users is fixed; `WaitForAssertion` waits for the rows (a grid renders them after its data). Each test disposes its context with `await using`: some services of the pages are disposed asynchronously only (a JavaScript module of the DataGrid: « type only implements IAsyncDisposable » otherwise). One helper builds the context the pages need (the version of bUnit of the test project decides the API: `BunitContext` and `Render` from 2.0, `TestContext` and `RenderComponent` before):
    ```csharp
    using System.Globalization;
    using Blazorise;
@@ -93,19 +93,22 @@ How the pack runs it (`/go sans ticket : remplacer Blazorise par du Razor natif 
 
    // What every page test needs: the culture of the users, the JavaScript of the browser answered by bUnit, and the
    // services of the component library the pages still use (they leave with it, at the last step of its replacement)
-   public abstract class PageTestContext : BunitContext
+   public static class PageTest
    {
-       protected PageTestContext()
+       public static BunitContext Context()
        {
            CultureInfo.CurrentCulture = CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
-           JSInterop.Mode = JSRuntimeMode.Loose;
-           Services.AddBlazorise().AddBootstrap5Providers().AddFontAwesomeIcons();
+           var ctx = new BunitContext();
+           ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+           ctx.Services.AddBlazorise().AddBootstrap5Providers().AddFontAwesomeIcons();
            // Blazorise registers its component activator as scoped: bUnit needs it transient
-           var activator = Services.LastOrDefault(d => d.ServiceType == typeof(IComponentActivator));
+           var activator = ctx.Services.LastOrDefault(d => d.ServiceType == typeof(IComponentActivator));
            if (activator?.ImplementationType is { } type)
            {
-               Services.Replace(ServiceDescriptor.Transient(typeof(IComponentActivator), type));
+               ctx.Services.Replace(ServiceDescriptor.Transient(typeof(IComponentActivator), type));
            }
+
+           return ctx;
        }
    }
    ```
@@ -120,20 +123,17 @@ How the pack runs it (`/go sans ticket : remplacer Blazorise par du Razor natif 
    namespace Web.UnitTests;
 
    // What the users see on the orders page: written before its grid is replaced, kept as they are after
-   public class OrdersPageTests : PageTestContext
+   public class OrdersPageTests
    {
-       public OrdersPageTests()
-       {
-           var orders = Enumerable.Range(1, 12)
-               .Select(i => new Order($"CMD-{i:00}", new DateTime(2026, 1, i), 10.5m * i))
-               .ToList();
-           Services.AddSingleton<IOrderSource>(new FixedOrders(orders));
-       }
+       private static readonly IReadOnlyList<Order> TwelveOrders = Enumerable.Range(1, 12)
+           .Select(i => new Order($"CMD-{i:00}", new DateTime(2026, 1, i), 10.5m * i))
+           .ToList();
 
        [Fact]
-       public void Orders_FirstPage_ShowsTheThreeColumnsAndFiveOrders()
+       public async Task Orders_FirstPage_ShowsTheThreeColumnsAndFiveOrders()
        {
-           var cut = Render<Orders>();
+           await using var ctx = Context();
+           var cut = ctx.Render<Orders>();
 
            cut.WaitForAssertion(() =>
            {
@@ -143,35 +143,45 @@ How the pack runs it (`/go sans ticket : remplacer Blazorise par du Razor natif 
        }
 
        [Fact]
-       public void Orders_FirstRow_ShowsItsDateAndTotalInFrench()
+       public async Task Orders_FirstRow_ShowsItsDateAndTotalInFrench()
        {
-           var cut = Render<Orders>();
+           await using var ctx = Context();
+           var cut = ctx.Render<Orders>();
 
            cut.WaitForAssertion(() => Assert.Equal(new[] { "CMD-01", "01/01/2026", "10,50" }, Cells(cut, 0)));
        }
 
        [Fact]
-       public void Orders_NextPage_ShowsTheNextFiveOrders()
+       public async Task Orders_NextPage_ShowsTheNextFiveOrders()
        {
-           var cut = Render<Orders>();
+           await using var ctx = Context();
+           var cut = ctx.Render<Orders>();
            cut.WaitForAssertion(() => Assert.Equal(5, Numbers(cut).Length));
 
-           cut.FindAll("a, button").First(e => e.TextContent.Trim() == "Suivante").Click();
+           await cut.FindAll("a, button").First(e => e.TextContent.Trim() == "Suivante").ClickAsync();
 
            cut.WaitForAssertion(() =>
                Assert.Equal(new[] { "CMD-06", "CMD-07", "CMD-08", "CMD-09", "CMD-10" }, Numbers(cut)));
        }
 
        [Fact]
-       public void Orders_SortedTwiceByNumber_ShowsTheLastOrderFirst()
+       public async Task Orders_SortedTwiceByNumber_ShowsTheLastOrderFirst()
        {
-           var cut = Render<Orders>();
+           await using var ctx = Context();
+           var cut = ctx.Render<Orders>();
            cut.WaitForAssertion(() => Assert.Equal(5, Numbers(cut).Length));
 
-           SortBy(cut, "Numéro");
-           SortBy(cut, "Numéro");
+           await SortByAsync(cut, "Numéro");
+           await SortByAsync(cut, "Numéro");
 
            cut.WaitForAssertion(() => Assert.Equal("CMD-12", Numbers(cut)[0]));
+       }
+
+       private static BunitContext Context()
+       {
+           var ctx = PageTest.Context();
+           ctx.Services.AddSingleton<IOrderSource>(new FixedOrders(TwelveOrders));
+           return ctx;
        }
 
        private static string[] Headers(IRenderedComponent<Orders> cut) =>
@@ -184,10 +194,10 @@ How the pack runs it (`/go sans ticket : remplacer Blazorise par du Razor natif 
            cut.FindAll("tbody tr")[row].QuerySelectorAll("td").Select(td => td.TextContent.Trim()).ToArray();
 
        // the header of a column: its button when it has one (QuickGrid), otherwise the cell itself (the DataGrid)
-       private static void SortBy(IRenderedComponent<Orders> cut, string title)
+       private static Task SortByAsync(IRenderedComponent<Orders> cut, string title)
        {
            var header = cut.FindAll("thead th").First(th => th.TextContent.Trim() == title);
-           (header.QuerySelector("button") ?? header).Click();
+           return (header.QuerySelector("button") ?? header).ClickAsync();
        }
 
        private sealed class FixedOrders(IReadOnlyList<Order> orders) : IOrderSource
@@ -301,4 +311,4 @@ How the pack runs it (`/go sans ticket : remplacer Blazorise par du Razor natif 
    ```
    Sorting and paging need an interactive render mode, as the DataGrid did. Data paged by the server: `ItemsProvider` instead of `Items` (the request gives `StartIndex`, `Count` and the sort).
 6. A package is the developer's decision, never the coder's: QuickGrid (`Microsoft.AspNetCore.Components.QuickGrid`, Microsoft, MIT, its major version is the one of the target framework: 8.0.x for net8.0, 10.0.x for net10.0); bUnit for the tests, through `test-guardian.sh setup --components` once the developer agreed. The analyst lists QuickGrid in « Décisions », the free option first; a step that needs it before it is there is « BLOQUÉ ».
-7. The last step: no `Blazorise.*` PackageReference or PackageVersion left; in `Program.cs` no `AddBlazorise(…)`, `AddBootstrap5Providers()`, `AddFontAwesomeIcons()` (or the providers of the repository) nor `ProductToken` (a license token: never printed, never committed; the developer removes it from the configuration); in `_Imports.razor` no `@using Blazorise…`; in `App.razor`, `_Host.cshtml` or `index.html` no `_content/Blazorise…` link and no `ThemeProvider`, `MessageProvider`, `NotificationProvider`, `ModalProvider`, `ToastProvider`; `GridTexts` and the language component above removed; the test base class keeps its culture and its JavaScript, without Blazorise. Then `git grep -n -i blazorise` finds only the history of the documentation, the build and every test pass.
+7. The last step: no `Blazorise.*` PackageReference or PackageVersion left; in `Program.cs` no `AddBlazorise(…)`, `AddBootstrap5Providers()`, `AddFontAwesomeIcons()` (or the providers of the repository) nor `ProductToken` (a license token: never printed, never committed; the developer removes it from the configuration); in `_Imports.razor` no `@using Blazorise…`; in `App.razor`, `_Host.cshtml` or `index.html` no `_content/Blazorise…` link and no `ThemeProvider`, `MessageProvider`, `NotificationProvider`, `ModalProvider`, `ToastProvider`; `GridTexts` and the language component above removed; the test helper keeps its culture and its JavaScript, without Blazorise. Then `git grep -n -i blazorise` finds only the history of the documentation, the build and every test pass.

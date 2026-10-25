@@ -145,7 +145,15 @@ add(["pilot"], [S + "test-guardian.sh setup xunit src/Api/Services/ExportService
   S + "test-guardian.sh unpark F1 && " + S + "ship.sh --no-push \"test(security): show that path traversal in FileStore.cs is not exploitable (ABC-123)\"",
   S + "fortify.sh discard V2-V3", S + "fortify.sh discard reprise"], "allow")
 add(["test-guardian", "coder", ...RO], [S + "test-guardian.sh setup xunit src/Api/Services/ExportService.cs", S + "test-guardian.sh park V1",
-  S + "test-guardian.sh unpark V1", "bash ~/.config/opencode/scripts/test-guardian.sh setup nunit src/Api/Api.csproj"], "deny")
+  S + "test-guardian.sh unpark V1", "bash ~/.config/opencode/scripts/test-guardian.sh setup nunit src/Api/Api.csproj",
+  S + "test-guardian.sh setup --components xunit src/Web/Components/Pages/Orders.razor"], "deny")
+// bUnit for the tests of Razor components (the safety net of a page): the pilot only, once the developer agreed
+add(["pilot"], [S + "test-guardian.sh setup --components xunit src/Web/Components/Pages/Orders.razor src/Web/Components/Pages/Invoices.razor && " + S + "ship.sh --no-push \"test: add bUnit for the tests of the components (ABC-123)\" \"- SETUP: bunit 2.11.3 added to tests/Web.UnitTests/Web.UnitTests.csproj; build OK\"",
+  S + "test-guardian.sh setup --components nunit src/Web/Components/Pages/Orders.razor && " + S + "ship.sh --no-push \"test: add bUnit for the tests of the components\""], "allow")
+// the safety net of a page: the test-guardian measures and proves it, like the net of a C# method
+add(["test-guardian"], [S + "test-guardian.sh deps src/Web/Components/Pages/Orders.razor",
+  S + "test-guardian.sh net F1-before src/Web/Components/Pages/Orders.razor:BuildRenderTree src/Web/Components/Pages/Orders.razor:OnInitialized",
+  S + "test-guardian.sh coverage F1-net tests/Web.UnitTests/Web.UnitTests.csproj src/Web/Components/Pages/Orders.razor"], "allow")
 // the seal of a proof: the test-guardian seals its tests before the fix and checks them after; the coder never seals
 // its own version of them nor puts them back, and no other agent of the pack writes a test file through it. Checking
 // a seal is open: the pilot does it before each commit, the coder may look

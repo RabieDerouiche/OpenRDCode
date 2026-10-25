@@ -712,14 +712,24 @@ case "$1" in
         bad = ""
         for (k = 1; k <= w; k++) {
           if (!found[k]) {
+            # the markup of a Razor component: coverlet counts the C# statements written in it (an @if, an @foreach, an
+            # event handler), never its tags and their attributes; a page made of them has no BuildRenderTree in the report
+            if (wfile[k] ~ /\.razor$/ && wname[k] == "BuildRenderTree" && seenfile[wfile[k]]) {
+              printf "NET: %s not measured: coverlet counts the C# statements of a component (its @code, the @if, @foreach and event handlers of its markup), never its tags and their attributes; the tests of what its users see are the net of its markup\n", wspec[k]
+              continue
+            }
             bad = bad "; " wspec[k] " (" (seenfile[wfile[k]] ? "the methods of this file in the report: " (names[wfile[k]] == "" ? "none" : names[wfile[k]]) : "this file is not in the report: no project the tests reference holds it") ")"
             continue
           }
-          printf "NET: %s lines %d/%d (%d%%) branches %d/%d uncovered%s\n", wspec[k], cov[k], tot[k], int(100 * cov[k] / tot[k]), bcov[k], btot[k], ranges(miss[k])
+          printf "NET: %s lines %d/%d (%d%%) branches %d/%d uncovered%s\n", wspec[k], cov[k], tot[k], (tot[k] ? int(100 * cov[k] / tot[k]) : 100), bcov[k], btot[k], ranges(miss[k])
         }
         if (bad != "") {
           print "STOP: not in the coverage report: " substr(bad, 3) ". Give each method by its name in the code (<class>.<method> when the file has several classes; a constructor: the name of its class)"
           exit 1
+        }
+        if (utot == 0) {
+          print "SAFETY NET: OK (no line of these methods is measured: the markup of a component is checked by the tests of what its users see, which must exist and pass before the change)"
+          exit 0
         }
         pct = int(100 * ucov / utot)
         what = (ucov + 0) "/" utot " lines of " (w == 1 ? "this method" : "these " w " methods") " run by the tests, " pct "%"

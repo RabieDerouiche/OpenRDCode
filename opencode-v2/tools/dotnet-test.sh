@@ -1029,6 +1029,19 @@ run test-guardian.sh net P1-after src/Web/Components/Pages/Orders.razor:BuildRen
 check "net of a Razor component: OK once its event handler runs" 0 '^SAFETY NET: OK \(4/4 lines of these 2 methods run by the tests, 100%; minimum 80%\)$'
 run test-guardian.sh compare P1-net P1-after
 check "compare: a Razor component that gained coverage" 0 '^COVERAGE: no file lost coverage$'
+# a markup without C# (tags and attributes only): coverlet reports no BuildRenderTree for it
+cp tests/Web.Tests/OrdersPageTests.cs "$work/orders-tests.kept"
+printf '%s\n' '// <!-- fake-test: Web.Tests.OrdersPageTests.Orders_FirstPage_ShowsFiveOrders pass -->' \
+  '// <!-- fake-cover: src/Web/Components/Pages/Orders.razor c=Web.Components.Pages.Orders m=OnInitialized 13:1 -->' > tests/Web.Tests/OrdersPageTests.cs
+run test-guardian.sh coverage P2 tests/Web.Tests/Web.Tests.csproj src/Web/Components/Pages/Orders.razor
+run test-guardian.sh net P2 src/Web/Components/Pages/Orders.razor:OnInitialized src/Web/Components/Pages/Orders.razor:BuildRenderTree
+check "net of a page whose markup coverlet does not measure: said, never a STOP" 0 '^NET: src/Web/Components/Pages/Orders\.razor:BuildRenderTree not measured: coverlet counts the C# statements of a component' '^STOP'
+check "net of a page whose markup coverlet does not measure: its @code measured" 0 '^SAFETY NET: OK \(1/1 lines of these 2 methods run by the tests, 100%; minimum 80%\)$'
+run test-guardian.sh net P2 src/Web/Components/Pages/Orders.razor:BuildRenderTree
+check "net of a markup alone: nothing measured, its tests are its net" 0 '^SAFETY NET: OK \(no line of these methods is measured: the markup of a component is checked by the tests of what its users see'
+run test-guardian.sh net P2 src/Web/Components/Pages/Invoices.razor:BuildRenderTree
+check "net of a component that no test reaches: a STOP, not « not measured »" 1 '^STOP: not in the coverage report: src/Web/Components/Pages/Invoices\.razor:BuildRenderTree \(this file is not in the report'
+cp "$work/orders-tests.kept" tests/Web.Tests/OrdersPageTests.cs
 git add -A && git commit -q -m "test: the safety net of the orders page"
 # the changed lines of a page: measured like those of a C# file
 git checkout -q -b feature/natif

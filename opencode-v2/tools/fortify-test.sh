@@ -1568,7 +1568,7 @@ check "no measure under that label: STOP" 1 '^STOP: no coverage measured as N9: 
 run test-guardian.sh net N1-net src/Shop/Pricing.cs:For
 check "a file that does not exist: STOP" 1 '^STOP: no file src/Shop/Pricing.cs in this repository$'
 run test-guardian.sh net N1-net src/Shop/Greeting.cs
-check "a file without its method: STOP" 1 '^STOP: bad method src/Shop/Greeting.cs: <file.cs>:<method>, or <file.cs>:<class>.<method>$'
+check "a file without its method: STOP" 1 '^STOP: bad method src/Shop/Greeting.cs: <file.cs>:<method>, <file.cs>:<class>.<method>, or <file.razor>:<method> \(BuildRenderTree, or a method of its @code block\)$'
 run test-guardian.sh net N1-net --min 120 src/Shop/Greeting.cs:For
 check "a minimum that is no percentage: STOP" 1 '^STOP: bad minimum 120: a percentage, from 0 to 100$'
 run test-guardian.sh tests-only

@@ -67,8 +67,8 @@ commit() { git add -A >/dev/null 2>&1 && git commit -q -m "$1" >/dev/null 2>&1; 
 note() { echo "NOTE: $*"; }
 
 # The code blocks of the skill, in order: 1 the language of Blazorise, 2 the shared texts of the DataGrid, 3 the orders
-# page on the DataGrid, 4 the test base class, 5 the tests of the orders page, 6 the Bootstrap classes of a field,
-# 7 the French pager of QuickGrid, 8 the orders page in native Razor
+# page on the DataGrid, 4 the helper of the page tests, 5 the tests of the orders page, 6 the Bootstrap classes of a
+# field, 7 the French pager of QuickGrid, 8 the orders page in native Razor
 blocks="$work/blocks"
 mkdir -p "$blocks"
 awk -v dir="$blocks" '
@@ -95,14 +95,15 @@ using Xunit;
 
 namespace Web.UnitTests;
 
-public class MarkupDump : PageTestContext
+public class MarkupDump
 {
     [Fact]
-    public void Dump()
+    public async Task Dump()
     {
         var orders = Enumerable.Range(1, 12).Select(i => new Order($"CMD-{i:00}", new DateTime(2026, 1, i), 10.5m * i)).ToList();
-        Services.AddSingleton<IOrderSource>(new Fixed(orders));
-        var cut = Render<Orders>();
+        await using var ctx = PageTest.Context();
+        ctx.Services.AddSingleton<IOrderSource>(new Fixed(orders));
+        var cut = ctx.Render<Orders>();
         try { cut.WaitForState(() => cut.FindAll("tbody tr").Count > 0, TimeSpan.FromSeconds(5)); }
         finally { File.WriteAllText(Environment.GetEnvironmentVariable("MARKUP_DUMP")!, cut.Markup); }
     }
@@ -248,10 +249,11 @@ EOF
   run test-guardian.sh deps "$page"
   check "$tfm: deps of the page: the source of its orders" 0 '^DEPENDS: IOrderSource -> src/Web/Data/Orders\.cs$'
   run test-guardian.sh coverage F1-before "$t" "$page"
-  check "$tfm: coverage of the page before its tests: none yet" 0 "no test in $t yet"
-  run test-guardian.sh net F1-before "$page:BuildRenderTree" "$page:OnInitialized"
-  check "$tfm: the net of the page before its tests: THIN" 0 '^SAFETY NET: THIN \(no test runs these 2 methods yet'
-  cp "$blocks/4" tests/Web.UnitTests/PageTestContext.cs
+  check "$tfm: coverage of the page before its tests: none of its lines runs" 0 "no test in $t yet|^src/Web/Components/Pages/Orders\\.razor lines 0/[0-9]+ \\(0%\\)"
+  run test-guardian.sh net F1-before "$page:OnInitialized" "$page:BuildRenderTree"
+  check "$tfm: the net of the page before its tests: THIN" 0 '^SAFETY NET: THIN '
+  note "$tfm, before the tests: $(printf '%s\n' "$out" | grep -E '^(NET|SAFETY NET):' | cut -c1-160 | tr '\n' ' ')"
+  cp "$blocks/4" tests/Web.UnitTests/PageTest.cs
   cp "$blocks/5" tests/Web.UnitTests/OrdersPageTests.cs
   run test-guardian.sh green "$t" "FullyQualifiedName~OrdersPageTests"
   if ! check "$tfm: the tests of what the users see, on the Blazorise DataGrid: green twice" 0 '^GREEN: 4 tests pass, twice$'; then
@@ -265,10 +267,10 @@ EOF
   note "$tfm, the page on the DataGrid, with its tests: $(printf '%s\n' "$out" | grep '^src/Web/Components/Pages/Orders.razor')"
   folder=$("$SHELL_UNDER_TEST" "$scripts/test-guardian.sh" folder | sed -n 's/^FOLDER: //p')
   note "$tfm: coverlet reports for Orders.razor the methods $(razor_methods "$folder/results-F1-net" | tr "\n" " ")"
-  run test-guardian.sh net F1-net "$page:BuildRenderTree" "$page:OnInitialized"
+  run test-guardian.sh net F1-net "$page:OnInitialized" "$page:BuildRenderTree"
   check "$tfm: the net of the page with its tests: OK" 0 '^SAFETY NET: OK '
-  note "$tfm: $(printf '%s\n' "$out" | grep -E '^(NET|SAFETY NET):' | tr '\n' ' ')"
-  run test-lint.sh tests/Web.UnitTests/OrdersPageTests.cs tests/Web.UnitTests/PageTestContext.cs
+  note "$tfm, with its tests: $(printf '%s\n' "$out" | grep -E '^(NET|SAFETY NET):' | cut -c1-160 | tr '\n' ' ')"
+  run test-lint.sh tests/Web.UnitTests/OrdersPageTests.cs tests/Web.UnitTests/PageTest.cs
   check "$tfm: test-lint on the tests of the page" 0 '^TEST LINT: OK'
   run test-guardian.sh tests-only
   check "$tfm: only the test project changed" 0 '^TESTS-ONLY: OK'
@@ -296,8 +298,9 @@ EOF
   note "$tfm, the native page, with the same tests: $(printf '%s\n' "$out" | grep -E '^src/Web/Components/(Pages/Orders|FrenchPager)\.razor' | tr '\n' ' ')"
   run test-guardian.sh compare F1-before F1-after
   check "$tfm: no coverage lost (compare)" 0 '^COVERAGE: no file lost coverage$'
-  run test-guardian.sh net F1-after "$page:BuildRenderTree" "$page:OnInitialized"
+  run test-guardian.sh net F1-after "$page:OnInitialized" "$page:BuildRenderTree"
   check "$tfm: the net of the native page: kept" 0 '^SAFETY NET: OK '
+  note "$tfm, the native page: $(printf '%s\n' "$out" | grep -E '^(NET|SAFETY NET):' | cut -c1-160 | tr '\n' ' ')"
   run test-guardian.sh sealed F1
   check "$tfm: sealed before the commit" 0 '^SEAL: OK'
   commit "refactor: the orders page in native Razor (QuickGrid)"
@@ -308,8 +311,8 @@ EOF
   sed -i '/@using Blazorise/d' src/Web/Components/_Imports.razor
   sed -i '/_content\/Blazorise/d' src/Web/Components/App.razor
   rm -f src/Web/Components/GridTexts.cs src/Web/Components/BlazoriseLanguage.razor
-  sed -i '/^using Blazorise/d; /Blazorise/d; /AddBlazorise/d; /IComponentActivator/,/^        }$/d' tests/Web.UnitTests/PageTestContext.cs
-  sed -i '/^using Microsoft.AspNetCore.Components;$/d; /^using Microsoft.Extensions.DependencyInjection;$/d; /^using Microsoft.Extensions.DependencyInjection.Extensions;$/d' tests/Web.UnitTests/PageTestContext.cs
+  sed -i '/^using Blazorise/d; /Blazorise/d; /IComponentActivator/,/^        }$/d' tests/Web.UnitTests/PageTest.cs
+  sed -i '/^using Microsoft.AspNetCore.Components;$/d; /^using Microsoft.Extensions.DependencyInjection;$/d; /^using Microsoft.Extensions.DependencyInjection.Extensions;$/d' tests/Web.UnitTests/PageTest.cs
   left=$(git grep -n -i blazorise -- . ':!*.md' 2>/dev/null)
   [ -z "$left" ]
   verdict "$tfm: no Blazorise left in the code${left:+ ($(printf '%s' "$left" | head -n 3 | tr '\n' ' '))}" $?
