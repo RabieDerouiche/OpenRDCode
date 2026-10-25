@@ -752,16 +752,45 @@ Un agent ne change jamais les dépendances : `npm install` (même sans paquet : 
 
 **Les commandes qui ne finissent jamais sont refusées aux agents du pack** : `npm start`, `ng serve`, `vite`, `next dev`, un `--watch`, `ng test` sans `--watch=false`, `npm test` quand son script regarde les fichiers (le plugin lit `package.json` : `npm test` d'un projet Jest passe, celui d'un Angular avec Karma est refusé), `dotnet watch`, `dotnet run` d'une API. Le refus donne la bonne commande. À savoir : `npm test --watch=false` ne passe pas l'option au script (npm la garde pour lui) ; c'est `npm test -- --watch=false`, et le refus le dit. Dans la conversation, tu peux en lancer une toi-même : l'agent la lance en arrière-plan (l'option d'arrière-plan de l'outil shell de la v2), ou bornée : `timeout 60 npm run dev`.
 
-## Blazorise (DataGrid, langue, retrait)
+## Blazorise (DataGrid, langue, remplacement par du Razor natif)
 
-Quand le dépôt référence Blazorise, `detect-project-type.sh` le dit avec sa version (`Blazorise 2.2.2: the skill blazorise …`) et les agents chargent le skill `blazorise` dès que le code touche ses composants : la langue du DataGrid et de sa pagination, ses textes, l'API de la version installée (jamais un membre inventé : il se lit dans la documentation XML du paquet), puis son remplacement par du Razor natif. Par exemple :
+Quand le dépôt référence Blazorise, `detect-project-type.sh` le dit avec sa version (`Blazorise 2.2.2: the skill blazorise …`) et les agents chargent le skill `blazorise` dès que le code touche ses composants : la langue du DataGrid et de sa pagination, ses textes, l'API de la version installée (jamais un membre inventé : il se lit dans la documentation XML du paquet ; la 2.0 de février 2026 a renommé beaucoup de choses, `TextEdit` devenu `TextInput`, `CurrentPage` devenu `Page`…), puis son remplacement par du Razor natif.
 ```text
 /go ABC-123            (« le DataGrid des commandes en français, pagination comprise »)
-/go sans ticket : remplacer Blazorise par du Razor natif dans la page Commandes
 ```
 - La langue : les textes de Blazorise en français pour chaque utilisateur, sans changer les formats de dates et de nombres de l'application ; les textes à corriger (« items », « Sauvegarder »…) dans une seule instance de `DataGridLocalizers` que chaque grille reprend.
-- Le retrait : une page ou une famille de composants par étape, chacune avec un test de ce que voit l'utilisateur, vert avant et après ; les paquets retirés à la dernière étape. QuickGrid (Microsoft, gratuit) ou bUnit sont des paquets : c'est toi qui les ajoutes, l'analyste te le propose dans « Décisions ».
-- Blazorise est payant (une licence par développeur front) : aucun agent n'ajoute ni ne monte un paquet Blazorise.
+- Blazorise est payant pour une entreprise (une licence par développeur front, les prestataires compris ; la licence Community gratuite est réservée à des développeurs individuels éligibles), et sans licence son DataGrid s'arrête à 1 000 lignes : une grille qui « perd » des lignes au-delà, c'est la licence, pas un bug. Aucun agent n'ajoute ni ne monte un paquet Blazorise ; `/outil licences` le signale avec son alternative gratuite.
+
+### Remplacer Blazorise par du Razor natif, page par page
+
+Le natif, c'est ce qu'ASP.NET Core fournit déjà : `QuickGrid` (un paquet de Microsoft, gratuit, MIT) pour les grilles, `EditForm` et ses `Input…` pour les formulaires, le HTML avec les classes Bootstrap que l'application charge déjà, et quelques petits composants de l'application là où Blazorise en donnait un tout fait (un pager, une fenêtre modale, un toast).
+```text
+/go sans ticket : remplacer Blazorise par du Razor natif dans la page Commandes
+```
+```text
+/go ABC-124            (« retirer Blazorise de l'application »)
+```
+Ce qui se passe :
+1. **L'inventaire** : l'analyste lit les balises de chaque page (`git grep`, jamais une liste apprise par cœur), les services de Blazorise injectés, ses enregistrements dans `Program.cs` et ses liens `_content/Blazorise…`. Son plan : une page ou une famille de composants par étape, chacune « (filet d'abord) », les plus simples d'abord (icônes, boutons, mise en page), puis les formulaires, les fenêtres et les messages, puis les grilles ; la dernière étape retire les paquets. QuickGrid est un paquet : c'est toi qui l'ajoutes, la fiche le propose dans « Décisions ».
+2. **bUnit** : les tests d'une page Blazor passent par bUnit (il affiche la page dans le test, sans navigateur). Quand aucun projet de tests ne l'a (`fortify.sh prereq --tests` : « COMPONENT TESTS: none »), une question « Composants » arrive avec celles de l'analyse : « Oui (recommandé) » l'ajoute en premier commit (`test-guardian.sh setup --components` : au projet de tests unitaires qui référence l'application, ou dans un nouveau projet) ; « Non » laisse ces pages sans filet, et la MR le dit.
+3. **Le filet d'abord, pour chaque page** : le test-guardian écrit les tests de ce que voient ses utilisateurs (les titres des colonnes dans l'ordre, la première page, les dates et montants en français, la page suivante, un tri par un clic), verts deux fois sur Blazorise, puis scellés. Ils cherchent des textes, jamais une classe CSS, un id ou un type Blazorise : les mêmes tests doivent passer tels quels sur la page native.
+4. **La page en natif** : le coder la réécrit ; l'étape est finie quand les tests scellés passent, sans une ligne changée, deux fois, sans couverture perdue.
+5. **La dernière étape** retire les paquets, les `@using`, `AddBlazorise…`, `ProductToken` (le jeton de licence : c'est toi qui le retires de la configuration), les liens `_content/Blazorise…` et les lignes Blazorise de l'aide des tests ; `git grep -i blazorise` ne trouve plus rien, le build et les tests sont verts.
+
+Ce qui change sans erreur de compilation (le skill le donne au coder, les tests l'attrapent) :
+
+| Sur Blazorise | En natif, si on ne fait rien | Ce que la page native fait |
+|---|---|---|
+| un champ change sa valeur à chaque frappe | `InputText` la change quand on quitte le champ | une recherche qui filtre en tapant : `<input @bind="search" @bind:event="oninput">` |
+| chaque colonne se trie d'un clic | une colonne ne se trie pas | `Sortable="true"` sur chaque `PropertyColumn` |
+| la taille de page de la grille | 10 lignes par page | `PaginationState { ItemsPerPage = <la même> }` |
+| les messages de validation en rouge Bootstrap (`is-invalid`) | les classes `invalid` et `validation-message` | un `FieldCssClassProvider` qui donne les classes Bootstrap |
+| les textes du pager en français | « Page 1 of 3 », « Go to next page » | un pager de l'application, avec les mêmes mots (« Première », « Précédente », « Suivante », « Dernière ») |
+| un clic sur une ligne, un texte pour la liste vide | rien : QuickGrid n'a ni l'un ni l'autre | un bouton dans une colonne, un `@if` avec le même texte |
+
+Pour poser le filet d'une page à la main, sans rien changer : `/tests Components/Pages/Orders.razor` (avec la question « Composants » quand bUnit manque).
+
+**Prouvé pour de vrai à chaque push** (`tools/blazor-native-test.sh`, dans la CI, avec .NET 10 et .NET 8) : une page des commandes sur le DataGrid de Blazorise 2.2.2, le projet de tests créé avec bUnit par `setup --components`, quatre tests de ce que voient ses utilisateurs écrits sur Blazorise (verts deux fois, scellés), la même page réécrite avec QuickGrid et le pager français du skill : les quatre tests passent sans une ligne changée, rien n'est perdu, puis Blazorise retiré entièrement ; 43 contrôles par version de .NET, avec le code du skill tel qu'il est écrit.
 
 ## Versions de .NET, environnement et librairies
 
@@ -961,6 +990,26 @@ OpenCode v2 n'a pas de planificateur : le plugin du pack en fait un (fonction 26
 ```
 Les planifications sont dans `~/.config/opencode/schedules.md` (modifiable à la main), à l'heure de la machine d'OpenCode. OpenCode doit tourner à cette heure (son service, COMMANDES.md « Redémarrer OpenCode ») : ce qu'il a manqué n'est pas rattrapé. Chaque lancement, ou la raison pour laquelle il n'est pas parti, est dans le journal du plugin (« Logs d'OpenCode » : `grep scheduled ~/.local/share/opencode/log/openrd-pack.log`). Pour tout arrêter, vide le fichier.
 
+## La carte des flux du pack (`/outil carte`)
+
+Pour voir d'un coup d'œil ce que fait le pack, ou le présenter à quelqu'un qui ne code pas :
+```text
+/outil carte
+```
+`pack-map.sh` lit le pack tel qu'il est installé (ses commandes, leurs étapes, les agents qui y travaillent, leurs questions, les outils de `/outil`, les skills, les fonctions du plugin, les scripts) et écrit une page HTML en français : « En une minute » (le pack expliqué sans jargon), la carte d'ensemble, puis une section par commande (à quoi elle sert, comment la lancer, ses étapes en schéma et en liste avec qui travaille et ce qu'il te demande, comment elle peut finir), les agents et ce qu'ils ont le droit d'écrire, les skills et les garde-fous. Rien n'est lu dans ton dépôt. L'agent te dit où est la page (par défaut dans le dossier de configuration d'OpenCode : `~/oc2/config/opencode/carte-des-flux.html` pendant l'essai à côté de la 1.19, `~/.config/opencode/carte-des-flux.html` sinon) et la résume en un tableau. Ouvre-la dans un navigateur ; quand OpenCode tourne sur une autre machine que la tienne, copie-la chez toi (`scp <machine>:<fichier> .`) ou écris-la dans le dépôt (ci-dessous). Les schémas viennent de Mermaid : sans Internet, la liste des étapes reste.
+
+Pour la mettre dans un dépôt (la partager, la pousser) :
+```text
+/outil carte docs
+```
+```text
+/outil carte docs/pack/carte.html
+```
+Un chemin du dépôt seulement (relatif à sa racine, jamais `..` ni `/…`). Elle se régénère en une seconde : relance-la après chaque mise à jour du pack, elle est toujours exacte. Sans agent, dans un terminal de la machine d'OpenCode (pendant l'essai à côté de la 1.19, ajoute `--pack ~/oc2/config/opencode`, sinon c'est le pack 1.19 qui est lu) :
+```sh
+sh ~/.config/opencode/scripts/pack-map.sh --out /tmp/carte.html
+```
+
 ## Bonnes pratiques et patterns du pack
 
 Appliqués automatiquement, sans question ni réglage :
@@ -985,6 +1034,12 @@ NET: src/App/PathService.cs:Preview lines 0/4 (0%) branches 0/2 uncovered 10-13
 SAFETY NET: THIN (1/5 lines of these 2 methods run by the tests, 20% < 80%): …
 ```
 Sous le minimum (80 % de leurs lignes), il écrit d'abord les tests du comportement **actuel** qui manquent (jamais celui de la faille ou du bug : leurs propres tests le font), les prouve verts deux fois, et les scelle avec la preuve : le coder ne peut pas les modifier, et son correctif est fini quand eux aussi passent. Après le correctif, le test-guardian vérifie que le filet passe toujours et n'est pas descendu sous le minimum. Un test du filet qui échoue alors est une régression (le coder reprend), sauf si l'étape change ce comportement exprès : le test-guardian le met à jour et la MR le liste.
+
+Une page `.razor` : coverlet mesure le C# de la page (son `@code`, et dans son balisage les `@if`, `@foreach` et gestionnaires d'événements), jamais ses balises et leurs attributs. `test-guardian.sh net` le dit (`NET: … BuildRenderTree not measured`) sans s'arrêter : le filet d'une page, ce sont les tests bUnit de ce que voient ses utilisateurs, qui doivent exister et passer avant qu'on la touche, quel que soit le chiffre.
+```text
+NET: src/Web/Components/Pages/Orders.razor:OnInitialized lines 1/1 (100%)
+NET: src/Web/Components/Pages/Orders.razor:BuildRenderTree not measured: coverlet counts the C# statements of a component …
+```
 
 Ce qu'aucun test ne peut exécuter sans changer le code de production (l'horloge réelle, une dépendance que le code crée lui-même, le réseau) est nommé : « Filet : INSUFFISANT (lignes … : raison) ». Le run continue, et la MR le montre pour que la review le regarde de près. Le filet ne pose aucune question.
 

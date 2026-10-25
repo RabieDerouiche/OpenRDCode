@@ -34,6 +34,7 @@ case "$name" in
   http|requetes|requêtes|requests) name=http ;;
   liens|lien|depots|dépôts|depots-lies|dépôts-liés|repos|related|repositories) name=liens ;;
   planifier|planification|planifie|planifications|schedule) name=planifier ;;
+  carte|cartes|carte-des-flux|flux|map) name=carte ;;
   *)
     [ -n "$name" ] && echo "Outil inconnu : $name"
     cat <<'EOF'
@@ -51,6 +52,7 @@ Outils disponibles (/outil <nom> [arguments]) :
 - http [dossier] : les requêtes des endpoints de l'API pour le client HTTP de Rider, pas à pas (un fichier .http par contrôleur, les environnements d'AGENTS.md, le jeton OIDC demandé par Rider lui-même, tes secrets dans un fichier privé jamais commité)
 - liens : les dépôts de la même application (front, API, librairies), pas à pas : leur rôle dans AGENTS.md, des deux côtés, et la lecture de leur code par les agents
 - planifier [<heure> <jours> /commande | suppr <n>] : /daily, /outil audit, /outil licences ou /tests env <environnement> lancés tout seuls à heure fixe ; sans argument, pas à pas
+- carte [<dossier ou page .html du dépôt>] : la carte des flux du pack, générée depuis ses propres fichiers (commandes et leurs étapes, agents, questions, outils, garde-fous), une page à ouvrir ou à présenter ; avec un chemin, écrite dans le dépôt pour la pousser
 EOF
     exit 0 ;;
 esac
@@ -170,5 +172,20 @@ case "$name" in
   liens)
     echo "Dépôts de cette machine et ce qui les lie (related-setup.sh scan) :"
     sh "$here/related-setup.sh" scan ;;
+  carte)
+    # without argument the page goes to the folder of the pack; with one, to that path of the repository (a folder:
+    # carte-des-flux.html in it), to push it
+    if [ -n "$1" ]; then
+      case "$1" in
+        /*|*..*) echo "Carte : « $1 » n'est pas un chemin du dépôt (relatif à sa racine, sans ..) : rien n'est écrit"; exit 0 ;;
+        *.html) page=$1 ;;
+        *) page="${1%/}/carte-des-flux.html" ;;
+      esac
+      echo "Carte des flux (pack-map.sh, dans le dépôt : $page) :"
+      sh "$here/pack-map.sh" --out "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/$page"
+    else
+      echo "Carte des flux (pack-map.sh, dans le dossier du pack) :"
+      sh "$here/pack-map.sh"
+    fi ;;
 esac
 exit 0

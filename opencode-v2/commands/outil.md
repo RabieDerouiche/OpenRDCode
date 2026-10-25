@@ -1,5 +1,5 @@
 ---
-description: "Les autres outils du pack, à la demande : doc, audit, licences, release-notes, pattern (capturer une implémentation d'un autre dépôt pour /go), cqrs, setup (AGENTS.md du dépôt), liens (les dépôts de la même application, pas à pas), abandon, todo, stats (ce que /go et /fix ont fait), http (les requêtes de l'API pour Rider, pas à pas), planifier (une commande qui n'écrit rien, lancée à heure fixe, pas à pas). Usage: /outil <nom> [arguments] ; /outil seul donne la liste"
+description: "Les autres outils du pack, à la demande : doc, audit, licences, release-notes, pattern (capturer une implémentation d'un autre dépôt pour /go), cqrs, setup (AGENTS.md du dépôt), liens (les dépôts de la même application, pas à pas), abandon, todo, stats (ce que /go et /fix ont fait), http (les requêtes de l'API pour Rider, pas à pas), planifier (une commande qui n'écrit rien, lancée à heure fixe, pas à pas), carte (la carte des flux du pack, générée depuis ses fichiers). Usage: /outil <nom> [arguments] ; /outil seul donne la liste"
 agent: build
 subtask: false
 ---

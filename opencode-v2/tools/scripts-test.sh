@@ -296,5 +296,56 @@ check "abandon in a worktree: says the folder can go" 0 '^WORKTREE: wt-abandon h
 cd "$work/repo" || exit 1
 git worktree remove --force "$work/wt-abandon"
 
+# ---------- /outil carte: the map of the flows of the pack, made from its own files ----------
+pack=$(dirname "$scripts")
+run pack-map.sh --pack "$pack" --out "$work/map/carte.html"
+check "carte: the page and what it counts" 0 "^CARTE: $work/map/carte\\.html \\([0-9]+ commandes, [0-9]+ outils de /outil, [0-9]+ agents, [0-9]+ skills, [0-9]+ fonctions du plugin, [0-9]+ scripts\\)$"
+check "carte: /go, its steps, its agents and its questions" 0 '^COMMANDE: /go — pilot — .* — [0-9]+ étapes — agents : analyst, .* — questions : Ticket, Ticket ambigu'
+truth "carte: the commands in the order of their families, /go first" 'printf "%s\n" "$out" | grep "^COMMANDE:" | head -n 1 | grep -q "^COMMANDE: /go "'
+check "carte: a tool whose arguments hold « : »" 0 '^OUTIL: pattern — capture une bonne implémentation'
+check "carte: an agent and what it may write" 0 '^AGENT: test-guardian — subagent — écrit : les projets de tests$'
+check "carte: the tools of /outil, as outil.sh lists them" 0 '^OUTIL: carte — '
+check "carte: the functions of the plugin, in plain words" 0 '^PLUGIN: 7\. Garde les agents dans le dépôt'
+check "carte: an answer header is no question" 0 '^COMMANDE: /tests ' 'questions : [^—]*\*\*'
+for c in "$pack"/commands/*.md; do
+  n=$(basename "$c" .md)
+  grep -q "<section id=\"cmd-$n\">" "$work/map/carte.html" || { fail=$((fail + 1)); echo "FAIL: carte: no section for /$n"; }
+done
+pass=$((pass + 1))
+truth "carte: one diagram per command that has steps" '[ "$(grep -c "<pre class=\"mermaid\">" "$work/map/carte.html")" -ge 8 ]'
+truth "carte: no raw < in a diagram but its line breaks" '! awk "/<pre class=\"mermaid\">/{on=1;next} /<\/pre>/{on=0} on" "$work/map/carte.html" | sed "s#<br/>##g" | grep -q "<"'
+truth "carte: the page is UTF-8 and complete" 'tail -n 1 "$work/map/carte.html" | grep -q "^</html>$" && iconv -f UTF-8 -t UTF-8 "$work/map/carte.html" > /dev/null 2>&1'
+run pack-map.sh --pack "$work/repo" --out "$work/map/x.html"
+check "carte: a folder that is not a pack" 1 '^STOP: .* is not a pack of OpenCode'
+run pack-map.sh --pack "$pack" --out "$work/map/carte.txt"
+check "carte: an .html page only" 1 '^STOP: the map is an \.html page'
+run outil.sh carte ../dehors
+check "outil carte: never outside the repository" 0 "^Carte : « \\.\\./dehors » n'est pas un chemin du dépôt"
+run outil.sh carte docs
+check "outil carte docs: the page in the repository, to push it" 0 "^CARTE: $work/repo/docs/carte-des-flux\\.html "
+truth "outil carte docs: written there" '[ -s "$work/repo/docs/carte-des-flux.html" ]'
+rm -rf "$work/repo/docs"
+# the pack this OpenCode reads, found as its plugin finds it: OpenCode v2 next to 1.19 (OPENCODE_CONFIG_DIR in ~/oc2,
+# without the scripts, common to both in ~/.config/opencode/scripts), then the usual configuration folder
+unset XDG_CONFIG_HOME
+mkdir -p "$work/oc2/config/opencode" "$HOME/.config/opencode"
+cp -R "$pack/commands" "$pack/agents" "$pack/skills" "$pack/plugins" "$work/oc2/config/opencode/"
+rm "$work/oc2/config/opencode/commands/compare.md"
+cp -R "$pack/commands" "$pack/agents" "$HOME/.config/opencode/"
+rm "$HOME/.config/opencode/commands/compare.md" "$HOME/.config/opencode/commands/review.md"
+nscripts=0
+for f in "$scripts"/*.sh; do nscripts=$((nscripts + 1)); done
+OPENCODE_CONFIG_DIR="$work/oc2/config/opencode"
+export OPENCODE_CONFIG_DIR
+run pack-map.sh
+check "carte: v2 next to 1.19, its configuration folder and the common scripts" 0 "^CARTE: $work/oc2/config/opencode/carte-des-flux\\.html \\(9 commandes, .* $nscripts scripts\\)$"
+truth "carte: written in the configuration folder of v2" '[ -s "$work/oc2/config/opencode/carte-des-flux.html" ]'
+unset OPENCODE_CONFIG_DIR
+run pack-map.sh --out "$work/map/usual.html"
+check "carte: otherwise the usual configuration folder" 0 "^CARTE: $work/map/usual\\.html \\(8 commandes, "
+rm -rf "$HOME/.config/opencode"
+run pack-map.sh --out "$work/map/above.html"
+check "carte: otherwise the folder above the scripts" 0 "^CARTE: $work/map/above\\.html \\(10 commandes, "
+
 echo "$pass checks passed, $fail failed ($SHELL_UNDER_TEST)"
 [ "$fail" -eq 0 ]

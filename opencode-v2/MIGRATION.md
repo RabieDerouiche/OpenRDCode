@@ -237,7 +237,7 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère : remplace tout son contenu ;
 - `FAILED open or read` : il n'existe pas encore : crée-le.
 
-La première fois, avec un pack 1.19 à jour, tu dois voir ces 33 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
+La première fois, avec un pack 1.19 à jour, tu dois voir ces 34 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
 ```text
 agents/analyst.md: FAILED
 agents/checker.md: FAILED
@@ -264,6 +264,7 @@ skills/dotnet-cqrs-conventions/SKILL.md: FAILED
 skills/fortify-remediation/SKILL.md: FAILED
 skills/pack-abandon/SKILL.md: FAILED
 skills/pack-audit/SKILL.md: FAILED
+skills/pack-carte/SKILL.md: FAILED open or read
 skills/pack-cqrs/SKILL.md: FAILED
 skills/pack-doc/SKILL.md: FAILED
 skills/pack-http/SKILL.md: FAILED open or read
@@ -273,7 +274,7 @@ skills/pack-release-notes/SKILL.md: FAILED
 skills/pack-setup/SKILL.md: FAILED
 plugins/openrd-pack.js: FAILED open or read
 ```
-Si ton pack 1.19 est plus ancien, il y en a plus. Par exemple, `agents/test-guardian.md: FAILED open or read` veut dire : crée `~/oc2/config/opencode/agents/test-guardian.md` et colles-y le contenu de `opencode-v2/agents/test-guardian.md`. Un skill nouveau a besoin de son dossier d'abord, avant de créer son `SKILL.md` : `cd ~/oc2/config/opencode/skills && mkdir -p blazorise api-tests pack-http pack-liens pack-planifier`.
+Si ton pack 1.19 est plus ancien, il y en a plus. Par exemple, `agents/test-guardian.md: FAILED open or read` veut dire : crée `~/oc2/config/opencode/agents/test-guardian.md` et colles-y le contenu de `opencode-v2/agents/test-guardian.md`. Un skill nouveau a besoin de son dossier d'abord, avant de créer son `SKILL.md` : `cd ~/oc2/config/opencode/skills && mkdir -p blazorise api-tests pack-http pack-liens pack-planifier pack-carte`.
 
 Relance la commande après chaque série de fichiers collés. **Tu as fini quand elle affiche `OK : la configuration est identique à GitHub`.** Si elle n'affiche rien du tout, c'est la liste `CHECKSUMS-config.txt` elle-même qui est mal collée : recrée-la depuis Raw.
 
@@ -283,11 +284,11 @@ ls ~/oc2/config/opencode/agents ~/oc2/config/opencode/commands
 ```
 Tu dois voir, pour les agents : `analyst.md checker.md coder.md debugger.md doc-writer.md pilot.md test-guardian.md` ; pour les commandes : `compare.md daily.md fix.md fortify.md go.md outil.md push.md review.md sync.md tests.md`. Un autre nom est soit un fichier à toi (garde-le), soit un reste d'un ancien pack : envoie-moi son nom. Dans `skills`, tes skills `pattern-…` sont à toi : ils restent.
 
-**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `abandon.sh`, `api-surface.sh`, `base.sh`, `dotnet-problem.sh`, `dotnet-targets.sh`, `fortify.sh`, `front-info.sh`, `front-test.sh`, `related-repos.sh`, `related-setup.sh`, `test-guardian.sh`, `test-lint.sh`, `test-platform.sh`, `tests.sh`, `api-preflight.sh`, `environments.sh`, `env-setup.sh`, `env-tests.sh`, `http-files.sh` et `schedule.sh` ; onze d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `detect-project-type.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-refs.sh`, `review-target.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public, `git fetch` de deux espaces de travail qui se croisent relancé tout seul, un dossier front-end buildé et testé une fois par `build-test.sh <dossier>`, un problème de la machine dit en une ligne, un `node_modules` jamais poussé).
+**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `abandon.sh`, `api-surface.sh`, `base.sh`, `dotnet-problem.sh`, `dotnet-targets.sh`, `fortify.sh`, `front-info.sh`, `front-test.sh`, `related-repos.sh`, `related-setup.sh`, `test-guardian.sh`, `test-lint.sh`, `test-platform.sh`, `tests.sh`, `api-preflight.sh`, `environments.sh`, `env-setup.sh`, `env-tests.sh`, `http-files.sh`, `schedule.sh` et `pack-map.sh` ; douze d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `detect-project-type.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-licenses.sh`, `package-refs.sh`, `review-target.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public, `git fetch` de deux espaces de travail qui se croisent relancé tout seul, un dossier front-end buildé et testé une fois par `build-test.sh <dossier>`, un problème de la machine dit en une ligne, un `node_modules` jamais poussé, l'alternative gratuite de Blazorise dans `/outil licences`).
 ```sh
 cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
 ```
-Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 31 lignes :
+Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 33 lignes :
 ```text
 abandon.sh: FAILED open or read
 api-preflight.sh: FAILED open or read
@@ -308,6 +309,8 @@ front-info.sh: FAILED open or read
 front-test.sh: FAILED open or read
 http-files.sh: FAILED open or read
 outil.sh: FAILED
+pack-map.sh: FAILED open or read
+package-licenses.sh: FAILED
 package-refs.sh: FAILED
 related-repos.sh: FAILED open or read
 related-setup.sh: FAILED open or read
@@ -673,16 +676,17 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
 
 **Les vérifications automatiques passent** :
 - plugin : 789 sur 789, dont les commandes planifiées (l'heure et les jours, seulement ce qui n'écrit rien ni n'attend de réponse : un assistant comme `/tests env config` refusé, une seule session quand deux OpenCode tournent, une ligne `/go` refusée), puis les commandes qui ne finissent jamais (un serveur, un mode watch, `npm test` jugé sur ce que lance son script, la conversation en arrière-plan ou bornée), les changements de dépendances et les installations sur la machine refusés aux agents du pack en une phrase (`npm install`, `npx npm@11 install`, `dotnet package add`, brew…), `npm ci` permis, et le QCM « Suite » qui finit chaque commande (le dossier libre pendant qu'il attend, l'issue gardée dans le titre, aucune reprise automatique après lui, la commande choisie lancée même si le serveur du modèle tombe ensuite), le contenu `null` des messages d'appels d'outils remplacé par `""` (rejoué sur le vrai v2.1.3 contre un serveur qui refuse `null` comme la passerelle de la plateforme), puis la coupure des réponses qui bouclent, « continue » repris par le pilote et `dotnet run` limité aux projets commités, `/tests`, chaque commande que le pack prescrit à un agent passée aux gardes du plugin, et un `/go` dans le dossier principal en même temps qu'un `/go` dans son espace de travail ;
-- permissions : 2 571 cas sur 2 571 (2 493 à l'étape précédente), dont les 209 commandes que les commandes, agents et skills du pack prescrivent, chacune permise à l'agent qui la lance (dont celles de `/tests api`, `/tests env` et de leurs assistants), `env-tests.sh --ecriture` refusé à tous les sous-agents, `schedule.sh`, `http-files.sh` et `related-setup.sh` à la conversation seulement, `env-setup.sh` au pilote de `/tests env config` et à la conversation seulement, et les scripts de package.json (un client d'API généré oui ; publier, déployer, les tests de bout en bout non) ;
-- scripts git hors ticket (`/push`, `/sync`, `/go … depuis`, espace de travail en HEAD détachée, `/outil abandon`, un `node_modules` jamais poussé) : 74 contrôles sur 74 contre un dépôt distant de test (`tools/scripts-test.sh`, dash et bash) ;
-- scripts .NET avec un `dotnet` simulé, VSTest et Microsoft.Testing.Platform, .NET 8 sans son SDK puis sans ses runtimes, librairie et validation de paquet, contrats, qualité des tests, dépôts liés, review d'une branche d'un collègue, Blazorise et son skill nommés, le projet de tests d'intégration d'une API .NET 8 et .NET 10, les tests d'un environnement (production refusée, écriture non permise, jeton absent puis masqué, environnement injoignable), les fichiers `.http`, les planifications : 230 contrôles sur 230 (`tools/dotnet-test.sh`, dash et bash) ;
+- permissions : 2 582 cas sur 2 582 (2 571 à l'étape précédente), dont les 214 commandes que les commandes, agents et skills du pack prescrivent (dont `setup --components`, au pilote seul), chacune permise à l'agent qui la lance (dont celles de `/tests api`, `/tests env` et de leurs assistants), `env-tests.sh --ecriture` refusé à tous les sous-agents, `schedule.sh`, `http-files.sh` et `related-setup.sh` à la conversation seulement, `env-setup.sh` au pilote de `/tests env config` et à la conversation seulement, et les scripts de package.json (un client d'API généré oui ; publier, déployer, les tests de bout en bout non) ;
+- scripts git hors ticket (`/push`, `/sync`, `/go … depuis`, espace de travail en HEAD détachée, `/outil abandon`, un `node_modules` jamais poussé) et la carte des flux (`/outil carte`) : 95 contrôles sur 95 contre un dépôt distant de test (`tools/scripts-test.sh`, dash et bash) ;
+- scripts .NET avec un `dotnet` simulé, VSTest et Microsoft.Testing.Platform, .NET 8 sans son SDK puis sans ses runtimes, librairie et validation de paquet, contrats, qualité des tests, dépôts liés, review d'une branche d'un collègue, Blazorise et son skill nommés, le projet de tests d'intégration d'une API .NET 8 et .NET 10, les tests d'un environnement (production refusée, écriture non permise, jeton absent puis masqué, environnement injoignable), les fichiers `.http`, les planifications, les pages Razor (leur filet, ce que coverlet mesure, bUnit ajouté par `setup --components`) : 264 contrôles sur 264 (`tools/dotnet-test.sh`, dash et bash) ;
 - scripts front-end avec un npm simulé (Angular avec Karma et avec Vitest, Create React App, Vitest, Jest, registre refusé, lockfile désynchronisé, npm qui échoue de lui-même, Chrome absent, run qui ne finit pas) : 79 contrôles sur 79 (`tools/frontend-test.sh`, dash et bash ; avec `--real`, les vrais Jest, Vitest et Angular, puis l'installation que fait le pack depuis leur lockfile, lancés par GitHub à chaque push) ;
-- les messages réels du SDK .NET (SDK de global.json absent, NETSDK1045, runtime des tests absent, .NET 8, CS9202, validation de paquet) le code du skill `blazorise` compilé contre les vrais paquets, et celui du skill `api-tests` sur une vraie API .NET 10 (projet créé par `setup --integration`, tests en mémoire, puis `env-tests.sh` contre l'API démarrée et contre une adresse qui ne répond pas) : `tools/real-dotnet-test.sh`, lancé par GitHub avec les SDK 10 et 8 ;
+- les messages réels du SDK .NET (SDK de global.json absent, NETSDK1045, runtime des tests absent, .NET 8, CS9202, validation de paquet) et le code du skill `api-tests` sur une vraie API .NET 10 (projet créé par `setup --integration`, tests en mémoire, puis `env-tests.sh` contre l'API démarrée et contre une adresse qui ne répond pas) : `tools/real-dotnet-test.sh`, lancé par GitHub avec les SDK 10 et 8 ;
+- Blazorise remplacé par du Razor natif, pour de vrai (Blazorise 2.2.2, bUnit, QuickGrid, coverlet, le code du skill `blazorise` tel qu'il est écrit) : bUnit ajouté par `setup --components`, les tests de ce que voient les utilisateurs écrits et scellés sur le DataGrid, la page réécrite avec QuickGrid qui les passe tels quels, puis Blazorise retiré : 43 contrôles sur 43 avec .NET 10, et autant avec .NET 8 (`tools/blazor-native-test.sh`, lancé par GitHub à chaque push) ;
 - les environnements et les assistants en vrai HTTP sur la machine (un fournisseur OpenID Connect, une API qui vérifie ses jetons, un proxy qui demande ses identifiants, en HTTP et en TLS) : 137 contrôles sur 137 (`tools/environments-test.sh`, dash et bash) ;
 - en situation réelle, dans Docker, avec les vrais SDK .NET 10 et 8 : Keycloak 26.6.1, un proxy squid qui demande ses identifiants, une autorité de certification interne, SQL Server et une API ASP.NET Core déployée derrière le proxy, qui vérifie les jetons de Keycloak : `/tests api` sur une API réaliste (EF Core 10 et 8), `/tests env config`, `/tests env` (lecture seule et écriture), le client des tests seul, les requêtes de `/outil http` envoyées comme Rider, et onze problèmes chacun dit en une ligne : 77 contrôles sur 77 (`tools/oidc-real-test.sh`, lancé par GitHub à chaque push) ;
 - des histoires complètes, avec un `dotnet` simulé, deux dépôts (avec et sans tests) et un second ordinateur qui pousse aussi : 139 contrôles sur 139 (`tools/scenarios-test.sh`, dash et bash ; avec `--real`, le vrai SDK .NET, lancé par GitHub à chaque push) — `/go`, une étape « (filet d'abord) » dont le filet arrête la régression du coder, la même dans un dépôt sans tests (le projet de tests créé d'abord, le filet mesuré avant tout test), `/go … depuis`, POC, documentation seule, build cassé, test rouge, « sans les tests », code déjà vert non relancé, commits du Mac fusionnés puis en conflit, `/sync`, commit fait sur develop par erreur, secret bloqué, `dotnet` absent, `/fix` sans ticket, `/tests` dans un dépôt sans tests, deux espaces de travail du même dépôt qui buildent, mesurent et poussent chacun sa branche en même temps, puis 4 espaces de travail qui font `git fetch` ensemble pendant que 12 branches bougent ;
 - le flux de `/fortify` et de son test-guardian de A à Z, ses lignes de commande dans l'ordre de ses étapes, sur de vrais projets C# : 205 contrôles sur 205 (`tools/fortify-test.sh`, dash et bash ; avec `--real`, le même rejeu avec le vrai SDK .NET, lancé par GitHub à chaque push), dont le filet de non-régression de chaque faille et celui de méthodes que le compilateur découpe (asynchrone, itérateur, lambda, fonction locale), ses chiffres comparés aux valeurs exactes du vrai coverlet ;
-- 38 fichiers d'agents, de commandes et de skills validés (37 à l'étape précédente), chaque fichier du pack décrit dans `FICHIERS.md` ;
+- 39 fichiers d'agents, de commandes et de skills validés (38 à l'étape précédente), chaque fichier du pack décrit dans `FICHIERS.md` ;
 - `shellcheck` sur tous les scripts.
 
 **Avec les vrais programmes**, sur la version du pack du 23 octobre 2026 (pas rejoués depuis : ma machine de vérification n'a ni OpenCode ni `dotnet` ; les changements suivants sont couverts par les contrôles ci-dessus, ceux du vrai SDK .NET lancés par GitHub à chaque push, les autres avec un `dotnet` simulé et le moteur de permissions d'OpenCode reproduit) :
@@ -696,19 +700,19 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
   - `plugins/openrd-pack.js`, qui remplace `compact-commands.js` ;
   - `commands/fortify.md`, `agents/test-guardian.md`, `scripts/fortify.sh`, `scripts/test-guardian.sh` ;
   - `commands/push.md`, `commands/sync.md`, `commands/tests.md` (le travail hors ticket), `scripts/base.sh` (la base d'une branche), `scripts/test-platform.sh` (les tests Microsoft.Testing.Platform), `scripts/abandon.sh` (`/outil abandon` sans jamais perdre de travail), `AGENTS.repo-template.md` ;
-  - `skills/blazorise/SKILL.md` (Blazorise : la langue du DataGrid et de sa pagination, l'API de la version installée, son remplacement par du Razor natif) ;
-  - `skills/api-tests/SKILL.md` (les tests d'intégration d'une API, en mémoire et sur un environnement), `scripts/tests.sh` (les modes et les faits de `/tests`), `scripts/api-preflight.sh` (ce qui empêcherait l'API de démarrer dans un test), `scripts/environments.sh`, `scripts/env-setup.sh` et `scripts/env-tests.sh` (`/tests env config` et `/tests env` : OIDC, proxy, certificats), `skills/pack-http/SKILL.md` et `scripts/http-files.sh` (`/outil http`), `skills/pack-liens/SKILL.md` et `scripts/related-setup.sh` (`/outil liens`), `skills/pack-planifier/SKILL.md` et `scripts/schedule.sh` (`/outil planifier`, que le plugin lance à l'heure dite) ;
+  - `skills/blazorise/SKILL.md` (Blazorise : la langue du DataGrid et de sa pagination, l'API de la version installée, son remplacement par du Razor natif page par page, sous tests bUnit) ;
+  - `skills/api-tests/SKILL.md` (les tests d'intégration d'une API, en mémoire et sur un environnement), `scripts/tests.sh` (les modes et les faits de `/tests`), `scripts/api-preflight.sh` (ce qui empêcherait l'API de démarrer dans un test), `scripts/environments.sh`, `scripts/env-setup.sh` et `scripts/env-tests.sh` (`/tests env config` et `/tests env` : OIDC, proxy, certificats), `skills/pack-http/SKILL.md` et `scripts/http-files.sh` (`/outil http`), `skills/pack-liens/SKILL.md` et `scripts/related-setup.sh` (`/outil liens`), `skills/pack-planifier/SKILL.md` et `scripts/schedule.sh` (`/outil planifier`, que le plugin lance à l'heure dite), `skills/pack-carte/SKILL.md` et `scripts/pack-map.sh` (`/outil carte` : la carte des flux du pack, générée depuis ses fichiers) ;
   - `CHECKSUMS-config.txt` et `CHECKSUMS-scripts.txt`, les listes d'empreintes de l'étape 5 ;
   - ce guide, `ANALYSE.md`, et `FICHIERS.md` (chaque fichier du pack : ce qu'il fait, qui le lance, à quoi il sert).
 - **Modifiés** :
   - les agents (vocabulaire des sous-agents, règles régénérées, le filet de non-régression avant chaque correctif : test-guardian, coder, analyst, pilot), les six commandes de la 1.19 (leur première ligne `[[command …]]`, lue par le plugin ; `go.md` et `fix.md` aussi pour le vocabulaire, `/go … depuis <branche>`, le filet et les arrêts qui renvoient à `/push` ; chacune finit par son QCM « Suite »), `AGENTS.global.md` (toute action proposée est un QCM qui la lance) ;
   - `skills/pack-setup/SKILL.md` (un AGENTS.md de dépôt court et utile aux agents, le minimum du filet, les règles proposées cochées dans son dernier QCM), `skills/pack-abandon/SKILL.md` (passe par `abandon.sh`), `skills/best-practices/SKILL.md` et `skills/build-fix/SKILL.md` (les commandes de la v1 qu'ils nommaient encore), `skills/pack-cqrs/SKILL.md` (son QCM « Suite »), `skills/pack-audit/SKILL.md` (son QCM « Suite » : ses premières améliorations en `/go sans ticket`, et plus de `/outil pattern apply`, qui n'existe plus) ;
-  - les scripts `branch.sh`, `build-test.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-refs.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh` (mêmes appels qu'en 1.19) ;
+  - les scripts `branch.sh`, `build-test.sh`, `detect-project-type.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-licenses.sh`, `package-refs.sh`, `review-target.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh` (mêmes appels qu'en 1.19) ;
   - `skills/pack-doc/SKILL.md` (vocabulaire, son QCM « Suite »), `skills/pack-release-notes/SKILL.md` (un espace en fin de ligne retiré) et `skills/fortify-remediation/SKILL.md` (une ligne vide finale retirée), pour qu'un copier-coller les reproduise à l'identique ;
   - `opencode.snippet.json` (règles de la v2, partage, mises à jour et recherche web coupés) ;
   - `COMMANDES.md` et `README.md`.
 - **Identiques** : les autres scripts et les autres skills.
-- **`tools/`** contient aussi `scripts-test.sh` (scripts git), `dotnet-test.sh` et `fake-dotnet.sh` (scripts .NET avec un `dotnet` simulé), `scenarios-test.sh` (les histoires complètes, plusieurs espaces de travail en parallèle), `fortify-test.sh` (le flux de `/fortify` et de son test-guardian de A à Z, avec le `dotnet` simulé ou, avec `--real`, le vrai).
+- **`tools/`** contient aussi `scripts-test.sh` (scripts git), `dotnet-test.sh` et `fake-dotnet.sh` (scripts .NET avec un `dotnet` simulé), `scenarios-test.sh` (les histoires complètes, plusieurs espaces de travail en parallèle), `fortify-test.sh` (le flux de `/fortify` et de son test-guardian de A à Z, avec le `dotnet` simulé ou, avec `--real`, le vrai), `blazor-native-test.sh` (Blazorise remplacé par du Razor natif, avec le vrai .NET).
 - **`tools/`** : mes outils de vérification. Ne les copie jamais dans ta configuration.
 
 ## Annexe A — La v2 a déjà remplacé ta 1.19 : tout remettre d'aplomb, avec l'interface web
@@ -974,7 +978,7 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère. Par exemple, `agents/pilot.md: FAILED` veut dire : remplace tout le contenu de `~/.config/opencode/agents/pilot.md` par celui de `opencode-v2/agents/pilot.md` ;
 - `FAILED open or read` : il n'existe pas encore, crée-le.
 
-Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 16 lignes :
+Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 17 lignes :
 ```text
 skills/api-tests/SKILL.md: FAILED open or read
 skills/best-practices/SKILL.md: FAILED
@@ -984,6 +988,7 @@ skills/dotnet-cqrs-conventions/SKILL.md: FAILED
 skills/fortify-remediation/SKILL.md: FAILED
 skills/pack-abandon/SKILL.md: FAILED
 skills/pack-audit/SKILL.md: FAILED
+skills/pack-carte/SKILL.md: FAILED open or read
 skills/pack-cqrs/SKILL.md: FAILED
 skills/pack-doc/SKILL.md: FAILED
 skills/pack-http/SKILL.md: FAILED open or read
@@ -993,7 +998,7 @@ skills/pack-release-notes/SKILL.md: FAILED
 skills/pack-setup/SKILL.md: FAILED
 plugins/openrd-pack.js: FAILED open or read
 ```
-Pour les cinq skills nouveaux, crée d'abord leurs dossiers : `cd ~/.config/opencode/skills && mkdir -p blazorise api-tests pack-http pack-liens pack-planifier`. Une ligne en plus pour un agent ou une commande : il a été collé sans son dernier retour à la ligne, ou pas depuis Raw. Recolle-le (voir « Si un fichier collé reste en `FAILED` », à la fin de l'étape 5).
+Pour les six skills nouveaux, crée d'abord leurs dossiers : `cd ~/.config/opencode/skills && mkdir -p blazorise api-tests pack-http pack-liens pack-planifier pack-carte`. Une ligne en plus pour un agent ou une commande : il a été collé sans son dernier retour à la ligne, ou pas depuis Raw. Recolle-le (voir « Si un fichier collé reste en `FAILED` », à la fin de l'étape 5).
 
 Relance la commande après chaque série de fichiers collés. **Tu as fini quand elle affiche `OK : la configuration est identique à GitHub`.** Si elle n'affiche rien du tout, c'est `~/CHECKSUMS-config.txt` qui est mal collé : recrée-le.
 
