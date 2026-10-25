@@ -333,8 +333,7 @@ cp -R "$pack/commands" "$pack/agents" "$pack/skills" "$pack/plugins" "$work/oc2/
 rm "$work/oc2/config/opencode/commands/compare.md"
 cp -R "$pack/commands" "$pack/agents" "$HOME/.config/opencode/"
 rm "$HOME/.config/opencode/commands/compare.md" "$HOME/.config/opencode/commands/review.md"
-nscripts=0
-for f in "$scripts"/*.sh; do nscripts=$((nscripts + 1)); done
+nscripts=$(set -- "$scripts"/*.sh; echo "$#")
 OPENCODE_CONFIG_DIR="$work/oc2/config/opencode"
 export OPENCODE_CONFIG_DIR
 run pack-map.sh

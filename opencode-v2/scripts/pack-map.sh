@@ -392,22 +392,22 @@ EOF
 # the menu
 {
   echo '<nav aria-label="Sections">'
-  echo '<span class="label">Vue d’ensemble</span><a href="#minute">En une minute</a><a href="#carte">Carte d’ensemble</a>'
+  echo '<span class="label">Vue d&rsquo;ensemble</span><a href="#minute">En une minute</a><a href="#carte">Carte d&rsquo;ensemble</a>'
   echo '<span class="label">Les commandes</span>'
   while IFS="$us" read -r o name fam; do echo "<a href=\"#cmd-$name\"><code>/$name</code></a>"; done < "$tmp/cmds.sorted"
-  echo '<span class="label">Le pack</span><a href="#agents">Qui fait quoi</a><a href="#skills">Ce qu’il sait</a><a href="#plugin">Ses garde-fous</a><a href="#scripts">Ses scripts</a>'
+  echo '<span class="label">Le pack</span><a href="#agents">Qui fait quoi</a><a href="#skills">Ce qu&rsquo;il sait</a><a href="#plugin">Ses garde-fous</a><a href="#scripts">Ses scripts</a>'
   echo '</nav>'
   echo '<main>'
   echo '<header>'
   echo '<h1>Carte des flux du pack</h1>'
-  echo "<p>Ce que fait le pack OpenCode installé, commande par commande : qui travaille, quelles questions il peut te poser, où il peut s’arrêter. Générée depuis ses propres fichiers le $now ($ncmd commandes, $ntool outils, $nagent agents, $nskill savoirs, $nplugin fonctions du plugin, $nscript scripts).</p>"
-  echo '<div class="marks" aria-label="Les issues d’un run"><span><b>⏳</b> en cours</span><span><b>✅</b> fini</span><span><b>🚀</b> MR créée ou poussé</span><span><b>🔁</b> MR mise à jour</span><span><b>⏸</b> attend le PO</span><span><b>⛔</b> arrêté, avec la raison</span><span><b>❓</b> une question t’attend</span></div>'
+  echo "<p>Ce que fait le pack OpenCode installé, commande par commande : qui travaille, quelles questions il peut te poser, où il peut s&rsquo;arrêter. Générée depuis ses propres fichiers le $now ($ncmd commandes, $ntool outils, $nagent agents, $nskill savoirs, $nplugin fonctions du plugin, $nscript scripts).</p>"
+  echo '<div class="marks" aria-label="Les issues d&rsquo;un run"><span><b>⏳</b> en cours</span><span><b>✅</b> fini</span><span><b>🚀</b> MR créée ou poussé</span><span><b>🔁</b> MR mise à jour</span><span><b>⏸</b> attend le PO</span><span><b>⛔</b> arrêté, avec la raison</span><span><b>❓</b> une question t&rsquo;attend</span></div>'
   echo '</header>'
   cat <<'EOF'
 <section id="minute">
 <h2>En une minute</h2>
-<p><b>OpenCode</b> est un assistant de développement : on lui écrit une demande, un modèle d’IA lit le code et agit. <b>Le pack</b> lui ajoute des <b>commandes</b> (des demandes toutes prêtes, qui commencent par une barre oblique : <code>/go</code>, <code>/tests</code>, <code>/push</code>), des <b>agents</b> (des rôles : un analyste, un développeur, un gardien des tests, un relecteur), des <b>savoirs</b> (des fiches qu’un agent lit quand le sujet se présente) et des <b>scripts</b> qui font les gestes sensibles toujours de la même façon (commiter, pousser, mesurer la couverture).</p>
-<p>Une commande déroule des <b>étapes</b>. Quand une décision t’appartient, elle te pose un <b>QCM</b> : tu cliques une réponse, la recommandée est en premier. À la fin, un dernier QCM, « Suite », propose la commande d’après. Des <b>garde-fous</b> empêchent ce qui ne doit jamais arriver : un secret qui part, un commit sur develop, un agent qui sort du dépôt.</p>
+<p><b>OpenCode</b> est un assistant de développement : on lui écrit une demande, un modèle d&rsquo;IA lit le code et agit. <b>Le pack</b> lui ajoute des <b>commandes</b> (des demandes toutes prêtes, qui commencent par une barre oblique : <code>/go</code>, <code>/tests</code>, <code>/push</code>), des <b>agents</b> (des rôles : un analyste, un développeur, un gardien des tests, un relecteur), des <b>savoirs</b> (des fiches qu&rsquo;un agent lit quand le sujet se présente) et des <b>scripts</b> qui font les gestes sensibles toujours de la même façon (commiter, pousser, mesurer la couverture).</p>
+<p>Une commande déroule des <b>étapes</b>. Quand une décision t&rsquo;appartient, elle te pose un <b>QCM</b> : tu cliques une réponse, la recommandée est en premier. À la fin, un dernier QCM, « Suite », propose la commande d&rsquo;après. Des <b>garde-fous</b> empêchent ce qui ne doit jamais arriver : un secret qui part, un commit sur develop, un agent qui sort du dépôt.</p>
 <p>Les schémas ci-dessous viennent des fichiers du pack : les titres des étapes sont écrits comme la commande les donne au modèle (en anglais) ; les explications en français sont celles du pack.</p>
 </section>
 EOF
@@ -415,7 +415,7 @@ EOF
 
 # the map: the families of commands, the tools, the agents, the skills, the guardrails
 {
-  echo '<section id="carte"><h2>Carte d’ensemble</h2><div class="mm">'
+  echo '<section id="carte"><h2>Carte d&rsquo;ensemble</h2><div class="mm">'
   echo "<div class=\"root\">Le pack OpenCode<small>$ncmd commandes · $nagent agents · $nskill savoirs · $nplugin garde-fous du plugin</small></div>"
   for fam in ticket free read other; do
     case "$fam" in
@@ -436,7 +436,7 @@ EOF
   done
   if [ -s "$tmp/tools" ]; then
     echo '<div class="branch" style="--c: #8a6a12"><h3><code>/outil</code></h3><ul>'
-    while IFS="$us" read -r name args what; do
+    while IFS="$us" read -r name _ what; do
       echo "<li><code>$(esc "$name")</code> $(esc "$(first_sentence "$what" | awk '{ n = split($0, w, " "); s = ""; for (i = 1; i <= n && i <= 9; i++) s = s (s == "" ? "" : " ") w[i]; if (n > 9) s = s " …"; print s }')")</li>"
     done < "$tmp/tools"
     echo '</ul></div>'
@@ -448,9 +448,9 @@ EOF
   echo '<li><code>build</code> la conversation : ni commit, ni push</li></ul></div>'
   echo '<div class="branch" style="--c: #1f7470"><h3>Ce que le pack sait</h3><ul>'
   awk -F "$us" '$1 !~ /^pack-/ { print $1 }' "$tmp/skills" | while IFS= read -r name; do echo "<li><code>$(esc "$name")</code></li>"; done
-  echo "<li>et $(grep -c '^pack-' "$tmp/skills") procédures d’outils (<code>pack-…</code>)</li></ul></div>"
+  echo "<li>et $(grep -c '^pack-' "$tmp/skills") procédures d&rsquo;outils (<code>pack-…</code>)</li></ul></div>"
   echo '<div class="branch" style="--c: #a14d2a"><h3>Toujours vrai</h3><ul>'
-  echo '<li>build et tests avant chaque push</li><li>un filet de tests avant de toucher du code existant</li><li>une preuve : rouge, puis vert, deux fois</li><li>aucun secret ne part, rien n’est commité sur develop</li>'
+  echo '<li>build et tests avant chaque push</li><li>un filet de tests avant de toucher du code existant</li><li>une preuve : rouge, puis vert, deux fois</li><li>aucun secret ne part, rien n&rsquo;est commité sur develop</li>'
   echo "<li>$nplugin fonctions du plugin veillent sur chaque commande</li></ul></div>"
   echo '</div></section>'
 } >> "$page"
@@ -497,27 +497,27 @@ while IFS="$us" read -r o name fam; do
         END { if (ends != "") { print "  E([\"" lab(ends) "\"])"; print "  " prev " --> E" } }' "$tmp/steps-$name" | sed 's/&/\&amp;/g'
       echo '</pre></div>'
       echo '<ol class="steps">'
-      awk -F "$us" '$1 == "STEP" { print }' "$tmp/steps-$name" | while IFS="$us" read -r tag kind label ags qs stops scs; do
+      awk -F "$us" '$1 == "STEP" { print }' "$tmp/steps-$name" | while IFS="$us" read -r _ kind label ags qs stops scs; do
         chips=""
         [ -n "$ags" ] && chips="$chips <span class=\"chip ag\">🤖 $(esc "$ags")</span>"
         [ -n "$qs" ] && chips="$chips <span class=\"chip q\">❓ $(esc "$qs")</span>"
-        [ "${stops:-0}" -gt 0 ] && chips="$chips <span class=\"chip stop\">⛔ peut s’arrêter</span>"
+        [ "${stops:-0}" -gt 0 ] && chips="$chips <span class=\"chip stop\">⛔ peut s&rsquo;arrêter</span>"
         [ -n "$scs" ] && chips="$chips <span class=\"chip sc\">$(esc "$scs")</span>"
         if [ "$kind" = alt ]; then echo "<li class=\"alt\">$(esc "$label")$chips</li>"; else echo "<li>$(esc "$label")$chips</li>"; fi
       done
       echo '</ol>'
     fi
     if [ "$name" = outil ] && [ -s "$tmp/tools" ]; then
-      echo '<div class="tablewrap"><table><thead><tr><th>Outil</th><th>Ce qu’il fait</th></tr></thead><tbody>'
+      echo '<div class="tablewrap"><table><thead><tr><th>Outil</th><th>Ce qu&rsquo;il fait</th></tr></thead><tbody>'
       while IFS="$us" read -r tname targs twhat; do
         echo "<tr><td><code>/outil $(esc "$tname")</code>${targs:+ <span class=\"usage\">$(esc "$targs")</span>}</td><td>$(esc "$twhat")</td></tr>"
       done < "$tmp/tools"
       echo '</tbody></table></div>'
     fi
     echo '<ul class="facts">'
-    [ -n "$pre" ] && echo "<li><b>Calculé avant qu’il lise ta demande</b>$(esc "$pre")</li>"
-    [ -n "$alla" ] && echo "<li><b>Les agents qu’il appelle</b>$(esc "$alla")</li>"
-    [ -n "$allq" ] && echo "<li><b>Les questions qu’il peut poser</b>$(esc "$allq")</li>"
+    [ -n "$pre" ] && echo "<li><b>Calculé avant qu&rsquo;il lise ta demande</b>$(esc "$pre")</li>"
+    [ -n "$alla" ] && echo "<li><b>Les agents qu&rsquo;il appelle</b>$(esc "$alla")</li>"
+    [ -n "$allq" ] && echo "<li><b>Les questions qu&rsquo;il peut poser</b>$(esc "$allq")</li>"
     [ -n "$ends" ] && echo "<li><b>Comment il peut finir</b>$(esc "$ends")$([ "$suite" = yes ] && echo ', puis le QCM « Suite »')</li>"
     echo '</ul>'
     echo '</section>'
@@ -528,20 +528,20 @@ done < "$tmp/cmds.sorted"
 # the agents, the skills, the guardrails, the scripts
 {
   echo '<section id="agents"><h2>Qui fait quoi</h2>'
-  echo '<p>Le pilote orchestre ; chaque autre agent part d’un contexte neuf, fait sa part et rend son rapport. Seuls les scripts du pack écrivent dans git.</p>'
-  echo '<div class="tablewrap"><table><thead><tr><th>Agent</th><th>Son rôle</th><th>Ce qu’il peut écrire</th></tr></thead><tbody>'
+  echo '<p>Le pilote orchestre ; chaque autre agent part d&rsquo;un contexte neuf, fait sa part et rend son rapport. Seuls les scripts du pack écrivent dans git.</p>'
+  echo '<div class="tablewrap"><table><thead><tr><th>Agent</th><th>Son rôle</th><th>Ce qu&rsquo;il peut écrire</th></tr></thead><tbody>'
   while IFS="$us" read -r name mode steps writes; do
     role=$(lookup "$tmp/agents.fr" "$name" 2)
     [ -n "$role" ] || role=$(first_sentence "$(front "$pack/agents/$name.md" description)")
     echo "<tr><td><code>$(esc "$name")</code><br><span class=\"usage\">$([ "$mode" = subagent ] && echo 'sous-agent' || echo 'mène les commandes')${steps:+, $steps étapes au plus}</span></td><td>$(esc "$role")</td><td>$(esc "$writes")</td></tr>"
     printf 'AGENT: %s — %s — écrit : %s\n' "$name" "${mode:-?}" "$writes" >> "$tmp/facts"
   done < "$tmp/agents"
-  echo '<tr><td><code>build</code><br><span class="usage">agent d’OpenCode</span></td><td>La conversation : un essai, de la doc, un petit correctif, les outils de <code>/outil</code>.</td><td>le dépôt, jamais un commit ni un push</td></tr>'
+  echo '<tr><td><code>build</code><br><span class="usage">agent d&rsquo;OpenCode</span></td><td>La conversation : un essai, de la doc, un petit correctif, les outils de <code>/outil</code>.</td><td>le dépôt, jamais un commit ni un push</td></tr>'
   echo '</tbody></table></div></section>'
 
   echo '<section id="skills"><h2>Ce que le pack sait</h2>'
-  echo '<p>Un savoir (skill) est une fiche qu’un agent lit seulement quand le sujet se présente : il ne coûte rien le reste du temps.</p>'
-  echo '<div class="tablewrap"><table><thead><tr><th>Savoir</th><th>Ce qu’il apporte</th></tr></thead><tbody>'
+  echo '<p>Un savoir (skill) est une fiche qu&rsquo;un agent lit seulement quand le sujet se présente : il ne coûte rien le reste du temps.</p>'
+  echo '<div class="tablewrap"><table><thead><tr><th>Savoir</th><th>Ce qu&rsquo;il apporte</th></tr></thead><tbody>'
   while IFS="$us" read -r name desc; do
     what=$(lookup "$tmp/skills.fr" "$name" 2)
     [ -n "$what" ] || what=$(first_sentence "$desc")
@@ -551,8 +551,8 @@ done < "$tmp/cmds.sorted"
   echo '</tbody></table></div></section>'
 
   echo '<section id="plugin"><h2>Ses garde-fous</h2>'
-  echo '<p>Le plugin du pack voit chaque demande, chaque commande d’un agent et chaque requête au modèle ; ses fonctions sont numérotées dans son en-tête.</p>'
-  echo '<div class="tablewrap"><table><thead><tr><th>N°</th><th>Ce qu’il fait</th></tr></thead><tbody>'
+  echo '<p>Le plugin du pack voit chaque demande, chaque commande d&rsquo;un agent et chaque requête au modèle ; ses fonctions sont numérotées dans son en-tête.</p>'
+  echo '<div class="tablewrap"><table><thead><tr><th>N°</th><th>Ce qu&rsquo;il fait</th></tr></thead><tbody>'
   while IFS="$us" read -r n what; do
     fr=$(lookup "$tmp/plugin.fr" "$n" 2)
     [ -n "$fr" ] || fr=$what
@@ -588,7 +588,7 @@ if ! cp "$page" "$out" 2>/dev/null; then
   echo "STOP: cannot write $out"
   exit 1
 fi
-while IFS="$us" read -r name args what; do printf 'OUTIL: %s — %s\n' "$name" "$(first_sentence "$what")"; done < "$tmp/tools" > "$tmp/tools.facts"
+while IFS="$us" read -r name _ what; do printf 'OUTIL: %s — %s\n' "$name" "$(first_sentence "$what")"; done < "$tmp/tools" > "$tmp/tools.facts"
 echo "CARTE: $out ($ncmd commandes, $ntool outils de /outil, $nagent agents, $nskill skills, $nplugin fonctions du plugin, $nscript scripts)"
 cat "$tmp/facts" "$tmp/tools.facts"
 exit 0
