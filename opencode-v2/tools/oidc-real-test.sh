@@ -69,6 +69,9 @@ printf '[init]\n\tdefaultBranch = develop\n' > "$GIT_CONFIG_GLOBAL"
 # no proxy of this machine: the proxy of the lab is the one of the environments
 unset HTTPS_PROXY https_proxy HTTP_PROXY http_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
 echo "oidc-real-test: SDKs $(dotnet --list-sdks | awk '{ printf "%s%s", sep, $1; sep = ", " }'); Docker $(docker version --format '{{.Server.Version}}' 2>/dev/null)"
+started=$(date +%s)
+# note <what> <output>: its TESTS line, as a NOTE of the run (what really ran, in the annotations of the CI)
+note() { echo "NOTE: $1: $(printf '%s\n' "$2" | grep -m 1 -E '^TESTS: ' || echo "no TESTS line")"; }
 
 pass=0
 fail=0
@@ -668,6 +671,7 @@ api_tests() {
   commit
   run build-test.sh "$t/Shop.IntegrationTests.csproj"
   check "$tfm: the factory of the skill: settings, worker out, DbContext on SQLite, the Bearer scheme answered by the test handler" 0 '^TESTS: OK' 'FAILED TESTS|ENVIRONMENT PROBLEM'
+  note "$tfm, the API tests in memory ($(sh "$scripts/test-platform.sh" kind "$t/Shop.IntegrationTests.csproj" 2>/dev/null | cut -d' ' -f1))" "$out"
   run test-lint.sh "$t/OrdersEnvironmentTests.cs" "$t/HealthEnvironmentTests.cs"
   check "$tfm: test-lint, the environment tests" 0 '^TEST LINT: OK'
   return 0
@@ -743,6 +747,7 @@ case "$kind" in
   *) check "env-tests: the environment tests, read only" 0 '^TESTS: OK' "$SECRETS" ;;
 esac
 run env-tests.sh recette --ecriture
+note "env-tests.sh recette --ecriture, .NET 10" "$out"
 case "$kind" in
   vstest*) check "env-tests --ecriture: the test that creates then deletes an order" 0 '^  OK  OrdersWritesEnvironmentTests\.Post_Order_Valid_Returns201ThenDeleteReturns204 \(' "$SECRETS|^  (FAILED|SKIPPED)  " ;;
   *) check "env-tests --ecriture: the tests that write too" 0 '^TESTS: OK' "$SECRETS" ;;
@@ -795,6 +800,7 @@ if [ -d "$work/shop8/tests/Shop.IntegrationTests" ]; then
   check "net8.0: env-setup set recette, the token URL through the proxy" 0 '^TOKEN URL: https://idp\.lab\.test:8443/realms/acme/protocol/openid-connect/token ' "$SECRETS"
   commit
   run env-tests.sh recette --ecriture
+  note "env-tests.sh recette --ecriture, .NET 8" "$out"
   case "$(sh "$scripts/test-platform.sh" kind tests/Shop.IntegrationTests/Shop.IntegrationTests.csproj 2>/dev/null)" in
     vstest*) check "net8.0: env-tests, the environment tests of a .NET 8 client through the proxy" 0 '^  OK  OrdersWritesEnvironmentTests\.Post_Order_Valid_Returns201ThenDeleteReturns204 \(' "$SECRETS|^  (FAILED|SKIPPED)  " ;;
     *) check "net8.0: env-tests, the environment tests of a .NET 8 client through the proxy" 0 '^TESTS: OK' "$SECRETS" ;;
@@ -915,5 +921,6 @@ docker stop -t 5 "$lab-api" > /dev/null 2>&1
 run env-tests.sh recette
 check "env-tests: the API stopped, said before any build" 1 '^ENVIRONMENT PROBLEM: the proxy cannot reach recette \(https://api\.lab\.test:8443\) \(50[234] on CONNECT' '^PROJECT:'
 
+echo "NOTE: $(( $(date +%s) - started )) s, the lab included"
 echo "oidc-real-test ($SHELL_UNDER_TEST): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
