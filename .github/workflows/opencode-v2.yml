@@ -1,12 +1,13 @@
 # Checks of the OpenCode v2 pack (opencode-v2/) on every push that changes it, and on demand (Actions tab, "Run
-# workflow"). Four jobs: every suite of the pack (no .NET SDK, no registry needed); the stories of the pack with the
+# workflow"). Five jobs: every suite of the pack (no .NET SDK, no registry needed); the stories of the pack with the
 # real .NET SDKs 10 and 8 (real builds, real xUnit and MSTest tests, real coverage, the real messages of the host, of
 # the test host and of package validation): the flow of /fortify and of its test-guardian, the developer's days, the
-# environment problems; the environments for real (Keycloak, a squid proxy with credentials, an internal certificate
-# authority, SQL Server and an ASP.NET Core API deployed behind the proxy, in Docker: /tests api, /tests env and
-# /outil http with the real SDKs); and the front-end with the real tools (Jest, Vitest, Angular with Vitest and with
-# Karma in ChromeHeadless, from the npm registry). A failed check becomes an annotation of the run; the logs are kept as
-# an artifact of the run.
+# environment problems; the replacement of Blazorise by native Razor under its safety net (Blazorise, bUnit, QuickGrid
+# and coverlet for real, .NET 10 and 8); the environments for real (Keycloak, a squid proxy with credentials, an
+# internal certificate authority, SQL Server and an ASP.NET Core API deployed behind the proxy, in Docker: /tests api,
+# /tests env and /outil http with the real SDKs); and the front-end with the real tools (Jest, Vitest, Angular with
+# Vitest and with Karma in ChromeHeadless, from the npm registry). A failed check becomes an annotation of the run; the
+# logs are kept as an artifact of the run.
 name: opencode-v2
 
 on:
@@ -134,6 +135,44 @@ jobs:
         if: always()
         with:
           name: logs-real-dotnet
+          path: ${{ runner.temp }}/logs/
+
+  real-blazor:
+    name: Blazorise vers le natif (vrai .NET, bUnit, QuickGrid)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: opencode-v2
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: blazor-native-test
+        run: |
+          logs="$RUNNER_TEMP/logs"
+          mkdir -p "$logs"
+          dotnet --list-sdks > "$logs/sdks.log" 2>&1
+          log="$logs/blazor-native.log"
+          failed=0
+          sh tools/blazor-native-test.sh dash > "$log" 2>&1 || failed=1
+          awk -v t="blazor-native-test" '
+            function flush() { if (msg != "") { print "::error title=" t "::" msg; msg = ""; n = 0 } }
+            { gsub(/%/, "%25"); gsub(/\r/, "") }
+            /^NOTE: / { notes = notes (notes == "" ? "" : "%0A") substr($0, 7); flush(); next }
+            /^FAIL/ { flush(); msg = $0; next }
+            /^    / && msg != "" && n < 90 { msg = msg "%0A" $0; n++; next }
+            { flush() }
+            END { flush(); if (notes != "") print "::notice title=" t " (valeurs réelles)::" notes }' "$log"
+          echo "::notice title=blazor-native-test::$(tail -n 1 "$log")"
+          exit "$failed"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: logs-real-blazor
           path: ${{ runner.temp }}/logs/
 
   real-oidc:

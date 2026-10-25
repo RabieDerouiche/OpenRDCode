@@ -7,7 +7,9 @@
 #                    and the coverage collector of each of them (coverlet.collector with VSTest; with
 #                    Microsoft.Testing.Platform, Microsoft.Testing.Extensions.CodeCoverage or coverlet.MTP):
 #                    "PREREQ: NO TEST PROJECT" or "PREREQ: COVERLET MISSING", then "PREREQ: SETUP NEEDED"
-#                    (test-guardian.sh setup, once the developer agreed), or "PREREQ: OK"
+#                    (test-guardian.sh setup, once the developer agreed), or "PREREQ: OK"; with --tests, in a Blazor
+#                    repository, "PREREQ: COMPONENT TESTS:" says which unit test project has bUnit (the tests of a
+#                    .razor component), or none (test-guardian.sh setup --components, once the developer agreed)
 #   batch            creates the folder of the batch of this branch and prints it ("BATCH: <path>")
 #   discard <label>  puts the uncommitted work of a failed vulnerability aside (git stash, recoverable), on the branch
 #                    of a ticket or of a work without a ticket (/fortify, and a security finding of /fix; never on
@@ -61,6 +63,18 @@ has_coverlet() {
   done
 }
 
+# The tests of Razor components, in a Blazor repository (for /go and /tests): the unit test projects that have bUnit,
+# which renders a component in a test (the safety net of a page before it changes)
+components() {
+  [ "$tests" = --tests ] && [ -n "$(git ls-files '*.razor' 2>/dev/null | head -n 1)" ] || return 0
+  with=$(for p in $1; do grep -qi 'Include="bunit"' "$p" 2>/dev/null && printf '%s ' "$p"; done)
+  if [ -n "$with" ]; then
+    echo "PREREQ: COMPONENT TESTS: bUnit in ${with% }"
+  else
+    echo "PREREQ: COMPONENT TESTS: none (no unit test project has bUnit, and a test of a .razor component renders it with bUnit: with the developer's agreement, test-guardian.sh setup --components adds it, as the first commit)"
+  fi
+}
+
 case "$1" in
   prereq)
     # a repository without .NET project (a front-end): the proofs of /fortify and /tests are .NET unit tests
@@ -83,8 +97,10 @@ case "$1" in
     fi
     # what the proofs need and is not there: the pilot asks the developer, then test-guardian.sh setup does it
     projects=$(test_projects)
+    tests=$2
     if [ -z "$projects" ]; then
       echo "PREREQ: NO TEST PROJECT: this repository has no unit test project, and /fortify and /tests prove their work with unit tests. With the developer's agreement, test-guardian.sh setup xunit|mstest|nunit <the files to test> creates it (dotnet new template, coverage collector, solution), as the first commit"
+      components ""
       echo "PREREQ: SETUP NEEDED"
       exit 0
     fi
@@ -101,9 +117,11 @@ case "$1" in
     done
     if [ -n "$missing" ]; then
       echo "PREREQ: COVERLET MISSING in:$missing (the coverage collector: coverlet.collector, or Microsoft.Testing.Extensions.CodeCoverage for a Microsoft.Testing.Platform project). With the developer's agreement, test-guardian.sh setup adds it, as the first commit of the batch"
+      components "$projects"
       echo "PREREQ: SETUP NEEDED"
       exit 0
     fi
+    components "$projects"
     echo "PREREQ: OK"
     exit 0 ;;
 

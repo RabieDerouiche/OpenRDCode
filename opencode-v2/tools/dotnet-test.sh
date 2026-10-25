@@ -938,6 +938,123 @@ check "xUnit v3: the category as a trait filter" 0 'TESTS: OK \(1 tests?\)'
 called "xUnit v3: --filter-trait" '^dotnet exec .*--filter-trait Category=Environment'
 rm tests/Core.Tests/HealthEnvironmentTests.cs
 
+# ---------- Razor components: their module, their safety net, their tests with bUnit (a page that leaves Blazorise) ----------
+mkdir -p "$work/blazor"
+cd "$work/blazor" || exit 1
+git init -q
+project src/Web/Web.csproj Microsoft.NET.Sdk.Web '<ItemGroup>' '  <PackageReference Include="Blazorise.DataGrid" Version="2.2.2" />' '</ItemGroup>'
+mkdir -p src/Web/Components/Pages src/Web/Orders
+cat > src/Web/Components/Pages/Orders.razor <<'EOF'
+@page "/commandes"
+@inject IOrderSource Source
+@inject ILogger<Orders> Logger
+
+<DataGrid TItem="Order" Data="@orders" ShowPager PageSize="5">
+    <DataGridColumn TItem="Order" Field="@nameof(Order.Number)" Caption="Numéro" />
+</DataGrid>
+<button type="button" @onclick="() => Logger.LogInformation(\"refresh\")">Actualiser</button>
+
+@code {
+    private IReadOnlyList<Order> orders = Array.Empty<Order>();
+
+    protected override void OnInitialized() => orders = Source.All();
+}
+EOF
+printf 'namespace Web.Orders;\npublic interface IOrderSource\n{\n    IReadOnlyList<Order> All();\n}\n' > src/Web/Orders/IOrderSource.cs
+printf 'namespace Web.Orders;\npublic class OrderSource(OrdersDb db) : IOrderSource\n{\n    public IReadOnlyList<Order> All() => db.Orders;\n}\n' > src/Web/Orders/OrderSource.cs
+printf 'namespace Web.Orders;\npublic class OrdersDb\n{\n    public List<Order> Orders { get; } = new();\n}\n' > src/Web/Orders/OrdersDb.cs
+printf '<p>@Total</p>\n' > src/Web/Components/Pages/Invoices.razor
+printf 'namespace Web.Components.Pages;\npublic partial class Invoices\n{\n    [Inject] private IOrderSource Source { get; set; } = default!;\n    private int Total => Source.All().Count;\n}\n' > src/Web/Components/Pages/Invoices.razor.cs
+project src/Lib/Lib.csproj Microsoft.NET.Sdk
+printf 'namespace Lib;\npublic static class Money { }\n' > src/Lib/Money.cs
+# two unit test projects, and none references the web project yet
+project tests/Web.Tests/Web.Tests.csproj Microsoft.NET.Sdk '<ItemGroup>' '  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />' \
+  '  <PackageReference Include="xunit" Version="2.9.2" />' '  <PackageReference Include="coverlet.collector" Version="6.0.2" />' '</ItemGroup>' \
+  '<!-- fake-test: Web.Tests.SmokeTests.Builds pass -->'
+project tests/Lib.Tests/Lib.Tests.csproj Microsoft.NET.Sdk '<ItemGroup>' '  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />' \
+  '  <PackageReference Include="xunit" Version="2.9.2" />' '  <PackageReference Include="coverlet.collector" Version="6.0.2" />' \
+  '  <ProjectReference Include="../../src/Lib/Lib.csproj" />' '</ItemGroup>'
+printf 'bin/\nobj/\n' > .gitignore
+git add -A && git commit -q -m init
+
+run test-guardian.sh deps src/Web/Components/Pages/Orders.razor
+check "deps of a Razor component: its class, named after its file" 0 '^  class Orders$'
+check "deps of a Razor component: what it injects, and the class that implements it" 0 '^DEPENDS: IOrderSource -> src/Web/Orders/OrderSource\.cs$'
+check "deps of a Razor component: the second level" 0 '^DEPENDS \(level 2\): OrdersDb -> src/Web/Orders/OrdersDb\.cs$'
+check "deps of a Razor component: a type of the framework, without its generic argument" 0 '^UNRESOLVED: ILogger \(outside this repository'
+run test-guardian.sh deps src/Web/Components/Pages/Invoices.razor
+check "deps of a Razor component: the [Inject] properties of its code-behind" 0 '^DEPENDS: IOrderSource -> src/Web/Orders/OrderSource\.cs$'
+
+run fortify.sh prereq --tests
+check "prereq in a Blazor repository: no unit test project has bUnit" 0 '^PREREQ: COMPONENT TESTS: none \(no unit test project has bUnit' 'COMPONENT TESTS: bUnit'
+check "prereq: the unit test projects themselves are ready" 0 '^PREREQ: OK$'
+run test-guardian.sh setup --components xunit src/Web/Components/Pages/Orders.razor
+check "setup --components: several unit test projects, none for these components: STOP, nothing changed" 1 '^STOP: several unit test projects, and none references src/Web/Web\.csproj'
+truth "setup --components: the STOP changed nothing" '[ -z "$(git status --porcelain)" ]'
+sed -i 's#</Project>#  <ItemGroup><ProjectReference Include="..\\..\\src\\Web\\Web.csproj" /></ItemGroup>\n</Project>#' tests/Web.Tests/Web.Tests.csproj
+git add -A && git commit -q -m "test: reference the web project"
+run test-guardian.sh setup --components xunit src/Lib/Money.cs
+check "setup --components: a project without component" 1 '^STOP: src/Lib/Lib\.csproj has no Razor component'
+run test-guardian.sh setup --components xunit src/Web/Components/Pages/Orders.razor
+check "setup --components: bUnit in the unit test project that references the components" 0 '^SETUP: bunit 2\.11\.3 added to tests/Web\.Tests/Web\.Tests\.csproj; build OK$'
+truth "setup --components: the package, next to the others" 'grep -q "<PackageReference Include=\"bunit\" Version=\"2.11.3\" />" tests/Web.Tests/Web.Tests.csproj'
+truth "setup --components: only that project changed" '[ "$(git status --porcelain)" = " M tests/Web.Tests/Web.Tests.csproj" ]'
+called "setup --components: built once" '^dotnet build tests/Web\.Tests/Web\.Tests\.csproj'
+git add -A && git commit -q -m "test: add bUnit"
+run fortify.sh prereq --tests
+check "prereq: the unit test project that has bUnit" 0 '^PREREQ: COMPONENT TESTS: bUnit in tests/Web\.Tests/Web\.Tests\.csproj$'
+run test-guardian.sh setup --components xunit src/Web/Components/Pages/Invoices.razor
+check "setup --components: nothing to do when bUnit is there" 0 '^SETUP: nothing to do, tests/Web\.Tests/Web\.Tests\.csproj has bUnit$'
+
+# the safety net of a page: its markup (BuildRenderTree, its event handlers included) and the methods of its @code
+cat > tests/Web.Tests/OrdersPageTests.cs <<'EOF'
+// <!-- fake-test: Web.Tests.OrdersPageTests.Orders_FirstPage_ShowsFiveOrders pass -->
+// <!-- fake-cover: src/Web/Components/Pages/Orders.razor c=Web.Components.Pages.Orders m=BuildRenderTree 5:1 6:1 -->
+// <!-- fake-cover: src/Web/Components/Pages/Orders.razor c=Web.Components.Pages.Orders/<>c__DisplayClass0_0 m=<BuildRenderTree>b__0_0 8:0 -->
+// <!-- fake-cover: src/Web/Components/Pages/Orders.razor c=Web.Components.Pages.Orders m=OnInitialized 13:1 -->
+EOF
+run test-guardian.sh coverage P1-net tests/Web.Tests/Web.Tests.csproj src/Web/Components/Pages/Orders.razor
+check "coverage of a Razor component" 0 '^src/Web/Components/Pages/Orders\.razor lines 3/4 \(75%\) branches 0/0 uncovered 8$'
+run test-guardian.sh net P1-net src/Web/Components/Pages/Orders.razor:BuildRenderTree src/Web/Components/Pages/Orders.razor:OnInitialized
+check "net of a Razor component: its markup, its event handler included" 0 '^NET: src/Web/Components/Pages/Orders\.razor:BuildRenderTree lines 2/3 \(66%\) branches 0/0 uncovered 8$'
+check "net of a Razor component: a method of its @code" 0 '^NET: src/Web/Components/Pages/Orders\.razor:OnInitialized lines 1/1 \(100%\)'
+check "net of a Razor component: THIN under the minimum" 0 '^SAFETY NET: THIN \(3/4 lines of these 2 methods run by the tests, 75% < 80%\)'
+run test-guardian.sh net P1-net src/Web/Components/Pages/Orders.razor:Render
+check "net of a Razor component: a wrong name, and the methods the report has" 1 '^STOP: not in the coverage report: src/Web/Components/Pages/Orders\.razor:Render \(the methods of this file in the report: BuildRenderTree, OnInitialized\)'
+run test-guardian.sh net P1-net src/Web/Components/Pages/Orders.razor
+check "net of a Razor component: a method is needed" 1 '^STOP: bad method src/Web/Components/Pages/Orders\.razor: '
+sed -i 's#m=<BuildRenderTree>b__0_0 8:0#m=<BuildRenderTree>b__0_0 8:1#' tests/Web.Tests/OrdersPageTests.cs
+run test-guardian.sh coverage P1-after tests/Web.Tests/Web.Tests.csproj src/Web/Components/Pages/Orders.razor
+run test-guardian.sh net P1-after src/Web/Components/Pages/Orders.razor:BuildRenderTree src/Web/Components/Pages/Orders.razor:OnInitialized
+check "net of a Razor component: OK once its event handler runs" 0 '^SAFETY NET: OK \(4/4 lines of these 2 methods run by the tests, 100%; minimum 80%\)$'
+run test-guardian.sh compare P1-net P1-after
+check "compare: a Razor component that gained coverage" 0 '^COVERAGE: no file lost coverage$'
+git add -A && git commit -q -m "test: the safety net of the orders page"
+# the changed lines of a page: measured like those of a C# file
+git checkout -q -b feature/natif
+sed -i 's#ShowPager PageSize="5"#ShowPager PageSize="10"#' src/Web/Components/Pages/Orders.razor
+git commit -q -am "feat: ten orders per page"
+run test-guardian.sh changes develop tests/Web.Tests/Web.Tests.csproj
+check "changes: the changed lines of a Razor component" 0 '^CHANGED: src/Web/Components/Pages/Orders\.razor 1/1 changed lines covered$'
+check "changes: their coverage" 0 '^COVERAGE OF THE CHANGES: 1/1 changed lines covered \(100%\) in 1 files'
+git checkout -q develop
+
+# a Blazor repository without any test project: the unit test project created with bUnit
+mkdir -p "$work/blazor-new"
+cd "$work/blazor-new" || exit 1
+git init -q
+project src/Web/Web.csproj Microsoft.NET.Sdk.Web
+mkdir -p src/Web/Components/Pages
+printf '@page "/"\n<h1>Accueil</h1>\n' > src/Web/Components/Pages/Home.razor
+printf 'bin/\nobj/\n' > .gitignore
+git add -A && git commit -q -m init
+run fortify.sh prereq --tests
+check "prereq: no test project, in a Blazor repository" 0 '^PREREQ: COMPONENT TESTS: none'
+check "prereq: no test project, the setup needed" 0 '^PREREQ: SETUP NEEDED$'
+run test-guardian.sh setup --components xunit src/Web/Components/Pages/Home.razor
+check "setup --components without test project: created, with bUnit" 0 '^SETUP: tests/Web\.UnitTests/Web\.UnitTests\.csproj created \(xunit, net10\.0\), it references src/Web/Web\.csproj; packages: .*bunit 2\.11\.3; build OK$'
+truth "setup --components without test project: its coverage collector too" 'grep -q "coverlet.collector" tests/Web.UnitTests/Web.UnitTests.csproj'
+
 # never dotnet run, in any of these runs
 truth "never dotnet run" '! grep -q "^dotnet run" "$work/all-calls.log"'
 truth "no output file left in the temporary folder" '[ -z "$(ls "$TMPDIR")" ]'

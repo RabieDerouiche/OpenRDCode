@@ -9,7 +9,6 @@
 #   - a .NET 8 solution: its build and its xUnit tests, the facts of dotnet-targets.sh (C# 12, the runtimes, the support)
 #   - a C# 13 feature in a net8.0 project (CS9202) and an API that netstandard2.0 lacks: the errors shown once each
 #   - a library with package validation: a public member removed against the published version (CP0002)
-#   - the code of the skill blazorise (its localizers, its French pager of QuickGrid): built against the real packages
 #   - the API tests of the skill api-tests: test-guardian.sh setup --integration, the tests in memory, then
 #     env-tests.sh against the API running on this machine, and against one that does not answer
 # Usage, from opencode-v2/: sh tools/real-dotnet-test.sh [<shell>] (default sh).
@@ -205,42 +204,6 @@ git checkout -q -- src/Lib/Client.cs
 run build-test.sh --build-only --pack src/Lib/Lib.csproj
 check "--pack: the same API, the package is made" 0 '^PACK: OK \(Company\.Lib\.2\.0\.0\.nupkg'
 if [ -z "$(git status --porcelain --untracked-files=all | grep '^??')" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL: --pack wrote in the repository"; git status --porcelain --untracked-files=all; fi
-
-# ---------- the code of the skill blazorise, built against the real packages ----------
-# Its code blocks, in order: 1 the language of Blazorise, 2 the shared texts of the DataGrid, 3 a DataGrid that uses
-# them, 4 the French pager of QuickGrid, 5 a QuickGrid with it. Blazorise.DataGrid 2.2.2: the version of a real repository.
-repo blazorise
-mkdir -p blocks Web
-awk -v dir="$PWD/blocks" '
-  /^ *```[a-z]+$/ { n++; inblock = 1; file = dir "/" n; next }
-  /^ *```$/ && inblock { inblock = 0; close(file); next }
-  inblock { sub(/^   /, ""); print > file }' "$pack/skills/blazorise/SKILL.md"
-if [ -s blocks/5 ] && [ ! -e blocks/6 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL: the skill blazorise has not its 5 code blocks"; ls blocks; fi
-cat > Web/Web.csproj <<'EOF'
-<Project Sdk="Microsoft.NET.Sdk.Razor">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
-  <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Blazorise.DataGrid" Version="2.2.2" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.QuickGrid" Version="10.0.0" />
-  </ItemGroup>
-</Project>
-EOF
-printf '@using Microsoft.AspNetCore.Components.Web\n@using Blazorise\n@using Blazorise.DataGrid\n' > Web/_Imports.razor
-printf 'public record Order(string Number, DateTime Date);\n' > Web/Order.cs
-cp blocks/1 Web/Language.razor
-cp blocks/2 Web/GridTexts.cs
-{ cat blocks/3; printf '</DataGrid>\n@code {\n    private List<Order> orders = new();\n}\n'; } > Web/Orders.razor
-cp blocks/4 Web/FrenchPager.razor
-{ printf '@using Microsoft.AspNetCore.Components.QuickGrid\n'; cat blocks/5; printf '@code {\n    private IQueryable<Order> orders = Enumerable.Empty<Order>().AsQueryable();\n}\n'; } > Web/QuickOrders.razor
-rm -rf blocks
-commit
-run build-test.sh --build-only Web/Web.csproj
-check "the code of the skill blazorise builds against Blazorise.DataGrid 2.2.2 and QuickGrid 10" 0 '^BUILD: OK'
 
 # ---------- the API tests of the skill api-tests: the project of /tests api, in memory, then on a running API ----------
 # Its code blocks, in order: 1 the factory, 2 the test authentication, 3 the factory of an API with settings at start, a

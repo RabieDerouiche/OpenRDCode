@@ -1,25 +1,28 @@
 #!/bin/sh
 # Measures and proofs of the unit tests, for the test-guardian and the coder of /fortify, /go and /fix: no agent judges
 # a coverage or a test result by reading code. Run from the repository (.NET projects that build on this machine).
-#   deps <file.cs>                 the module of a file: its classes, the types its constructors receive (classic or
-#                                  primary constructor) and the files that implement them (two levels): "MODULE:",
-#                                  "DEPENDS:", "UNRESOLVED:" lines
-#   coverage <label> <test project> <file.cs>...
+#   deps <file.cs or file.razor>   the module of a file: its classes, the types its constructors receive (classic or
+#                                  primary constructor; a Razor component: the types it injects, @inject and [Inject],
+#                                  its code-behind <file>.razor.cs included) and the files that implement them (two
+#                                  levels): "MODULE:", "DEPENDS:", "UNRESOLVED:" lines
+#   coverage <label> <test project> <file.cs or file.razor>...
 #                                  runs the tests of the project with coverlet and prints the line and branch coverage
 #                                  of each file, with its uncovered lines, and the tests that fail; kept as <label> in
 #                                  the measures folder. A test project with no test yet (just set up): "no test in
 #                                  <project> yet", each file at 0/0 (no line of it runs)
 #   compare <label before> <label after>
 #                                  coverage after a change, file by file: "STOP:" when a file lost coverage
-#   net <label> [--min <percent>] <file.cs>:<method>...
+#   net <label> [--min <percent>] <file.cs or file.razor>:<method>...
 #                                  the safety net of a fix (no test run: the report of coverage <label>): the line and
 #                                  branch coverage of each method the fix will change or that leads to it, its async
 #                                  state machine, lambdas and local functions included, with its uncovered lines, then
 #                                  "SAFETY NET: OK" or "SAFETY NET: THIN" against the minimum (80 % of their lines when
 #                                  none is given): below it, the non-regression tests of the current behavior come
 #                                  before the fix. <method>: its name as the code writes it, <class>.<method> when the
-#                                  file has several classes; a constructor: the name of its class. Measured with no
-#                                  test yet: THIN, every line of these methods to run
+#                                  file has several classes; a constructor: the name of its class; a Razor component:
+#                                  BuildRenderTree (its markup, the C# written in it and its event handlers) and the
+#                                  methods of its @code block. Measured with no test yet: THIN, every line of these
+#                                  methods to run
 #   red <test project> <filter>    the new tests must FAIL on the current code (and compile), the same way twice
 #   green <test project> <filter>  the same tests must PASS, twice: a test whose result changes is FLAKY
 #   build <project>                builds a project (the test-guardian never runs dotnet itself): "BUILD: OK", or the
@@ -32,7 +35,7 @@
 #   park <label>, unpark <label>   (the pilot) takes the sealed test files of a proof out of the working tree until its
 #                                  turn, and brings them back as sealed: the proofs of a wave are written together,
 #                                  their fixes one after the other, each commit with its own tests only
-#   setup [--integration [--db sqlite]] xunit|mstest|nunit <file.cs or project>...
+#   setup [--integration [--db sqlite] | --components] xunit|mstest|nunit <file.cs, file.razor or project>...
 #                                  (the pilot, once the developer agreed) creates the unit test project of these files:
 #                                  the dotnet new template of the SDK, coverlet.collector, the versions this machine's
 #                                  NuGet cache already holds (otherwise the template's), the central versions when the
@@ -46,11 +49,17 @@
 #                                  statements; nothing when a test project has Microsoft.AspNetCore.Mvc.Testing already.
 #                                  --db sqlite (the developer's choice in the wizard of /tests api, for endpoints that
 #                                  use a DbContext directly): Microsoft.EntityFrameworkCore.Sqlite of the EF Core version
-#                                  of the API too, in the new project or in the integration test project already there
+#                                  of the API too, in the new project or in the integration test project already there.
+#                                  --components (the tests of Razor components, with bUnit: the safety net of a page
+#                                  before it changes, its replacement of a component library included): bUnit in the
+#                                  unit test project that references the project of these components (the only unit
+#                                  test project otherwise, which then references it), with its coverage collector when
+#                                  it lacks; the unit test project created with bUnit when there is none
 #   changes <base> [<solution, project or folder>]
 #                                  the whole suite once, with coverlet (the BUILD, TESTS and FAILED TESTS lines of
-#                                  build-test.sh), then the lines the branch changed since <base> that no test runs:
-#                                  "CHANGED:" lines per source file, then one "COVERAGE OF THE CHANGES:" line
+#                                  build-test.sh), then the lines the branch changed since <base> that no test runs, in
+#                                  its C# and Razor files: "CHANGED:" lines per source file, then one "COVERAGE OF THE
+#                                  CHANGES:" line
 #   folder                         creates and prints the measures folder ("FOLDER: <path>")
 # The measures folder: <git folder>/opencode-tickets/<KEY>.tests (KEY from the branch; a branch without a Jira key, of
 # /push, /tests or /fix without a ticket: its name, / as -; a detached HEAD: NOKEY), shared by the
@@ -68,7 +77,8 @@
 # Usage: test-guardian.sh deps <file> | coverage <label> <proj> <file>... | compare <a> <b>
 #        | net <label> [--min <pct>] <file>:<method>... | red|green <proj> <filter>
 #        | build <proj> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label>
-#        | setup [--integration [--db sqlite]] xunit|mstest|nunit <file>... | changes <base> [<target>] | folder
+#        | setup [--integration [--db sqlite] | --components] xunit|mstest|nunit <file>... | changes <base> [<target>]
+#        | folder
 
 LC_ALL=C
 export LC_ALL
@@ -76,6 +86,9 @@ DOTNET_CLI_UI_LANGUAGE=en DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_CLI_UI_LANGUAGE DOTNET_NOLOGO DOTNET_CLI_TELEMETRY_OPTOUT
 # the longest a single test may run before the test host is stopped (VSTest blame); a test of the pack never needs it
 HANG=${TEST_GUARDIAN_HANG:-5m}
+# bUnit for the tests of Razor components (setup --components) when the NuGet cache of this machine holds none: a
+# version of the 2.x line (BunitContext, Render), for net8.0 and later
+BUNIT_DEFAULT=2.11.3
 
 stop() {
   echo "STOP: $1"
@@ -186,6 +199,12 @@ project_of() {
     [ "$d" = . ] || [ "$d" = / ] && return 1
     d=$(dirname "$d")
   done
+}
+
+# Whether a project file references another project (a ProjectReference to its file name, / or \\ before it)
+references() {
+  bn=$(basename "$2" | sed 's/[].[*^$\\]/\\&/g')
+  grep -qE "<ProjectReference[^>]*Include=\"([^\"]*[/\\\\])?$bn\"" "$1" 2>/dev/null
 }
 
 # The Directory.Packages.props that sets the versions of a folder, when the repository manages them centrally
@@ -374,8 +393,50 @@ case "$1" in
   deps)
     file=$2
     [ -f "$file" ] || stop "no file $file"
-    # Type names given to the constructors of the classes of the file (classic and primary constructors)
-    types=$(awk '
+    # The types a Razor component receives from the container: @inject in its markup, [Inject] properties in its @code
+    # block or its code-behind (namespaces and generic arguments dropped: ILogger<Orders> is ILogger)
+    inject_types() {
+      sed -n -E -e 's/^[[:space:]]*@inject[[:space:]]+([A-Za-z_][A-Za-z0-9_.]*).*/TYPE \1/p' \
+        -e 's/.*\[Inject[^]]*\][[:space:]]*((public|private|protected|internal)[[:space:]]+)?(required[[:space:]]+)?([A-Za-z_][A-Za-z0-9_.]*).*/TYPE \4/p' "$1" |
+        sed 's/^TYPE .*\./TYPE /'
+    }
+    case "$file" in
+      *.razor)
+        # a component: its class is named after its file; its code-behind (<file>.razor.cs) may add a constructor
+        # (.NET 9 and later) or [Inject] properties
+        types=$({ printf 'CLASS %s\n' "$(basename "$file" .razor)"; inject_types "$file"
+          if [ -f "$file.cs" ]; then sh "$0" deps-types "$file.cs"; inject_types "$file.cs"; fi; } | sort -u) ;;
+      *) types=$({ sh "$0" deps-types "$file"; inject_types "$file"; } | sort -u) ;;
+    esac
+    echo "MODULE: $file"
+    printf '%s\n' "$types" | sed -n 's/^CLASS /  class /p'
+    resolve() {
+      # the files that declare the type, or a class that implements the interface (test projects excluded)
+      { git grep -lE "(class|record|struct)[[:space:]]+$1([^A-Za-z0-9_]|\$)" -- '*.cs'
+        git grep -lE "(class|record)[[:space:]]+[A-Za-z0-9_]+[^{;]*:[^{;]*[^A-Za-z0-9_]$1([^A-Za-z0-9_]|\$)" -- '*.cs'; } 2>/dev/null |
+        grep -viE '(^|/)[^/]*tests?[^/]*/|/(bin|obj)/' | grep -vxF "$file" | sort -u
+    }
+    level2=""
+    for t in $(printf '%s\n' "$types" | sed -n 's/^TYPE //p'); do
+      found=$(resolve "$t")
+      if [ -n "$found" ]; then
+        for f in $found; do echo "DEPENDS: $t -> $f"; level2="$level2 $f"; done
+      else
+        echo "UNRESOLVED: $t (outside this repository: framework or package)"
+      fi
+    done
+    # second level, once: what the dependencies receive
+    for f in $level2; do
+      sh "$0" deps-one "$f" 2>/dev/null | sed -n 's/^DEPENDS: /DEPENDS (level 2): /p'
+    done | sort -u
+    exit 0 ;;
+
+  deps-types)
+    # the classes of a C# file and the type names given to their constructors (classic and primary constructors):
+    # "CLASS <name>" and "TYPE <name>" lines (used by deps)
+    file=$2
+    [ -f "$file" ] || stop "no file $file"
+    awk '
       { text = text " " $0 }
       END {
         n = split(text, chunks, /class[ \t]+/)
@@ -403,28 +464,7 @@ case "$1" in
           sub(/<.*/, "", t); sub(/\?$/, "", t); sub(/.*\./, "", t)
           if (t ~ /^[A-Z][A-Za-z0-9_]*$/) print "TYPE " t
         }
-      }' "$file" | sort -u)
-    echo "MODULE: $file"
-    printf '%s\n' "$types" | sed -n 's/^CLASS /  class /p'
-    resolve() {
-      # the files that declare the type, or a class that implements the interface (test projects excluded)
-      { git grep -lE "(class|record|struct)[[:space:]]+$1([^A-Za-z0-9_]|\$)" -- '*.cs'
-        git grep -lE "(class|record)[[:space:]]+[A-Za-z0-9_]+[^{;]*:[^{;]*[^A-Za-z0-9_]$1([^A-Za-z0-9_]|\$)" -- '*.cs'; } 2>/dev/null |
-        grep -viE '(^|/)[^/]*tests?[^/]*/|/(bin|obj)/' | grep -vxF "$file" | sort -u
-    }
-    level2=""
-    for t in $(printf '%s\n' "$types" | sed -n 's/^TYPE //p'); do
-      found=$(resolve "$t")
-      if [ -n "$found" ]; then
-        for f in $found; do echo "DEPENDS: $t -> $f"; level2="$level2 $f"; done
-      else
-        echo "UNRESOLVED: $t (outside this repository: framework or package)"
-      fi
-    done
-    # second level, once: what the dependencies receive
-    for f in $level2; do
-      sh "$0" deps-one "$f" 2>/dev/null | sed -n 's/^DEPENDS: /DEPENDS (level 2): /p'
-    done | sort -u
+      }' "$file"
     exit 0 ;;
 
   deps-one)
@@ -433,7 +473,7 @@ case "$1" in
     exit 0 ;;
 
   coverage)
-    [ $# -ge 4 ] || stop "usage: test-guardian.sh coverage <label> <test project> <file.cs>..."
+    [ $# -ge 4 ] || stop "usage: test-guardian.sh coverage <label> <test project> <file.cs or file.razor>..."
     label=$2 project=$3
     shift 3
     [ -f "$project" ] || stop "no test project $project"
@@ -527,7 +567,7 @@ case "$1" in
     exit $? ;;
 
   net)
-    [ $# -ge 3 ] || stop "usage: test-guardian.sh net <label> [--min <percent>] <file.cs>:<method>..."
+    [ $# -ge 3 ] || stop "usage: test-guardian.sh net <label> [--min <percent>] <file.cs or file.razor>:<method>..."
     label=$2
     shift 2
     min=80
@@ -536,20 +576,25 @@ case "$1" in
       shift 2
     fi
     { printf '%s' "$min" | grep -qE '^[0-9]{1,3}$' && [ "$min" -le 100 ]; } || stop "bad minimum $min: a percentage, from 0 to 100"
-    [ $# -ge 1 ] || stop "usage: test-guardian.sh net <label> [--min <percent>] <file.cs>:<method>..."
+    [ $# -ge 1 ] || stop "usage: test-guardian.sh net <label> [--min <percent>] <file.cs or file.razor>:<method>..."
     printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
+    # <file.cs>:<method> or <file.razor>:<method> (a Razor component: BuildRenderTree, or a method of its @code block):
+    # the file in f, the method in spec
+    split_method() {
+      case "$1" in
+        *.razor:?*) f="${1%%.razor:*}.razor" spec=${1#*.razor:} ;;
+        *.cs:?*) f="${1%%.cs:*}.cs" spec=${1#*.cs:} ;;
+        *) stop "bad method $1: <file.cs>:<method>, <file.cs>:<class>.<method>, or <file.razor>:<method> (BuildRenderTree, or a method of its @code block)" ;;
+      esac
+      f=${f#./}
+      [ -f "$f" ] || [ -f "$root/$f" ] || stop "no file $f in this repository"
+    }
     report=$(find "$folder/results-$label" -name '*.cobertura.xml' 2>/dev/null | head -n 1)
     if [ -z "$report" ] && [ -f "$folder/results-$label/no-test-yet" ]; then
       # measured before any test exists: every line of these methods is to run
       n=0
       for m in "$@"; do
-        case "$m" in
-          *.cs:?*) ;;
-          *) stop "bad method $m: <file.cs>:<method>, or <file.cs>:<class>.<method>" ;;
-        esac
-        f="${m%%.cs:*}.cs"
-        f=${f#./}
-        [ -f "$f" ] || [ -f "$root/$f" ] || stop "no file $f in this repository"
+        split_method "$m"
         n=$((n + 1))
       done
       for m in "$@"; do echo "NET: ${m#./} no test yet: none of its lines runs"; done
@@ -565,13 +610,7 @@ case "$1" in
     # one "WANT<tab><file><tab><class or -><tab><method><tab><as given>" line per method asked
     wants=""
     for m in "$@"; do
-      case "$m" in
-        *.cs:?*) ;;
-        *) stop "bad method $m: <file.cs>:<method>, or <file.cs>:<class>.<method>" ;;
-      esac
-      f="${m%%.cs:*}.cs" spec=${m#*.cs:}
-      f=${f#./}
-      [ -f "$f" ] || [ -f "$root/$f" ] || stop "no file $f in this repository"
+      split_method "$m"
       case "$spec" in
         *[!A-Za-z0-9_.]*) stop "bad method $spec in $m: the name of a method, or <class>.<method>" ;;
       esac
@@ -873,7 +912,10 @@ case "$1" in
 
   setup)
     kind=unit db=""
-    if [ "$2" = --integration ]; then kind=integration; shift; fi
+    case "$2" in
+      --integration) kind=integration; shift ;;
+      --components) kind=components; shift ;;
+    esac
     if [ "$2" = --db ]; then
       [ "$kind" = integration ] || stop "--db goes with --integration (the database of the API tests)"
       db=$3
@@ -883,10 +925,10 @@ case "$1" in
     framework=$2
     case "$framework" in
       xunit|mstest|nunit) ;;
-      *) stop "usage: test-guardian.sh setup [--integration [--db sqlite]] xunit|mstest|nunit <file.cs or project>..." ;;
+      *) stop "usage: test-guardian.sh setup [--integration [--db sqlite] | --components] xunit|mstest|nunit <file.cs, file.razor or project>..." ;;
     esac
     shift 2
-    [ $# -ge 1 ] || stop "usage: test-guardian.sh setup [--integration [--db sqlite]] xunit|mstest|nunit <file.cs or project>..."
+    [ $# -ge 1 ] || stop "usage: test-guardian.sh setup [--integration [--db sqlite] | --components] xunit|mstest|nunit <file.cs, file.razor or project>..."
     need_dotnet
     [ -z "$(git status --porcelain)" ] || stop "uncommitted changes: setup runs on a clean working tree, so that a failure undoes all it did"
     # the production projects of the files
@@ -932,6 +974,71 @@ case "$1" in
         exit 0
       fi
       [ -z "$done_already" ] || { echo "SETUP: nothing to do, $done_already has Microsoft.AspNetCore.Mvc.Testing (WebApplicationFactory)${db:+ and Microsoft.EntityFrameworkCore.Sqlite}"; exit 0; }
+    fi
+    if [ "$kind" = components ]; then
+      # bUnit renders the components of a Blazor project: the projects of these files that hold .razor files
+      blazor=$(printf '%s\n' "$prods" | while IFS= read -r p; do
+        d=$(dirname "$p")
+        git ls-files -- "$d" | grep -q '\.razor$' && printf '%s\n' "$p"
+      done)
+      [ -n "$blazor" ] || stop "$(printf '%s\n' "$prods" | tr '\n' ' ')has no Razor component (.razor file): bUnit tests the components of a Blazor project"
+      prods=$blazor
+      # the unit test projects (an integration test project of /tests api runs the API, not its components)
+      units=$(test_projects | while IFS= read -r t; do grep -qi 'Microsoft.AspNetCore.Mvc.Testing' "$t" || printf '%s\n' "$t"; done)
+      if [ -n "$units" ]; then
+        # the one that references the project of these components; otherwise the only one, which will reference it
+        target=$(printf '%s\n' "$units" | while IFS= read -r t; do
+          printf '%s\n' "$prods" | while IFS= read -r p; do references "$t" "$p" && { printf '%s\n' "$t"; break; }; done
+        done | head -n 1)
+        if [ -z "$target" ]; then
+          [ "$(printf '%s\n' "$units" | grep -c .)" -eq 1 ] ||
+            stop "several unit test projects, and none references $(printf '%s\n' "$prods" | tr '\n' ' ')(add that reference to the one that tests these components, then run setup again): $(printf '%s\n' "$units" | tr '\n' ' ' | sed 's/ $//')"
+          target=$units
+        fi
+        if grep -qi 'Include="bunit"' "$target"; then
+          echo "SETUP: nothing to do, $target has bUnit"
+          exit 0
+        fi
+        mkdir -p "$folder" || stop "cannot create $folder"
+        log="$folder/setup.log"
+        take_lock
+        props=$(central_props "$(dirname "$target")")
+        v=$(cache_version bunit "$BUNIT_DEFAULT")
+        if [ -n "$props" ]; then
+          add_package_version "$props" bunit "$v"
+          add_package_ref "$target" bunit ""
+        else
+          add_package_ref "$target" bunit "$v"
+        fi
+        also=""
+        if ! has_coverage "$target"; then
+          if is_mtp "$target"; then
+            id=Microsoft.Testing.Extensions.CodeCoverage cv=$(cache_version Microsoft.Testing.Extensions.CodeCoverage 18.6.2)
+          else
+            id=coverlet.collector cv=$(cache_version coverlet.collector 6.0.4)
+          fi
+          if [ -n "$props" ]; then
+            add_package_version "$props" "$id" "$cv"
+            add_package_ref "$target" "$id" ""
+          else
+            add_package_ref "$target" "$id" "$cv"
+          fi
+          also="; $id $cv too (its coverage collector)"
+        fi
+        refs=$(printf '%s\n' "$prods" | while IFS= read -r p; do references "$target" "$p" || printf '%s\n' "$p"; done)
+        if [ -n "$refs" ] && ! printf '%s\n' "$refs" | tr '\n' '\0' | xargs -0 dotnet add "$target" reference > "$log" 2>&1; then
+          git checkout -q -- . 2>/dev/null
+          stop "dotnet add reference failed: $(grep -v '^[[:space:]]*$' "$log" | tail -n 2 | tr '\n' ' ')"
+        fi
+        if ! dotnet build "$target" -nologo -v q > "$log" 2>&1; then
+          git checkout -q -- . 2>/dev/null
+          environment "$log"
+          grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5
+          stop "the build of $target fails with bUnit $v: nothing changed"
+        fi
+        echo "SETUP: bunit $v added to $target${props:+ (version in $props)}$also${refs:+; it references $(printf '%s\n' "$refs" | tr '\n' ' ' | sed 's/ $//') now}; build OK"
+        exit 0
+      fi
     fi
     mkdir -p "$folder" || stop "cannot create $folder"
     log="$folder/setup.log"
@@ -1029,6 +1136,8 @@ EOF
     else
       grep -qi 'coverlet.collector' "$csproj" || add_package_ref "$csproj" coverlet.collector 6.0.4
     fi
+    # the tests of Razor components render them with bUnit
+    [ "$kind" = components ] && add_package_ref "$csproj" bunit "$BUNIT_DEFAULT"
     # WebApplicationFactory: Microsoft.AspNetCore.Mvc.Testing of the major version of the target framework (8.0.x for
     # net8.0: a later one targets a later .NET only)
     major=$(printf '%s' "$tfm" | sed -n 's/^net\([0-9][0-9]*\)\..*/\1/p')
@@ -1121,7 +1230,7 @@ EOF
     # the source files the branch changed (committed or not), outside the test projects and the generated code
     fork=$(git merge-base "$base" HEAD) || stop "no common history with $base"
     tests=$(test_projects | while read -r p; do dirname "$p"; done)
-    git diff -U0 --no-color "$fork" -- '*.cs' > "$folder/changes.diff" 2>/dev/null
+    git diff -U0 --no-color "$fork" -- '*.cs' '*.razor' > "$folder/changes.diff" 2>/dev/null
     reports=$(find "$results" -name '*.cobertura.xml' 2>/dev/null)
     if [ -z "$reports" ]; then
       echo "COVERAGE OF THE CHANGES: not measured (no coverage report: the build failed, or the coverage collector is missing in the test projects: coverlet.collector, or Microsoft.Testing.Extensions.CodeCoverage for Microsoft.Testing.Platform)"
@@ -1179,5 +1288,5 @@ EOF
       }'
     exit "$status" ;;
 
-  *) stop "usage: test-guardian.sh deps <file> | coverage <label> <project> <file>... | compare <a> <b> | red|green <project> <filter> | build <project> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label> | setup [--integration [--db sqlite]] xunit|mstest|nunit <file>... | changes <base> [<target>] | folder" ;;
+  *) stop "usage: test-guardian.sh deps <file> | coverage <label> <project> <file>... | compare <a> <b> | red|green <project> <filter> | build <project> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label> | setup [--integration [--db sqlite] | --components] xunit|mstest|nunit <file>... | changes <base> [<target>] | folder" ;;
 esac
