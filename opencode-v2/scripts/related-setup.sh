@@ -111,6 +111,7 @@ expand() {
   case "$1" in '~') printf '%s\n' "$HOME" ;; '~/'*) printf '%s\n' "$HOME/${1#'~/'}" ;; /*) printf '%s\n' "$1" ;; *) printf '%s\n' "$parent/$1" ;; esac
 }
 # ~/repos/x for a folder of the home folder (the form a teammate with the same layout shares)
+# shellcheck disable=SC2088 # a literal ~ is written on purpose (opencode.json expands it)
 tilde() { case "$1" in "$HOME"/*) printf '~/%s\n' "${1#"$HOME"/}" ;; *) printf '%s\n' "$1" ;; esac; }
 
 # ---------- what a repository is ----------

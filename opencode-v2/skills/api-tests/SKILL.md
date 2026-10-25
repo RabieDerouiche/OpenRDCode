@@ -97,7 +97,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 // The API in memory: the settings it reads at start, its worker out, its DbContext on an in-memory SQLite database
-// (one per factory, its schema from the model), authentication by the test scheme
+// (one per factory, its schema from the model), every authentication scheme by the test handler
 public sealed class ApiFactory : WebApplicationFactory<Program>
 {
     private readonly SqliteConnection connection = new("DataSource=:memory:");

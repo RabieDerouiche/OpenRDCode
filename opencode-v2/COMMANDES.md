@@ -86,7 +86,7 @@ grep -n '"ask"' ~/.config/opencode/opencode.json
 
 Quand j'annonce une nouvelle version, avec la liste des fichiers modifiés :
 1. Recrée `~/oc2/CHECKSUMS-config.txt` et `~/oc2/CHECKSUMS-scripts.txt` depuis GitHub (vue Raw).
-2. Ce qui a changé dans la configuration, puis dans les scripts : chaque ligne `FAILED` est un fichier à recoller depuis `opencode-v2/` ; tu as fini quand la commande affiche son `OK`.
+2. Ce qui a changé dans la configuration, puis dans les scripts : chaque ligne `FAILED` est un fichier à recoller depuis `opencode-v2/` ; tu as fini quand la commande affiche son `OK`. Un skill nouveau (`skills/<nom>/SKILL.md: FAILED open or read`) a besoin de son dossier d'abord : `mkdir -p ~/oc2/config/opencode/skills/<nom>` (dans cette version : `pack-liens`).
 ```sh
 cd ~/oc2/config/opencode && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-config.txt 2>/dev/null && echo "OK : la configuration est identique à GitHub"
 ```
@@ -519,23 +519,24 @@ Pour réutiliser la même implémentation sur plusieurs tickets ou la partager �
 
 ## Plusieurs dépôts d'une même application (une API et son front, une librairie et ses consommateurs)
 
-Déclare-les une fois, dans l'`AGENTS.md` de chaque dépôt (`/outil setup` le fait depuis le code) : une ligne par autre dépôt, son nom, son chemin quand il n'est pas à côté de celui-ci, ce qui les lie.
+Déclare-les une fois, dans une session du dépôt, pas à pas :
+```text
+/outil liens
+```
+Il cherche les dépôts git à côté de celui-ci et ce qui les lie (un paquet de l'un utilisé par l'autre, les mêmes clés Jira dans leurs commits, un nom commun, le port local de l'API qu'appelle le front), puis UN QCM : le rôle de chacun (« Le front Angular qui appelle cette API (recommandé) », « La librairie Acme.Montants que ce dépôt utilise »…, ou le tien, ou « Pas lié à ce dépôt »), lesquels les agents peuvent lire (leur code, en lecture seule, par une référence d'`opencode.json` de cette machine), et dans lesquels écrire aussi la ligne réciproque. Un dépôt sans lien visible n'est pas proposé : nomme-le dans un message, puis relance `/outil liens`. Il écrit :
 ```text
 ## Dépôts liés
-- `front-factures` (`~/repos/front-factures`) : le front Angular qui appelle cette API
+- `front-factures` : le front Angular qui appelle cette API
 - `lib-commun` : la librairie NuGet interne des montants
 ```
-Un front et son API, chacun dans son dépôt : la même section des deux côtés, chacun nommant l'autre. Dans l'`AGENTS.md` du front :
-```text
-## Dépôts liés
-- `api-factures` (`~/repos/api-factures`) : l'API .NET que ce front appelle
-```
+et, dans l'`AGENTS.md` du front, la ligne réciproque (« - `api-factures` : l'API .NET que ce front appelle »), jamais commitée : chacun part avec son propre `/push`. Le chemin n'est écrit que pour un dépôt qui n'est ni à côté de celui-ci, ni une référence : chaque développeur range ses dépôts où il veut, sans chemin de sa machine dans un fichier partagé. `opencode.json` est copié avant d'être modifié (`opencode.json.before-outil-liens`, à côté), gardé avec ses commentaires, puis relu : une modification qui le casserait est annulée. Après une référence ajoutée : redémarre OpenCode (il lit ses références à son démarrage).
+
 Rien d'autre à déclarer : c'est la même application parce que chacun nomme l'autre ; le rôle (« le front Angular qui appelle cette API », « l'API que ce front appelle ») dit qui fournit le contrat. Ensuite, pour un ticket qui touche les deux (la même clé Jira, ou deux tickets liés) :
 1. **Le dépôt qui fournit le contrat d'abord** (l'API, la librairie) : `/go ABC-123` dans une session de ce dépôt. L'analyste écrit dans la fiche une section « ## Contrat » : chaque route, champ ou membre public ajouté, modifié ou retiré, et ce que les consommateurs doivent faire. L'auto-review compare avec ce que la branche change vraiment (`api-surface.sh`) : une rupture non annoncée est un point bloquant. La MR a une section « Contrat », et la réponse finale dit ce que l'autre dépôt doit suivre.
 2. **Le consommateur ensuite** : `/go ABC-123` dans une session du front (ou de l'application qui utilise la librairie). L'analyste lit, par `related-repos.sh ABC-123`, la branche de l'API pour ce ticket, sa fiche, sa ligne « livré » et son « Contrat » : le plan s'appuie sur ce que l'API donne vraiment, jamais sur un champ qu'elle ne donne pas.
 3. **Une librairie consommée en paquet** : son changement est livré et publié d'abord (sa propre MR, sa CI, sa version) ; dans le consommateur, monter la version du paquet est une étape du plan que tu valides, jamais un paquet ajouté par le coder.
 
-Les agents lisent toujours la fiche de l'autre dépôt (elle est dans son dossier git). Pour qu'ils lisent aussi son code, déclare-le en référence d'`opencode.json` (section précédente). Pour voir ce qu'ils voient, dans une session :
+Les agents lisent toujours la fiche de l'autre dépôt (elle est dans son dossier git) ; son code, quand il est une référence d'`opencode.json`. Pour voir ce qu'ils voient, dans une session :
 ```text
 lance `sh ~/.config/opencode/scripts/related-repos.sh ABC-123`
 ```
@@ -656,7 +657,7 @@ Des tests unitaires sans ticket : `/tests` avec une classe, un fichier ou un dos
 ```text
 /tests src/Billing seulement les cas d'erreur
 ```
-Les endpoints d'une API, scénario par scénario : `/tests api` ; les tests d'un environnement déployé : `/tests env recette` (section « Tests d'API »).
+Les endpoints d'une API, scénario par scénario : `/tests api` ; un environnement déployé, déclaré puis vérifié : `/tests env config recette`, puis `/tests env recette` ; et `/tests` seul pour son menu (section « Tests d'API »).
 Récupérer ce que tu as poussé depuis ton Mac (Rider), sans rien commiter ni pousser : tes modifications non commitées restent là. Avec « develop », les nouveaux commits de la base aussi ; « merge <branche> » pour une autre branche. Sur develop lui-même : une avance rapide sur origin, jamais une fusion. Un conflit : la fusion est annulée et les fichiers listés, tu la fais dans Rider :
 ```text
 /sync
@@ -714,12 +715,15 @@ Ce que `/go` et `/fix` ont fait sur tes tickets de ce dépôt : étapes, lanceme
 /outil stats
 ```
 
-Les requêtes de chaque endpoint pour Rider, et `/daily` ou les tests d'un environnement lancés tout seuls chaque matin (sections « Requêtes `.http` pour Rider » et « Planifier une commande ») :
+Les requêtes de chaque endpoint pour Rider, `/daily` ou les tests d'un environnement lancés tout seuls chaque matin, et les dépôts d'une même application (sections « Requêtes `.http` pour Rider », « Planifier une commande » et « Plusieurs dépôts d'une même application ») :
 ```text
 /outil http
 ```
 ```text
 /outil planifier 8h45 lun-ven /daily
+```
+```text
+/outil liens
 ```
 
 Les autres outils (audit, licences, release notes, cqrs, AGENTS.md du dépôt, abandon d'un ticket) :
@@ -796,10 +800,21 @@ lance `sh ~/.config/opencode/scripts/test-lint.sh --changed origin/develop`
 ## Tests d'API (`/tests api`) et tests d'un environnement (`/tests env`)
 
 Deux sortes de tests d'intégration, jamais mêlées (skill `api-tests`) :
-- **En mémoire**, la preuve du comportement : l'API tourne dans le processus des tests (`WebApplicationFactory<Program>`), chaque endpoint est appelé en HTTP (routage, validation, autorisation, sérialisation pour de vrai), ses ports (dépôts de données, clients d'autres systèmes, horloge) remplacés par des fakes. Aucune base, aucun réseau : ils tournent à chaque build, dans la CI, comme les tests unitaires.
+- **En mémoire**, la preuve du comportement : l'API tourne dans le processus des tests (`WebApplicationFactory<Program>`), chaque endpoint est appelé en HTTP (routage, validation, autorisation, sérialisation pour de vrai), ses ports (dépôts de données, clients d'autres systèmes, horloge) remplacés par des fakes. Aucun serveur de base, aucun réseau : ils tournent à chaque build, dans la CI, comme les tests unitaires.
 - **Sur un environnement**, la preuve du déploiement : les mêmes endpoints appelés sur l'URL d'une recette ou d'une préproduction, avec des contrôles vrais quelles que soient ses données (statut, type de contenu, champs promis, 401 sans jeton). Lecture seule ; jamais la production.
 
-Les endpoints d'une API, un à un, depuis le code. `/tests api` lit les routes (`api-routes.sh`), propose pour chaque endpoint ses scénarios (nominal avec des valeurs, 400 par règle de validation, 401, 403, 404, 409 quand le code le renvoie) dans UNE question où tu coches ceux à écrire ; sans projet de tests d'intégration, la même question propose de le créer en premier commit (`Microsoft.AspNetCore.Mvc.Testing` de ta version de .NET ; avant .NET 10, `public partial class Program { }` ajouté à ton `Program.cs`). Le test-guardian les écrit, les prouve verts deux fois ; un test qui révèle un bug n'est pas gardé, le bug est dans la réponse. Un commit, rien n'est poussé :
+Sans savoir par où commencer : `/tests` seul te propose, en un QCM, les fichiers modifiés récemment qu'aucun test ne nomme, les endpoints de l'API, les tests d'un environnement et la configuration d'un environnement.
+```text
+/tests
+```
+
+### `/tests api` : les endpoints, en deux QCM
+
+Avant d'écrire quoi que ce soit, il lit dans le code ce qui empêcherait l'API de démarrer dans un test (`api-preflight.sh`) : un réglage lu au démarrage (`GetConnectionString`, `?? throw`, `ValidateOnStart`), un worker (`AddHostedService`), un `DbContext` que les endpoints utilisent directement, une configuration distante appelée à chaque démarrage (Key Vault, App Configuration). Puis :
+1. **La mise en place**, un QCM : le projet de tests d'intégration à créer en premier commit (`Microsoft.AspNetCore.Mvc.Testing` de ta version de .NET ; avant .NET 10, `public partial class Program { }` ajouté à ton `Program.cs`), la base que les endpoints utilisent directement (« SQLite en mémoire » : `Microsoft.EntityFrameworkCore.Sqlite` de la version d'EF Core de l'API, une base neuve par factory, son schéma créé depuis le modèle ; ou ces endpoints laissés de côté), une configuration distante appelée à chaque démarrage (l'arrêter d'abord par `/go sans ticket`, ou continuer), et les tests d'environnement quand AGENTS.md déclare un environnement.
+2. **Les scénarios**, un QCM : pour chaque endpoint, ses scénarios lus dans son code (nominal avec des valeurs, 400 par règle de validation, 401, 403, 404, 409 quand le code le renvoie), que tu coches un à un.
+
+Le test-guardian écrit d'abord la factory qui fait démarrer l'API en mémoire (les réglages par `UseSetting`, les workers retirés par leur type, le `DbContext` sur SQLite, le gestionnaire de chaque schéma d'authentification remplacé par celui des tests), fait passer un premier scénario, puis écrit les autres et les prouve verts deux fois ; un test qui révèle un bug n'est pas gardé, le bug est dans la réponse. Un commit, rien n'est poussé :
 ```text
 /tests api
 ```
@@ -810,32 +825,81 @@ Les endpoints d'une API, un à un, depuis le code. `/tests api` lit les routes (
 /tests api src/Api/Features/Orders seulement les erreurs
 ```
 
-Les environnements, une fois par dépôt, dans son `AGENTS.md` (le jeton n'y est jamais : seulement le nom de la variable de ta machine qui le tient) :
+### `/tests env config` : déclarer un environnement, pas à pas
+
+Une fois par environnement, dans une session du dépôt :
+```text
+/tests env config recette
+```
+Ses questions partent de ce que le code dit déjà (`env-setup.sh scan`) : les URL des jobs de déploiement de `.gitlab-ci.yml`, l'autorité et l'audience que l'API vérifie dans ses appsettings, le scope Entra ID qu'elles donnent, le proxy de ta machine. Deux QCM :
+1. le nom, l'URL de base de l'API, l'accès (un client OpenID Connect, recommandé quand l'API vérifie des jetons ; un jeton fixe dans une variable ; ou aucun), le proxy (celui de la machine, aucun, ou un autre) et s'il demande des identifiants, l'usage (lecture seule, écriture permise, production : jamais testée) ;
+2. avec OIDC : l'autorité (Keycloak : `https://<hôte>/realms/<realm>` ; Entra ID : `https://login.microsoftonline.com/<tenant>/v2.0`), le client id (dans une variable, ou tel quel : ce n'est pas un secret), le scope (Entra ID : `api://<application>/.default`), le fichier PEM des autorités de certification internes quand un proxy re-signe le TLS ou que le certificat est interne, et l'authentification du client en Basic quand le fournisseur l'exige.
+
+Il écrit le bloc de cet environnement dans la section « ## Environnements » d'AGENTS.md, jamais un secret : seulement les noms des variables de ta machine, déduits du nom de l'environnement. Pour `recette` :
 ```text
 ## Environnements
-- `recette` : https://api-recette.example.com (jeton : `API_TOKEN_RECETTE`, écriture permise)
+- `recette` : https://api-recette.example.com (écriture permise)
+  - oidc : https://login.example.com/realms/acme
+  - token-url : https://login.example.com/realms/acme/protocol/openid-connect/token
+  - client : shop-tests
+  - secret : `RECETTE_CLIENT_SECRET`
+  - scope : api://acme-api/.default
+  - proxy : http://proxy.example.com:8080
+  - proxy-identifiants : `RECETTE_PROXY_CREDENTIALS`
+  - certificat : certs/acme-ca.pem
+  - santé : /health
 - `preprod` : https://api-preprod.example.com (jeton : `API_TOKEN_PREPROD`)
 - `prod` : https://api.example.com (production)
 ```
-La variable du jeton, dans `~/.zshenv`, hors d'OpenCode (un jeton de service de l'environnement, jamais le tien) :
+Les réglages possibles : `oidc` (l'autorité ; l'URL du jeton vient de son document de découverte, écrite à côté dans `token-url` quand le fournisseur répond) ou `token-url` seul, `client` (une valeur, ou `` `RECETTE_CLIENT_ID` ``), `secret` (toujours une variable), `scope`, `audience` et `resource` (Auth0, ADFS), `auth-client : basic` ; `jeton : `<VARIABLE>`` sur la ligne pour un jeton fixe ; `proxy` (`aucun`, ou son URL sans identifiants), `proxy-identifiants`, `sans-proxy` (les hôtes joints sans lui), `certificat` (relatif au dépôt, ou `~/…`), `santé` (le chemin qui dit que l'API répond).
+
+Les secrets, dans `~/.zshenv` de la machine d'OpenCode, jamais dans un message ni une commande (le secret du client de service de l'environnement, jamais le tien ; les identifiants du proxy : `<utilisateur>:<mot de passe>`, un mot de passe avec `@`, `:` ou `#` tel quel, le script l'encode) :
 ```sh
-export API_TOKEN_RECETTE='…'
+export RECETTE_CLIENT_SECRET='…'
+export RECETTE_PROXY_CREDENTIALS='jdupont:…'
 ```
-`~/.zshenv` est relu à chaque commande d'un agent : rien à redémarrer ; le contrôle avant push arrête tout commit qui contiendrait sa valeur, et `env-tests.sh` la masque dans ce qu'il affiche. Avec un environnement déclaré, `/tests api` propose aussi d'écrire leurs tests d'environnement. Pour les lancer, à la demande, n'importe quand :
+`~/.zshenv` est relu à chaque commande d'un agent : rien à redémarrer. Puis il vérifie l'accès, étape par étape (`env-tests.sh --check recette`) : les variables, le document de découverte, un jeton (son émetteur, son audience, son client, ses scopes et ses rôles, jamais le jeton lui-même), l'API sans le jeton, puis un GET authentifié du code avec le jeton. Relance `/tests env config recette` après avoir réglé ce qu'il dit.
+
+### `/tests env` : lancer les tests d'un environnement
+
+Sans environnement nommé, un QCM : lequel (ses variables présentes ou non), tous ses tests ou une classe, avec ou sans les tests qui écrivent :
+```text
+/tests env
+```
+Ou tout de suite :
 ```text
 /tests env recette
 ```
-Un tableau test par test (OK, en échec, durée) ; un échec dit ce que l'environnement a répondu : c'est un fait sur ce déploiement (sa version, sa configuration, ses données), pas un correctif à faire. Les tests qui écrivent (`EnvironmentWrites` : créer, relire, supprimer ce qu'ils ont créé) ne tournent qu'avec `--écriture`, sur un environnement marqué « écriture permise » :
+Il vérifie d'abord l'accès, avant tout build (un environnement hors d'atteinte s'arrête en secondes), puis demande un jeton frais à son fournisseur juste avant les tests (il vit 5 minutes sur un Keycloak par défaut), et lance les tests de la catégorie `Environment` contre l'URL d'AGENTS.md : un tableau test par test (OK, en échec, durée) ; un échec dit ce que l'environnement a répondu : c'est un fait sur ce déploiement (sa version, sa configuration, ses données), pas un correctif à faire. Les tests qui écrivent (`EnvironmentWrites` : créer, relire, supprimer ce qu'ils ont créé) ne tournent qu'avec `--écriture`, sur un environnement marqué « écriture permise » ; quelques mots après le nom en restreignent la portée :
 ```text
 /tests env recette --écriture
 ```
+```text
+/tests env recette OrdersEnvironmentTests
+```
 Pour le voir sans agent, dans une session :
 ```text
-lance `sh ~/.config/opencode/scripts/env-tests.sh recette`
+lance `sh ~/.config/opencode/scripts/env-tests.sh --check recette`
 ```
-`ENVIRONMENT PROBLEM` : la variable du jeton n'est pas définie, ou l'environnement ne répond pas depuis ta machine (VPN, proxy, certificat) ; l'agent s'arrête et te le dit, il ne réessaie jamais autrement. La production est toujours refusée.
 
-**Dans la CI, chaque nuit** (sans OpenCode) : la convention est le contrat, pas le script. Dans GitLab, un pipeline planifié (CI/CD > Schedules) et des variables masquées du projet `API_BASE_URL` et `API_TOKEN` (Settings > CI/CD > Variables, « Masked », par environnement) :
+**Ce qu'il peut te dire** (une ligne `ENVIRONMENT PROBLEM`, l'agent s'arrête et te le dit ; il ne réessaie jamais autrement) :
+
+| Message | Ce qu'il faut régler |
+|---|---|
+| la variable `RECETTE_CLIENT_SECRET` n'est pas définie | l'`export` dans `~/.zshenv`, puis `/tests env config recette` |
+| le proxy refuse la connexion (407) | `proxy-identifiants`, ou la variable qui les tient |
+| le proxy interdit l'hôte (403) | le proxy ne laisse pas passer : `sans-proxy`, ou l'équipe réseau |
+| le proxy ne joint pas l'hôte (502, 503, 504) | un nom que le proxy ne connaît pas, ou un environnement arrêté |
+| le fournisseur refuse le client (`invalid_client`) | le client id ou le secret, ou `auth-client` |
+| le client ne peut pas demander de jeton (`unauthorized_client`) | côté fournisseur : le compte de service du client (Keycloak : « Service accounts roles ») |
+| le fournisseur refuse le scope (`invalid_scope`) | `scope` (Entra ID : `api://<application>/.default`) |
+| l'API refuse le jeton (401, avec sa raison : l'audience, l'émetteur) | `scope` ou `audience`, ou la configuration de l'API |
+| le certificat n'est pas reconnu | `certificat` : le fichier PEM des autorités internes ; jamais la vérification désactivée |
+| le nom est inconnu ici | VPN, DNS, ou un proxy à donner |
+
+Le secret, le jeton et les identifiants du proxy sont masqués (`***`) dans tout ce qu'il affiche, même encodés ; le contrôle avant push arrête tout commit qui contiendrait la valeur d'une de ces variables. La production est toujours refusée.
+
+**Dans la CI, chaque nuit** (sans OpenCode) : la convention est le contrat, pas le script. Dans GitLab, un pipeline planifié (CI/CD > Schedules) et des variables masquées du projet, par environnement (Settings > CI/CD > Variables, « Masked ») : `API_BASE_URL`, `API_OIDC_TOKEN_URL`, `API_OIDC_CLIENT_ID`, `API_OIDC_CLIENT_SECRET`, `API_OIDC_SCOPE` (ou `API_TOKEN` pour un jeton fixe), et `HTTPS_PROXY` quand le runner en a besoin. Le client des tests (`EnvironmentClient` du skill) demande lui-même son jeton :
 ```yaml
 env-tests:
   image: mcr.microsoft.com/dotnet/sdk:10.0
@@ -844,22 +908,45 @@ env-tests:
   script:
     - dotnet test tests/Api.IntegrationTests --filter "Category=Environment"
 ```
-Un projet xUnit v3 sur Microsoft.Testing.Platform filtre par `--filter-trait "Category=Environment"` ; MSTest, par `--filter "TestCategory=Environment"`.
+Un projet xUnit v3 sur Microsoft.Testing.Platform filtre par `--filter-trait "Category=Environment"` ; MSTest, par `--filter "TestCategory=Environment"`. Une autorité de certification interne : `SSL_CERT_FILE` vers un fichier qui contient celles du système et la tienne (image Linux).
 
 ## Requêtes `.http` pour Rider (`/outil http`)
 
-Pour appeler toi-même chaque endpoint dans Rider (ou Visual Studio), sans Postman : `/outil http` écrit, depuis le code, un fichier `.http` par contrôleur dans `<projet de l'API>/http/`, chaque requête avec sa route, son jeton quand l'endpoint l'exige, un corps rempli depuis son DTO et un contrôle de son statut ; `http-client.env.json` avec `local` (l'URL de `launchSettings.json`) et tes environnements d'AGENTS.md (jamais la production) ; `http-client.private.env.json` pour tes jetons, ajouté au `.gitignore`. Un fichier qui existe n'est jamais réécrit.
+Pour appeler toi-même chaque endpoint dans Rider (ou Visual Studio), sans Postman :
 ```text
 /outil http
 ```
-Dans Rider : ouvre un `.http`, choisis l'environnement en haut de l'éditeur, puis ▶ sur une requête ou « Run All Requests in File ». Ton jeton, une fois, dans `http-client.private.env.json` (jamais commité) :
+Il te montre d'abord ce qu'il écrirait (rien n'est encore écrit), puis UN QCM : les contrôleurs (tous, ou ceux que tu coches), le client (Rider, ou Visual Studio), et, quand des fichiers existent déjà, les garder (tes requêtes modifiées restent telles quelles) ou les remplacer. Il écrit, depuis le code, un fichier `.http` par contrôleur dans `<projet de l'API>/http/`, chaque requête avec sa route, son jeton quand l'endpoint l'exige, un corps rempli depuis son DTO et un contrôle de son statut ; `http-client.env.json` avec `local` (l'URL de `launchSettings.json`) et tes environnements d'AGENTS.md (jamais la production) ; `http-client.private.env.json` pour tes secrets, ajouté au `.gitignore`, jamais réécrit.
+
+Dans Rider : ouvre un `.http`, choisis l'environnement en haut de l'éditeur, puis ▶ sur une requête ou « Run All Requests in File ». Pour un environnement OIDC, Rider demande le jeton lui-même (OAuth 2.0 client credentials de son client HTTP, renouvelé tout seul), avec ce qu'`http-client.env.json` dit :
 ```json
-{ "recette": { "token": "…" } }
+"recette": {
+  "baseUrl": "https://api-recette.example.com",
+  "id": "1",
+  "Security": {
+    "Auth": {
+      "api": {
+        "Type": "OAuth2",
+        "Grant Type": "Client Credentials",
+        "Token URL": "https://login.example.com/realms/acme/protocol/openid-connect/token",
+        "Client ID": "shop-tests",
+        "Client Secret": "{{clientSecret}}",
+        "Client Credentials": "in body",
+        "Scope": "api://acme-api/.default"
+      }
+    }
+  }
+}
 ```
+Chaque requête dit `Authorization: Bearer {{$auth.token("api")}}`. Le secret, une fois, dans `http-client.private.env.json` (jamais commité) ; un environnement à jeton fixe ou `local` y attend son jeton :
+```json
+{ "recette": { "clientSecret": "…" }, "local": { "token": "…" } }
+```
+Rider passe par le proxy de ses réglages (Settings > Appearance & Behavior > System Settings > HTTP Proxy). Visual Studio ne lit pas la configuration OAuth de Rider : avec le client « Visual Studio », chaque requête dit `Bearer {{token}}`, un jeton à coller par environnement.
 
 ## Planifier une commande (`/outil planifier`)
 
-OpenCode v2 n'a pas de planificateur : le plugin du pack en fait un (fonction 26). À l'heure dite, il ouvre une nouvelle session dans le dépôt et y lance la commande ; la session est sur l'accueil, avec son issue dans le titre. Seulement ce qui n'écrit rien, ni dans git ni dans Jira : `/daily`, `/outil audit`, `/outil licences`, `/tests env <environnement>` (lecture seule) ; `/go`, `/fix`, `/push` et les autres sont refusés, même écrits à la main dans le fichier. Depuis le dossier principal du dépôt :
+OpenCode v2 n'a pas de planificateur : le plugin du pack en fait un (fonction 26). À l'heure dite, il ouvre une nouvelle session dans le dépôt et y lance la commande ; la session est sur l'accueil, avec son issue dans le titre. Seulement ce qui n'écrit rien, ni dans git ni dans Jira : `/daily`, `/outil audit`, `/outil licences`, `/tests env <environnement>` (lecture seule) ; `/go`, `/fix`, `/push`, un assistant (`/tests env config`) et les autres sont refusés, même écrits à la main dans le fichier. Sans argument, un QCM : quoi (le point du matin, les tests d'un environnement, l'audit, les licences, ou retirer une planification), l'heure, les jours. Depuis le dossier principal du dépôt :
 ```text
 /outil planifier 8h45 lun-ven /daily
 ```

@@ -42,11 +42,16 @@ jobs:
           logs="$RUNNER_TEMP/logs"
           mkdir -p "$logs"
           failed=0
-          # annotate <title> <log>: each FAIL block of a suite as an error annotation of the run
+          # annotate <title> <log>: each FAIL block of a suite as an error annotation of the run, and each finding of
+          # shellcheck (its gcc format: file:line:column: level: message) on its file and line
           annotate() {
             awk -v t="$1" '
               function flush() { if (msg != "") { print "::error title=" t "::" msg; msg = ""; n = 0 } }
               { gsub(/%/, "%25"); gsub(/\r/, "") }
+              /^[^: ]+:[0-9]+:[0-9]+: (error|warning|note|style): / {
+                flush(); split($0, f, ":"); m = $0; sub(/^[^:]+:[0-9]+:[0-9]+: /, "", m)
+                print "::error file=opencode-v2/" f[1] ",line=" f[2] ",col=" f[3] ",title=" t "::" m; next
+              }
               /^FAIL/ { flush(); msg = $0; next }
               /^    / && msg != "" && n < 30 { msg = msg "%0A" $0; n++; next }
               { flush() }
@@ -67,7 +72,7 @@ jobs:
               echo "❌ $title : $(tail -n 1 "$log")" >> "$results"
             fi
           }
-          suite "shellcheck" shellcheck sh -c 'shellcheck -S warning scripts/*.sh tools/*.sh && echo "shellcheck: OK"'
+          suite "shellcheck" shellcheck sh -c 'shellcheck -S warning -f gcc scripts/*.sh tools/*.sh && echo "shellcheck: OK"'
           suite "validate.js" validate node tools/validate.js
           suite "plugin-test" plugin node tools/plugin-test.mjs
           suite "permission-sim" permissions sh -c 'cd tools && node permission-sim.mjs ..'

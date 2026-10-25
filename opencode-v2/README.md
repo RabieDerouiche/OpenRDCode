@@ -1,6 +1,6 @@
 # OpenRDCode v2 : un ticket entre, une MR sort
 
-> **Version du pack pour OpenCode v2** (testée avec OpenCode v2.1.2 et v2.1.3). Ce qui change et comment passer de la 1.19 à la v2 : `MIGRATION.md` ; l'analyse de départ : `ANALYSE.md`. Nouveautés : `/fortify`, un lot de vulnérabilités Fortify corrigées avec leurs tests, jusqu'à la MR ; le `test-guardian`, un agent qui pose d'abord le filet de non-régression du code qu'un correctif va toucher, puis écrit les tests d'un bug ou d'une faille avant leur correctif et les prouve rouges puis verts, aussi dans `/go` et `/fix` ; des runs qui vont au bout seuls (reprise automatique, résumés de contexte qui gardent la procédure) ; et la suite de chaque commande en un clic (QCM « Suite »).
+> **Version du pack pour OpenCode v2** (testée avec OpenCode v2.1.2 et v2.1.3). Ce qui change et comment passer de la 1.19 à la v2 : `MIGRATION.md` ; l'analyse de départ : `ANALYSE.md`. Nouveautés : `/fortify`, un lot de vulnérabilités Fortify corrigées avec leurs tests, jusqu'à la MR ; le `test-guardian`, un agent qui pose d'abord le filet de non-régression du code qu'un correctif va toucher, puis écrit les tests d'un bug ou d'une faille avant leur correctif et les prouve rouges puis verts, aussi dans `/go` et `/fix` ; des runs qui vont au bout seuls (reprise automatique, résumés de contexte qui gardent la procédure) ; la suite de chaque commande en un clic (QCM « Suite ») ; et des assistants pas à pas, en QCM, pour les tests d'une API (`/tests api`), la configuration d'un environnement derrière un fournisseur OpenID Connect et un proxy d'entreprise (`/tests env config`) puis ses tests (`/tests env`), les dépôts d'une même application (`/outil liens`), les requêtes pour Rider (`/outil http`) et les commandes planifiées (`/outil planifier`), vérifiés à chaque push contre un vrai Keycloak, un vrai proxy squid et le vrai SDK .NET.
 
 Tu donnes une clé Jira à `/go`. L'agent analyse le ticket, code étape par étape avec les tests, se relit, corrige, vérifie ce qui va partir, pousse la branche et ouvre la merge request en Draft. Tu relis la MR comme celle d'un collègue. Après la CI ou la review, `/fix` traite tous les retours en une fois.
 
@@ -30,6 +30,8 @@ La v2 inverse le contrat :
 | Un ticket qui part d'une autre branche que develop | `/go ABC-123 depuis feature/ABC-100-socle` | La branche du ticket part de `origin/feature/ABC-100-socle`, qui devient sa base : la mesure de départ, la review, le contrôle avant push, la fusion de la base et la MR la visent au lieu de develop. Un nom qui n'existe pas sur origin : arrêt avec les noms proches. |
 | Un POC, un essai, une doc, un petit correctif, sans ticket | une demande dans une session (« fais un POC de… », « corrige… », « ajoute la doc de… ») | Il travaille dans la conversation, avec les mêmes règles (lire avant d'écrire, plus petit changement, build et tests par `build-test.sh` avant de dire que ça marche), sans branche ni fiche ; il peut lancer un projet du dépôt (`dotnet run --project src/Api`, borné dans le temps). Pour le garder : `/push`. |
 | Des tests unitaires, sans ticket | `/tests InvoiceService` (une classe, un fichier, un dossier) | Le `test-guardian` mesure la couverture, écrit les tests du comportement actuel dans le style du dépôt, les prouve (verts deux fois, aucun test instable), mesure la couverture après ; un bug trouvé en route est signalé, jamais corrigé en douce. Commit sur une branche `test/…` ; puis `/push`. Sans projet de tests, il propose de le créer. |
+| Les endpoints d'une API, sans ticket | `/tests api [contrôleur, route ou dossier]` | Deux QCM : la mise en place d'abord (le projet de tests d'intégration à créer, la base que les endpoints utilisent directement en SQLite, ce qui empêcherait l'API de démarrer en mémoire, lu dans le code avant tout test), puis les scénarios de chaque endpoint (nominal, 400, 401, 403, 404, 409), cochés un à un. Le `test-guardian` écrit la factory, prouve un scénario, puis les autres, verts deux fois ; et leurs tests d'environnement si tu en veux. Commit sur `test/…`, puis `/push`. |
+| Un environnement à déclarer, puis à vérifier | `/tests env config recette`, puis `/tests env recette` (ou `/tests env` : un QCM) | Deux QCM proposés depuis le code : l'URL, l'accès (un client OIDC : son autorité, son client id, son scope ; ou un jeton fixe), le proxy et ses identifiants, le certificat des autorités internes. Le bloc va dans AGENTS.md avec les noms des variables de `~/.zshenv`, jamais un secret, puis l'accès est vérifié étape par étape (jeton et ses claims, l'API sans puis avec le jeton). Ensuite, les tests d'environnement tournent contre l'URL d'AGENTS.md, en lecture seule, jamais sur la production ; ce qui ne va pas est dit en une ligne, avant le build. |
 | Pousser ton travail, ticket ou pas | `/push [message] [branche <nom>] [avec MR / sans MR] [avec develop] [sans les tests] [vite]` | Il lit tes changements et te propose, en une seule question (un clic, ou ton propre texte) : la branche quand il en faut une (sur develop, main ou une HEAD détachée : `feature/…`, `bugfix/…`, `test/…`, `docs/…`, `poc/…`…, la recommandée d'abord), le message de commit (conventional commit, 2 ou 3 propositions) et la MR (en Draft, recommandée sauf pour un POC). Le code modifié est buildé et testé avant le commit (pas relancé si ce même code est déjà passé au vert ; en échec, la même question te demande s'il pousse quand même, non recommandé) ; puis fusion de ce que tu as poussé depuis ton autre poste, contrôle avant push, push. `vite` : les choix recommandés, sans question. À la fin, le QCM « Suite » te propose `/fix` pour après la CI (il marche aussi sans ticket). |
 | Récupérer ce que tu as poussé depuis ton Mac | `/sync [develop] [merge <branche>]` | Fusionne les commits de la branche sur origin (et develop, ou une autre branche, si tu le dis), sans rien commiter ni pousser ; sur develop, une avance rapide sur origin. Un conflit : fusion annulée, fichiers listés. |
 | Vérifier un problème, sans rien changer | une question dans une session (« vérifie pourquoi… ») | Il enquête, sans branche ni commit. S'il faut corriger, `/go sans ticket` dans la même session reprend son enquête. |
@@ -37,7 +39,7 @@ La v2 inverse le contrat :
 | Vulnérabilités Fortify par lot | `/fortify [nombre ≤ 5] [catégorie]` | Les plus graves de l'application SSC : analysées trois à la fois, chacune avec ses tests gardés par le `test-guardian` (le filet de non-régression des méthodes que le correctif touche, écrit d'abord s'il en manque ; couverture coverlet du module et de ses dépendances avant et après ; tests de la faille rouges puis verts, deux fois chacun), corrigée, un commit chacune, une MR Draft. COMMANDES.md, section « Fortify ». |
 | MR d'un collègue | `/review !42` | Commentaires prêts à coller, en lecture seule. |
 | Régression entre deux dépôts | `/compare <dépôt où ça marche> <classe> <symptôme>` | Cause de la régression : code, package, configuration, données ou correctif non reporté. |
-| Le reste | `/outil <nom>` | Doc, audit, licences, release notes, patterns d'équipe, scaffolding CQRS, AGENTS.md du dépôt, abandon d'un ticket, todo, statistiques. |
+| Le reste | `/outil <nom>` | Doc, audit, licences, release notes, patterns d'équipe, scaffolding CQRS, AGENTS.md du dépôt, dépôts liés d'une même application (`liens`, en QCM), requêtes pour Rider (`http`, en QCM), commandes planifiées (`planifier`), abandon d'un ticket, todo, statistiques. |
 
 Plusieurs `/go` en même temps, chacun dans son dossier et sa session : le titre de chaque session montre son avancement (⏳ 12:40 outil · Étape 2/5 — /go ABC-123), puis son issue (✅ MR créée, ⏸ une réponse du PO t'attend, ↻ il reprend tout seul, ⛔ arrêté), et la dernière réponse la détaille (❓ une question t'attend). Un seul `/go` ou `/fix` à la fois par dossier : le second est refusé. Plusieurs tickets du même dépôt en même temps : un dossier par ticket, créé dans l'interface (section suivante).
 
@@ -81,6 +83,141 @@ flowchart LR
   F --> R{{Ta relecture}}
   R -->|CI ou review| X["/fix"]
   X --> G
+```
+
+## La carte du pack
+
+Tout le pack d'un coup d'œil : les commandes, les tests, les outils, les agents, les garde-fous et la façon dont il est vérifié.
+
+```mermaid
+mindmap
+  root((OpenRDCode v2))
+    Un ticket
+      /go : de Jira à la MR en Draft
+      /fix : CI, Sonar, Fortify, review
+      /fortify : un lot de failles prouvées
+    Sans ticket
+      Conversation : POC, petit correctif
+      /push : branche, message, MR
+      /sync : commits d'un autre poste
+      /daily : le point du matin
+      /review, /compare : lecture seule
+    Tests
+      /tests : le menu
+      /tests unitaires : prouvés deux fois
+      /tests api : endpoints en mémoire
+      /tests env config : un environnement
+      /tests env : un déploiement vérifié
+      /outil http : les requêtes pour Rider
+      /outil planifier : chaque matin
+    Outils /outil
+      doc, audit, licences
+      release-notes, pattern, cqrs
+      setup, liens, abandon
+      todo, stats
+    Agents
+      pilot : mène les runs
+      analyst, coder, checker
+      debugger, test-guardian
+      doc-writer, build
+    Garde-fous
+      Plugin : 26 fonctions
+      Permissions sans question
+      Contrôle avant push
+      Secrets hors des fichiers
+    Vérification
+      Suites locales
+      CI : vrai .NET 10 et 8
+      Keycloak, squid, SQL Server
+```
+
+### Les outils de tests
+
+```mermaid
+mindmap
+  root((Les tests))
+    /tests unitaires
+      Une classe, un fichier, un dossier
+      Couverture avant et après
+      Verts deux fois, aucun test instable
+      Projet de tests créé si besoin
+    /tests api
+      Pré-vol : réglages, workers, DbContext
+      QCM 1 : projet, base SQLite, environnement
+      QCM 2 : scénarios cochés un à un
+      Factory en mémoire, un scénario vert d'abord
+      Scénarios : 200, 400, 401, 403, 404, 409
+    /tests env config
+      Indices du code : URL, autorité, audience
+      QCM 1 : URL, OIDC ou jeton, proxy, usage
+      QCM 2 : autorité, client id, scope, certificat
+      AGENTS.md : noms des variables, jamais un secret
+      Accès vérifié étape par étape
+    /tests env
+      QCM : environnement, portée, écriture
+      Jeton OIDC par client credentials
+      Proxy, identifiants, autorité interne
+      Un résultat par test, jamais la production
+    /outil http
+      QCM : contrôleurs, client, fichiers existants
+      Rider demande le jeton OAuth 2.0
+      Secrets dans un fichier jamais commité
+    /outil planifier
+      QCM : quoi, heure, jours
+      Seulement ce qui n'écrit rien
+```
+
+`/tests api`, du code aux tests prouvés :
+
+```mermaid
+flowchart TD
+  A["/tests api"] --> F["Faits : pré-vol de l'API,<br>ses endpoints, ses environnements"]
+  F --> Q1{{"QCM 1 — la mise en place<br>projet de tests d'intégration, base en SQLite,<br>configuration distante, tests d'environnement"}}
+  Q1 -->|"j'arrête"| X["⛔ rien n'est écrit"]
+  Q1 --> Q2{{"QCM 2 — les scénarios<br>un par endpoint, cochés un à un"}}
+  Q2 --> S["Branche test/… et, si choisi,<br>projet de tests créé en premier commit"]
+  S --> G["test-guardian : la factory d'abord,<br>un scénario vert, puis les autres<br>verts deux fois"]
+  G --> E["Tests d'environnement :<br>prouvés en lecture seule<br>ou « écrits, non lancés »"]
+  E --> C["Commit test(api)"]
+  C --> U{{"Suite : /push, /tests env, /tests env config"}}
+```
+
+`/tests env config` puis `/tests env`, de la déclaration d'un environnement à ses tests :
+
+```mermaid
+flowchart TD
+  C["/tests env config"] --> F["Faits : ce que le code dit<br>URL des déploiements, autorité et audience de l'API,<br>proxy de la machine"]
+  F --> Q1{{"QCM 1 — nom, URL, accès OIDC ou jeton,<br>proxy et ses identifiants, usage"}}
+  Q1 --> Q2{{"QCM 2 — avec OIDC : autorité, client id,<br>scope, certificat, client en Basic"}}
+  Q2 --> W["Bloc écrit dans AGENTS.md :<br>les noms des variables, jamais un secret"]
+  W --> K["Accès vérifié : variables, proxy,<br>découverte, jeton et ses claims,<br>API sans puis avec le jeton"]
+  K -->|"OK"| R["/tests env recette"]
+  K -->|"problème"| P["⛔ ce qu'il faut régler, en une phrase"]
+  L["/tests env"] --> Q3{{"QCM — environnement, portée, écriture"}}
+  Q3 --> R
+  R --> T["Accès vérifié avant le build,<br>jeton OIDC frais, tests Environment<br>contre l'URL d'AGENTS.md"]
+  T --> V["Un résultat par test,<br>jamais la production"]
+```
+
+Les assistants de `/outil` :
+
+```mermaid
+flowchart TB
+  subgraph liens["/outil liens"]
+    direction LR
+    L1["Dépôts voisins<br>et leurs preuves"] --> L2{{"QCM — rôle de chacun,<br>lecture par les agents,<br>ligne réciproque"}}
+    L2 --> L3["AGENTS.md des deux côtés,<br>référence d'opencode.json"]
+  end
+  subgraph http["/outil http"]
+    direction LR
+    H1["Plan : groupes,<br>environnements, fichiers"] --> H2{{"QCM — contrôleurs,<br>Rider ou Visual Studio,<br>garder ou remplacer"}}
+    H2 --> H3["Un .http par contrôleur,<br>OAuth 2.0 de Rider,<br>fichier privé ignoré"]
+  end
+  subgraph plan["/outil planifier"]
+    direction LR
+    P1{{"QCM — quoi, heure, jours"}} --> P2["Lancé seul à l'heure dite,<br>seulement ce qui n'écrit rien"]
+  end
+  liens ~~~ http ~~~ plan
 ```
 
 ## Comment ça marche, exactement
@@ -147,7 +284,7 @@ En v1, c'était `/extract-pattern` puis `/apply-pattern`, avec ses questions. `a
 - **Chaque type de projet avec ses outils.** API CQRS ou REST, Blazor, workers, librairies publiées en paquets NuGet internes, front-ends Angular, React ou Vue, sur .NET 8, 9 ou 10 (netstandard2.0 pour certaines librairies) : `detect-project-type.sh` donne les frameworks cibles, la version de C# permise, le SDK que demande `global.json` et s'il est là, les runtimes des tests, la fin de support de .NET 8 et 9 (10 novembre 2026), la librairie et sa validation de paquet, le dossier du front et comment ses tests tournent. Le coder écrit pour la version du projet (jamais `LangVersion` relevé, jamais un framework ou `global.json` changés) ; un SDK, un runtime, Docker ou le flux de paquets absents sont dits en une ligne, au lieu d'être « réparés » dans le dépôt.
 - **Le front-end testé comme la CI le teste.** `build-test.sh <dossier>` : les dépendances installées depuis le lockfile seulement, le build, puis les tests une fois (Karma en ChromeHeadless, Angular 21 avec Vitest, Create React App, Vitest, Jest), un test focalisé (`fit`, `.only`) refusé, un run qui ne finit pas arrêté ; npm qui échoue de lui-même (npm 10 sur l'arbre de Vitest 4) dit comme un problème de la machine, jamais contourné. Une commande qui ne finit jamais (`npm start`, `ng serve`, un mode watch, `npm test` sur un Angular avec Karma) est refusée aux agents du pack : elle tenait le tour 20 minutes.
 - **Des tests qui prouvent un comportement, pas des lignes.** Chaque test attendu de la fiche a son niveau (unitaire, intégration, composant) et un scénario avec des valeurs ; le coder et le test-guardian écrivent le résultat attendu dans le test, jamais recalculé avec le code testé ; `test-lint.sh` refuse un test sans assertion, focalisé ou ignoré, et signale une horloge réelle, un délai réel, un appel HTTP réel ou un `Random` sans graine.
-- **Les endpoints testés en HTTP, puis chaque déploiement vérifié.** `/tests api` propose, endpoint par endpoint, ses scénarios lus dans le code (nominal, validation, 401, 403, 404, 409) ; tu coches ceux à écrire, le test-guardian les écrit en mémoire (`WebApplicationFactory`, ports remplacés par des fakes) et les prouve verts deux fois. Les mêmes endpoints ont leurs tests d'environnement, lancés à la demande sur la recette ou la préproduction d'AGENTS.md (`/tests env recette`), en lecture seule, jamais sur la production, le jeton jamais vu par le modèle ; ou chaque matin (`/outil planifier`), ou par un pipeline planifié de la CI. Le code du skill est compilé et lancé à chaque push contre une vraie API .NET 10.
+- **Les endpoints testés en HTTP, puis chaque déploiement vérifié.** `/tests api` lit d'abord ce qui empêcherait l'API de démarrer dans un test (réglages lus au démarrage, workers, `DbContext` des endpoints, configuration distante) et te le fait trancher dans son premier QCM ; puis il propose, endpoint par endpoint, ses scénarios lus dans le code (nominal, validation, 401, 403, 404, 409) ; tu coches ceux à écrire, le test-guardian écrit la factory, prouve un scénario, puis les autres en mémoire (`WebApplicationFactory`, ports remplacés par des fakes, base en SQLite, chaque schéma d'authentification répondu par le gestionnaire de test), verts deux fois. Les mêmes endpoints ont leurs tests d'environnement, lancés à la demande sur la recette ou la préproduction d'AGENTS.md (`/tests env recette`), en lecture seule, jamais sur la production : `env-tests.sh` demande lui-même le jeton OIDC (client credentials) à travers le proxy de l'environnement, avec ses autorités de certification internes, et dit précisément ce qui ne va pas avant le premier build ; le secret et le jeton ne passent jamais par le modèle. Ou chaque matin (`/outil planifier`), ou par un pipeline planifié de la CI. Le code du skill est compilé et lancé à chaque push avec les vrais SDK .NET 10 et 8, contre une API réaliste déployée derrière un vrai Keycloak et un vrai proxy squid.
 - **Les contrats tenus entre dépôts.** `api-surface.sh` dit ce qu'une branche retire, change ou ajoute dans l'API publique, les routes et les DTO ; une librairie avec la validation de paquet est contrôlée contre sa dernière version publiée (`build-test.sh --pack`) ; les dépôts d'une même application (« Dépôts liés » d'AGENTS.md) partagent la section « Contrat » de leurs fiches : le front planifie sur ce que l'API a vraiment livré, et la MR dit ce que l'autre dépôt doit suivre.
 - **Un run qui va au bout sans toi.** Panne du serveur du modèle, réponse coupée, limite d'étapes : reprise automatique depuis la fiche ; contexte plein : le résumé garde l'état du run et le pilote retrouve sa procédure.
 - **Une auto-review stricte.** Même grille que la review de la v1 (sécurité, autorisations, plusieurs instances, EF Core, performance, conventions), critères d'acceptation et pré-scan Sonar/Fortify. Les points bloquants et majeurs sont corrigés avant le push.
@@ -178,7 +315,9 @@ En v1, tu validais chaque push et chaque demande d'autorisation. En v2, plus per
 | Une installation front-end refusée quand git n'ignore pas `node_modules` ; le contrôle avant push arrête `node_modules`, `obj`, `bin/Debug` et `TestResults` | `ship.sh` commite tout (`git add -A`) : un `.gitignore` incomplet aurait poussé des milliers de fichiers. |
 | `dotnet run` : jamais pour les agents du pack ; en conversation, seulement un projet du dépôt que le dernier commit contient | Un projet « sonde » créé pour l'occasion (réflexion sur un assembly, fichier `Probe.cs` lancé en programme) servait à deviner l'API d'un package. L'API vient de sa documentation XML : `package-refs.sh --doc <package>`. |
 | Une commande planifiée (`/outil planifier`) ne peut rien écrire : `/daily`, `/outil audit`, `/outil licences` et `/tests env` en lecture seule ; une autre ligne, même écrite à la main dans le fichier, est refusée par le plugin | Une commande lancée à 7 h sans personne devant ne doit jamais commiter, pousser ou écrire dans Jira : ce que tu valides en v1 ne serait vu par personne. |
-| Les tests d'un environnement : jamais la production, jamais une écriture sans `--écriture` de ta main sur un environnement « écriture permise », l'URL et le jeton donnés par `env-tests.sh` seul (jeton lu dans ta variable, jamais affiché ni dans une commande) | Un agent qui appelle lui-même une API déployée (curl, un script) avec un jeton, ou qui lance des tests qui créent des données sur la production. |
+| Les tests d'un environnement : jamais la production, jamais une écriture sans `--écriture` de ta main sur un environnement « écriture permise », l'URL et le jeton donnés par `env-tests.sh` seul (jeton lu dans ta variable ou demandé au fournisseur OIDC, jamais affiché ni dans une commande) | Un agent qui appelle lui-même une API déployée (curl, un script) avec un jeton, ou qui lance des tests qui créent des données sur la production. |
+| Les secrets d'un environnement (secret du client OIDC, identifiants du proxy, jeton) : jamais dans AGENTS.md ni dans une commande, seulement les noms des variables de `~/.zshenv`, par convention (`RECETTE_CLIENT_SECRET`…) ; masqués dans tout ce qu'affiche `env-tests.sh`, encodés ou non, même dans l'URL du proxy qu'une exception .NET écrit | AGENTS.md est commité et partagé : un secret écrit dedans partirait dans GitLab. Et les règles des agents refusent tout nom de variable qui contient SECRET, TOKEN ou CREDENTIAL : l'assistant ne les écrit jamais, le script les déduit du nom de l'environnement. |
+| Les assistants (`/tests env config`, `/outil liens`, `/outil http`) ne partent jamais seuls : jamais planifiés, leurs scripts d'écriture réservés au pilote de `/tests` ou à la conversation ; `opencode.json` modifié par `/outil liens` seulement par un script qui le copie d'abord, garde ses commentaires et le relit (remis tel quel s'il ne se lit plus) | Un assistant planifié attendrait une réponse que personne ne donne ; un `opencode.json` cassé empêcherait OpenCode de démarrer. |
 
 Restent interdits comme en v1 : commit ou push sur develop, master ou main, force-push, rebase ; toute écriture dans Jira ; dans GitLab, tout sauf la création de la MR en Draft par le pilote ; Confluence sans ta validation ; la lecture des secrets (nuget.config, `.env`, `~/.zshenv`, identifiants git) ; décompiler un package. En conflit avec develop, l'agent n'arbitre jamais.
 
@@ -231,7 +370,7 @@ Sous OpenCode v2, la température et le top_p de chaque agent passent dans chaqu
 | `/daily`, `/review`, `/compare` | inchangées |
 | `/extract-pattern`, `/apply-pattern` | `/outil pattern` (capture), puis `/go` (applique) |
 | `/doc`, `/audit`, `/licences`, `/release-notes`, `/cqrs`, `/agents-md`, `/abandon`, `/todo` | `/outil doc`, `/outil audit`, `/outil licences`, `/outil release-notes`, `/outil cqrs`, `/outil setup`, `/outil abandon`, `/outil todo` |
-| — | `/outil stats` : ce que `/go` et `/fix` ont fait sur tes tickets |
+| — | `/outil stats` : ce que `/go` et `/fix` ont fait sur tes tickets ; `/tests api` et `/tests env` (avec leurs assistants), `/outil liens`, `/outil http`, `/outil planifier` |
 
 En langage courant aussi : « pourquoi ça plante », « explique ce flux », « corrige le point Fortify 4512 », « rappelle-moi de relancer Paul vendredi ».
 
@@ -247,7 +386,7 @@ En langage courant aussi : « pourquoi ça plante », « explique ce flux », «
 | `test-guardian` | Le filet de non-régression avant un correctif (les tests du comportement actuel des méthodes touchées, quand ils manquent), puis les tests d'une faille, d'un bug, des lignes modifiées ou d'un code que tu nommes (`/tests`), et les tests d'API des scénarios que tu as cochés (`/tests api`), écrits avant le correctif quand il y en a un, et prouvés par script (rouge, vert, deux fois, filet intact, couverture sans perte). | les projets de tests seulement |
 | `doc-writer` | Écrit `docs/` pour `/outil doc`, sans jamais ouvrir un fichier de configuration. | `docs/`, `README.md` |
 
-Le reste : 10 commandes, 8 skills de connaissances (conventions CQRS, intégrations SharePoint/DocuSign/S3/Piano, Blazorise : langue du DataGrid et de sa pagination, puis son remplacement par du Razor natif, tests d'API en mémoire et sur un environnement, remédiation Fortify, bonnes pratiques, correction de build, explication de code), les procédures de `/outil` sous forme de skills (dont les requêtes `.http` pour Rider et les commandes planifiées), les scripts du pack (état git, build et tests .NET et front-end, versions et problèmes d'environnement, contrats et qualité des tests, dépôts liés, branche, commit et push, contrôle avant push, fiche, statistiques…) et un plugin : scripts des commandes, environnement stable des agents, refus des identifiants et des dumps d'environnement, agents gardés dans le dépôt, délais longs pour les builds, un seul run (`/go`, `/fix`, `/fortify`, `/tests`, `/push`, `/sync`) à la fois par dossier, aucune question d'un sous-agent, la ligne courte des commandes, l'avancement et l'issue dans le titre de la session, la commande choisie dans un QCM lancée toute seule, la reprise automatique d'un run arrêté avant sa réponse finale, la procédure redonnée après un résumé du contexte, plus de patience envers le serveur du modèle, le refus des commandes qui ne finissent jamais et des changements de dépendances par les agents, les commandes planifiées qui n'écrivent rien (`/daily`, `/tests env` chaque matin), et la fermeture de ce que la v2 ouvre (code mode, recherche web, partage, déplacement de session : MIGRATION.md, étape 14). Chaque fichier, ce qu'il fait et à quoi il sert : `FICHIERS.md`.
+Le reste : 10 commandes, 8 skills de connaissances (conventions CQRS, intégrations SharePoint/DocuSign/S3/Piano, Blazorise : langue du DataGrid et de sa pagination, puis son remplacement par du Razor natif, tests d'API en mémoire et sur un environnement, remédiation Fortify, bonnes pratiques, correction de build, explication de code), les procédures de `/outil` sous forme de skills (dont les dépôts liés, les requêtes `.http` pour Rider et les commandes planifiées), les scripts du pack (état git, build et tests .NET et front-end, versions et problèmes d'environnement, contrats et qualité des tests, dépôts liés, branche, commit et push, contrôle avant push, fiche, statistiques…) et un plugin : scripts des commandes, environnement stable des agents, refus des identifiants et des dumps d'environnement, agents gardés dans le dépôt, délais longs pour les builds, un seul run (`/go`, `/fix`, `/fortify`, `/tests`, `/push`, `/sync`) à la fois par dossier, aucune question d'un sous-agent, la ligne courte des commandes, l'avancement et l'issue dans le titre de la session, la commande choisie dans un QCM lancée toute seule, la reprise automatique d'un run arrêté avant sa réponse finale, la procédure redonnée après un résumé du contexte, plus de patience envers le serveur du modèle, le refus des commandes qui ne finissent jamais et des changements de dépendances par les agents, les commandes planifiées qui n'écrivent rien (`/daily`, `/tests env` chaque matin), et la fermeture de ce que la v2 ouvre (code mode, recherche web, partage, déplacement de session : MIGRATION.md, étape 14). Chaque fichier, ce qu'il fait et à quoi il sert : `FICHIERS.md`.
 
 ## Installation
 
@@ -268,7 +407,8 @@ Une fois par dépôt : `/outil setup`, qui écrit l'`AGENTS.md` du dépôt, cour
 - **Front-end** : node (et Chrome ou Chromium pour un Angular avec Karma) sur la machine d'OpenCode ; le reste vient du lockfile du dépôt. Un dépôt .NET avec un dossier front (`ClientApp`) : `/go` mesure et teste les deux ; un dépôt sans .NET : `build-test.sh` seul. `.gitignore` doit ignorer `node_modules` (sinon rien n'est installé, et le run le dit).
 - **.NET 8 et 9** : leur support s'arrête le 10 novembre 2026 ; les agents écrivent pour eux tant que le dépôt les cible (C# 12 pour .NET 8) et passer à .NET 10 est un ticket à part. Le SDK que demande `global.json` et les runtimes des tests (.NET 8 et ASP.NET Core 8 pour les tests d'une API .NET 8) doivent être installés sur la machine d'OpenCode : sinon, une ligne `ENVIRONMENT PROBLEM` le dit dès le premier build.
 - **Librairies** : pour que l'API publique soit contrôlée par le build, `EnablePackageValidation` et `PackageValidationBaselineVersion` dans le projet (une décision d'équipe : `/outil setup` la propose) ; sans eux, `api-surface.sh` lit les ruptures dans le diff.
-- **Plusieurs dépôts** (un front et son API, une librairie et ses consommateurs) : une ligne par dépôt dans la section « ## Dépôts liés » de l'AGENTS.md de chacun, chacun nommant l'autre avec son rôle (`/outil setup` la remplit ; COMMANDES.md, « Plusieurs dépôts d'une même application »), et, pour que les agents lisent son code, le dépôt en `references` d'`opencode.json` (COMMANDES.md, « Lire un autre dépôt »).
+- **Plusieurs dépôts** (un front et son API, une librairie et ses consommateurs) : `/outil liens` les trouve à côté du dépôt avec ce qui les lie, te fait choisir leur rôle en un QCM, écrit la section « ## Dépôts liés » de l'AGENTS.md des deux côtés et, si tu le veux, la référence d'`opencode.json` qui permet aux agents de lire leur code (COMMANDES.md, « Plusieurs dépôts d'une même application »).
+- **Environnements** : `/tests env config` déclare chacun dans l'AGENTS.md du dépôt (URL, client OIDC, proxy, certificat, jamais un secret) ; ses secrets vont dans `~/.zshenv`, sous les noms que l'assistant donne (COMMANDES.md, « Tests d'API et tests d'un environnement »).
 
 Le push automatique demande des identifiants GitLab que git trouve seul sur la machine : `COMMANDES.md`, section « Identifiants GitLab ».
 
@@ -290,14 +430,15 @@ Tout ce qui est vérifié ici l'a été avec un modèle simulé qui suit un scri
 - Une référence `references` d'`opencode.json` doit être un dossier local : une référence vers un dépôt git distant n'est pas lisible par les agents du pack.
 - `test-lint.sh` et `api-surface.sh` lisent le code sans le compiler : ce sont des heuristiques (un helper d'assertion maison est reconnu à son nom, une API publique à ses mots-clés). La validation de paquet (`--pack`) est la vérification exacte d'une librairie, quand l'équipe l'active.
 - (Likely) Les commandes planifiées : le plugin ouvre leur session par `ctx.session.create`, l'API de plugin que la documentation de la v2 décrit, pas encore rejouée sur ta v2.1.3 ; si elle n'existe pas chez toi, le journal du plugin le dit (« scheduled command not started »), et rien d'autre ne change. OpenCode doit tourner à l'heure dite (son service) : une heure manquée n'est pas rattrapée.
-- Les tests d'environnement tournent depuis la machine d'OpenCode : un environnement qu'elle ne joint pas (VPN, proxy, certificat interne) donne un `ENVIRONMENT PROBLEM` ; le pipeline planifié de la CI, lui, tourne là où l'environnement est joignable.
+- Les tests d'environnement tournent depuis la machine d'OpenCode : un environnement qu'elle ne joint pas donne un `ENVIRONMENT PROBLEM` précis (VPN, nom inconnu, proxy qui refuse, certificat) ; le pipeline planifié de la CI, lui, tourne là où l'environnement est joignable. Sur un Mac, .NET ne lit que le trousseau : le certificat d'une autorité interne doit y être pour les tests (curl, lui, prend le fichier de « certificat ») ; sous Linux, `SSL_CERT_FILE` suffit.
+- Les requêtes `.http` d'un environnement OIDC demandent leur jeton par la configuration OAuth 2.0 du client HTTP de Rider ; Visual Studio ne la lit pas (un jeton à coller), et le client HTTP en ligne de commande de JetBrains ne la gère pas encore. Rider passe par le proxy de ses propres réglages.
 - Sur un Mac sans `timeout` (paquet coreutils, `gtimeout`), un test front-end qui ne finit pas est arrêté par OpenCode au bout de 20 minutes, au lieu de 15 par `front-test.sh`.
 
 ## Pour la maintenance du pack
 
 - `tools/permissions.py` régénère les lignes `permission:` des agents et `opencode.snippet.json` (à lancer depuis `opencode-v2/`). Ne les modifie pas à la main. Aucune règle « ask » sur le shell, la lecture ou l'écriture : la simulation échoue s'il en apparaît une.
-- Les permissions sont vérifiées par simulation : `tools/permission-sim.mjs` (le moteur d'OpenCode 1.19, dont v2 garde la logique de règles, sous-sessions et `primary_tools` compris) rejoue `tools/permission-corpus.mjs`, 2 493 cas, dont les 189 commandes que les fichiers du pack prescrivent, chacune avec l'agent qui la lance (une commande prescrite et refusée bloquerait le run : `/outil abandon` l'était) : les commandes que le pack fait lancer à chaque agent, les réflexes du modèle, les secrets, les écritures git interdites (y compris un message de commit qui tenterait `$(…)`), la liste blanche du coder, les outils MCP permis ou masqués par agent, les questions et les boucles, et les outils que la v2 ajoute (code mode, recherche web, déplacement de session, worktrees, skill `report`). Lancement : `cd tools && npm install --no-save web-tree-sitter@0.25.10 tree-sitter-bash@0.25.0 gray-matter@4.0.3 && node permission-sim.mjs ..`.
-- Les garde-fous du plugin : `node tools/plugin-test.mjs .` (789 vérifications : ces mêmes 189 commandes prescrites passées aux garde-fous du plugin, les commandes planifiées (l'heure et les jours, seulement ce qui n'écrit rien, une seule session quand plusieurs OpenCode tournent), les commandes qui ne finissent jamais refusées à chaque agent du pack et permises à la conversation en arrière-plan ou bornées, `npm test` jugé sur ce que lance son script, les changements de dépendances et les installations sur la machine refusés à chaque agent du pack sous toutes leurs formes, `npm ci` permis, le journal qui ne contient jamais un script de package.json, le QCM « Suite » qui finit un run (dossier libéré pendant qu'il attend, issue gardée, aucune reprise, la commande choisie lancée même si le serveur du modèle tombe ensuite ; celui de `/compare` et de `/outil`, qui ne tiennent pas le dossier, et une question de choix posée avec lui dans le même appel), deux runs en même temps dans un dépôt et son espace de travail, la boucle de réflexion coupée dans le flux, l'historique nettoyé, la pénalité de présence après une coupure, « continue » repris par le pilote, `dotnet run` d'un projet non commité refusé ; chemins hors du dépôt, dossiers en lecture seule, fiches d'un worktree, dossier du worktree dans le titre et la ligne de commande, état des sous-agents dans le titre, dossiers nommés et références, `cd` suivis, outils appelés par leur chemin, journal des refus, dumps d'environnement, `rm` récursifs, délais, un seul `/go`, issue dans le titre ; pour la v2 : l'adaptateur, le verrou et sa reprise après un redémarrage du service, aucune question d'un sous-agent, ni mot de passe du serveur, ni token MCP, ni dossiers `~/oc2` dans l'environnement des commandes, les `references` lues dans `OPENCODE_CONFIG_DIR`, code mode et recherche web retirés, l'attente des serveurs MCP, le même appel répété trois fois, l'option recommandée d'un QCM, le dossier d'un espace de travail dans les titres, l'effacement des anciennes sorties d'outils, le journal du plugin, un fichier cité de ton dossier personnel qui ne rend rien lisible ; plusieurs sous-agents dans le titre, l'attente d'un nouvel essai, le résumé du contexte ; la procédure ou la tâche redonnées après un résumé, et ce que le résumé doit garder ; les nouveaux essais étalés ; les reprises automatiques et leurs limites).
+- Les permissions sont vérifiées par simulation : `tools/permission-sim.mjs` (le moteur d'OpenCode 1.19, dont v2 garde la logique de règles, sous-sessions et `primary_tools` compris) rejoue `tools/permission-corpus.mjs`, 2 571 cas, dont les 209 commandes que les fichiers du pack prescrivent (celles des assistants comprises), chacune avec l'agent qui la lance (une commande prescrite et refusée bloquerait le run : `/outil abandon` l'était) : les commandes que le pack fait lancer à chaque agent, les réflexes du modèle, les secrets, les écritures git interdites (y compris un message de commit qui tenterait `$(…)`), la liste blanche du coder, les outils MCP permis ou masqués par agent, les questions et les boucles, et les outils que la v2 ajoute (code mode, recherche web, déplacement de session, worktrees, skill `report`). Lancement : `cd tools && npm install --no-save web-tree-sitter@0.25.10 tree-sitter-bash@0.25.0 gray-matter@4.0.3 && node permission-sim.mjs ..`.
+- Les garde-fous du plugin : `node tools/plugin-test.mjs .` (789 vérifications : ces mêmes commandes prescrites passées aux garde-fous du plugin, les assistants jamais planifiés, les commandes planifiées (l'heure et les jours, seulement ce qui n'écrit rien, une seule session quand plusieurs OpenCode tournent), les commandes qui ne finissent jamais refusées à chaque agent du pack et permises à la conversation en arrière-plan ou bornées, `npm test` jugé sur ce que lance son script, les changements de dépendances et les installations sur la machine refusés à chaque agent du pack sous toutes leurs formes, `npm ci` permis, le journal qui ne contient jamais un script de package.json, le QCM « Suite » qui finit un run (dossier libéré pendant qu'il attend, issue gardée, aucune reprise, la commande choisie lancée même si le serveur du modèle tombe ensuite ; celui de `/compare` et de `/outil`, qui ne tiennent pas le dossier, et une question de choix posée avec lui dans le même appel), deux runs en même temps dans un dépôt et son espace de travail, la boucle de réflexion coupée dans le flux, l'historique nettoyé, la pénalité de présence après une coupure, « continue » repris par le pilote, `dotnet run` d'un projet non commité refusé ; chemins hors du dépôt, dossiers en lecture seule, fiches d'un worktree, dossier du worktree dans le titre et la ligne de commande, état des sous-agents dans le titre, dossiers nommés et références, `cd` suivis, outils appelés par leur chemin, journal des refus, dumps d'environnement, `rm` récursifs, délais, un seul `/go`, issue dans le titre ; pour la v2 : l'adaptateur, le verrou et sa reprise après un redémarrage du service, aucune question d'un sous-agent, ni mot de passe du serveur, ni token MCP, ni dossiers `~/oc2` dans l'environnement des commandes, les `references` lues dans `OPENCODE_CONFIG_DIR`, code mode et recherche web retirés, l'attente des serveurs MCP, le même appel répété trois fois, l'option recommandée d'un QCM, le dossier d'un espace de travail dans les titres, l'effacement des anciennes sorties d'outils, le journal du plugin, un fichier cité de ton dossier personnel qui ne rend rien lisible ; plusieurs sous-agents dans le titre, l'attente d'un nouvel essai, le résumé du contexte ; la procédure ou la tâche redonnées après un résumé, et ce que le résumé doit garder ; les nouveaux essais étalés ; les reprises automatiques et leurs limites).
 - Tous les agents, commandes et skills sont validés avec `gray-matter`, le parseur YAML d'OpenCode, et chaque fichier du pack doit être décrit dans `FICHIERS.md` (`node tools/validate.js`).
 - Les listes d'empreintes, après tout changement d'un agent, d'une commande, d'un skill, du plugin ou d'un script (depuis `opencode-v2/`) : `{ for f in agents/*.md commands/*.md; do sha256sum "$f"; done; for f in skills/*/SKILL.md; do sha256sum "$f"; done; sha256sum plugins/openrd-pack.js; } > CHECKSUMS-config.txt && (cd scripts && for f in *.sh; do sha256sum "$f"; done) > CHECKSUMS-scripts.txt`, puis les lignes attendues de `MIGRATION.md` (5.3, 5.4 et A.7), recalculées sur une copie d'une installation 1.19.
 - Les scripts sont vérifiés avec `shellcheck` et testés avec dash, bash et busybox sh, et avec les awk mawk, gawk, BWK et busybox ; `branch.sh` et `ship.sh` sont rejoués contre un dépôt distant de test (branche, accents, push, commit poussé depuis un autre poste, merge de develop, conflit annulé, identifiants refusés, GitLab muet, secret refusé puis historique réécrit) et `diff-guard.sh` sur 33 cas (secrets par type, faux positifs, fichiers de test, secret retiré par un commit suivant, valeur d'une variable secrète de l'environnement, packages payants).
@@ -306,7 +447,9 @@ Tout ce qui est vérifié ici l'a été avec un modèle simulé qui suit un scri
 - Le flux de `/fortify` et de son test-guardian, de A à Z : `sh tools/fortify-test.sh [--real] [dash|bash]`, 205 contrôles qui rejouent les lignes de commande de `commands/fortify.md` et de `agents/test-guardian.md` dans l'ordre de leurs étapes, sur de vrais projets C# et de vrais tests xUnit et MSTest : prérequis et mise en place des tests (et son échec, qui défait tout), conditions de départ, branche et fiche du lot, mesure de develop avec un test déjà rouge, le filet de chaque faille (insuffisant puis complété par ses tests, déjà en place, gardé après le correctif, rangé, mis de côté et repris avec sa preuve), preuves d'une vague écrites en parallèle (leurs builds qui s'attendent), rouge pour la bonne raison, test instable, test bloqué, fichier d'un autre test-guardian qui ne compile pas encore, preuves rangées, faille fermée par le correctif d'une autre, coder qui modifie les tests scellés (remis tels quels), couverture perdue, le code qui résiste, faille qu'aucun test unitaire ne peut montrer (preuve vide), faille abandonnée et mise de côté, chaque cas de reprise après une interruption, suite finale et couverture des changements, contrôle avant push, push ; un second lot dans un espace de travail, et le même flux sur Microsoft.Testing.Platform ; le filet de méthodes que le compilateur découpe (méthode asynchrone, itérateur, lambda, fonction locale, surcharges, propriété, constructeur), un filet qu'aucun test ne peut compléter (l'horloge réelle) et le minimum d'AGENTS.md (atteint pile, puis manqué d'un point). Avec `--real`, tout tourne avec le vrai SDK .NET de la machine (environ 10 minutes : à lancer sur la machine d'OpenCode) ; sans, avec le `dotnet` simulé, pour une machine sans SDK.
 - Les scripts front-end avec un npm simulé (`tools/fake-npm.sh`) : `sh tools/frontend-test.sh [--real] [dash|bash]`, 79 contrôles (Angular avec Karma : installation depuis le lockfile, build, tests une fois en ChromeHeadless, filtre d'une spec, `--if-changed`, test en échec nommé, test focalisé, erreur de build, Chrome absent, run qui ne finit pas, version de node ; Angular 21 avec Vitest ; Create React App sur yarn ; Vitest sur pnpm ; un script de test qui regarde les fichiers ; des tests de bout en bout laissés à la CI ; une API .NET et son front dans un même dépôt ; registre refusé, lockfile désynchronisé, npm qui échoue de lui-même et script d'installation d'un paquet qui échoue ; `node_modules` que git n'ignore pas, `dist` qui serait commité ; sortie en couleurs ; `test-lint.sh` sur des specs). Avec `--real`, les vrais Jest, Vitest et Angular (la version actuelle avec Vitest, la 19 avec Karma), installés depuis le registre npm, puis réinstallés par le pack depuis leur lockfile avec le npm de la machine.
 - Les messages réels du SDK .NET : `sh tools/real-dotnet-test.sh [dash|bash]` (avec les SDK .NET 10 et 8 : SDK de `global.json` absent, NETSDK1045, runtime des tests absent, une solution .NET 8 et ce qu'en dit `dotnet-targets.sh`, CS9202, une API que netstandard2.0 n'a pas, la vraie validation de paquet d'une librairie, le code du skill `blazorise` compilé contre les vrais Blazorise.DataGrid 2.2.2 et QuickGrid 10, et le code du skill `api-tests` : le projet de tests d'intégration créé par `test-guardian.sh setup --integration` sur une vraie API .NET 10, ses tests en mémoire, puis `env-tests.sh` contre cette API démarrée sur la machine et contre une adresse qui ne répond pas).
-- Sur GitHub, à chaque push qui change `opencode-v2/` : `.github/workflows/opencode-v2.yml` lance toutes ces suites, puis `fortify-test.sh --real`, `scenarios-test.sh --real` et `real-dotnet-test.sh` avec les vrais SDK .NET 10 et 8, et `frontend-test.sh --real` avec les vrais outils front-end ; un contrôle en échec devient une annotation du run, et les journaux restent en artefact. Avec le vrai .NET 10.0.402 : 205 contrôles sur 205 du flux Fortify et 139 sur 139 des journées ; les chiffres de chaque filet (lignes, branches, lignes non couvertes) y sont comparés aux valeurs exactes du vrai coverlet, qui ne compte aucune ligne pour l'accolade qui suit un `throw` ou un `return`, et le run les montre en annotation.
+- Les environnements et les assistants, en vrai HTTP sur la machine (sans Docker) : `sh tools/environments-test.sh [dash|bash]`, 137 contrôles contre `tools/oidc-proxy-lab.mjs`, un fournisseur OpenID Connect, une API qui vérifie ses jetons et un proxy qui demande ses identifiants, en HTTP et en TLS (`environments.sh`, `env-setup.sh`, `env-tests.sh` et chacun de ses `ENVIRONMENT PROBLEM`, le masquage des secrets, `http-files.sh` avec OAuth 2.0, `tests.sh`, `api-preflight.sh`, `related-setup.sh` et `related-repos.sh`, `schedule.sh`).
+- En situation réelle, dans Docker : `sh tools/oidc-real-test.sh [dash|bash]`, 77 contrôles avec les vrais SDK .NET 10 et 8, Keycloak 26.6.1, un proxy squid 6 qui demande ses identifiants (un mot de passe avec `@`, `:`, `#`, `!` et `%`), une autorité de certification interne, SQL Server, et une API ASP.NET Core déployée derrière le proxy, qui vérifie les jetons de Keycloak : `/tests api` sur une API réaliste (pré-vol, la factory du skill sur EF Core 10 et 8), `/tests env config` et `/tests env` (lecture seule, `--ecriture`, .NET 10 et 8), le client du skill seul (`post` et `basic`), les messages de .NET que lit `env-tests.sh`, les requêtes de `/outil http` envoyées comme Rider les envoie, et onze problèmes, chacun avec sa ligne ; aucun secret ni jeton dans une sortie du pack.
+- Sur GitHub, à chaque push qui change `opencode-v2/` : `.github/workflows/opencode-v2.yml` lance toutes ces suites, puis `fortify-test.sh --real`, `scenarios-test.sh --real` et `real-dotnet-test.sh` avec les vrais SDK .NET 10 et 8, `oidc-real-test.sh` dans Docker, et `frontend-test.sh --real` avec les vrais outils front-end ; un contrôle en échec (et chaque constat de `shellcheck`, sur son fichier et sa ligne) devient une annotation du run, et les journaux restent en artefact (ceux des serveurs du laboratoire compris). Avec le vrai .NET 10.0.402 : 205 contrôles sur 205 du flux Fortify et 139 sur 139 des journées ; les chiffres de chaque filet (lignes, branches, lignes non couvertes) y sont comparés aux valeurs exactes du vrai coverlet, qui ne compte aucune ligne pour l'accolade qui suit un `throw` ou un `return`, et le run les montre en annotation.
 - Les scripts .NET avec un `dotnet` simulé (`tools/fake-dotnet.sh`, aux formats de sortie de VSTest et de Microsoft.Testing.Platform, et de couverture de coverlet méthode par méthode) : `sh tools/dotnet-test.sh [dash|bash]`, 230 contrôles (les problèmes de la machine : SDK de `global.json` absent, runtime des tests absent, NETSDK1045, workload, projet Windows, MSB3644, Docker, LocalDB, flux de paquets ; `dotnet-targets.sh` ; une librairie multi-cible et sa validation de paquet ; `api-surface.sh` et `test-lint.sh`, aussi sur une branche d'un collègue relue sans toucher la sienne ; deux dépôts liés et leur « Contrat » ; VSTest inchangé ; « aucun test lancé » avec sa raison : pas de projet de tests, filtre qui ne trouve rien, projet de tests encore vide, et sa couverture et son filet avant le premier test ; des tests qui ont tourné à côté d'un projet de tests vide, ou qu'un filtre écarte : OK ; `--if-changed` qui ne relance pas un code déjà vert ; xUnit v3, MSTest.Sdk et TUnit lancés comme applications, filtres traduits, couleurs retirées, échec nommé, test bloqué, plateforme sans `--timeout`, couverture ; solution mixte ; projet refusé par `dotnet test` relancé ; `red`, `green`, instabilité, `coverage` (et les tests en échec qu'il nomme), `changes` et `setup` du test-guardian ; `fortify.sh prereq` ; `/outil setup` ; `package-refs.sh --doc` ; Blazorise, sa version et son skill nommés par `detect-project-type.sh` ; une branche sans clé Jira avec son propre dossier de mesures et sa mise de côté ; TUnit reconnu ; le projet de tests d'intégration d'une API .NET 8 et .NET 10, les environnements d'AGENTS.md, `env-tests.sh` (production refusée, écriture non permise, jeton absent puis masqué, environnement injoignable, une ligne par test, les catégories en `--filter-trait` pour xUnit v3), les fichiers `.http`, les planifications ; jamais `dotnet run`). Le vrai SDK .NET 10 n'était pas disponible pour ces contrôles : le premier run sur un dépôt Microsoft.Testing.Platform le confirme.
 - Les trois points qui suivent ont été faits avec les vrais programmes sur la version du pack du 23 octobre 2026, et pas rejoués depuis (la machine de vérification n'a plus OpenCode) : les changements du 24 octobre sont couverts par les contrôles ci-dessus, `fortify-test.sh` et `scenarios-test.sh` avec le vrai SDK .NET 10 sur GitHub, le reste avec un `dotnet` simulé et le moteur de permissions d'OpenCode reproduit.
 - Les mesures des tests (`test-guardian.sh`, `fortify.sh`) avec un vrai `dotnet test` (VSTest) et coverlet : 38 scénarios (rouge et sa raison, vert deux fois, test instable, test qui ne s'arrête pas, test qui ne compile pas, filtre vide, tests de la preuve scellés puis remis quand le correctif les modifie ou les supprime, perte de couverture, couverture des lignes modifiées, travail mis de côté et rendu par son commit depuis un autre espace de travail), avec dash, bash et busybox sh, et gawk, mawk, BWK et busybox awk.

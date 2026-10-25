@@ -13,13 +13,22 @@
 ## Project overview
 - [2 lines: what this API does, who calls it]
 
-## Dépôts liés (optional: the other repositories of the same application, one line each: name, path when it is not next to this one, role)
-- `[front-factures]` (`[~/repos/front-factures]`) : [le front Angular qui appelle cette API]
+## Dépôts liés (optional: the other repositories of the same application, one line each: name, its role; a path only when it is not next to this one. `/outil liens` writes them from the code, on both sides)
+- `[front-factures]` : [le front Angular qui appelle cette API]
 - `[lib-commun]` : [la librairie NuGet interne des montants, utilisée en version [2.3]]
 
 ## Environnements
-(optional, an API only: where it is deployed, for /tests env and /outil http. One line each: its name, its base URL, then « jeton : `<VARIABLE>` », the variable of the developer's machine (~/.zshenv) that holds its token, never the token itself; « écriture permise » where tests that write may run; « production » for production, where no test of the pack ever runs. Keep the heading exactly « ## Environnements ».)
-- `[recette]` : [https://api-recette.example.com] (jeton : `[API_TOKEN_RECETTE]`, écriture permise)
+(optional, an API only: where it is deployed, for /tests env and /outil http; `/tests env config` writes each block and checks its access. One line each: its name, its base URL, « écriture permise » where tests that write may run, « production » for production, where no test of the pack ever runs; then its settings, one per line: « oidc » (the authority of its OpenID Connect provider) or « token-url », « client » (its client id, or the variable that holds it), « secret » (always a variable), « scope », « audience », « auth-client : basic »; or « jeton : `<VARIABLE>` » on the line for a fixed token; « proxy » (`aucun`, or its URL) and « proxy-identifiants » (a variable: <user>:<password>), « sans-proxy », « certificat » (the PEM file of the internal certificate authorities), « santé » (the path that says the API is up). A secret is never here: only the names of the variables of the developer's machine (~/.zshenv). Keep the heading exactly « ## Environnements ».)
+- `[recette]` : [https://api-recette.example.com] (écriture permise)
+  - oidc : [https://login.example.com/realms/acme]
+  - token-url : [https://login.example.com/realms/acme/protocol/openid-connect/token]
+  - client : [shop-tests]
+  - secret : `[RECETTE_CLIENT_SECRET]`
+  - scope : [api://acme-api/.default]
+  - proxy : [http://proxy.example.com:8080]
+  - proxy-identifiants : `[RECETTE_PROXY_CREDENTIALS]`
+  - certificat : [certs/acme-ca.pem]
+  - santé : [/health]
 - `[preprod]` : [https://api-preprod.example.com] (jeton : `[API_TOKEN_PREPROD]`)
 - `[prod]` : [https://api.example.com] (production)
 
