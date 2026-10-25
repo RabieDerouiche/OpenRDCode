@@ -32,6 +32,7 @@ case "$name" in
   todo) ;;
   stats|statistiques|stat) name=stats ;;
   http|requetes|requêtes|requests) name=http ;;
+  liens|lien|depots|dépôts|depots-lies|dépôts-liés|repos|related|repositories) name=liens ;;
   planifier|planification|planifie|planifications|schedule) name=planifier ;;
   *)
     [ -n "$name" ] && echo "Outil inconnu : $name"
@@ -47,8 +48,9 @@ Outils disponibles (/outil <nom> [arguments]) :
 - abandon : annule un ticket lancé par erreur (branche et fiche supprimées, avec ta validation)
 - todo [texte | fait <n> | suppr <n> | rappels] : ta todo list personnelle, hors Jira
 - stats [<dépôt>...] : ce que /go et /fix ont fait sur tes tickets (étapes, interventions, décisions, arrêts, temps jusqu'à la MR)
-- http [dossier] : les requêtes des endpoints de l'API pour le client HTTP de Rider (un fichier .http par contrôleur, les environnements d'AGENTS.md, tes jetons dans un fichier privé jamais commité)
-- planifier [<heure> <jours> /commande | suppr <n>] : /daily, /outil audit, /outil licences ou /tests env <environnement> lancés tout seuls à heure fixe
+- http [dossier] : les requêtes des endpoints de l'API pour le client HTTP de Rider, pas à pas (un fichier .http par contrôleur, les environnements d'AGENTS.md, le jeton OIDC demandé par Rider lui-même, tes secrets dans un fichier privé jamais commité)
+- liens : les dépôts de la même application (front, API, librairies), pas à pas : leur rôle dans AGENTS.md, des deux côtés, et la lecture de leur code par les agents
+- planifier [<heure> <jours> /commande | suppr <n>] : /daily, /outil audit, /outil licences ou /tests env <environnement> lancés tout seuls à heure fixe ; sans argument, pas à pas
 EOF
     exit 0 ;;
 esac
@@ -58,7 +60,8 @@ if [ "$name" = todo ]; then
   sh "$here/todo.sh" --raw "$rest"
   echo "[[visible]]"
 fi
-if [ "$name" = planifier ]; then
+# planifier with a schedule or « suppr <n> »: done at once, shown to me; without argument, the wizard of its skill
+if [ "$name" = planifier ] && [ -n "$rest" ]; then
   sh "$here/schedule.sh" --raw "$rest"
   echo "[[visible]]"
 fi
@@ -71,6 +74,10 @@ if [ "$name" = stats ]; then
 fi
 echo "Outil : $name"
 echo "Skill : pack-$name"
+# its file, for a skill OpenCode does not know yet (added since it started): where this OpenCode reads its skills
+for f in "${OPENCODE_CONFIG_DIR:+$OPENCODE_CONFIG_DIR/skills/pack-$name/SKILL.md}" "$HOME/oc2/config/opencode/skills/pack-$name/SKILL.md" "$HOME/.config/opencode/skills/pack-$name/SKILL.md"; do
+  [ -n "$f" ] && [ -f "$f" ] && { echo "Fichier du skill : $f"; break; }
+done
 echo "Arguments : ${rest:-aucun}"
 
 # The words of the arguments, for the tools that take positional ones
@@ -145,10 +152,23 @@ case "$name" in
   abandon)
     echo "État git (une récupération, puis l'état de la branche et de sa fiche) :"
     sh "$here/workflow-state.sh" ;;
-  todo|stats|planifier)
+  todo|stats)
     echo "Résultat : déjà affiché au-dessus, tel quel" ;;
+  planifier)
+    if [ -n "$rest" ]; then
+      echo "Résultat : déjà affiché au-dessus, tel quel"
+    else
+      echo "Planifications actuelles (schedule.sh) :"
+      sh "$here/schedule.sh"
+      echo "Environnements (pour /tests env) :"
+      sh "$here/environments.sh" | awk -F '\t' '/^WARNING:/ { next } { print "  - " $1 " " $2 ($5 == "yes" ? " (production : jamais planifiable)" : "") }'
+      echo "Dépôt : $(cd "$(dirname "$(git rev-parse --git-common-dir 2>/dev/null || echo .)")" 2>/dev/null && pwd)"
+    fi ;;
   http)
-    echo "Requêtes écrites (http-files.sh) :"
-    sh "$here/http-files.sh" ${1:+"$1"} ;;
+    echo "Plan des requêtes (http-files.sh --plan : rien n'est encore écrit) :"
+    sh "$here/http-files.sh" --plan ${1:+"$1"} ;;
+  liens)
+    echo "Dépôts de cette machine et ce qui les lie (related-setup.sh scan) :"
+    sh "$here/related-setup.sh" scan ;;
 esac
 exit 0

@@ -224,6 +224,24 @@ case "$1" in
                 done >> "$args"
                 continue
               fi
+              # traits and names together (env-tests.sh <environment> --filter <names>: "(Category=…)&(<names>)"):
+              # xUnit v3 ands filters of different kinds, ors those of one kind
+              cats=$(printf '%s' "$filter" | sed -n 's/^[[:space:]]*(\(Category=[A-Za-z0-9_.-]*\([[:space:]]*|[[:space:]]*Category=[A-Za-z0-9_.-]*\)*\))[[:space:]]*&[[:space:]]*(\(.*\))[[:space:]]*$/\1/p')
+              rest=$(printf '%s' "$filter" | sed -n 's/^[[:space:]]*(\(Category=[A-Za-z0-9_.-]*\([[:space:]]*|[[:space:]]*Category=[A-Za-z0-9_.-]*\)*\))[[:space:]]*&[[:space:]]*(\(.*\))[[:space:]]*$/\3/p')
+              if [ -n "$cats" ] && [ -n "$rest" ]; then
+                names=$(names_of "$rest")
+                if printf '%s\n' "$names" | grep -q '^UNTRANSLATED$'; then
+                  untranslated=$filter
+                else
+                  printf '%s\n' "$cats" | tr '|' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | while IFS= read -r term; do
+                    printf '%s\n%s\n' --filter-trait "$term"
+                  done >> "$args"
+                  printf '%s\n' "$names" | sed -n 's/^~\(.*\)/*\1*/p; s/^=//p' | while IFS= read -r m; do
+                    printf '%s\n%s\n' --filter-method "$m"
+                  done >> "$args"
+                fi
+                continue
+              fi
               names=$(names_of "$filter")
               if printf '%s\n' "$names" | grep -q '^UNTRANSLATED$'; then
                 untranslated=$filter

@@ -756,10 +756,10 @@ cat > "$work/apps/api-factures/.git/opencode-tickets/ABC-123.md" <<'EOF'
 EOF
 cd "$work/apps/front-factures" || exit 1
 run related-repos.sh ABC-123
-check "related-repos: the other repository, next to this one" 0 "^RELATED: api-factures — $work/apps/api-factures \(branch feature/ABC-123-export-csv\): l'API \.NET des factures"
+check "related-repos: the other repository, next to this one" 0 "^RELATED: api-factures — $work/apps/api-factures \(branch feature/ABC-123-export-csv; next to this repository\): l'API \.NET des factures"
 check "related-repos: its branch and its delivery for the ticket" 0 '^  ABC-123 there: branch feature/ABC-123-export-csv, sheet .*ABC-123\.md; 2026-10-21 16:30 — /go - livré - MR https://gitlab\.example\.com/g/api/-/merge_requests/42'
 check "related-repos: its contract" 0 '^    - GET /api/invoices/export\?from=&to= : text/csv'
-check "related-repos: a repository not on this machine says how to give its path" 0 "^RELATED: lib-commun — not found at $HOME/nowhere/lib-commun: give its path"
+check "related-repos: a repository not on this machine says how to find it" 0 "^RELATED: lib-commun — not found at $HOME/nowhere/lib-commun \(path of its line\): /outil liens finds it"
 run related-repos.sh
 check "related-repos: without a key, where they are" 0 '^RELATED: api-factures — ' '^  ABC-123'
 cd "$work/apps/api-factures" || exit 1
@@ -825,6 +825,9 @@ public class EdgeTests { }
 // <!-- fake-test: Edge.Tests.EdgeTests.Unreachable fail System.Net.Http.HttpRequestException : Name or service not known (api-recette.example.com:443) category=Environment -->
 EOF
 git add -A && git commit -q -m tests
+# (the call to the API before the build goes to the network: left out here, environments-test.sh checks it)
+ENV_TESTS_PREFLIGHT=0
+export ENV_TESTS_PREFLIGHT
 run env-tests.sh recette
 check "env-tests: no environment declared, how to declare one" 1 '^STOP: no environment declared in AGENTS\.md\. Add a section « ## Environnements »'
 cat > AGENTS.md <<'EOF'
@@ -838,8 +841,8 @@ cat > AGENTS.md <<'EOF'
 EOF
 git add -A && git commit -q -m env
 run environments.sh
-check "environments: each line, its token variable, writes, production" 0 "^recette	https://api-recette\.example\.com	API_TOKEN_RECETTE	yes	no$"
-check "environments: production, no writes" 0 "^prod	https://api\.example\.com	-	no	yes$"
+check "environments: each line, its token variable, writes, production, its access" 0 "^recette	https://api-recette\.example\.com	API_TOKEN_RECETTE	yes	no	token$"
+check "environments: production, no writes" 0 "^prod	https://api\.example\.com	-	no	yes	none$"
 check "environments: a URL with a password is refused" 0 '^WARNING: leak: a user or a password in its URL' 'secret@'
 run env-tests.sh
 check "env-tests: which environment" 1 '^STOP: which environment\? env-tests\.sh <environment>: recette preprod prod$'
@@ -871,7 +874,7 @@ check "env-tests: the token is never printed" 1 'Bearer \*\*\* ' 's3cr3t-value'
 check "env-tests: an environment out of reach is the machine's problem" 1 '^ENVIRONMENT PROBLEM: recette \(https://api-recette\.example\.com\) cannot be reached from this machine'
 run env-tests.sh recette
 check "env-tests: every project with environment tests" 1 '^PROJECT: tests/Edge\.Tests/Edge\.Tests\.csproj$'
-unset API_TOKEN_RECETTE FAKE_DOTNET_RUNTIMES
+unset API_TOKEN_RECETTE FAKE_DOTNET_RUNTIMES ENV_TESTS_PREFLIGHT
 
 # test-lint: the HTTP calls and the conditional skip of environment tests are their purpose
 cat > tests/Shop.IntegrationTests/HealthEnvironmentTests.cs <<'EOF'

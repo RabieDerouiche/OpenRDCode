@@ -1996,7 +1996,9 @@ await check("[26] only what writes nothing starts without the developer, even a 
   const ok = (command) => scheduleAllowed(scheduleEntries("- #1 08:00 lun " + command + " — /r (ajoutée le 2026-10-24)")[0])
   for (const command of ["/daily", "/outil audit", "/outil licences branche", "/tests env recette"]) assert.equal(ok(command), true, command)
   for (const command of ["/go ABC-1", "/push", "/fix", "/sync", "/fortify", "/outil setup", "/outil abandon", "/tests api", "/tests InvoiceService",
-    "/tests env", "/tests env recette --ecriture", "/tests env recette écriture", "/tests env recette --allow-writes"]) assert.equal(ok(command), false, command)
+    "/tests env", "/tests env recette --ecriture", "/tests env recette écriture", "/tests env recette --allow-writes",
+    // the wizards of /tests env ask questions and write AGENTS.md: never without the developer
+    "/tests env config", "/tests env config recette", "/tests env configurer recette", "/tests env setup", "/tests env Réglages recette"]) assert.equal(ok(command), false, command)
 })
 await check("[26] a schedule due now starts once, in a new session of its repository, whatever the number of instances", async () => {
   let now = new Date()

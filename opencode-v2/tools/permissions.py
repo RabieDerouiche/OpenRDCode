@@ -138,7 +138,14 @@ WRITE_SCRIPTS = ["*ship.sh*", "*branch.sh*", "*ticket-sheet.sh*", "*fortify.sh d
 # after its own checks; no agent of a run ever does it
 # /outil planifier writes the schedules the plugin starts (schedule.sh), /outil http writes the .http files of the API
 # (http-files.sh): the developer's own commands
-CONVERSATION_SCRIPTS = ["*scripts/abandon.sh*", "*scripts/schedule.sh*", "*scripts/http-files.sh*"]
+CONVERSATION_SCRIPTS = ["*scripts/abandon.sh*", "*scripts/schedule.sh*", "*scripts/http-files.sh*",
+                        # /outil liens declares the related repositories: AGENTS.md of this repository and of the other
+                        # one, and the references of opencode.json (what the agents may read): the developer's choice
+                        # in its question, never an agent of a run
+                        "*scripts/related-setup.sh*"]
+# /tests env config writes the access of an environment in AGENTS.md (env-setup.sh, the names of the variables only):
+# the pilot of /tests, once the developer answered its wizard, and the conversation; never the other agents
+CONFIG_SCRIPTS = ["*scripts/env-setup.sh*"]
 # The environment tests that write (env-tests.sh --ecriture, on an environment AGENTS.md allows): the pilot of /tests env
 # when the developer asked for them, and the conversation; the other agents run them read only
 ENV_WRITES = ["*env-tests.sh*criture*", "*env-tests.sh*allow-writes*"]
@@ -206,7 +213,7 @@ def read_only_bash(extra_allows=(), after_secrets=(), package_guard=True):
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + list(extra_allows))
     rules += REDIRECT
     rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS + WRITE_SCRIPTS + CONVERSATION_SCRIPTS + ENV_WRITES
-                  + (PACKAGE_GUARD if package_guard else [])
+                  + CONFIG_SCRIPTS + (PACKAGE_GUARD if package_guard else [])
                   + (FRONT_TEST_DENY if any(p in extra_allows for p in FRONT_TEST) else []))
     rules += allow(after_secrets)
     return rules
@@ -300,7 +307,7 @@ def coder_bash(guardian=False):
     # (the commands of CREDENTIAL_STORES and DECOMPILE are not in the allowlist; their paths are outside the repository)
     # the test-guardian seals its proofs and puts them back; the coder never does; setup, park and unpark are the pilot's
     rules += deny(GIT_READ_GUARD + CODER_OTHER_DENY + CODER_RM_GUARD + SECRETS + WRITE_SCRIPTS + CONVERSATION_SCRIPTS
-                  + ENV_WRITES + ([] if guardian else SEAL_SCRIPTS) + PILOT_SCRIPTS + PACKAGE_GUARD + FRONT_SCRIPT_DENY
+                  + ENV_WRITES + CONFIG_SCRIPTS + ([] if guardian else SEAL_SCRIPTS) + PILOT_SCRIPTS + PACKAGE_GUARD + FRONT_SCRIPT_DENY
                   + ["* /tmp/*", "* /tmp", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*"] + SUBST)
     return rules
 

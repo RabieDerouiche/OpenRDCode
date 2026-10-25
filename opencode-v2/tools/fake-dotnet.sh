@@ -8,6 +8,9 @@
 #   <!-- fake-test: <fully qualified name> pass|fail <message>|hang|flaky -->
 #   <!-- fake-test: <fully qualified name> env <VARIABLE>=<value> <message> -->
 #                                                          (passes when the variable has that value: env-tests.sh)
+#   <!-- fake-test: <fully qualified name> envset <VARIABLE> <message> -->
+#                                                          (passes when the variable is set, whatever its value: a token
+#                                                          asked to a provider)
 #   ... category=<name> in the message: its category (a filter Category=<name> or TestCategory=<name> selects it)
 #   <!-- fake-test: <fully qualified name> requires <file>:<text> <message> -->
 #                                                          (passes when <file> of the repository holds <text>, fails
@@ -154,13 +157,19 @@ selected() {
   done | while IFS='|' read -r n o m; do
     keep=1
     if [ "$mode" = vstest ] && [ -n "$1" ]; then
-      keep=0
-      for term in $(printf '%s' "$1" | tr '|' ' '); do
-        case "$term" in
-          # a category (xUnit trait, NUnit Category, MSTest TestCategory): "category=<name>" in the fake-test line
-          Category=*|TestCategory=*) case " $m " in *" category=${term#*=} "*) keep=1 ;; esac ;;
-          *) v=${term#FullyQualifiedName~}; case "$n" in *"$v"*) keep=1 ;; esac ;;
-        esac
+      # groups joined by & must all match ("(Category=Environment)&(FullyQualifiedName~Orders)"), the terms of a group
+      # joined by | are or'ed
+      keep=1
+      for group in $(printf '%s' "$1" | tr -d '()' | tr '&' ' '); do
+        hit=0
+        for term in $(printf '%s' "$group" | tr '|' ' '); do
+          case "$term" in
+            # a category (xUnit trait, NUnit Category, MSTest TestCategory): "category=<name>" in the fake-test line
+            Category=*|TestCategory=*) case " $m " in *" category=${term#*=} "*) hit=1 ;; esac ;;
+            *) v=${term#FullyQualifiedName~}; case "$n" in *"$v"*) hit=1 ;; esac ;;
+          esac
+        done
+        [ "$hit" -eq 1 ] || keep=0
       done
     elif [ "$mode" = method ] && [ $# -gt 0 ]; then
       keep=0
@@ -201,6 +210,11 @@ outcome() {
   if [ "$2" = env ]; then
     spec=${3%% *} var=${3%%=*}
     [ "$(printenv "$var" 2>/dev/null)" = "${spec#*=}" ] && echo pass || echo fail
+    return
+  fi
+  if [ "$2" = envset ]; then
+    var=${3%% *}
+    [ -n "$(printenv "$var" 2>/dev/null)" ] && echo pass || echo fail
     return
   fi
   # requires <file>:<text>: the test passes when the production code holds the text
@@ -403,7 +417,7 @@ case "$1" in
       while IFS='|' read -r n o m; do
         [ -n "$n" ] || continue
         case "$o" in
-          requires|env) r=$(outcome "$p" "$o" "$m"); m=${m#* }; o=$r ;;
+          requires|env|envset) r=$(outcome "$p" "$o" "$m"); m=${m#* }; o=$r ;;
         esac
         o=$(outcome "$p" "$o")
         [ -n "$trx" ] && printf '    <UnitTestResult executionId="x" testId="y" testName="%s" computerName="fake" duration="00:00:00.0%s" startTime="2026-10-24T10:00:00" endTime="2026-10-24T10:00:01" testType="z" outcome="%s" testListId="w" />\n' \
@@ -466,7 +480,7 @@ EOF
     while IFS='|' read -r n o m; do
       [ -n "$n" ] || continue
       case "$o" in
-        requires|env) r=$(outcome "$p" "$o" "$m"); m=${m#* }; o=$r ;;
+        requires|env|envset) r=$(outcome "$p" "$o" "$m"); m=${m#* }; o=$r ;;
       esac
       o=$(outcome "$p" "$o")
       case "$o" in

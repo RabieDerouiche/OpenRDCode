@@ -1042,13 +1042,19 @@ export function scheduleEntries(text) {
   }
   return entries
 }
+// The wizards of /tests env: they ask questions and write AGENTS.md, never started without the developer
+const SCHEDULE_WIZARDS = /^(?:config|configurer|configuration|setup|ajouter|r[ée]glages|r[ée]gler|param[ée]trer|nouvel|nouveau)$/i
 // What may start without the developer: what writes nothing in git or in Jira (schedule.sh refuses the others; a line
 // edited by hand is checked again here)
 export function scheduleAllowed(entry) {
   const args = entry.args.split(/\s+/).filter(Boolean)
   if (entry.command === "daily") return true
   if (entry.command === "outil") return args[0] === "audit" || args[0] === "licences"
-  if (entry.command === "tests") return args[0] === "env" && args.length >= 2 && !args.some((word) => /^(?:--)?(?:writes|allow-writes|[eé]criture)$/i.test(word))
+  // /tests env <environment>, read only: never its wizards (/tests env config asks questions and writes AGENTS.md)
+  if (entry.command === "tests") {
+    return args[0] === "env" && args.length >= 2 && !SCHEDULE_WIZARDS.test(args[1]) &&
+      !args.some((word) => /^(?:--)?(?:writes|allow-writes|[eé]criture)$/i.test(word))
+  }
   return false
 }
 // The schedules due at this minute of the local time of the machine

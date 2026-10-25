@@ -385,6 +385,28 @@ add(["pilot", "coder", "test-guardian", "analyst", "checker", "debugger", "doc-w
 add(["build"], [S + "schedule.sh --raw \"8h45 lun-ven /daily\"", S + "schedule.sh", S + "http-files.sh",
   S + "env-tests.sh recette --ecriture", S + "environments.sh"], "allow")
 
+// ---------- the wizards: /tests (its facts, the setup of /tests api, the access of an environment), /outil liens,
+// /outil http, /outil planifier ----------
+const ENV_SET = S + "env-setup.sh set recette --url https://api-recette.example.com --oidc https://login.example.com/realms/acme --client-var --scope \"api://acme-api/.default\" --proxy http://proxy.example.com:8080 --proxy-auth --health /health ; " + S + "env-tests.sh --check recette"
+const LIENS = S + "related-setup.sh apply front-factures ~/repos/front-factures \"le front Angular qui appelle cette API\" --reference --reciprocal \"l'API .NET que ce front appelle\" && " + S + "related-setup.sh apply lib-montants ~/repos/lib-montants \"la librairie Acme.Montants que ce dépôt utilise\""
+P(["pilot"], [S + "tests.sh --raw \"api OrdersController\"", S + "api-preflight.sh", S + "api-preflight.sh src/Api/Features/Orders",
+  S + "env-tests.sh --check recette", S + "env-tests.sh --discover recette", ENV_SET,
+  S + "env-setup.sh set prod --url https://api.example.com --production",
+  S + "env-setup.sh set preprod --url https://api-preprod.example.com --token-var --proxy none ; " + S + "env-tests.sh --check preprod",
+  S + "env-tests.sh recette --filter \"FullyQualifiedName~OrdersEnvironmentTests\"",
+  S + "test-guardian.sh setup --integration --db sqlite xunit src/Api/Api.csproj && " + S + "ship.sh --no-push \"test: add the integration test project\"",
+  S + "test-guardian.sh setup --integration --db sqlite xunit src/Api/Api.csproj && " + S + "ship.sh --no-push \"test: add SQLite to the integration test project\""])
+P(["test-guardian"], [S + "env-tests.sh --check recette", S + "api-preflight.sh"])
+P(["build"], [LIENS, S + "related-setup.sh scan", S + "related-setup.sh remove lib-montants --reference",
+  S + "http-files.sh --plan", S + "http-files.sh --only Orders,Customers --replace --client vs src/Api",
+  S + "schedule.sh add 8h45 lun-ven /daily ; " + S + "schedule.sh remove 2", ENV_SET])
+add(["analyst", "checker", "debugger", "doc-writer"], [S + "api-preflight.sh", S + "tests.sh --raw \"env\"", S + "env-tests.sh --check recette"], "allow")
+// what writes AGENTS.md or opencode.json: never an agent of a run but the pilot of /tests for its environments
+add(["coder", "test-guardian", "analyst", "checker", "debugger", "doc-writer"],
+  [ENV_SET, S + "env-setup.sh scan", S + "env-setup.sh remove recette"], "deny")
+add(["pilot", "coder", "test-guardian", "analyst", "checker", "debugger", "doc-writer"],
+  [LIENS, S + "related-setup.sh scan", S + "related-setup.sh apply x ~/repos/x \"r\"", S + "http-files.sh --plan"], "deny")
+
 // /go, /fix, /fortify, /push, /sync, /tests: the pilot
 P(["pilot"], [
   S + "ticket-sheet.sh suivi \"/go - reprise à l'étape 2\"",

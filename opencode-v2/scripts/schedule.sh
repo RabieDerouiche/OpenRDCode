@@ -36,7 +36,9 @@ remove() {
     grep -q "^- #$id " "$file" || { echo "Pas de planification #$id."; return 1; }
   done
   for id in $ids; do
-    grep -v "^- #$id " "$file" > "$file.new" && mv "$file.new" "$file"
+    # (grep -v exits 1 when nothing is left: the file is replaced all the same)
+    grep -v "^- #$id " "$file" > "$file.new"
+    mv "$file.new" "$file"
     echo "Retirée : #$id"
   done
   list
@@ -88,6 +90,10 @@ add() {
         echo "Refusé : /tests env se planifie en lecture seule, jamais avec écriture."; return 1 ;;
       esac
       env=$(printf '%s\n' "$words" | awk '{ print $3 }')
+      case "$(printf '%s' "$env" | tr '[:upper:]' '[:lower:]')" in
+        config|configurer|configuration|setup|ajouter|réglages|reglages|régler|regler|parametrer|paramétrer|nouvel|nouveau)
+          echo "Refusé : /tests env $env est un assistant qui pose des questions et écrit AGENTS.md : il ne part jamais seul. Planifie /tests env <environnement>."; return 1 ;;
+      esac
       line=$(sh "$here/environments.sh" "$env" 2>/dev/null | grep -v '^WARNING:' | head -n 1)
       [ -n "$line" ] || { echo "Refusé : aucun environnement « $env » dans l'AGENTS.md de ce dépôt (section ## Environnements)."; return 1; }
       [ "$(printf '%s' "$line" | cut -f5)" = yes ] && { echo "Refusé : $env est la production, où le pack ne lance jamais de tests."; return 1; } ;;

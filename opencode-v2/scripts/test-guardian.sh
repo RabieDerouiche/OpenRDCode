@@ -32,7 +32,7 @@
 #   park <label>, unpark <label>   (the pilot) takes the sealed test files of a proof out of the working tree until its
 #                                  turn, and brings them back as sealed: the proofs of a wave are written together,
 #                                  their fixes one after the other, each commit with its own tests only
-#   setup [--integration] xunit|mstest|nunit <file.cs or project>...
+#   setup [--integration [--db sqlite]] xunit|mstest|nunit <file.cs or project>...
 #                                  (the pilot, once the developer agreed) creates the unit test project of these files:
 #                                  the dotnet new template of the SDK, coverlet.collector, the versions this machine's
 #                                  NuGet cache already holds (otherwise the template's), the central versions when the
@@ -43,7 +43,10 @@
 #                                  Core API (/tests api), <solution>.IntegrationTests, with Microsoft.AspNetCore.Mvc.Testing
 #                                  of the major version of its target framework (WebApplicationFactory), and, before
 #                                  .NET 10, `public partial class Program { }` at the end of a Program.cs of top-level
-#                                  statements; nothing when a test project has Microsoft.AspNetCore.Mvc.Testing already
+#                                  statements; nothing when a test project has Microsoft.AspNetCore.Mvc.Testing already.
+#                                  --db sqlite (the developer's choice in the wizard of /tests api, for endpoints that
+#                                  use a DbContext directly): Microsoft.EntityFrameworkCore.Sqlite of the EF Core version
+#                                  of the API too, in the new project or in the integration test project already there
 #   changes <base> [<solution, project or folder>]
 #                                  the whole suite once, with coverlet (the BUILD, TESTS and FAILED TESTS lines of
 #                                  build-test.sh), then the lines the branch changed since <base> that no test runs:
@@ -65,7 +68,7 @@
 # Usage: test-guardian.sh deps <file> | coverage <label> <proj> <file>... | compare <a> <b>
 #        | net <label> [--min <pct>] <file>:<method>... | red|green <proj> <filter>
 #        | build <proj> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label>
-#        | setup [--integration] xunit|mstest|nunit <file>... | changes <base> [<target>] | folder
+#        | setup [--integration [--db sqlite]] xunit|mstest|nunit <file>... | changes <base> [<target>] | folder
 
 LC_ALL=C
 export LC_ALL
@@ -218,6 +221,18 @@ cache_version_major() {
   best=$(for d in "$cache/$id"/*; do [ -d "$d" ] && basename "$d"; done | grep -E "^$2\.[0-9]+\.[0-9]+\$" |
     awk -F. '{ printf "%09d%09d%09d %s\n", $1, $2, $3, $0 }' | sort | tail -n 1 | cut -d' ' -f2)
   printf '%s\n' "${best:-$3}"
+}
+
+# The version of EF Core the repository uses (its Microsoft.EntityFrameworkCore packages, versions in the projects or in
+# Directory.Packages.props), so that a provider added for the tests is of the same version; otherwise, the version of
+# the NuGet cache of this machine of the major version of <target framework major>, or <major>.0.0
+ef_version() {
+  v=$(git ls-files -- '*.csproj' 'Directory.Packages.props' 'Directory.Build.props' 2>/dev/null |
+    while IFS= read -r f; do grep -h -o -E '"Microsoft\.EntityFrameworkCore(\.[A-Za-z]+)*"[[:space:]]+Version="[0-9][^"]*"' "$f" 2>/dev/null; done |
+    sed 's/.*Version="\([^"]*\)".*/\1/' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' |
+    awk -F. '{ printf "%09d%09d%09d %s\n", $1, $2, $3, $0 }' | sort | tail -n 1 | cut -d' ' -f2)
+  if [ -n "$v" ]; then printf '%s\n' "$v"; return 0; fi
+  cache_version_major Microsoft.EntityFrameworkCore.Sqlite "${1:-10}" "${1:-10}.0.0"
 }
 
 # Adds <PackageReference Include="id"[ Version="v"] /> to a project, next to its other package references
@@ -857,15 +872,21 @@ case "$1" in
     exit 0 ;;
 
   setup)
-    kind=unit
+    kind=unit db=""
     if [ "$2" = --integration ]; then kind=integration; shift; fi
+    if [ "$2" = --db ]; then
+      [ "$kind" = integration ] || stop "--db goes with --integration (the database of the API tests)"
+      db=$3
+      [ "$db" = sqlite ] || stop "--db sqlite only (an in-memory SQLite database for the DbContext of the API; Testcontainers is the developer's own setup)"
+      shift 2
+    fi
     framework=$2
     case "$framework" in
       xunit|mstest|nunit) ;;
-      *) stop "usage: test-guardian.sh setup [--integration] xunit|mstest|nunit <file.cs or project>..." ;;
+      *) stop "usage: test-guardian.sh setup [--integration [--db sqlite]] xunit|mstest|nunit <file.cs or project>..." ;;
     esac
     shift 2
-    [ $# -ge 1 ] || stop "usage: test-guardian.sh setup [--integration] xunit|mstest|nunit <file.cs or project>..."
+    [ $# -ge 1 ] || stop "usage: test-guardian.sh setup [--integration [--db sqlite]] xunit|mstest|nunit <file.cs or project>..."
     need_dotnet
     [ -z "$(git status --porcelain)" ] || stop "uncommitted changes: setup runs on a clean working tree, so that a failure undoes all it did"
     # the production projects of the files
@@ -887,7 +908,30 @@ case "$1" in
       [ -n "$webs" ] || stop "$(printf '%s\n' "$prods" | tr '\n' ' ')is not an ASP.NET Core project (Sdk=\"Microsoft.NET.Sdk.Web\"): the API tests run one"
       prods=$webs
       done_already=$(test_projects | while IFS= read -r t; do grep -qi 'Microsoft.AspNetCore.Mvc.Testing' "$t" && { printf '%s\n' "$t"; break; }; done)
-      [ -z "$done_already" ] || { echo "SETUP: nothing to do, $done_already has Microsoft.AspNetCore.Mvc.Testing (WebApplicationFactory)"; exit 0; }
+      if [ -n "$done_already" ] && [ "$db" = sqlite ] && ! grep -qi 'Microsoft.EntityFrameworkCore.Sqlite' "$done_already"; then
+        # the integration test project is there: SQLite added to it, of the EF Core version of the API
+        major=$(target_of "$(printf '%s\n' "$webs" | head -n 1)" | sed -n 's/^net\([0-9][0-9]*\)\..*/\1/p')
+        efv=$(ef_version "$major")
+        mkdir -p "$folder" || stop "cannot create $folder"
+        log="$folder/setup.log"
+        take_lock
+        props=$(central_props "$(dirname "$done_already")")
+        if [ -n "$props" ]; then
+          add_package_version "$props" Microsoft.EntityFrameworkCore.Sqlite "$efv"
+          add_package_ref "$done_already" Microsoft.EntityFrameworkCore.Sqlite ""
+        else
+          add_package_ref "$done_already" Microsoft.EntityFrameworkCore.Sqlite "$efv"
+        fi
+        if ! dotnet build "$done_already" -nologo -v q > "$log" 2>&1; then
+          git checkout -q -- . 2>/dev/null
+          environment "$log"
+          grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5
+          stop "the build of $done_already fails with Microsoft.EntityFrameworkCore.Sqlite $efv: nothing changed"
+        fi
+        echo "SETUP: Microsoft.EntityFrameworkCore.Sqlite $efv (the EF Core version of the API) added to $done_already${props:+ (version in $props)}; build OK"
+        exit 0
+      fi
+      [ -z "$done_already" ] || { echo "SETUP: nothing to do, $done_already has Microsoft.AspNetCore.Mvc.Testing (WebApplicationFactory)${db:+ and Microsoft.EntityFrameworkCore.Sqlite}"; exit 0; }
     fi
     mkdir -p "$folder" || stop "cannot create $folder"
     log="$folder/setup.log"
@@ -989,6 +1033,9 @@ EOF
     # net8.0: a later one targets a later .NET only)
     major=$(printf '%s' "$tfm" | sed -n 's/^net\([0-9][0-9]*\)\..*/\1/p')
     [ "$kind" = integration ] && add_package_ref "$csproj" Microsoft.AspNetCore.Mvc.Testing "${major:-10}.0.0"
+    # the in-memory database of the DbContext of the API, of its EF Core version (a provider of another version would
+    # not restore or not run beside it)
+    [ "$db" = sqlite ] && add_package_ref "$csproj" Microsoft.EntityFrameworkCore.Sqlite "$(ef_version "${major:-10}")"
     # the versions this machine already uses, otherwise the template's; the central versions file when there is one
     props=$(central_props "$dir")
     versions=""
@@ -998,6 +1045,7 @@ EOF
       id=${pv%%=*} v=${pv#*=}
       case "$id" in
         Microsoft.AspNetCore.Mvc.Testing) nv=$(cache_version_major "$id" "${major:-10}" "$v") ;;
+        Microsoft.EntityFrameworkCore.Sqlite) nv=$v ;;
         *) nv=$(cache_version "$id" "$v") ;;
       esac
       how=""
@@ -1131,5 +1179,5 @@ EOF
       }'
     exit "$status" ;;
 
-  *) stop "usage: test-guardian.sh deps <file> | coverage <label> <project> <file>... | compare <a> <b> | red|green <project> <filter> | build <project> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label> | setup [--integration] xunit|mstest|nunit <file>... | changes <base> [<target>] | folder" ;;
+  *) stop "usage: test-guardian.sh deps <file> | coverage <label> <project> <file>... | compare <a> <b> | red|green <project> <filter> | build <project> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label> | setup [--integration [--db sqlite]] xunit|mstest|nunit <file>... | changes <base> [<target>] | folder" ;;
 esac
