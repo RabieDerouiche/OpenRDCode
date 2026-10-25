@@ -87,7 +87,7 @@ case "$lower" in
       "")
         echo "Mode : env-launch"
         environments
-        echo "Variables de cette machine (présence seulement) :"
+        echo "Variables de cette machine (présence seulement, vue au démarrage d'OpenCode : chaque commande relit ~/.zshenv, et env-tests.sh dit si l'une manque vraiment) :"
         sh "$here/env-setup.sh" scan | grep -E '^  variables: |^DECLARED: ' | sed 's/^/  /'
         envtests ;;
       *)

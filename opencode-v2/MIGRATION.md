@@ -237,7 +237,7 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère : remplace tout son contenu ;
 - `FAILED open or read` : il n'existe pas encore : crée-le.
 
-La première fois, avec un pack 1.19 à jour, tu dois voir ces 32 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
+La première fois, avec un pack 1.19 à jour, tu dois voir ces 33 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
 ```text
 agents/analyst.md: FAILED
 agents/checker.md: FAILED
@@ -267,6 +267,7 @@ skills/pack-audit/SKILL.md: FAILED
 skills/pack-cqrs/SKILL.md: FAILED
 skills/pack-doc/SKILL.md: FAILED
 skills/pack-http/SKILL.md: FAILED open or read
+skills/pack-liens/SKILL.md: FAILED open or read
 skills/pack-planifier/SKILL.md: FAILED open or read
 skills/pack-release-notes/SKILL.md: FAILED
 skills/pack-setup/SKILL.md: FAILED
@@ -286,9 +287,10 @@ Tu dois voir, pour les agents : `analyst.md checker.md coder.md debugger.md doc-
 ```sh
 cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
 ```
-Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 27 lignes :
+Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 31 lignes :
 ```text
 abandon.sh: FAILED open or read
+api-preflight.sh: FAILED open or read
 api-surface.sh: FAILED open or read
 base.sh: FAILED open or read
 branch.sh: FAILED
@@ -297,6 +299,7 @@ detect-project-type.sh: FAILED
 diff-guard.sh: FAILED
 dotnet-problem.sh: FAILED open or read
 dotnet-targets.sh: FAILED open or read
+env-setup.sh: FAILED open or read
 env-tests.sh: FAILED open or read
 environments.sh: FAILED open or read
 fetch.sh: FAILED
@@ -307,12 +310,14 @@ http-files.sh: FAILED open or read
 outil.sh: FAILED
 package-refs.sh: FAILED
 related-repos.sh: FAILED open or read
+related-setup.sh: FAILED open or read
 review-target.sh: FAILED
 schedule.sh: FAILED open or read
 ship.sh: FAILED
 test-guardian.sh: FAILED open or read
 test-lint.sh: FAILED open or read
 test-platform.sh: FAILED open or read
+tests.sh: FAILED open or read
 todo.sh: FAILED
 workflow-state.sh: FAILED
 ```
@@ -969,7 +974,7 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère. Par exemple, `agents/pilot.md: FAILED` veut dire : remplace tout le contenu de `~/.config/opencode/agents/pilot.md` par celui de `opencode-v2/agents/pilot.md` ;
 - `FAILED open or read` : il n'existe pas encore, crée-le.
 
-Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 15 lignes :
+Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 16 lignes :
 ```text
 skills/api-tests/SKILL.md: FAILED open or read
 skills/best-practices/SKILL.md: FAILED
@@ -982,6 +987,7 @@ skills/pack-audit/SKILL.md: FAILED
 skills/pack-cqrs/SKILL.md: FAILED
 skills/pack-doc/SKILL.md: FAILED
 skills/pack-http/SKILL.md: FAILED open or read
+skills/pack-liens/SKILL.md: FAILED open or read
 skills/pack-planifier/SKILL.md: FAILED open or read
 skills/pack-release-notes/SKILL.md: FAILED
 skills/pack-setup/SKILL.md: FAILED

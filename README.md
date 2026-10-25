@@ -1,5 +1,7 @@
 # Pack OpenCode — dev senior .NET
 
+> **Pour OpenCode v2 : [`opencode-v2/`](opencode-v2/README.md)** (le pack v2 et ses ajouts : `/fortify`, `/tests` et ses assistants pas à pas, des environnements derrière un fournisseur OpenID Connect et un proxy, la carte du pack ; le passage depuis la 1.19 : [`opencode-v2/MIGRATION.md`](opencode-v2/MIGRATION.md)).
+>
 > **v2 disponible dans [`v2/`](v2/README.md)** : un ticket entre, une MR sort (`/go`, `/fix`), avec deux interventions du dev au lieu d'une douzaine. Ce fichier décrit la v1, conservée telle quelle. La v1 garde deux trous corrigés en v2 (une réponse « Toujours » à une demande d'autorisation vaut pour tous les agents jusqu'au redémarrage d'OpenCode ; un `grep` sur `~` peut afficher `~/.zshenv`) : préfère la v2, et en v1 ne réponds jamais « Toujours ».
 
 Agents, commandes et skills pour OpenCode (1.19, interface web) avec Qwen. Ils couvrent les API .NET 10 (CQRS ou non, ABP), Blazor, le legacy .NET Framework, les librairies et le front, avec GitLab, Jira, Confluence, SonarQube, Fortify SSC et Artifactory.
