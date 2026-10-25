@@ -730,7 +730,8 @@ TOKEN_URL=https://idp.lab.test:8443/realms/acme/protocol/openid-connect/token
 commit
 run env-tests.sh --check recette
 check "env-tests --check: how recette is reached" 0 "^ENVIRONMENT: recette https://api\\.lab\\.test:8443 \\(tests that write: allowed\\) — token: OpenID Connect \\(client credentials\\); proxy http://127\\.0\\.0\\.1:$pport \\(credentials from RECETTE_PROXY_CREDENTIALS\\), certificate certs/lab-ca\\.pem$" "$SECRETS"
-check "env-tests --check: a token of Keycloak through the proxy, its claims" 0 '^CHECK: token OK: expires in 300 s; issuer https://idp\.lab\.test:8443/realms/acme; audience [^;]*shop-api[^;]*; client shop-tests; scopes [^;]*profile' "$SECRETS"
+# Keycloak gives expires_in from the clock of its answer: 300 s for this realm, 299 s when a second turns meanwhile
+check "env-tests --check: a token of Keycloak through the proxy, its claims" 0 '^CHECK: token OK: expires in (299|300) s; issuer https://idp\.lab\.test:8443/realms/acme; audience [^;]*shop-api[^;]*; client shop-tests; scopes [^;]*profile' "$SECRETS"
 check "env-tests --check: the API through the proxy, its certificate trusted" 0 '^CHECK: API https://api\.lab\.test:8443/health answers 200 without a token$'
 check "env-tests --check: the token accepted by the API (JwtBearer: signature, issuer, audience)" 0 '^CHECK: API GET /api/orders answers 200 with the token \(401 without\)$'
 check "env-tests --check: OK" 0 '^CHECK: OK$' "$SECRETS"
@@ -739,7 +740,7 @@ check "env-tests --check: OK" 0 '^CHECK: OK$' "$SECRETS"
 tp=tests/Shop.IntegrationTests/Shop.IntegrationTests.csproj
 kind=$(sh "$scripts/test-platform.sh" kind "$tp" 2>/dev/null)
 run env-tests.sh recette
-check "env-tests: the token before the build" 0 '^TOKEN: OK from the provider of recette \(expires in 300 s\)$' "$SECRETS"
+check "env-tests: the token before the build" 0 '^TOKEN: OK from the provider of recette \(expires in (299|300) s\)$' "$SECRETS"
 case "$kind" in
   vstest*)
     check "env-tests: the environment tests, one line each, read only" 0 '^  OK  HealthEnvironmentTests\.Get_Orders_ReturnsAJsonArray \([0-9.]+ s\)$' "$SECRETS|^  (FAILED|SKIPPED)  |OrdersWritesEnvironmentTests"
