@@ -790,7 +790,7 @@ Ce qui change sans erreur de compilation (le skill le donne au coder, les tests 
 
 Pour poser le filet d'une page à la main, sans rien changer : `/tests Components/Pages/Orders.razor` (avec la question « Composants » quand bUnit manque).
 
-**Prouvé pour de vrai à chaque push** (`tools/blazor-native-test.sh`, dans la CI, avec .NET 10 et .NET 8) : une page des commandes sur le DataGrid de Blazorise 2.2.2, le projet de tests créé avec bUnit par `setup --components`, quatre tests de ce que voient ses utilisateurs écrits sur Blazorise (verts deux fois, scellés), la même page réécrite avec QuickGrid et le pager français du skill : les quatre tests passent sans une ligne changée, rien n'est perdu, puis Blazorise retiré entièrement ; 43 contrôles par version de .NET, avec le code du skill tel qu'il est écrit.
+**Prouvé pour de vrai à chaque push** (`tools/blazor-native-test.sh`, dans la CI, avec .NET 10 et .NET 8) : une page des commandes sur le DataGrid de Blazorise 2.2.2, le projet de tests créé avec bUnit par `setup --components`, quatre tests de ce que voient ses utilisateurs écrits sur Blazorise (verts deux fois, scellés), la même page réécrite avec QuickGrid et le pager français du skill : les quatre tests passent sans une ligne changée, rien n'est perdu, puis Blazorise retiré entièrement ; 43 contrôles en tout (21 par version de .NET, et les 8 blocs de code du skill), avec le code du skill tel qu'il est écrit.
 
 ## Versions de .NET, environnement et librairies
 
