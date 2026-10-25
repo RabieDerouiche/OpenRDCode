@@ -62,6 +62,7 @@ run() {
   : > "$FAKE_DOTNET_LOG"
   out=$("$SHELL_UNDER_TEST" "$scripts/$script" "$@" 2>&1)
   status=$?
+  # shellcheck disable=SC2034 # read in the eval of truth
   calls=$(cat "$FAKE_DOTNET_LOG")
 }
 truth() {
