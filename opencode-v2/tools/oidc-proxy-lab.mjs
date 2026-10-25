@@ -8,13 +8,15 @@
 //   API       GET /health (anonymous), GET /api/orders (a token of its audience), GET /api/admin (role admin, else 403),
 //             401 with WWW-Authenticate: Bearer error="invalid_token", error_description=… as ASP.NET Core says it
 //   proxy     CONNECT (https) and absolute URLs (http), Basic credentials when asked (407 otherwise), 403 for the
-//             hosts it refuses; it alone resolves the lab's host names (*.lab.test): a client that does not go through
+//             hosts it refuses, 502 for a host it does not know (503 for dnsfail.lab.test, as squid answers a failed
+//             lookup); it alone resolves the lab's host names (*.lab.test): a client that does not go through
 //             it cannot even resolve them. Each request it forwards is written to its log.
 // Usage: node tools/oidc-proxy-lab.mjs <state folder> [--proxy-user <user:password>] [--tls <cert.pem> <key.pem>]
 //   writes <state folder>/lab.json (ports, names, clients) once everything listens, and runs until it is killed.
 //   Clients (realm "test", audience "acme-api"): tests-recette / s3cr3t-recette (service account, roles orders.read),
 //   tests-admin / s3cr3t-admin (roles orders.read, admin), no-sa / s3cr3t-nosa (no service account), tests-other /
-//   s3cr3t-other (its tokens are for the audience other-api: the API refuses them). GET /down answers 503. Scopes known:
+//   s3cr3t-other (its tokens are for the audience other-api: the API refuses them), legacy / s3cr3t-legacy (a wrong
+//   secret answered unauthorized_client, as older Keycloak versions did). GET /down answers 503. Scopes known:
 //   openid, profile, email, api://acme-api/.default. Access tokens live 300 s (Keycloak's default).
 import { createServer as http } from "node:http"
 import { createServer as https } from "node:https"
@@ -48,6 +50,8 @@ const CLIENTS = {
   "no-sa": { secret: "s3cr3t-nosa", serviceAccount: false, roles: [] },
   // a client whose tokens are for another API (the API refuses them: its audience)
   "tests-other": { secret: "s3cr3t-other", serviceAccount: true, roles: ["orders.read"], audience: "other-api" },
+  // a provider that answers a wrong secret as older Keycloak versions did (unauthorized_client, "Invalid client secret")
+  legacy: { secret: "s3cr3t-legacy", serviceAccount: true, roles: ["orders.read"], legacyErrors: true },
 }
 const SCOPES = new Set(["openid", "profile", "email", "api://acme-api/.default"])
 const AUDIENCE = "acme-api"
@@ -107,6 +111,7 @@ const provider = (base) => async (req, res) => {
     }
     if (form.get("grant_type") !== "client_credentials") return json(res, 400, { error: "unsupported_grant_type" })
     const client = CLIENTS[id]
+    if (client && client.legacyErrors && client.secret !== secret) return json(res, 400, { error: "unauthorized_client", error_description: "Invalid client secret" })
     if (!client || client.secret !== secret) return json(res, 401, { error: "invalid_client", error_description: "Invalid client or Invalid client credentials" })
     if (!client.serviceAccount) return json(res, 400, { error: "unauthorized_client", error_description: "Client not enabled to retrieve service account" })
     const scope = form.get("scope") || ""
@@ -157,6 +162,8 @@ if (tls) {
 
 // ---------- the proxy ----------
 const REFUSED = new Set(["blocked.lab.test"])
+// a name whose lookup fails at the proxy: squid answers 503 (ERR_DNS_FAIL) where other proxies answer 502
+const DNS_FAIL = new Set(["dnsfail.lab.test"])
 function authorized(req) {
   if (!proxyUser) return true
   const m = /^Basic\s+(.+)$/.exec(req.headers["proxy-authorization"] || "")
@@ -217,6 +224,11 @@ proxy.on("connect", (req, socket, head) => {
   if (REFUSED.has(host)) {
     log(`403 CONNECT ${host}`)
     socket.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+    return
+  }
+  if (DNS_FAIL.has(host)) {
+    log(`503 CONNECT ${host}`)
+    socket.end("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
     return
   }
   const to = target(host)

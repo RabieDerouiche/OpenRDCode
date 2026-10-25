@@ -1,10 +1,12 @@
 # Checks of the OpenCode v2 pack (opencode-v2/) on every push that changes it, and on demand (Actions tab, "Run
-# workflow"). Three jobs: every suite of the pack (no .NET SDK, no registry needed); the stories of the pack with the
+# workflow"). Four jobs: every suite of the pack (no .NET SDK, no registry needed); the stories of the pack with the
 # real .NET SDKs 10 and 8 (real builds, real xUnit and MSTest tests, real coverage, the real messages of the host, of
 # the test host and of package validation): the flow of /fortify and of its test-guardian, the developer's days, the
-# environment problems; and the front-end with the real tools (Jest, Vitest, Angular with Vitest and with Karma in
-# ChromeHeadless, from the npm registry). A failed check becomes an annotation of the run; the logs are kept as an
-# artifact of the run.
+# environment problems; the environments for real (Keycloak, a squid proxy with credentials, an internal certificate
+# authority, SQL Server and an ASP.NET Core API deployed behind the proxy, in Docker: /tests api, /tests env and
+# /outil http with the real SDKs); and the front-end with the real tools (Jest, Vitest, Angular with Vitest and with
+# Karma in ChromeHeadless, from the npm registry). A failed check becomes an annotation of the run; the logs are kept as
+# an artifact of the run.
 name: opencode-v2
 
 on:
@@ -75,6 +77,7 @@ jobs:
             suite "scenarios-test $s" "scenarios-$s" sh tools/scenarios-test.sh "$s"
             suite "fortify-test $s" "fortify-$s" sh tools/fortify-test.sh "$s"
             suite "frontend-test $s" "frontend-$s" sh tools/frontend-test.sh "$s"
+            suite "environments-test $s" "environments-$s" sh tools/environments-test.sh "$s"
           done
           echo "::notice title=Suites du pack::$(awk '{ gsub(/%/, "%25"); printf "%s%s", (NR > 1 ? "%0A" : ""), $0 }' "$results")"
           exit "$failed"
@@ -126,6 +129,47 @@ jobs:
         if: always()
         with:
           name: logs-real-dotnet
+          path: ${{ runner.temp }}/logs/
+
+  real-oidc:
+    name: Environnements réels (Keycloak, squid, .NET 10 et 8)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: opencode-v2
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: oidc-real-test
+        run: |
+          logs="$RUNNER_TEMP/logs"
+          mkdir -p "$logs/lab"
+          { dotnet --list-sdks; docker version; } > "$logs/tools.log" 2>&1
+          log="$logs/oidc-real.log"
+          failed=0
+          OIDC_LAB_LOGS="$logs/lab" sh tools/oidc-real-test.sh dash > "$log" 2>&1 || failed=1
+          awk -v t="oidc-real-test" '
+            function flush() { if (msg != "") { print "::error title=" t "::" msg; msg = ""; n = 0 } }
+            { gsub(/%/, "%25"); gsub(/\r/, "") }
+            /^NOTE: / { notes = notes (notes == "" ? "" : "%0A") substr($0, 7); flush(); next }
+            /^FAIL/ { flush(); msg = $0; next }
+            /^    / && msg != "" && n < 40 { msg = msg "%0A" $0; n++; next }
+            { flush() }
+            END { flush(); if (notes != "") print "::notice title=" t " (laboratoire)::" notes }' "$log"
+          echo "::notice title=oidc-real-test::$(tail -n 1 "$log")"
+          exit "$failed"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: logs-real-oidc
           path: ${{ runner.temp }}/logs/
 
   real-frontend:

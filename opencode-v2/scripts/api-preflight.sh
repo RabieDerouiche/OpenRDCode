@@ -84,7 +84,7 @@ grep_cs 'Add(JwtBearer|MicrosoftIdentityWebApi(Authentication)?|OpenIdConnect|Ne
     echo "AUTHENTICATION: $what ($f)"
   done
 grep_cs 'AuthenticationSchemes[[:space:]]*=[[:space:]]*"[^"]+"' | head -n 4 | while IFS= read -r l; do
-  echo "AUTHENTICATION: scheme $(printf '%s' "$l" | grep -o -E 'AuthenticationSchemes[[:space:]]*=[[:space:]]*"[^"]+"' | head -n 1 | sed 's/.*"\([^"]*\)"/\1/') named by an endpoint ($(printf '%s' "$l" | cut -d: -f1,2)): the test handler is registered under it too"
+  echo "AUTHENTICATION: scheme $(printf '%s' "$l" | grep -o -E 'AuthenticationSchemes[[:space:]]*=[[:space:]]*"[^"]+"' | head -n 1 | sed 's/.*"\([^"]*\)"/\1/') named by an endpoint ($(printf '%s' "$l" | cut -d: -f1,2)): the factory gives its handler to the test one (never a second AddScheme under its name)"
 done
 grep_cs 'AddPolicy\("[^"]+"' | head -n 6 | while IFS= read -r l; do
   echo "AUTHENTICATION: policy $(printf '%s' "$l" | grep -o -E 'AddPolicy\("[^"]+"' | head -n 1 | sed 's/AddPolicy("//; s/"$//') ($(printf '%s' "$l" | cut -d: -f1,2))"

@@ -308,7 +308,7 @@ cut -f2 "$tmp/dirs" | sort -u | while IFS= read -r pdir; do
     b=$(cut -f2 "$file.count")
     rm -f "$file.count"
     if [ "${count:-0}" -gt 0 ]; then mv "$file.new" "$file"; else rm -f "$file.new"; continue; fi
-    echo "HTTP: $file ($count requests${b:+, $b with a body to fill in})" | sed 's/, 0 with a body to fill in//; s/, with a body to fill in//'
+    echo "HTTP: $file ($count request$([ "$count" -gt 1 ] && echo s)${b:+, $b with a body to fill in})" | sed 's/, 0 with a body to fill in//; s/, with a body to fill in//'
   done
 done
 cat "$tmp/notes"

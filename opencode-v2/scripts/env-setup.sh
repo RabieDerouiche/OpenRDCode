@@ -346,7 +346,8 @@ if [ "$oidc" -eq 1 ] && [ -z "$tokenurl" ] && [ "$production" -eq 0 ]; then
     awk -v ep="$found" '{ print } /^  - oidc : / && !added { print "  - token-url : " ep; added = 1 }' "$tmp/block" > "$tmp/block2" && mv "$tmp/block2" "$tmp/block"
     write_block "$tmp/block"
   else
-    why=$(printf '%s\n' "$d" | grep -E '^(ENVIRONMENT PROBLEM|STOP):' | head -n 1)
+    # the reason, without what the line tells an agent to do (the wizard says what comes next)
+    why=$(printf '%s\n' "$d" | grep -E '^(ENVIRONMENT PROBLEM|STOP):' | head -n 1 | sed 's/^[A-Z ]*: //; s/ Stop and tell the user.*//; s/\.$//')
   fi
 fi
 echo "WRITTEN: $agents « ## Environnements » — $name ($before$([ "$created" -eq 1 ] && echo ", AGENTS.md created: /outil setup completes it"))"

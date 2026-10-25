@@ -294,6 +294,12 @@ cat > "$work/more-envs" <<EOF
   - secret : \`RECETTE_CLIENT_SECRET\`
   - proxy : $P
   - proxy-identifiants : \`RECETTE_PROXY_CREDENTIALS\`
+- \`legacy\` : http://api.lab.test
+  - oidc : http://idp.lab.test/realms/test
+  - client : legacy
+  - secret : \`BAD_SECRET\`
+  - proxy : $P
+  - proxy-identifiants : \`RECETTE_PROXY_CREDENTIALS\`
 - \`direct\` : http://api.lab.test
   - oidc : http://idp.lab.test/realms/test
   - client : tests-recette
@@ -307,6 +313,9 @@ cat > "$work/more-envs" <<EOF
   - proxy : $P
   - proxy-identifiants : \`RECETTE_PROXY_CREDENTIALS\`
 - \`unknownhost\` : https://nowhere.lab.test
+  - proxy : $P
+  - proxy-identifiants : \`RECETTE_PROXY_CREDENTIALS\`
+- \`dnsfail\` : https://dnsfail.lab.test
   - proxy : $P
   - proxy-identifiants : \`RECETTE_PROXY_CREDENTIALS\`
 - \`deadproxy\` : https://apis.lab.test
@@ -333,11 +342,13 @@ cat > "$work/more-envs" <<EOF
   - santé : /down
 EOF
 add_envs "$work/more-envs"
-truth "the environments of these tests are in the section" '[ "$(sh "$scripts/environments.sh" | grep -c -v "^WARNING:")" -ge 18 ]'
+truth "the environments of these tests are in the section" '[ "$(sh "$scripts/environments.sh" | grep -c -v "^WARNING:")" -ge 20 ]'
 BAD_SECRET=wrong-secret-value NOSA_SECRET=s3cr3t-nosa ADMIN_SECRET=s3cr3t-admin OTHER_SECRET=s3cr3t-other
 export BAD_SECRET NOSA_SECRET ADMIN_SECRET OTHER_SECRET
 run env-tests.sh --check badsecret
 check "env-tests --check: a wrong secret (invalid_client)" 1 '^ENVIRONMENT PROBLEM: the provider of badsecret refuses the client \(401 invalid_client' "$SECRETS|wrong-secret"
+run env-tests.sh --check legacy
+check "env-tests --check: a wrong secret answered unauthorized_client (older Keycloak): still a wrong client or secret" 1 '^ENVIRONMENT PROBLEM: the provider of legacy refuses the client \(400 unauthorized_client: Invalid client secret\): the client id or the secret \(BAD_SECRET\) is wrong' "$SECRETS|wrong-secret"
 run env-tests.sh --check noproxyauth
 check "env-tests --check: a proxy that wants credentials (407)" 1 '^ENVIRONMENT PROBLEM: the proxy refuses the connection to the OpenID Connect provider of noproxyauth .*407 Proxy Authentication Required'
 run env-tests.sh --check badscope
@@ -359,6 +370,8 @@ run env-tests.sh --check blocked
 check "env-tests --check: a host the proxy forbids (403 on CONNECT)" 1 '^ENVIRONMENT PROBLEM: the proxy forbids blocked \(https://blocked\.lab\.test\) \(403 on CONNECT\)'
 run env-tests.sh --check unknownhost
 check "env-tests --check: a host the proxy cannot reach (502)" 1 '^ENVIRONMENT PROBLEM: the proxy cannot reach unknownhost \(https://nowhere\.lab\.test\) \(502 on CONNECT'
+run env-tests.sh --check dnsfail
+check "env-tests --check: a name the proxy cannot resolve (503, as squid answers)" 1 '^ENVIRONMENT PROBLEM: the proxy cannot reach dnsfail \(https://dnsfail\.lab\.test\) \(503 on CONNECT'
 run env-tests.sh --check deadproxy
 check "env-tests --check: a proxy that does not answer" 1 '^ENVIRONMENT PROBLEM: the proxy of deadproxy refuses the connection or does not answer'
 run env-tests.sh --check tls

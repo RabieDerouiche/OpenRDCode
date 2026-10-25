@@ -18,7 +18,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 
-// The API in memory: its ports replaced by the fakes of the tests, authentication by the test scheme
+// The API in memory: its ports replaced by the fakes of the tests, every authentication scheme by the test handler
 public sealed class ApiFactory : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -26,8 +26,14 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Testing");
         builder.ConfigureTestServices(services =>
         {
-            services.AddAuthentication(TestAuthHandler.Scheme)
-                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.Scheme, _ => { });
+            // the test scheme by default, and the handler of each scheme of the API (Bearer, ...) replaced by the test one
+            services.AddAuthentication(TestAuthHandler.SchemeName)
+                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+            services.Configure<AuthenticationOptions>(options =>
+            {
+                foreach (var scheme in options.SchemeMap.Values)
+                    scheme.HandlerType = typeof(TestAuthHandler);
+            });
             // each port the endpoints use: services.RemoveAll<IOrderRepository>(); services.AddSingleton<IOrderRepository>(Orders);
         });
     }
@@ -43,7 +49,7 @@ using Microsoft.Extensions.Options;
 // A user only when the test sends X-Test-User (and its roles in X-Test-Roles): without it, the API answers 401
 public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    public const string Scheme = "Test";
+    public const string SchemeName = "Test";
     public const string UserHeader = "X-Test-User";
     public const string RolesHeader = "X-Test-Roles";
 
@@ -59,45 +65,28 @@ public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationScheme
         var claims = new List<Claim> { new(ClaimTypes.Name, user.ToString()) };
         foreach (var role in Request.Headers[RolesHeader].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries))
             claims.Add(new Claim(ClaimTypes.Role, role.Trim()));
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, Scheme));
-        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme)));
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, Scheme.Name));
+        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name)));
     }
 }
 ```
 - The tests of an endpoint: one class per controller or group (`OrdersEndpointsTests`), `IClassFixture<ApiFactory>`, `factory.CreateClient()`; a scenario per test, named `<Verb>_<Route>_<Condition>_<Expected>` (`Get_OrderById_Unknown_Returns404`).
 - Each test: the data of the scenario put in the fakes, the request (with `X-Test-User`, and `X-Test-Roles` when a role matters), then the status, then what the response says: the body read back as its DTO with its values (`ReadFromJsonAsync<OrderDto>()`), `Location` for a 201, the validation errors of a 400 (`ValidationProblemDetails.Errors` has the field), and what the fakes received (the order saved, with its values). Never only the status of a 2xx.
 - The usual scenarios: the nominal one; 400 for each validation rule; 401 without user; 403 with a user that lacks the role or the policy; 404 for an unknown id; 409 when the code answers it. The scenarios the developer validated, no others.
-- An endpoint that a policy ties to its own scheme (`[Authorize(AuthenticationSchemes = "Bearer")]`, `AddJwtBearer`, `AddMicrosoftIdentityWebApi`): register the test handler under that scheme name too (`.AddScheme<…, TestAuthHandler>("Bearer", _ => { })`), so that the real handler never runs in a test.
+- Every scheme of the API (`AddJwtBearer`, `AddMicrosoftIdentityWebApi`, an endpoint with `AuthenticationSchemes = "Bearer"`) is answered by the test handler: the factory replaces the handler of each scheme, never a second `AddScheme` under its name (« Scheme already exists » at start), so that the real handler never runs in a test.
+- A policy on a claim of the token (`RequireClaim("scope", "orders.read")`): the test handler adds that claim from a header of the test (`X-Test-Scopes`), as it does the roles.
 - Before .NET 10, `WebApplicationFactory<Program>` needs `public partial class Program { }` (test-guardian.sh setup --integration adds it); .NET 10 makes it public itself.
 - The proof: `test-guardian.sh green <test project> <filter>`, twice, like any test.
 
 ### What stops the API from starting in a test (`api-preflight.sh` lists it), handled in the test code only
-A setting that Program.cs reads before `Build()` (a connection string, a section validated at start, `?? throw`): give it a value with `UseSetting` (the code of Program.cs sees it, `ConfigureAppConfiguration` comes too late with minimal hosting). A worker (`AddHostedService<T>`) that would connect to a broker or loop: removed by its implementation type (never every `IHostedService`: the server of the API is one of them).
-```csharp
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+The one factory of the test project takes what the pre-flight lines name, and nothing else:
+- a setting that Program.cs reads before `Build()` (SETTING AT START: a connection string, a section validated at start, `?? throw`): a value given with `UseSetting` (the code of Program.cs sees it; `ConfigureAppConfiguration` comes too late with minimal hosting);
+- a worker (WORKER: `AddHostedService<T>`, the consumer of a broker, a loop on the database): removed by its implementation type (never every `IHostedService`: the server of the API is one of them);
+- a DbContext that the endpoints use directly (DBCONTEXT, no port to fake), with the developer's choice « SQLite en mémoire »: `test-guardian.sh setup --integration --db sqlite` has added `Microsoft.EntityFrameworkCore.Sqlite` (the EF Core version of the API) to the test project; the context gets an in-memory SQLite database, kept open as long as the factory, its schema created from the model (and its `HasData`).
 
-// The settings the API reads at start, with values for the tests; its workers out of the tests
-public sealed class StartupSettingsApiFactory : WebApplicationFactory<Program>
-{
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        builder.UseEnvironment("Testing");
-        builder.UseSetting("ConnectionStrings:Default", "DataSource=:memory:");
-        builder.UseSetting("Payments:BaseUrl", "http://payments.invalid");
-        builder.ConfigureTestServices(services =>
-        {
-            foreach (var worker in services.Where(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(OutboxWorker)).ToList())
-                services.Remove(worker);
-        });
-    }
-}
-```
-A DbContext that the endpoints use directly (no port to fake): with the developer's choice « SQLite en mémoire », `test-guardian.sh setup --integration --db sqlite` has added `Microsoft.EntityFrameworkCore.Sqlite` (the EF Core version of the API) to the test project; the factory gives the context an in-memory SQLite database, kept open as long as the factory, its schema created from the model:
+The factory of an API that has the three (it replaces the first `ApiFactory`, under the same name):
 ```csharp
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -107,16 +96,28 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-// The DbContext of the API on an in-memory SQLite database, one per factory: its schema from the model
-public sealed class SqliteApiFactory : WebApplicationFactory<Program>
+// The API in memory: the settings it reads at start, its worker out, its DbContext on an in-memory SQLite database
+// (one per factory, its schema from the model), authentication by the test scheme
+public sealed class ApiFactory : WebApplicationFactory<Program>
 {
     private readonly SqliteConnection connection = new("DataSource=:memory:");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.UseSetting("ConnectionStrings:Default", "Server=unused-by-the-tests");
+        builder.UseSetting("Payments:BaseUrl", "http://payments.invalid");
         builder.ConfigureTestServices(services =>
         {
+            services.AddAuthentication(TestAuthHandler.SchemeName)
+                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+            services.Configure<AuthenticationOptions>(options =>
+            {
+                foreach (var scheme in options.SchemeMap.Values)
+                    scheme.HandlerType = typeof(TestAuthHandler);
+            });
+            foreach (var worker in services.Where(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(OutboxWorker)).ToList())
+                services.Remove(worker);
             // the provider of the API out (EF Core 9 and later also keep how AddDbContext configured it), SQLite in
             services.RemoveAll<DbContextOptions<ShopDbContext>>();
             foreach (var configuration in services.Where(d => d.ServiceType.IsGenericType
@@ -144,6 +145,7 @@ public sealed class SqliteApiFactory : WebApplicationFactory<Program>
     }
 }
 ```
+- Its names come from the pre-flight lines: the keys of SETTING AT START (a value that lets the code start, never a real address or secret), the type of each WORKER, the DbContext of DBCONTEXT. A part the API does not need is left out.
 - The data of a scenario goes in the context before the request (`using var scope = factory.Services.CreateScope();` then `Add`, `SaveChanges`), and what the endpoint wrote is read back from it after.
 - SQLite is not SQL Server: an endpoint whose query SQLite cannot run (raw SQL, a function of SQL Server, a schema, a sequence) is « BLOQUÉ : requête propre à <provider> » for that scenario, the others go on. Testcontainers (a real database in Docker) is the developer's decision, never taken here.
 - A configuration provider that calls a remote system at start (Azure Key Vault, Azure App Configuration, AWS Secrets Manager) and that Program.cs does not skip for the environment `Testing`: no setting of the test code can stop it: the scenarios are « BLOQUÉ : <provider> appelé au démarrage », with the one-line change of Program.cs that would let them run (proposed, never made: `/go sans ticket` makes it).

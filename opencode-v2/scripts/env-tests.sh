@@ -118,10 +118,15 @@ hide() {
   [ "${#1}" -ge 4 ] || return 0
   printf '%s\n' "$1" >> "$masks"
 }
+# (and the user and password of any URL, in whatever encoding a program prints them: .NET names its proxy with them)
 mask() {
   awk -v file="$masks" '
     BEGIN { while ((getline line < file) > 0) if (line != "") t[++n] = line; close(file) }
-    { for (k = 1; k <= n; k++) while ((i = index($0, t[k])) > 0) $0 = substr($0, 1, i - 1) "***" substr($0, i + length(t[k])); print }' "$@"
+    {
+      for (k = 1; k <= n; k++) while ((i = index($0, t[k])) > 0) $0 = substr($0, 1, i - 1) "***" substr($0, i + length(t[k]))
+      gsub(/:\/\/[^\/@ \t"]+@/, "://***@")
+      print
+    }' "$@"
 }
 # the value of a variable of this machine (printenv: never through the shell of an agent)
 var() { printenv "$1" 2>/dev/null; }
@@ -273,7 +278,7 @@ unreachable() {
     407) echo "ENVIRONMENT PROBLEM: the proxy refuses the connection to $what ($where) without credentials, or with these (407 Proxy Authentication Required): $proxyshown. Stop and tell the user in one line: proxy-identifiants of $name (/tests env config $name), or the variable that holds them."; return 0 ;;
     403) echo "ENVIRONMENT PROBLEM: the proxy forbids $what ($where) (403 on CONNECT): $proxyshown. Stop and tell the user in one line: the proxy does not let this machine reach it, or « sans-proxy » should name this host."; return 0 ;;
     000|200) ;;
-    502|504) echo "ENVIRONMENT PROBLEM: the proxy cannot reach $what ($where) ($connect on CONNECT: a name it does not know, or a host it does not reach from where it is): $proxyshown. Stop and tell the user in one line."; return 0 ;;
+    502|503|504) echo "ENVIRONMENT PROBLEM: the proxy cannot reach $what ($where) ($connect on CONNECT: a name it does not know, or a host it does not reach from where it is): $proxyshown. Stop and tell the user in one line."; return 0 ;;
     *) echo "ENVIRONMENT PROBLEM: the proxy answers $connect to the connection to $what ($where): $proxyshown. Stop and tell the user in one line."; return 0 ;;
   esac
   case "$cexit" in
@@ -356,8 +361,11 @@ get_token() {
   if [ "$code" != 200 ]; then
     e=$(jstr error "$tmp/token.json" | mask)
     d=$(jstr error_description "$tmp/token.json" | mask | cut -c1-300)
-    case "$e" in
-      invalid_client) echo "ENVIRONMENT PROBLEM: the provider of $name refuses the client ($code invalid_client${d:+: $d}): the client id$([ -n "$clientvar" ] && echo " ($clientvar)") or the secret ($secretvar) is wrong, or the client does not authenticate by « auth-client : $clientauth ». Stop and tell the user in one line." ;;
+    # some providers answer unauthorized_client to a wrong secret (older Keycloak versions: "Invalid client secret")
+    kind=$e
+    [ "$e" = unauthorized_client ] && printf '%s' "$d" | grep -q -i -E 'secret|credential|invalid client' && kind=invalid_client
+    case "$kind" in
+      invalid_client) echo "ENVIRONMENT PROBLEM: the provider of $name refuses the client ($code $e${d:+: $d}): the client id$([ -n "$clientvar" ] && echo " ($clientvar)") or the secret ($secretvar) is wrong, or the client does not authenticate by « auth-client : $clientauth ». Stop and tell the user in one line." ;;
       unauthorized_client) echo "ENVIRONMENT PROBLEM: the client of $name may not ask a token by client credentials ($code unauthorized_client${d:+: $d}): the provider must allow it for this client (Keycloak: « Service accounts roles » of the client). Stop and tell the user in one line." ;;
       invalid_scope) echo "ENVIRONMENT PROBLEM: the provider of $name refuses the scope « $scope » ($code invalid_scope${d:+: $d}): « scope » of its settings (Entra ID: api://<application>/.default). Stop and tell the user in one line." ;;
       invalid_grant|unsupported_grant_type) echo "ENVIRONMENT PROBLEM: the provider of $name refuses the client credentials grant ($code $e${d:+: $d}). Stop and tell the user in one line." ;;

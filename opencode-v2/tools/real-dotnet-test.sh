@@ -243,8 +243,9 @@ run build-test.sh --build-only Web/Web.csproj
 check "the code of the skill blazorise builds against Blazorise.DataGrid 2.2.2 and QuickGrid 10" 0 '^BUILD: OK'
 
 # ---------- the API tests of the skill api-tests: the project of /tests api, in memory, then on a running API ----------
-# Its code blocks, in order: 1 the factory, 2 the test authentication, 3 the environment attribute, 4 the environment
-# client, 5 environment tests (/health, /api/orders). The API: .NET 10, top-level statements (Program public by itself).
+# Its code blocks, in order: 1 the factory, 2 the test authentication, 3 the factory of an API with settings at start, a
+# worker and a DbContext (tools/oidc-real-test.sh builds it), 4 the environment attribute, 5 the environment client,
+# 6 environment tests (/health, /api/orders). The API: .NET 10, top-level statements (Program public by itself).
 repo apitests
 mkdir -p src/Api blocks
 cat > src/Api/Api.csproj <<'EOF'
@@ -275,13 +276,13 @@ awk -v dir="$PWD/blocks" '
   /^ *```[a-z]+$/ { n++; inblock = 1; file = dir "/" n; next }
   /^ *```$/ && inblock { inblock = 0; close(file); next }
   inblock { sub(/^   /, ""); print > file }' "$pack/skills/api-tests/SKILL.md"
-if [ -s blocks/5 ] && [ ! -e blocks/6 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL: the skill api-tests has not its 5 code blocks"; ls blocks; fi
+if [ -s blocks/6 ] && [ ! -e blocks/7 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL: the skill api-tests has not its 6 code blocks"; ls blocks; fi
 t=tests/Api.IntegrationTests
 cp blocks/1 "$t/ApiFactory.cs"
 cp blocks/2 "$t/TestAuthHandler.cs"
-cp blocks/3 "$t/EnvironmentFactAttribute.cs"
-cp blocks/4 "$t/EnvironmentClient.cs"
-cp blocks/5 "$t/HealthEnvironmentTests.cs"
+cp blocks/4 "$t/EnvironmentFactAttribute.cs"
+cp blocks/5 "$t/EnvironmentClient.cs"
+cp blocks/6 "$t/HealthEnvironmentTests.cs"
 rm -rf blocks
 cat > "$t/OrdersEndpointsTests.cs" <<'EOF'
 using System.Net;
