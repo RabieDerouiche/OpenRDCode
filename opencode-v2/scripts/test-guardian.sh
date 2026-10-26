@@ -493,7 +493,7 @@ case "$1" in
     aborted "$folder/test-$label.log"
     report=$(find "$results" -name '*.cobertura.xml' 2>/dev/null | head -n 1)
     # a test project with no test yet (just set up): nothing runs these files, which is their net (0 %), not a failure
-    if [ -z "$report" ] && [ "$(counts "$folder/test-$label.log")" = "0 0" ] && ! grep -qE 'error (CS|MSB)|^COVERAGE: NOT MEASURED' "$folder/test-$label.log" &&
+    if [ -z "$report" ] && [ "$(counts "$folder/test-$label.log")" = "0 0" ] && ! grep -qE 'error (CS|MSB|RZ|NU|NETSDK)[0-9]|^COVERAGE: NOT MEASURED' "$folder/test-$label.log" &&
       grep -qE 'No test is available|No test source files|Zero tests ran|NONE RUN' "$folder/test-$label.log"; then
       mkdir -p "$results" && : > "$results/no-test-yet"
       echo "TESTS: 0 passed, 0 failed (no test in $project yet)"
@@ -501,7 +501,7 @@ case "$1" in
       exit 0
     fi
     if [ -z "$report" ]; then
-      grep -m 3 'error CS\|error MSB' "$folder/test-$label.log"
+      grep -m 3 -E 'error (CS|MSB|RZ|NU|NETSDK)[0-9]' "$folder/test-$label.log"
       grep -m 1 '^COVERAGE: NOT MEASURED' "$folder/test-$label.log"
       stop "no coverage report: the build failed, or the coverage collector is missing in $project (coverlet.collector, or Microsoft.Testing.Extensions.CodeCoverage for Microsoft.Testing.Platform: fortify.sh prereq)"
     fi
@@ -748,8 +748,9 @@ case "$1" in
     one="$folder/$1-$stamp-1.log" two="$folder/$1-$stamp-2.log"
     run_tests "$project" "$filter" "$one"
     environment "$one"
-    if grep -q 'error CS\|error MSB' "$one"; then
-      grep 'error CS\|error MSB' "$one" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 3
+    # the errors of the compiler, of Razor (a .razor page), of NuGet and of the SDK
+    if grep -q -E 'error (CS|MSB|RZ|NU|NETSDK)[0-9]' "$one"; then
+      grep -E 'error (CS|MSB|RZ|NU|NETSDK)[0-9]' "$one" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 3
       stop "the tests do not build: $([ "$1" = red ] && echo "a red test must compile against the current code (call what exists)" || echo "fix the build first")"
     fi
     aborted "$one"

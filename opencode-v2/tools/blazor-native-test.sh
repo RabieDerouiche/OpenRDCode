@@ -168,7 +168,9 @@ native_demo() {
 <button type="button" @onclick="() => editing = true">Modifier</button>
 <button type="button" @onclick="InformAsync">Informer</button>
 <NativeModal @bind-Visible="editing" Title="Modifier la commande">
-    <p>Le formulaire</p>
+    <ChildContent>
+        <p>Le formulaire</p>
+    </ChildContent>
     <Footer>
         <button type="button" class="btn btn-secondary" @onclick="() => editing = false">Fermer</button>
     </Footer>
@@ -689,6 +691,8 @@ EOF
   native_demo
   run test-guardian.sh green "$t" "FullyQualifiedName~NativeComponentsTests"
   if ! check "$tfm: the native components (grid, dialog, questions, toasts, field classes): green twice" 0 '^GREEN: 13 tests pass, twice$'; then
+    # what the compiler said, when the page or its tests do not build
+    dotnet build "$t" --nologo -v q 2>&1 | grep -E 'error [A-Z]+[0-9]+' | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 15 | sed 's/^/    /'
     return 0
   fi
   commit "test: the native components"

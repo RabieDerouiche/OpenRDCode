@@ -125,7 +125,7 @@ equivalent() {
     FieldHelp) echo "<div class=\"form-text\">" ;;
     Addons|Addon|AddonLabel) echo "<div class=\"input-group\">, <span class=\"input-group-text\">" ;;
     Autocomplete) echo "<input list=\"…\"> and a <datalist>" ;;
-    Modal|ModalContent|ModalHeader|ModalTitle|ModalBody|ModalFooter|CloseButton) echo "NativeModal (@bind-Visible, Title, Footer; or @ref and Show()/Hide())" ;;
+    Modal|ModalContent|ModalHeader|ModalTitle|ModalBody|ModalFooter|CloseButton) echo "NativeModal (@bind-Visible, Title; with buttons: <ChildContent>…</ChildContent><Footer>…</Footer>; or @ref and Show()/Hide())" ;;
     ModalProvider) echo "nothing: a NativeModal in the page, the component inside it" ;;
     MessageProvider|Message*) echo "NativeDialogService (ConfirmAsync, AlertAsync) + <NativeDialogHost /> in the layout" ;;
     NotificationProvider|Notification*|Snackbar*|Toast*) echo "NativeToastService (Success, Info, Warning, Error) + <NativeToastHost /> in the layout" ;;
@@ -832,8 +832,9 @@ EOF
 
 write NativeModal.razor <<'EOF'
 @* NativeModal: a dialog of the application with the Bootstrap markup (a component shown in a dialog: that component
-   inside it): @bind-Visible, or @ref and Show() / Hide(); it takes the focus when it shows, Escape and its close
-   button hide it.
+   inside it): @bind-Visible, or @ref and Show() / Hide(); with buttons, its content and its buttons both named
+   (<ChildContent>…</ChildContent><Footer>…</Footer>: Razor refuses plain content next to a named one); it takes the
+   focus when it shows, Escape and its close button hide it.
    Written by blazor-native.sh scaffold; the application owns it. *@
 @namespace __NS__
 @using Microsoft.AspNetCore.Components.Web
