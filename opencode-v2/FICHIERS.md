@@ -371,7 +371,7 @@ Ils font ce que le modèle ne doit pas faire lui-même : écrire dans git, mesur
 - **Lancé par** : `/go`, l'analyste, le coder, `outil.sh` (audit, pattern), `compare-repos.sh`, les skills `pack-doc` et `pack-setup`. **Utilité** : l'API exacte d'un package, au lieu de la deviner, de sonder une DLL ou de chercher sur le web.
 
 ### `scripts/package-licenses.sh`
-- **Ce qu'il fait** : les packages NuGet dont la licence les rend payants ou copyleft (licence commerciale, frais de maintenance, AGPL), par version : tout le dépôt, `--diff` (ajoutés ou changés depuis la base), ou un package avant de l'ajouter ; pour chacun, l'alternative gratuite (Blazorise : le Razor natif, QuickGrid et les formulaires d'ASP.NET Core, que le skill `blazorise` met en place page par page sous tests bUnit). Règles vérifiées en octobre 2026.
+- **Ce qu'il fait** : les packages NuGet dont la licence les rend payants ou copyleft (licence commerciale, frais de maintenance, AGPL), par version : tout le dépôt, `--diff` (ajoutés ou changés depuis la base), ou un package avant de l'ajouter ; pour chacun, l'alternative gratuite (Blazorise : le Razor natif sans aucun paquet, les composants que `blazor-native.sh scaffold` écrit dans l'application et les formulaires d'ASP.NET Core, que le skill `blazorise` met en place page par page sous tests bUnit). Règles vérifiées en octobre 2026.
 - **Lancé par** : `/outil licences`, `diff-guard.sh` (un package payant ajouté arrête le push). **Utilité** : ne jamais introduire sans le savoir un package qui devient payant.
 
 ### `scripts/compare-repos.sh`
