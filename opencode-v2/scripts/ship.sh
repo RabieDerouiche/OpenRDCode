@@ -95,6 +95,20 @@ fi
 # 1. Commit
 if [ "$sync_only" -eq 0 ]; then
   git add -A || stop "git add failed"
+  # Installed dependencies and build outputs that the .gitignore misses (node_modules after an install, obj/ after a
+  # build), the kinds diff-guard.sh refuses at the push: never committed. A run of /go commits each step: without this,
+  # the push at its end would stop on them, after all the work, with a history to rewrite. Said once per kind.
+  outputs=$(git diff --cached --name-only --diff-filter=A | awk '
+    function cut(name,   i) { i = index(p, "/" name "/"); if (i == 0) return 0; k = name; d = substr($0, 1, i - 1 + length(name)); return 1 }
+    { p = "/" $0; k = ""
+      if (cut("node_modules") || cut(".angular/cache") || cut("obj") || cut("TestResults") || cut("bin/Debug") || cut("bin/Release")) print k "\t" d "\t" $0 }')
+  if [ -n "$outputs" ]; then
+    printf '%s\n' "$outputs" | cut -f2 | sort -u | while IFS= read -r d; do
+      git reset -q -- "$d" 2>/dev/null
+    done
+    printf '%s\n' "$outputs" | awk -F '\t' '{ n[$1]++; if (!($1 in first)) first[$1] = $3 }
+      END { for (k in n) print "WARNING: " n[k] " file(s) of " k " left out of the commit (" first[k] (n[k] > 1 ? ", …" : "") "): an install or a build output that .gitignore misses; add " k "/ to .gitignore" }'
+  fi
   if git diff --cached --quiet; then
     echo "COMMIT: nothing new to commit"
   else

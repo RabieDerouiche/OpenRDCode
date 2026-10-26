@@ -60,8 +60,10 @@
 //    answered "always" cannot lift it either. Also refused for every agent: an environment dump (`export`,
 //    `declare -p`, `set` alone) and a recursive rm, whatever the order of its options.
 // 8. Gives the long commands the time they need: a build or test command 20 minutes (OpenCode stops any command after
-//    2 minutes unless the agent asks for more, and a stopped full test suite is run again from the start), ship.sh
-//    and branch.sh 5 minutes. The agents of the pack never run a shell command or a subagent in the background: /go,
+//    2 minutes unless the agent asks for more, and a stopped full test suite is run again from the start); a script of
+//    the pack that waits for the lock of the folder then builds and tests (build-test.sh, test-guardian.sh…) 45 minutes,
+//    each one in a chain: it bounds its own run before that and says what ran (TIMEOUT), where a command stopped from
+//    outside would lose its whole output; ship.sh and branch.sh 5 minutes. The agents of the pack never run a shell command or a subagent in the background: /go,
 //    /fix and /fortify wait for each result, and the folder lock (9) ends with the turn. Nor a command without a time
 //    limit: OpenCode v2 lets an agent turn the limit off (timeout 0), and a command that waits for a network that never
 //    answers would hold the run for good; such a command gets 20 minutes, and none more than 2 hours. The pause of
@@ -185,12 +187,21 @@
 //    day of the developer, the release groups): about 2 700 tokens in each of their requests that they never use, in a
 //    context that fills and slows the model. The conversation keeps them; an AGENTS.md without these marks is sent as
 //    it is.
+// 31. Offers the pilot, while a command runs, only the tools of the MCP servers its procedure uses: /go Jira and
+//    GitLab, /fix Jira, GitLab, Sonar and Fortify, /fortify Fortify and GitLab, /daily Jira and GitLab, /push GitLab,
+//    /tests and /sync none (the permission rules never give it Confluence, which only the analyst reads). The tool
+//    descriptions of every server went into each of its requests, up to 100 a run: a longer prompt, a context that
+//    fills sooner, and a tool choice that degrades past a few dozen tools. Its subagents keep their own servers (their
+//    permission rules); a server whose name says neither Jira, Confluence, GitLab, Sonar, Fortify nor Kibana stays.
+//    The list changes only from one command to the next: within a run, every request starts the same way (the
+//    prefix cache of the model server).
 // Every refusal of 6, 7, 9, 12, 16, 23, 24 and 25 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
 // the summaries of a run (17), its automatic resumes (19), the loops cut (21), the resumes I ask for (22), the end of a
-// run at its « Suite » question (4), the MCP servers bounded (27), the options sent for each agent (28) and the time of
-// each run (29). Any error leaves the prompt or the call as it is.
+// run at its « Suite » question (4), the MCP servers bounded (27), the options sent for each agent (28), the time of
+// each run (29) and the MCP servers taken out of the requests of the pilot (31, once per command). Any error leaves the
+// prompt or the call as it is.
 import { execFile, execFileSync, spawn } from "node:child_process"
 import { Plugin } from "@opencode/plugin"
 import {
@@ -264,7 +275,11 @@ const SETS_ENVIRONMENT = new RegExp(ASSIGN + String.raw`(?:PATH|DOTNET_ROOT\w*)=
 const SETS_SECRET = new RegExp(ASSIGN + String.raw`(?:\w*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_?KEY|CREDENTIALS?)\w*|ARTIFACTORY\w*)=`, "i")
 const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
 // Commands that take minutes (8): a build or tests, a restore, the front-end tooling; the pack's git scripts
-const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*front-test\.sh|\S*env-tests\.sh|\S*fortify\.sh\s+prereq|\S*test-guardian\.sh\s+(?:coverage|red|green|changes|build|setup)|dotnet\s+(?:build|test|restore|format|ef|clean|pack)|npm\s+(?:test|ci|install|i|run\s+\S+)|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint|generate|g))|yarn\s+(?:test|install|build|lint|run\s+\S+)|pnpm\s+(?:test|install|build|lint|run\s+\S+))(?=\s|$|[;&|)])/
+const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*front-test\.sh|\S*env-tests\.sh|\S*fortify\.sh\s+prereq|\S*test-guardian\.sh\s+(?:coverage|red|green|changes|build|setup|verify)|dotnet\s+(?:build|test|restore|format|ef|clean|pack)|npm\s+(?:test|ci|install|i|run\s+\S+)|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint|generate|g))|yarn\s+(?:test|install|build|lint|run\s+\S+)|pnpm\s+(?:test|install|build|lint|run\s+\S+))(?=\s|$|[;&|)])/
+// 8. the scripts of the pack that wait for the lock of the folder, then build and test: each one bounds its own run
+// (42 minutes with the wait, "TIMEOUT" lines that say what ran): 45 minutes for each of them in the command
+const BOUNDED_SCRIPT = /(?:^|[\s;&|(])\S*(?:build-test\.sh|front-test\.sh|env-tests\.sh|fortify\.sh\s+prereq|test-guardian\.sh\s+(?:coverage|red|green|changes|build|setup|verify))(?=\s|$|[;&|)])/g
+const SCRIPT_MAX_MS = 45 * 60000
 const GIT_SCRIPT = /(?:^|[\s;&|(])\S*(?:ship|branch)\.sh(?=\s|$)/
 // 8. the pause of /fix while the CI of its push runs (pause.sh caps itself at 290 s)
 const PAUSE_SCRIPT = /(?:^|[\s;&|(])\S*pause\.sh(?=\s|$)/
@@ -1005,8 +1020,9 @@ export const Guards = async (input) => {
       }
       if (call.tool === "bash" && typeof output.args.command === "string") {
         // 8. long commands get the time they need (OpenCode stops a command after 2 minutes by default)
-        const need = LONG_COMMAND.test(output.args.command) ? COMMAND_MAX_MS : GIT_SCRIPT.test(output.args.command) ? 5 * 60000
-          : PAUSE_SCRIPT.test(output.args.command) ? PAUSE_MS : 0
+        const scripts = (output.args.command.match(BOUNDED_SCRIPT) || []).length
+        const need = scripts ? Math.min(scripts * SCRIPT_MAX_MS, COMMAND_CAP_MS) : LONG_COMMAND.test(output.args.command) ? COMMAND_MAX_MS
+          : GIT_SCRIPT.test(output.args.command) ? 5 * 60000 : PAUSE_SCRIPT.test(output.args.command) ? PAUSE_MS : 0
         if (need && !(Number(output.args.timeout) >= need)) output.args.timeout = need
         // 8. and a command of an agent of the pack always ends: never without a limit (OpenCode v2 turns it off with
         // timeout 0): the 20 minutes of a full build and tests instead, and 2 hours at most when the agent asks for more
@@ -1135,6 +1151,35 @@ const V2_TOOLS = { shell: "bash", subagent: "task" }
 const V2_REFUSED = new Set(["session_move", "worktree_create", "worktree_remove"].flatMap((name) => [name, "opencode_" + name]))
 // 12. tools taken out of every request to the model: code mode and the web search
 const V2_HIDDEN = ["execute", "websearch"]
+// 31. the MCP servers each command of the pilot uses (its procedure, commands/*.md); a tool of another server is taken
+// out of the requests of the pilot while the command runs. The servers are known by their names, as the permission
+// rules know them (tools/permissions.py, MCP_SERVERS): a tool of a server whose name says none of them stays
+const MCP_SERVERS = [["jira", /jira/i], ["confluence", /confluence/i], ["gitlab", /gitlab/i], ["sonar", /sonar/i],
+  ["fortify", /fortify/i], ["kibana", /kibana|elastic/i]]
+const PILOT_MCP = {
+  go: ["jira", "gitlab"],
+  fix: ["jira", "gitlab", "sonar", "fortify"],
+  fortify: ["fortify", "gitlab"],
+  daily: ["jira", "gitlab"],
+  push: ["gitlab"],
+  tests: [],
+  sync: [],
+}
+// The tools of the request of a pilot running <command>, without those of the MCP servers its procedure never calls:
+// the names of the servers taken out ([] when nothing changed; a command the table does not know: nothing changes)
+export function narrowPilotTools(tools, command) {
+  const keep = PILOT_MCP[command]
+  if (!keep || !tools || typeof tools !== "object") return []
+  const out = new Set()
+  for (const name of Object.keys(tools)) {
+    const server = MCP_SERVERS.find(([, pattern]) => pattern.test(name))
+    if (server && !keep.includes(server[0])) {
+      delete tools[name]
+      out.add(server[0])
+    }
+  }
+  return [...out]
+}
 // the first line of the prompt of a new subagent session in OpenCode v2.1.2 (its subagent tool)
 const SUBAGENT_PROMPT = "You are a subagent spawned by another session."
 // 3. the first line of every command of the pack: "[[command <name> <arguments>]]"
@@ -3207,6 +3252,7 @@ export default Plugin.define({
 
     // 12, 13, 17, 19 and 30. what each request to the model carries
     const strippedLogged = new Set()
+    const narrowedLogged = new Set()
     if (typeof api.hook === "function") {
       await api.hook("context", async (event) => {
         try {
@@ -3214,6 +3260,13 @@ export default Plugin.define({
           if (event.tools) {
             for (const name of V2_HIDDEN) delete event.tools[name]
             if (event.tools.question && (await isSubagent(event.sessionID))) delete event.tools.question
+            // 31. the pilot gets the tools of the MCP servers of the command under way only
+            const run = String(event.agent || "") === "pilot" ? commandRuns.get(event.sessionID) : undefined
+            const narrowed = run ? narrowPilotTools(event.tools, run.command) : []
+            if (narrowed.length && !narrowedLogged.has(run.command)) {
+              narrowedLogged.add(run.command)
+              log("the MCP servers the command does not use taken out of the requests of the pilot", { command: "/" + run.command, servers: narrowed })
+            }
           }
           // 30. the instructions of the free conversation stay out of the requests of the agents of the pack
           if (PACK_AGENTS.has(String(event.agent || ""))) {

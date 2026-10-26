@@ -339,10 +339,12 @@ def coder_bash(guardian=False):
 
 
 AGENTS = {
-    # /go, /fix, /daily: every MCP server, read-only, except the creation of the merge request of the branch
+    # /go, /fix, /fortify, /daily: Jira, GitLab, Sonar and Fortify, read-only, except the creation of the merge request
+    # of the branch. Never Confluence: no procedure of the pilot reads it (the analyst does), and each tool of a server
+    # weighs on every request of a run. The pack plugin narrows these servers to those of the command under way
     "pilot": SHEET + BASE + NO_TOOLS_SKILLS + [("task", only(["analyst", "coder", "checker", "debugger", "test-guardian"]))]
     + [("bash", pilot_bash())] + MCP_WRITE_DENY + [("*create_merge_request", "allow")]
-    + mcp_only(["jira", "confluence", "gitlab", "sonar", "fortify"]),
+    + mcp_only(["jira", "gitlab", "sonar", "fortify"]),
     "analyst": SHEET + SILENT + NO_TASK + NO_TOOLS_SKILLS + [("bash", read_only_bash() + deny(SEAL_SCRIPTS + PILOT_SCRIPTS))] + MCP_WRITE_DENY
     + mcp_only(["jira", "confluence", "gitlab"]),
     # code and tests anywhere in the repository except .git (the ticket sheet is the pilot's), no MCP

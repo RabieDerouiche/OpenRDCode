@@ -159,8 +159,10 @@ P_COMPONENTS(["test-guardian"], [S + "test-guardian.sh deps src/Web/Components/P
 // its own version of them nor puts them back, and no other agent of the pack writes a test file through it. Checking
 // a seal is open: the pilot does it before each commit, the coder may look
 add(["test-guardian"], [S + "test-guardian.sh seal V1 tests/Api.Tests/Security/PathTraversalV1Tests.cs tests/Api.Tests/Services/ExportServiceTests.cs",
+  S + "test-guardian.sh seal V1 --problem src/Api/Services/ExportService.cs:Export tests/Api.Tests/Security/PathTraversalV1Tests.cs",
   S + "test-guardian.sh sealed V1", S + "test-guardian.sh restore V1", S + "test-guardian.sh seal S2 \"tests/Api.Tests/Invoice Tests.cs\""], "allow")
 add(["coder", "pilot", ...RO], [S + "test-guardian.sh seal V1 tests/Api.Tests/Security/PathTraversalV1Tests.cs",
+  S + "test-guardian.sh seal B1 --problem src/Billing/Invoice.cs:Discount tests/App.Tests/InvoiceTests.cs",
   S + "test-guardian.sh restore V1", "bash ~/.config/opencode/scripts/test-guardian.sh seal V1 tests/Api.Tests/X.cs",
   "cd tests && " + S + "test-guardian.sh restore V1", S + "test-guardian.sh seal V3"], "deny")
 add(["coder", "pilot", "test-guardian"], [S + "test-guardian.sh sealed V1"], "allow")
@@ -434,6 +436,10 @@ P(["pilot"], [
   S + "test-guardian.sh setup nunit src/Billing/Invoice.cs src/Billing/Vat.cs && " + S + "ship.sh --no-push \"test: add the unit test project\" \"- SETUP: tests/App.UnitTests/App.UnitTests.csproj created (nunit, net10.0)\"",
   S + "ticket-sheet.sh decision \"Tests unitaires : projet App.UnitTests créé (réponse du dev)\"",
   S + "ticket-sheet.sh decision \"Tests unitaires : aucun projet, correctifs sans test ni filet (réponse du dev)\"",
+  // /go, /fix and /fortify: the checks after a fix or a change, by script, before any test-guardian turn
+  S + "test-guardian.sh verify S2 \"FullyQualifiedName~VatCalculatorTests.Round|FullyQualifiedName~InvoiceServiceTests\"",
+  S + "test-guardian.sh verify V2 \"FullyQualifiedName~Security_PathManipulation_V2|FullyQualifiedName~FileStoreContextTests\"",
+  S + "test-guardian.sh verify N1", S + "test-guardian.sh verify F1 FullyQualifiedName~Security_PathManipulation_F1",
   // /go: a step « (filet d'abord) », committed with its net
   S + "test-guardian.sh sealed S3 && " + S + "ship.sh --no-push \"refactor(billing): compute the discount in one expression (ABC-123)\" \"- src/Billing: Invoice\" \"- safety net: 0% -> 100% of the lines of 1 methods\" && " +
     S + "ticket-sheet.sh tick 3 \"/go étape 3 - 1 fichiers - build ok, tests 17/17 - filet 0 -> 100 %\"",
@@ -545,8 +551,10 @@ P(["build"], [
 
 // ---------- MCP (tool names "<server>_<tool>") ----------
 const tool = (agent, name, expect) => cases.push({ agent, tool: name, expect })
-for (const t of ["gitlab_create_merge_request", "jira_get_issue", "jira_search", "confluence_get_page", "gitlab_get_merge_request",
+for (const t of ["gitlab_create_merge_request", "jira_get_issue", "jira_search", "gitlab_get_merge_request",
   "gitlab_list_merge_request_discussions", "gitlab_get_pipeline", "sonar_search_issues", "fortify_list_issues"]) tool("pilot", t, "allow")
+// Confluence is the analyst's: no procedure of the pilot reads it, and its tools would weigh on every request of a run
+for (const t of ["confluence_get_page", "confluence_search", "Confluence_get_page_children"]) tool("pilot", t, "deny")
 for (const t of ["gitlab_create_merge_request_note", "gitlab_create_issue", "gitlab_update_merge_request", "gitlab_merge_merge_request",
   "gitlab_approve_merge_request", "jira_add_comment", "jira_transition_issue", "jira_create_issue", "jira_update_issue",
   "confluence_create_page", "sonar_change_issue_status", "fortify_set_issue_suppressed", "kibana_search"]) tool("pilot", t, "deny")

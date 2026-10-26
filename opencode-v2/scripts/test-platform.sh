@@ -15,10 +15,12 @@
 #                                           --filter-method (Category=<name>: --filter-trait) and for TUnit into
 #                                           --treenode-filter: the class, then the method), --collect "XPlat Code Coverage" (the coverage extension
 #                                           of the project, Cobertura), --results-directory, and a time limit for
-#                                           the run (5 minutes with a filter, 18 without; none on a platform older
-#                                           than 1.5, which lacks --timeout); the other VSTest options are dropped
+#                                           the run (5 minutes with a filter, 25 without or the time left to the
+#                                           command, TEST_SUITE_LIMIT; none on a platform older than 1.5, which
+#                                           lacks --timeout); the other VSTest options are dropped
 #                                           (--logger, --blame…), anything else goes to the test app.
-#                                           Prints the output of the test app, then one of "HANG:", "No test
+#                                           Prints the output of the test app, then one of "HANG:" (a test that
+#                                           hangs), "TIMEOUT:" (a whole run longer than its time), "No test
 #                                           matches", "COVERAGE: NOT MEASURED" when it applies; exit 0 when every
 #                                           test passed, 1 otherwise
 # Usage: test-platform.sh scope [<target>] | kind <project> | projects | run <project> [<options>]
@@ -28,8 +30,9 @@ export LC_ALL
 DOTNET_CLI_UI_LANGUAGE=en DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1 TESTINGPLATFORM_NOBANNER=1
 export DOTNET_CLI_UI_LANGUAGE DOTNET_NOLOGO DOTNET_CLI_TELEMETRY_OPTOUT TESTINGPLATFORM_NOBANNER
 HANG=${TEST_GUARDIAN_HANG:-5m}
-# the longest a whole test application may run without a filter (the build and test commands get 20 minutes)
-SUITE_LIMIT=${TEST_SUITE_LIMIT:-18m}
+# the longest a whole test application may run without a filter; build-test.sh gives the time left to its command
+# (the pack's plugin stops a command of its scripts after 45 minutes)
+SUITE_LIMIT=${TEST_SUITE_LIMIT:-25m}
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) || root=$(pwd)
 
@@ -274,8 +277,14 @@ case "$1" in
       exit 1
     fi
     # a time limit for the whole run (MTP has no limit per test without its HangDump extension): the hang limit with a
-    # filter, the suite limit otherwise
-    if [ "$filtered" -eq 1 ]; then limit=$HANG; else limit=$SUITE_LIMIT; fi
+    # filter (a test that hangs), the suite limit otherwise or when less time is left (a run that does not end in the
+    # time of the command: TIMEOUT)
+    secs() {
+      v=$(printf '%s' "$1" | sed 's/min$/m/; s/sec$/s/')
+      case "$v" in *h) echo $((${v%h} * 3600)) ;; *m) echo $((${v%m} * 60)) ;; *s) echo "${v%s}" ;; *) echo "$v" ;; esac
+    }
+    limit_kind=timeout limit=$SUITE_LIMIT
+    if [ "$filtered" -eq 1 ] && [ "$(secs "$HANG")" -le "$(secs "$SUITE_LIMIT")" ]; then limit_kind=hang limit=$HANG; fi
     limit=$(printf '%s' "$limit" | sed 's/min$/m/; s/sec$/s/')
     report=""
     if [ -n "$results" ] || [ "$want_coverage" -eq 1 ]; then
@@ -333,8 +342,10 @@ LIST
       0) exit 0 ;;
       2) exit 1 ;;
       3)
-        if [ "$use_timeout" -eq 1 ]; then
+        if [ "$use_timeout" -eq 1 ] && [ "$limit_kind" = hang ]; then
           echo "HANG: the tests of $project ran more than $limit and were stopped (a test waits for the network, a real clock or a lock, or loops): fix that test (or report it), never raise the limit"
+        elif [ "$use_timeout" -eq 1 ]; then
+          echo "TIMEOUT: the tests of $project ran more than $limit, the time left to this command, and were stopped"
         else
           echo "TESTS: the test session of $project was aborted (exit 3)"
         fi

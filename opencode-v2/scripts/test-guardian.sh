@@ -28,10 +28,22 @@
 #   build <project>                builds a project (the test-guardian never runs dotnet itself): "BUILD: OK", or the
 #                                  compiler errors and "BUILD: FAILED"
 #   tests-only                     the uncommitted changes touch only test projects
-#   seal <label> [<test file>...]  keeps a copy of the test files of a proof, before the fix: "SEALED: <n> test files";
-#                                  none for a problem that no unit test can show (« non démontrable »): an empty proof
+#   seal <label> [--problem <file>:<method>] [<test file>...]
+#                                  keeps a copy of the test files of a proof, before the fix: "SEALED: <n> test files";
+#                                  none for a problem that no unit test can show (« non démontrable »): an empty proof.
+#                                  It also keeps what the checks after the fix need (verify): the test project and the
+#                                  files of coverage <label>-before, the methods and the minimum of the last net
+#                                  (<label>-net, otherwise <label>-before), and, for a vulnerability or a bug, the method
+#                                  of the problem (--problem), whose every line must run after the fix
 #   sealed <label>                 the sealed test files are unchanged ("SEAL: OK"), or "STOP:" with the changed ones
 #   restore <label>                puts the sealed test files back as they were sealed: "RESTORED: <files>"
+#   verify <label> [<filter>]      (the pilot, once the coder's report is OK) the checks of the phase after the fix or
+#                                  the change, by script, on what the seal kept: the sealed tests as sealed, the tests of
+#                                  <filter> (the proof and its net) green twice, the coverage after (no test failing that
+#                                  passed before, no file losing coverage), the net at its minimum, every line of the
+#                                  method of the problem run. "VERIFY: OK", or "VERIFY: TEST-GUARDIAN (<reason>)": the
+#                                  same test-guardian session takes the phase after over (it alone restores, updates a
+#                                  test, judges). Never a "STOP:" line: the failures of its checks are "FAILED:" lines
 #   park <label>, unpark <label>   (the pilot) takes the sealed test files of a proof out of the working tree until its
 #                                  turn, and brings them back as sealed: the proofs of a wave are written together,
 #                                  their fixes one after the other, each commit with its own tests only
@@ -76,7 +88,8 @@
 # unpark and set up (permission rules).
 # Usage: test-guardian.sh deps <file> | coverage <label> <proj> <file>... | compare <a> <b>
 #        | net <label> [--min <pct>] <file>:<method>... | red|green <proj> <filter>
-#        | build <proj> | tests-only | seal <label> [<file>...] | sealed <label> | restore <label> | park|unpark <label>
+#        | build <proj> | tests-only | seal <label> [--problem <file>:<method>] [<file>...] | sealed <label>
+#        | restore <label> | verify <label> [<filter>] | park|unpark <label>
 #        | setup [--integration [--db sqlite] | --components] xunit|mstest|nunit <file>... | changes <base> [<target>]
 #        | folder
 
@@ -86,6 +99,12 @@ DOTNET_CLI_UI_LANGUAGE=en DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_CLI_UI_LANGUAGE DOTNET_NOLOGO DOTNET_CLI_TELEMETRY_OPTOUT
 # the longest a single test may run before the test host is stopped (VSTest blame); a test of the pack never needs it
 HANG=${TEST_GUARDIAN_HANG:-5m}
+# The time of this command, the wait for the lock of the folder included: the pack's plugin stops it after 45 minutes,
+# and its output would be lost; a test run stops before that, and says so (the same deadline as build-test.sh, which
+# it calls)
+OPENCODE_COMMAND_START=${OPENCODE_COMMAND_START:-$(date +%s)}
+export OPENCODE_COMMAND_START
+DEADLINE=${BUILD_TEST_DEADLINE:-2520}
 # bUnit for the tests of Razor components (setup --components) when the NuGet cache of this machine holds none: a
 # version of the 2.x line (BunitContext, Render), for net8.0 and later
 BUNIT_DEFAULT=2.11.3
@@ -93,6 +112,44 @@ BUNIT_DEFAULT=2.11.3
 stop() {
   echo "STOP: $1"
   exit 1
+}
+
+# the seconds left before the deadline of this command, a whole test run 25 minutes at most (TEST_SUITE_LIMIT)
+left() {
+  s=${TEST_SUITE_LIMIT:-25m}
+  case "$s" in *h) s=$((${s%h} * 3600)) ;; *m) s=$((${s%m} * 60)) ;; *s) s=${s%s} ;; esac
+  l=$((OPENCODE_COMMAND_START + DEADLINE - $(date +%s)))
+  [ "$l" -gt "$s" ] && l=$s
+  [ "$l" -gt 0 ] || l=1
+  echo "$l"
+}
+kill_tree() {
+  for child in $(pgrep -P "$1" 2>/dev/null); do
+    kill_tree "$child"
+  done
+  kill "$1" 2>/dev/null
+}
+# bounded <seconds> <command>…: the command, stopped with everything it started after <seconds>: its status, or 124
+bounded() {
+  limit=$1
+  shift
+  "$@" &
+  pid=$!
+  ( sleep "$limit"; kill_tree "$pid" ) </dev/null >/dev/null 2>&1 &
+  watchdog=$!
+  wait "$pid"
+  rc=$?
+  if kill -0 "$watchdog" 2>/dev/null; then kill_tree "$watchdog"; else rc=124; fi
+  return "$rc"
+}
+# a test run that did not end in the time of this command (its status, or the TIMEOUT line of build-test.sh): final,
+# like an environment problem (the agent reports it, the run stops)
+timed_out() {
+  if [ "$1" -eq 124 ] || grep -q -E '^(TESTS|BUILD): TIMEOUT|^TIMEOUT: ' "$2" 2>/dev/null; then
+    echo "TESTS: TIMEOUT (the tests of $3 ran until the time of this command ran out, $((($(date +%s) - OPENCODE_COMMAND_START + 30) / 60)) min with the wait for another build of this folder, and were stopped)"
+    echo "NOTE: a test run this long cannot prove a change on this machine: AGENTS.md « Build & test », « Tests locaux », gives a filter that leaves its slow tests to the CI (/outil setup proposes it). Never raise a limit, never run the tests another way."
+    exit 124
+  fi
 }
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || stop "not in a git repository"
@@ -114,7 +171,7 @@ folder="$common/opencode-tickets/${key:-NOKEY}.tests"
 # for each worktree); a run stopped by a timeout leaves it behind, and the next run takes it over. A script called by
 # the one that holds it (build-test.sh under changes or build) does not take it again.
 lockdir="$(git rev-parse --absolute-git-dir)/opencode-dotnet.lock"
-LOCK_WAIT=${TEST_GUARDIAN_LOCK_WAIT:-900}
+LOCK_WAIT=${TEST_GUARDIAN_LOCK_WAIT:-1200}
 take_lock() {
   [ "${OPENCODE_DOTNET_LOCK:-}" = "$lockdir" ] && return 0
   waited=0
@@ -378,10 +435,12 @@ aborted() {
 run_tests() {
   if is_mtp "$1"; then
     sh "$scripts/build-test.sh" ${4:+"$4"} "$1" --filter "$2" > "$3" 2>&1
+    timed_out $? "$3" "$1"
     return
   fi
-  dotnet test "$1" --filter "$2" --nologo -v q --logger "console;verbosity=normal" ${4:+"$4"} \
+  bounded "$(left)" dotnet test "$1" --filter "$2" --nologo -v q --logger "console;verbosity=normal" ${4:+"$4"} \
     --results-directory "$folder/results-run" --blame-hang-timeout "$HANG" --blame-hang-dump-type none > "$3" 2>&1
+  timed_out $? "$3" "$1"
 }
 
 case "$1" in
@@ -480,15 +539,22 @@ case "$1" in
     printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
     need_dotnet
     mkdir -p "$folder" || stop "cannot create $folder"
+    # what the seal keeps for verify: the test project and the files of this measure; a new measure before a change
+    # starts a new proof, so the net measured with the tests of an earlier attempt (<label>-net) no longer counts
+    printf '%s\n' "$project" "$@" > "$folder/args-coverage-$label"
+    case "$label" in
+      *-before) rm -f "$folder/args-net-${label%-before}-net" ;;
+    esac
     take_lock
     results="$folder/results-$label"
     rm -rf "$results"
     if is_mtp "$project"; then
       sh "$scripts/build-test.sh" "$project" --collect:"XPlat Code Coverage" --results-directory "$results" > "$folder/test-$label.log" 2>&1
     else
-      dotnet test "$project" --collect:"XPlat Code Coverage" --results-directory "$results" --nologo -v q \
+      bounded "$(left)" dotnet test "$project" --collect:"XPlat Code Coverage" --results-directory "$results" --nologo -v q \
         --logger "console;verbosity=normal" --blame-hang-timeout "$HANG" --blame-hang-dump-type none > "$folder/test-$label.log" 2>&1
     fi
+    timed_out $? "$folder/test-$label.log" "$project"
     environment "$folder/test-$label.log"
     aborted "$folder/test-$label.log"
     report=$(find "$results" -name '*.cobertura.xml' 2>/dev/null | head -n 1)
@@ -578,6 +644,8 @@ case "$1" in
     { printf '%s' "$min" | grep -qE '^[0-9]{1,3}$' && [ "$min" -le 100 ]; } || stop "bad minimum $min: a percentage, from 0 to 100"
     [ $# -ge 1 ] || stop "usage: test-guardian.sh net <label> [--min <percent>] <file.cs or file.razor>:<method>..."
     printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
+    # what the seal keeps for verify: the minimum and the methods of this net
+    mkdir -p "$folder" && printf '%s\n' "$min" "$@" > "$folder/args-net-$label"
     # <file.cs>:<method> or <file.razor>:<method> (a Razor component: BuildRenderTree, or a method of its @code block):
     # the file in f, the method in spec
     split_method() {
@@ -810,10 +878,22 @@ case "$1" in
     exit 0 ;;
 
   seal)
-    [ $# -ge 2 ] || stop "usage: test-guardian.sh seal <label> [<test file>...]"
+    [ $# -ge 2 ] || stop "usage: test-guardian.sh seal <label> [--problem <file>:<method>] [<test file>...]"
     label=$2
     shift 2
     printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
+    # the method of a vulnerability or a bug: every one of its lines runs after the fix (verify)
+    problem=""
+    if [ "$1" = --problem ]; then
+      problem=$2
+      case "$problem" in
+        *.cs:?*|*.razor:?*) ;;
+        *) stop "bad method $problem: <file.cs>:<method>, <file.cs>:<class>.<method>, or <file.razor>:<method>" ;;
+      esac
+      pf=${problem%:*}
+      [ -f "$pf" ] || [ -f "$root/${pf#./}" ] || stop "no file $pf in this repository"
+      shift 2
+    fi
     # every file first: a seal is all the files of the proof or nothing
     list=""
     for f in "$@"; do
@@ -829,6 +909,16 @@ case "$1" in
     while IFS= read -r p; do
       { mkdir -p "$seal/files/$(dirname "$p")" && cp "$p" "$seal/files/$p"; } || stop "cannot copy $p"
     done < "$seal/list"
+    # what verify checks after the fix: the measure before it, the last net (with the tests of the context, or before
+    # them), the method of the problem
+    [ -f "$folder/args-coverage-$label-before" ] && cp "$folder/args-coverage-$label-before" "$seal/coverage-args"
+    for n in "$label-net" "$label-before"; do
+      if [ -f "$folder/args-net-$n" ]; then
+        cp "$folder/args-net-$n" "$seal/net-args" && printf '%s\n' "$n" > "$seal/net-label"
+        break
+      fi
+    done
+    [ -n "$problem" ] && printf '%s\n' "${problem#./}" > "$seal/problem"
     if [ -s "$seal/list" ]; then
       echo "SEALED: $(wc -l < "$seal/list" | tr -d ' ') test files ($(tr '\n' ' ' < "$seal/list" | sed 's/ $//')): the fix must make them pass as they are"
     else
@@ -861,6 +951,79 @@ case "$1" in
       fi
     done < "$seal/list"
     echo "RESTORED: ${changed:-nothing (the test files were as sealed)}"
+    exit 0 ;;
+
+  verify)
+    # The phase after the fix or the change, by script, for the pilot: the checks the test-guardian makes in that
+    # phase (agents/test-guardian.md), on what its seal kept. All green: "VERIFY: OK", and no model turn is spent on
+    # it. Anything else, or anything to judge (a test of the net that the change meant to change, a net that was
+    # already thin, a sealed test changed: only the test-guardian restores): "VERIFY: TEST-GUARDIAN (<reason>)", and
+    # its session takes the phase over. Its own lines are "FAILED:", never "STOP:", which would stop the run.
+    label=$2 filter=$3
+    [ -n "$label" ] || stop "usage: test-guardian.sh verify <label> [<filter of the tests of the proof and of its net>]"
+    printf '%s' "$label" | grep -qE '^[A-Za-z0-9._-]+$' || stop "bad label $label"
+    seal="$folder/seal-$label"
+    out="$folder/verify-$label.out"
+    handover() {
+      echo "VERIFY: TEST-GUARDIAN ($1): resume its session, phase after the fix or the change, with these lines"
+      exit 1
+    }
+    # one check: its output, with « FAILED: » for its STOP line; an environment problem ends everything at once
+    check() {
+      sh "$scripts/test-guardian.sh" "$@" > "$out" 2>&1
+      rc=$?
+      sed 's/^STOP: /FAILED: /' "$out"
+      if grep -q -E '^ENVIRONMENT PROBLEM|^TESTS: TIMEOUT' "$out"; then exit 1; fi
+      return "$rc"
+    }
+    [ -f "$seal/list" ] || handover "no seal $label: the proof or the net was not sealed"
+    [ -f "$seal/coverage-args" ] && [ -f "$seal/net-args" ] ||
+      handover "the seal of $label did not keep the measures before the change (coverage $label-before, then net)"
+    mkdir -p "$folder"
+    check sealed "$label" || handover "the sealed tests changed since the seal: only the test-guardian puts them back"
+    project=$(sed -n 1p "$seal/coverage-args")
+    if [ -n "$filter" ]; then
+      check green "$project" "$filter" || handover "the tests of the proof or of its net do not pass, twice the same way"
+    fi
+    # the coverage after, on the files measured before; the tests that fail now and passed before
+    set --
+    while IFS= read -r f; do [ -n "$f" ] && set -- "$@" "$f"; done <<FILES
+$(sed -n '2,$p' "$seal/coverage-args")
+FILES
+    check coverage "$label-after" "$project" "$@" || handover "the coverage after the change was not measured"
+    before="$folder/test-$label-before.log" after="$folder/test-$label-after.log"
+    { [ -f "$before" ] && outcomes "$before" | sed -n 's/^Failed //p'; } | sort -u > "$out.before"
+    outcomes "$after" | sed -n 's/^Failed //p' | sort -u > "$out.after"
+    newly=$(comm -13 "$out.before" "$out.after" | head -n 8 | tr '\n' ',' | sed 's/,$//; s/,/, /g')
+    fb=0
+    [ -f "$before" ] && fb=$(counts "$before" | cut -d' ' -f2)
+    fa=$(counts "$after" | cut -d' ' -f2)
+    if [ -n "$newly" ] || [ "$fa" -gt "$fb" ]; then
+      echo "FAILED: tests that passed before the change fail now: ${newly:-$fa failed after, $fb before}"
+      handover "a test that passed before fails: a behavior the step changes on purpose (a test to update), or a regression"
+    fi
+    check compare "$label-before" "$label-after" || handover "a file lost coverage"
+    # the net after, against its minimum (the methods and the minimum of the last net before the change)
+    min=$(sed -n 1p "$seal/net-args")
+    set --
+    while IFS= read -r m; do [ -n "$m" ] && set -- "$@" "$m"; done <<METHODS
+$(sed -n '2,$p' "$seal/net-args")
+METHODS
+    check net "$label-after" --min "$min" "$@" || handover "a method of the net is not in the coverage after the change (renamed or removed)"
+    if grep -q '^SAFETY NET: THIN' "$out"; then
+      if sh "$scripts/test-guardian.sh" net "$(cat "$seal/net-label")" --min "$min" "$@" 2>/dev/null | grep -q '^SAFETY NET: THIN'; then
+        handover "the net is under its minimum, as it was before the change (INSUFFISANT): whether the same lines are left is the test-guardian's call"
+      fi
+      handover "the net fell under its minimum with the change"
+    fi
+    # a vulnerability or a bug: every line of its method runs after the fix
+    if [ -f "$seal/problem" ]; then
+      problem=$(cat "$seal/problem")
+      check net "$label-after" --min 100 "$problem" > "$out.problem" || { cat "$out.problem"; handover "the method of the problem is not in the coverage after the fix"; }
+      sed -n 's/^NET: /PROBLEM: /p' "$out.problem"
+      grep -q '^SAFETY NET: OK' "$out.problem" || handover "lines of the method of the problem that no test runs after the fix"
+    fi
+    echo "VERIFY: OK (the sealed tests as sealed$([ -n "$filter" ] && echo ", green twice"), no test failing that passed before, no file lost coverage, the net at its minimum$([ -f "$seal/problem" ] && echo ", every line of the method of the problem run")): commit it"
     exit 0 ;;
 
   park|unpark)

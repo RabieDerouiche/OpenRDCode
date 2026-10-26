@@ -200,6 +200,100 @@ run test-guardian.sh coverage with-failure tests/App.Tests/App.Tests.csproj src/
 check "VSTest coverage: a test that fails, named" 0 '^FAILED TESTS \(1\): App.Tests.InvoiceTests.Tax$'
 git checkout -q -- .
 
+# ---------- verify: the checks of the phase after a fix, by script, for the pilot (VERIFY: OK, or the test-guardian) ----------
+FAKE_DOTNET_COVER="$work/verify-cover.txt"
+export FAKE_DOTNET_COVER
+vcover() { printf '<!-- fake-cover: %s -->\n' "$1" > "$FAKE_DOTNET_COVER"; }
+T=tests/App.Tests/App.Tests.csproj
+vcover "src/App/Invoice.cs c=App.Invoice m=Total 3:1 m=Tax 4:0"
+run test-guardian.sh coverage V9-before "$T" src/App/Invoice.cs
+check "verify: the measure before the fix" 0 '^src/App/Invoice.cs lines 1/2 \(50%\)'
+run test-guardian.sh net V9-before src/App/Invoice.cs:Total
+check "verify: the net before, OK" 0 '^SAFETY NET: OK \(1/1 lines'
+run test-guardian.sh seal V9 --problem src/App/Nothing.cs:Total
+check "seal --problem: a file that does not exist" 1 '^STOP: no file src/App/Nothing.cs in this repository$'
+run test-guardian.sh seal V9 --problem Total
+check "seal --problem: <file>:<method> only" 1 '^STOP: bad method Total: '
+run test-guardian.sh seal V9 --problem src/App/Invoice.cs:Total
+check "seal --problem: an empty proof with the method of its problem" 0 '^SEALED: 0 test files'
+run test-guardian.sh verify V9 FullyQualifiedName~InvoiceTests.Total
+check "verify: all green, OK" 0 '^VERIFY: OK \(the sealed tests as sealed, green twice, no test failing that passed before, no file lost coverage, the net at its minimum, every line of the method of the problem run\): commit it$' '^STOP:'
+check "verify: …the proof green twice" 0 '^GREEN: 1 tests pass, twice$'
+check "verify: …the coverage after, on the files measured before" 0 '^src/App/Invoice.cs lines 1/2 \(50%\)'
+check "verify: …the net of the seal" 0 '^NET: src/App/Invoice.cs:Total lines 1/1 \(100%\)'
+check "verify: …the method of the problem" 0 '^PROBLEM: src/App/Invoice.cs:Total lines 1/1 \(100%\)'
+truth "verify: the coverage after is kept as V9-after (the test-guardian reads it when it takes over)" '[ -f "$(git rev-parse --git-common-dir)/opencode-tickets/NOKEY.tests/coverage-V9-after.txt" ] || ls "$(git rev-parse --git-common-dir)"/opencode-tickets/*.tests/coverage-V9-after.txt >/dev/null 2>&1'
+run test-guardian.sh verify V9
+check "verify without a filter (an empty proof, a net without new tests): no green, the rest" 0 '^VERIFY: OK \(the sealed tests as sealed, no test failing' '^GREEN:'
+# a test that passed before fails after the fix: a regression, or a behavior changed on purpose: the test-guardian judges
+sed -i 's/InvoiceTests.Tax pass/InvoiceTests.Tax fail Assert.Equal() Failure: Expected 2, Actual 3/' "$T"
+run test-guardian.sh verify V9 FullyQualifiedName~InvoiceTests.Total
+check "verify: a test that passed before fails: the test-guardian" 1 '^VERIFY: TEST-GUARDIAN \(a test that passed before fails: a behavior the step changes on purpose \(a test to update\), or a regression\)' '^STOP:'
+check "verify: …the test named" 1 '^FAILED: tests that passed before the change fail now: App.Tests.InvoiceTests.Tax$'
+git checkout -q -- .
+# the tests of the proof fail: the test-guardian
+run test-guardian.sh verify V9 FullyQualifiedName~InvoiceTests.Nothing
+check "verify: the tests of the filter do not pass: the test-guardian, no STOP" 1 '^VERIFY: TEST-GUARDIAN \(the tests of the proof or of its net do not pass, twice the same way\)' '^STOP:'
+check "verify: …its failure as FAILED" 1 '^FAILED: no test matched the filter FullyQualifiedName~InvoiceTests.Nothing$'
+# a file that loses coverage
+vcover "src/App/Invoice.cs c=App.Invoice m=Total 3:0 m=Tax 4:0"
+run test-guardian.sh verify V9
+check "verify: a lost coverage: the test-guardian" 1 '^VERIFY: TEST-GUARDIAN \(a file lost coverage\)'
+check "verify: …the file named" 1 '^FAILED: coverage lost after the change in src/App/Invoice.cs$'
+# the net falls under its minimum, the file keeping its coverage
+vcover "src/App/Invoice.cs c=App.Invoice m=Total 3:0 m=Tax 4:1"
+run test-guardian.sh verify V9
+check "verify: the net under its minimum, OK before: the test-guardian" 1 '^VERIFY: TEST-GUARDIAN \(the net fell under its minimum with the change\)'
+check "verify: …its NET line" 1 '^NET: src/App/Invoice.cs:Total lines 0/1 \(0%\)'
+# a net already thin before the change (INSUFFISANT): which lines are left is the test-guardian's call
+vcover "src/App/Invoice.cs c=App.Invoice m=Total 3:1 m=Tax 4:0"
+run test-guardian.sh coverage V8-before "$T" src/App/Invoice.cs
+run test-guardian.sh net V8-before src/App/Invoice.cs:Total src/App/Invoice.cs:Tax
+check "verify: a net thin before" 0 '^SAFETY NET: THIN'
+run test-guardian.sh seal V8
+run test-guardian.sh verify V8
+check "verify: thin before and after: the test-guardian decides (INSUFFISANT)" 1 '^VERIFY: TEST-GUARDIAN \(the net is under its minimum, as it was before the change \(INSUFFISANT\)'
+# the method of the problem keeps a line that no test runs
+run test-guardian.sh coverage V7-before "$T" src/App/Invoice.cs
+run test-guardian.sh net V7-before src/App/Invoice.cs:Total
+run test-guardian.sh seal V7 --problem src/App/Invoice.cs:Tax
+run test-guardian.sh verify V7
+check "verify: a line of the method of the problem not run: the test-guardian" 1 '^VERIFY: TEST-GUARDIAN \(lines of the method of the problem that no test runs after the fix\)'
+check "verify: …its line" 1 '^PROBLEM: src/App/Invoice.cs:Tax lines 0/1 \(0%\) branches 0/0 uncovered 4$'
+# a method of the net that the change removed or renamed
+vcover "src/App/Invoice.cs c=App.Invoice m=Tax 4:1 m=Grand 3:1"
+run test-guardian.sh verify V7
+check "verify: a method of the net gone from the report: the test-guardian" 1 '^VERIFY: TEST-GUARDIAN \(a method of the net is not in the coverage after the change \(renamed or removed\)\)' '^STOP:'
+vcover "src/App/Invoice.cs c=App.Invoice m=Total 3:1 m=Tax 4:0"
+# a seal without its measures (made by an older pack, or without coverage before), and no seal at all
+run test-guardian.sh seal V6
+run test-guardian.sh verify V6
+check "verify: a seal without the measures before: the test-guardian" 1 '^VERIFY: TEST-GUARDIAN \(the seal of V6 did not keep the measures before the change'
+run test-guardian.sh verify V5
+check "verify: no seal: the test-guardian" 1 '^VERIFY: TEST-GUARDIAN \(no seal V5: '
+# a new measure before a change starts a new proof: the net of an earlier attempt no longer counts
+run test-guardian.sh coverage V4-net "$T" src/App/Invoice.cs
+run test-guardian.sh net V4-net src/App/Invoice.cs:Tax
+run test-guardian.sh coverage V4-before "$T" src/App/Invoice.cs
+run test-guardian.sh net V4-before src/App/Invoice.cs:Total
+run test-guardian.sh seal V4
+run test-guardian.sh verify V4
+check "verify: the net of the seal is that of this proof (V4-before), not of an earlier attempt (V4-net)" 0 '^NET: src/App/Invoice.cs:Total ' 'Invoice.cs:Tax'
+# a test run that does not end in the time of the command: final, no VERIFY line, no turn of the test-guardian
+out=$(FAKE_DOTNET_SLOW_TEST=5 TEST_SUITE_LIMIT=1s "$SHELL_UNDER_TEST" "$scripts/test-guardian.sh" verify V9 FullyQualifiedName~InvoiceTests.Total 2>&1)
+status=$?
+check "verify: a timeout is final, never handed to the test-guardian" 1 '^TESTS: TIMEOUT' '^VERIFY:'
+# the machine cannot run the tests: the ENVIRONMENT PROBLEM line, at once, and no VERIFY line
+mkdir -p "$work/nodotnet"
+for f in /usr/local/bin/* /usr/bin/* /bin/*; do
+  n=$(basename "$f")
+  [ "$n" = dotnet ] || [ -e "$work/nodotnet/$n" ] || ln -s "$f" "$work/nodotnet/$n" 2>/dev/null
+done
+out=$(PATH="$work/nodotnet" "$SHELL_UNDER_TEST" "$scripts/test-guardian.sh" verify V9 2>&1)
+status=$?
+check "verify: dotnet missing: the ENVIRONMENT PROBLEM line, nothing else to judge" 1 '^ENVIRONMENT PROBLEM: dotnet is not on the PATH' '^VERIFY:'
+unset FAKE_DOTNET_COVER
+
 run fortify.sh prereq
 check "VSTest prereq" 0 '^PREREQ: OK$'
 check "VSTest prereq: coverlet" 0 'tests/App.Tests/App.Tests.csproj \(coverlet.collector\)'
@@ -220,6 +314,24 @@ check "lock: the wait gives up" 1 'BUILD: NOT RUN \(another build or test run'
 truth "lock: no output file left behind" '[ "$(ls "$TMPDIR" | wc -l)" -eq "$before" ]'
 truth "lock: the lock of the other run is kept" '[ -d .git/opencode-dotnet.lock ]'
 rm -rf .git/opencode-dotnet.lock
+
+# a test run that does not end in the time of a command: stopped by the script itself, which says what ran and why
+# (the plugin would stop the command later and lose its whole output)
+out=$(FAKE_DOTNET_SLOW_TEST=5 TEST_SUITE_LIMIT=1s "$SHELL_UNDER_TEST" "$scripts/build-test.sh" 2>&1)
+status=$?
+check "timeout: the suite stopped by the script, said" 124 '^TESTS: TIMEOUT \(the tests ran until the time of this command ran out' '^TESTS: (OK|FAILED)'
+check "timeout: …what to do, never a limit raised" 124 '^NOTE: a test run this long cannot prove a change on this machine: AGENTS.md « Build & test », « Tests locaux »'
+truth "timeout: no test host left running" '! pgrep -f "fake-dotnet|dotnet test" >/dev/null 2>&1 || ! pgrep -P $$ >/dev/null 2>&1'
+# the wait for the lock counts: a command that already used its time gets what is left, not a whole run
+out=$(FAKE_DOTNET_SLOW_TEST=5 OPENCODE_COMMAND_START=$(($(date +%s) - 2518)) "$SHELL_UNDER_TEST" "$scripts/build-test.sh" 2>&1)
+status=$?
+check "timeout: the time already spent (the wait for the lock) counts" 124 '^TESTS: TIMEOUT \(the tests ran until the time of this command ran out, 42 min with the build and the wait'
+out=$(FAKE_DOTNET_SLOW_TEST=5 TEST_SUITE_LIMIT=1s "$SHELL_UNDER_TEST" "$scripts/test-guardian.sh" green tests/App.Tests/App.Tests.csproj FullyQualifiedName~InvoiceTests.Total 2>&1)
+status=$?
+check "timeout: the test-guardian's proof, final like an environment problem, never a STOP" 124 '^TESTS: TIMEOUT \(the tests of tests/App.Tests/App.Tests.csproj ran until the time' '^STOP:'
+out=$(FAKE_DOTNET_SLOW_TEST=5 TEST_SUITE_LIMIT=1s "$SHELL_UNDER_TEST" "$scripts/build-test.sh" tests/App.Tests/App.Tests.csproj --filter FullyQualifiedName~InvoiceTests 2>&1)
+status=$?
+check "timeout: a filtered run too" 124 '^TESTS: TIMEOUT'
 
 # ---------- a Microsoft.Testing.Platform repository (.slnx): xUnit v3, MSTest.Sdk, a VSTest one, TUnit ----------
 mkdir -p "$work/mtp"
@@ -269,8 +381,8 @@ check "scope: the VSTest project" 0 "^vstest	tests/Legacy.Tests/Legacy.Tests.csp
 run build-test.sh Mtp.slnx
 check "mixed solution: every test, summed" 0 '^TESTS: OK \(5 tests\)$'
 called "mixed: the VSTest project with dotnet test" '^dotnet test tests/Legacy.Tests/Legacy.Tests.csproj --no-build'
-called "mixed: xUnit v3 as its application, the suite limit" '^dotnet exec .*/Core.Tests.dll --timeout 18m$' '^dotnet run'
-called "mixed: MSTest.Sdk as its application" '^dotnet exec .*/Core.MsTests.dll --timeout 18m$'
+called "mixed: xUnit v3 as its application, the suite limit: the time left to the command, 25 minutes at most" '^dotnet exec .*/Core.Tests.dll --timeout 1(4[0-9][0-9]|500)s$' '^dotnet run'
+called "mixed: MSTest.Sdk as its application" '^dotnet exec .*/Core.MsTests.dll --timeout 1(4[0-9][0-9]|500)s$'
 called "mixed: dotnet test never runs an MTP project" '^dotnet test' '^dotnet test [^ ]*(Core.Tests|Core.MsTests)'
 
 run build-test.sh tests/Core.Tests/Core.Tests.csproj --filter FullyQualifiedName~PriceTests
@@ -328,6 +440,15 @@ run build-test.sh tests/Core.Tests/Core.Tests.csproj --filter FullyQualifiedName
 check "MTP hang: named and stopped" 1 '^HANG: the tests of tests/Core.Tests/Core.Tests.csproj ran more than 5m'
 run test-guardian.sh green tests/Core.Tests/Core.Tests.csproj FullyQualifiedName~CartTests
 check "MTP hang: the test-guardian stops" 1 '^STOP: the tests of tests/Core.Tests/Core.Tests.csproj ran more than 5m'
+# a whole run of the application longer than the time left: a TIMEOUT of the run, never a test to fix
+out=$(TEST_SUITE_LIMIT=7m "$SHELL_UNDER_TEST" "$scripts/test-platform.sh" run tests/Core.Tests/Core.Tests.csproj 2>&1)
+status=$?
+check "MTP: a whole run past its time is a TIMEOUT, not a hanging test" 1 '^TIMEOUT: the tests of tests/Core.Tests/Core.Tests.csproj ran more than 7m, the time left to this command' '^HANG:'
+run build-test.sh tests/Core.Tests/Core.Tests.csproj
+check "MTP: build-test.sh says TESTS: TIMEOUT" 124 '^TESTS: TIMEOUT' '^HANG:'
+out=$(TEST_SUITE_LIMIT=2m "$SHELL_UNDER_TEST" "$scripts/test-platform.sh" run tests/Core.Tests/Core.Tests.csproj --filter FullyQualifiedName~CartTests 2>&1)
+status=$?
+check "MTP: a filtered run with less time left than the hang limit: a TIMEOUT too" 1 '^TIMEOUT: the tests of tests/Core.Tests/Core.Tests.csproj ran more than 2m'
 git checkout -q -- .
 
 sed -i 's#</Project>#  <!-- fake-mtp-old -->\n</Project>#' tests/Core.MsTests/Core.MsTests.csproj
@@ -480,7 +601,14 @@ printf '<Project>\n  <ItemGroup>\n    <PackageVersion Include="Blazorise.Bootstr
 git add -A && git commit -q -m upgrade
 run detect-project-type.sh
 check "detect: the highest version of Blazorise, central versions included" 0 'Blazorise 2\.10\.1: the skill blazorise'
-git rm -q Directory.Packages.props && git commit -q -m central
+check "detect: no EF Core line without EF Core" 0 'Blazorise 2' '^- EF Core'
+# Entity Framework Core: its version, its providers and the skill that knows it, central versions included
+printf '<Project>\n  <ItemGroup>\n    <PackageVersion Include="Blazorise.Bootstrap5" Version="2.10.1" />\n    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.11" />\n    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11" />\n  </ItemGroup>\n</Project>\n' > Directory.Packages.props
+sed -i 's#</Project>#  <ItemGroup>\n    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />\n    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.2" />\n  </ItemGroup>\n</Project>#' src/Web/Web.csproj
+git add -A && git commit -q -m ef
+run detect-project-type.sh
+check "detect: EF Core, its highest version, its providers, the skill efcore" 0 '^- EF Core 8\.0\.11 \(SqlServer, Sqlite\): the skill efcore'
+git rm -q Directory.Packages.props && git checkout -q HEAD~1 -- src/Web/Web.csproj && git commit -q -m central
 
 # ---------- the machine, not the code (dotnet-problem.sh): .NET 8, global.json, the runtimes of the tests ----------
 mkdir -p "$work/env"

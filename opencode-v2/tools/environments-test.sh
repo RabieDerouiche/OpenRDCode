@@ -611,6 +611,15 @@ check "tests.sh: /tests api, the endpoints" 0 '^\| GET \| /api/orders \|'
 run tests.sh --raw ""
 check "tests.sh: /tests alone is the menu" 0 '^Mode : menu$'
 check "tests.sh: the menu, the API" 0 '^API ASP\.NET Core : 3 endpoint\(s\)'
+# the candidates of the menu: the production files changed lately that no test names (the names of the tests read once)
+mkdir -p src/Api/Billing tests/Api.Tests
+printf 'namespace Api.Billing;\npublic class Discount { }\n' > src/Api/Billing/Discount.cs
+printf 'namespace Api.Billing;\npublic class Rounding { }\n' > src/Api/Billing/Rounding.cs
+printf 'namespace Api.Tests;\npublic class DiscountTests { private readonly Api.Billing.Discount d = new(); }\n' > tests/Api.Tests/DiscountTests.cs
+git add src/Api/Billing tests/Api.Tests/DiscountTests.cs && git commit -q -m "billing"
+run tests.sh --raw ""
+check "tests.sh: the menu, a class no test names" 0 '^  - src/Api/Billing/Rounding\.cs \(1 modification\(s\)\)$' 'Billing/Discount\.cs'
+git reset -q --hard HEAD~1
 run tests.sh --raw "InvoiceService"
 check "tests.sh: a class: the unit tests" 0 '^Mode : unit$'
 
