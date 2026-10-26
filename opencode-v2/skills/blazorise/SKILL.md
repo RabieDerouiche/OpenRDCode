@@ -52,13 +52,13 @@ public static class PageTest
     }
 }
 ```
-The page of the examples (`Order`, `IOrderSource` are classes of the application), on the DataGrid:
+The page of the examples (`Order`, `IOrderSource` are classes of the application), on the DataGrid with its French texts (`GridTexts`, below):
 ```razor
 @page "/commandes"
 @inject IOrderSource Source
 
 <h1>Commandes</h1>
-<DataGrid TItem="Order" Data="@orders" ShowPager PageSize="5">
+<DataGrid TItem="Order" Data="@orders" ShowPager PageSize="5" Localizers="@GridTexts.French">
     <DataGridColumn TItem="Order" Field="@nameof(Order.Number)" Caption="Numéro" />
     <DataGridColumn TItem="Order" Field="@nameof(Order.Date)" Caption="Date" DisplayFormat="{0:dd/MM/yyyy}" />
     <DataGridColumn TItem="Order" Field="@nameof(Order.Total)" Caption="Total" DisplayFormat="{0:N2}" />

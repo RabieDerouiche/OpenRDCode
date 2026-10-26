@@ -804,22 +804,15 @@ check "Vault: no token (not logged in)" 1 'ENVIRONMENT PROBLEM: the client secre
 vault_case "$OTHER_TOKEN" coffre
 vnote "Vault with a token of another policy" "$out"
 check "Vault: a token whose policy does not give the secret" 1 'cannot be read: Vault refuses secret/lab/recette to your token' "$SECRETS"
-cat >> AGENTS.md <<EOF
-- \`coffrevide\` : https://api.lab.test:8443
-  - oidc : https://idp.lab.test:8443/realms/acme
-  - client : shop-tests
-  - secret : \`vault:secret/lab/nothing#client_secret\`
-  - proxy : $P
-  - proxy-identifiants : \`vault:secret/lab/proxy#credentials\`
-  - certificat : certs/lab-ca.pem
-- \`coffrechamp\` : https://api.lab.test:8443
-  - oidc : https://idp.lab.test:8443/realms/acme
-  - client : shop-tests
-  - secret : \`vault:secret/lab/recette#nope\`
-  - proxy : $P
-  - proxy-identifiants : \`vault:secret/lab/proxy#credentials\`
-  - certificat : certs/lab-ca.pem
-EOF
+# two more environments, declared as /tests env config declares them: a path and a field that Vault does not have
+vault_env() {
+  "$SHELL_UNDER_TEST" "$scripts/env-setup.sh" set "$1" --url https://api.lab.test:8443 --oidc https://idp.lab.test:8443/realms/acme \
+    --client shop-tests --vault "$2" --proxy "$P" --proxy-vault secret/lab/proxy#credentials --ca certs/lab-ca.pem > "$work/set-$1.log" 2>&1
+}
+vault_env coffrevide secret/lab/nothing#client_secret
+vault_env coffrechamp secret/lab/recette#nope
+grep -q '^- `coffrechamp` : ' AGENTS.md
+verdict "Vault: the environments of the cases declared" $?
 vault_case "$DEV_TOKEN" coffrevide
 vnote "Vault, a path that does not exist" "$out"
 check "Vault: nothing at that path" 1 'cannot be read: nothing in Vault at secret/lab/nothing' "$SECRETS"
