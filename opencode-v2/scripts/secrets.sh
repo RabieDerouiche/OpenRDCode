@@ -82,7 +82,12 @@ secret_get() {
     *"missing client token"*)
       secret_why="you are not logged in to Vault ($s_addr): vault login, in your terminal, as your Vault asks (OIDC, LDAP, a token)" ;;
     *"permission denied"*|*"Code: 403"*)
-      secret_why="Vault refuses $s_path to your token ($s_addr): its policy does not give it, or the token expired (vault login again)" ;;
+      # no token at all (none in the environment, no ~/.vault-token of vault login): Vault answers 403 as well
+      if [ -z "${VAULT_TOKEN:-}" ] && [ ! -s "${HOME:-/nonexistent}/.vault-token" ] && [ ! -f "${VAULT_CONFIG_PATH:-${HOME:-/nonexistent}/.vault}" ]; then
+        secret_why="you are not logged in to Vault ($s_addr): vault login, in your terminal, as your Vault asks (OIDC, LDAP, a token)"
+      else
+        secret_why="Vault refuses $s_path to your token ($s_addr): its policy does not give it, or the token expired (vault login again)"
+      fi ;;
     *"No value found"*|*"Code: 404"*)
       secret_why="nothing in Vault at $s_path ($s_addr): the path of « $1 » in AGENTS.md (vault kv list <its folder> shows the paths), or a secret not put there yet" ;;
     *"not present in secret"*|*"not present"*)

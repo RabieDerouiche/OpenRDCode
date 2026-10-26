@@ -78,10 +78,11 @@ note() { echo "NOTE: $*"; }
 # DataGrid
 blocks="$work/blocks"
 mkdir -p "$blocks"
+# (a block in a list is indented as its fence: that indentation is taken off its lines)
 awk -v dir="$blocks" '
-  /^ *```[a-z]+$/ { n++; inblock = 1; file = dir "/" n; next }
+  /^ *```[a-z]+$/ { n++; inblock = 1; file = dir "/" n; match($0, /^ */); indent = RLENGTH; next }
   /^ *```$/ && inblock { inblock = 0; close(file); next }
-  inblock { sub(/^   /, ""); print > file }' "$pack/skills/blazorise/SKILL.md"
+  inblock { line = $0; if (indent > 0 && substr(line, 1, indent) ~ /^ *$/) line = substr(line, indent + 1); print line > file }' "$pack/skills/blazorise/SKILL.md"
 if [ -s "$blocks/6" ] && [ ! -e "$blocks/7" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL: the skill blazorise has not its 6 code blocks"; ls "$blocks"; fi
 
 # The rendered markup of the page, after a failure: what the DataGrid or NativeGrid really wrote

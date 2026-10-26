@@ -800,7 +800,7 @@ vault_case() {
 vnote() { echo "NOTE: $1: $(printf '%s\n' "$2" | grep -m 1 '^ENVIRONMENT PROBLEM' | sed 's/.*cannot be read: //' | cut -c1-200)"; }
 vault_case "" coffre
 vnote "Vault without a token" "$out"
-check "Vault: no token (not logged in)" 1 'ENVIRONMENT PROBLEM: the client secret of coffre \(Vault secret/lab/recette \(field client_secret\)\) cannot be read: (you are not logged in to Vault|Vault refuses secret/lab/recette to your token)' "$SECRETS"
+check "Vault: no token (not logged in)" 1 'ENVIRONMENT PROBLEM: the client secret of coffre \(Vault secret/lab/recette \(field client_secret\)\) cannot be read: you are not logged in to Vault' "$SECRETS"
 vault_case "$OTHER_TOKEN" coffre
 vnote "Vault with a token of another policy" "$out"
 check "Vault: a token whose policy does not give the secret" 1 'cannot be read: Vault refuses secret/lab/recette to your token' "$SECRETS"

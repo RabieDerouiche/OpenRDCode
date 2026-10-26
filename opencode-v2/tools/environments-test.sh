@@ -450,8 +450,13 @@ export FAKE_VAULT_MODE
 run env-tests.sh --check vaulted
 check "env-tests --check: not logged in to Vault" 1 'cannot be read: you are not logged in to Vault \(https://vault\.lab\.test:8200\): vault login, in your terminal'
 FAKE_VAULT_MODE=denied
+VAULT_TOKEN=hvs.token-of-another-policy
+export VAULT_TOKEN
 run env-tests.sh --check vaulted
-check "env-tests --check: a token Vault refuses" 1 'cannot be read: Vault refuses secret/lab/recette to your token'
+check "env-tests --check: a token Vault refuses" 1 'cannot be read: Vault refuses secret/lab/recette to your token' 'hvs\.token'
+unset VAULT_TOKEN
+run env-tests.sh --check vaulted
+check "env-tests --check: Vault answers 403 to no token at all (as the real one): not logged in" 1 'cannot be read: you are not logged in to Vault'
 FAKE_VAULT_MODE=down
 run env-tests.sh --check vaulted
 check "env-tests --check: Vault out of reach" 1 'cannot be read: Vault cannot be reached from this machine \(https://vault\.lab\.test:8200\): VPN, or VAULT_ADDR'
