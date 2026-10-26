@@ -618,7 +618,7 @@ Une session devenue longue, ou qui répond « Service Unavailable » à chaque m
 /compact
 ```
 
-Un ticket, du début à la MR en Draft (tes consignes après la clé, facultatives). Relancé, il reprend où il s'était arrêté. Ta commande s'affiche en une ligne, « /go ABC-123 — mon-api · branche develop », le titre de la session montre l'avancement (⏳), et l'issue reste dans le titre et dans la dernière réponse : ✅ MR créée ou rien à faire, ⏸ une réponse du PO t'attend, ⛔ arrêté avec la raison, ❓ une question t'attend. Avant qu'une étape touche du code existant, son filet de non-régression (section « Le filet de non-régression ») : les tests du comportement actuel des méthodes touchées, écrits d'abord par le test-guardian s'il en manque. Un bug se corrige preuve à l'appui : le test-guardian écrit d'abord le test qui le reproduit (rouge), le coder corrige (vert), le test-guardian vérifie (vert deux fois, filet intact, couverture sans perte). À la fin, un QCM « Suite » : `/fix` d'un clic, tout de suite (il attend la fin de la CI, 30 minutes au plus). En fin de `/go`, la suite complète mesure la couverture des lignes modifiées par la branche, et les lignes qu'aucun test n'exécute reçoivent leurs tests (le chiffre va dans la MR : Sonar demande 80 % sur le nouveau code) :
+Un ticket, du début à la MR en Draft (tes consignes après la clé, facultatives). Relancé, il reprend où il s'était arrêté. Ta commande s'affiche en une ligne, « /go ABC-123 — mon-api · branche develop », le titre de la session montre l'avancement (⏳), et l'issue reste dans le titre et dans la dernière réponse : ✅ MR créée ou rien à faire, ⏸ une réponse du PO t'attend, ⛔ arrêté avec la raison, ❓ une question t'attend. Avant qu'une étape touche du code existant, son filet de non-régression (section « Le filet de non-régression ») : les tests du comportement actuel des méthodes touchées, écrits d'abord par le test-guardian s'il en manque. Un bug se corrige preuve à l'appui : le test-guardian écrit d'abord le test qui le reproduit (rouge), le coder corrige (vert), le test-guardian vérifie (vert deux fois, filet intact, couverture sans perte). À la fin, un QCM « Suite » : `/fix` d'un clic, tout de suite (il attend la fin de la CI, 32 minutes au plus). En fin de `/go`, la suite complète mesure la couverture des lignes modifiées par la branche, et les lignes qu'aucun test n'exécute reçoivent leurs tests (le chiffre va dans la MR : Sonar demande 80 % sur le nouveau code) :
 ```text
 /go ABC-123
 ```
@@ -699,7 +699,7 @@ Récupérer ce que tu as poussé depuis ton Mac (Rider), sans rien commiter ni p
 /sync merge hotfix/ABC-130-urgent
 ```
 
-Après la CI ou la review (jobs en échec, Sonar, Fortify, discussions de la MR), sur la branche d'un ticket (pour simplement pousser : `/push`). Une faille Fortify ou Sonar des fichiers de la branche, ou un bug qu'un test peut reproduire (3 au plus par `/fix`), est corrigé avec son filet de non-régression et sa preuve, comme dans `/fortify` ; un refactoring demandé (complexité Sonar, duplication, une discussion qui change le fonctionnement d'une méthode) a son filet d'abord ; une faille que le test-guardian ne parvient pas à montrer (le code résiste déjà) garde ses tests et part en « Faux positifs probables ». Lancé pendant que la CI du commit poussé tourne encore (juste après `/go`, par exemple), il l'attend d'abord, 30 minutes au plus, par pauses de 100 secondes (le titre montre « pause.sh »), puis traite ses retours ; « sans attendre » ne l'attend pas. Un job en échec pour une raison hors du code (runner, réseau, délai du job, registre ou flux de paquets muet) n'est jamais « corrigé » : la réponse dit de le relancer dans GitLab :
+Après la CI ou la review (jobs en échec, Sonar, Fortify, discussions de la MR), sur la branche d'un ticket (pour simplement pousser : `/push`). Une faille Fortify ou Sonar des fichiers de la branche, ou un bug qu'un test peut reproduire (3 au plus par `/fix`), est corrigé avec son filet de non-régression et sa preuve, comme dans `/fortify` ; un refactoring demandé (complexité Sonar, duplication, une discussion qui change le fonctionnement d'une méthode) a son filet d'abord ; une faille que le test-guardian ne parvient pas à montrer (le code résiste déjà) garde ses tests et part en « Faux positifs probables ». Lancé pendant que la CI du commit poussé tourne encore (juste après `/go`, par exemple), il l'attend d'abord, 32 minutes au plus, par pauses de 4 minutes après chacune desquelles il ne relit que le statut du pipeline, sans ses jobs (le titre montre « pause.sh ») : 8 tours au plus, peu de tokens ; puis il traite ses retours, et lit la fin du journal de chaque job en échec, là où est l'erreur ; « sans attendre » ne l'attend pas. Un job en échec pour une raison hors du code (runner, réseau, délai du job, registre ou flux de paquets muet) n'est jamais « corrigé » : la réponse dit de le relancer dans GitLab :
 ```text
 /fix
 ```
@@ -796,34 +796,38 @@ Quand le dépôt référence Blazorise, `detect-project-type.sh` le dit avec sa 
 
 ### Remplacer Blazorise par du Razor natif, page par page
 
-Le natif, c'est ce qu'ASP.NET Core fournit déjà : `QuickGrid` (un paquet de Microsoft, gratuit, MIT) pour les grilles, `EditForm` et ses `Input…` pour les formulaires, le HTML avec les classes Bootstrap que l'application charge déjà, et quelques petits composants de l'application là où Blazorise en donnait un tout fait (un pager, une fenêtre modale, un toast).
+100 % natif, sans aucun paquet (pas même QuickGrid) : `EditForm` et ses `Input…` pour les formulaires, le HTML avec les classes Bootstrap que l'application charge déjà, et les composants natifs que `blazor-native.sh scaffold` écrit une fois dans le code de l'application, dans `Components/Native` : `NativeGrid` avec `NativeColumn` et `NativeTemplateColumn` (tri d'un clic, pages et pager en français avec les mots du DataGrid, texte d'une liste vide, clic sur une ligne et ligne sélectionnée, données d'un serveur), `NativeModal`, `NativeDialogService` et son hôte (les questions et les messages d'`IMessageService`), `NativeToastService` et son hôte (les notifications), et les classes Bootstrap d'un champ. Ils appartiennent ensuite à l'application : à adapter comme le reste de son code.
 ```text
-/go sans ticket : remplacer Blazorise par du Razor natif dans la page Commandes
+/go sans ticket : remplacer Blazorise par du Razor natif dans toute l'application
 ```
 ```text
 /go ABC-124            (« retirer Blazorise de l'application »)
 ```
 Ce qui se passe :
-1. **L'inventaire** : l'analyste lit les balises de chaque page (`git grep`, jamais une liste apprise par cœur), les services de Blazorise injectés, ses enregistrements dans `Program.cs` et ses liens `_content/Blazorise…`. Son plan : une page ou une famille de composants par étape, chacune « (filet d'abord) », les plus simples d'abord (icônes, boutons, mise en page), puis les formulaires, les fenêtres et les messages, puis les grilles ; la dernière étape retire les paquets. QuickGrid est un paquet : c'est toi qui l'ajoutes, la fiche le propose dans « Décisions ».
-2. **bUnit** : les tests d'une page Blazor passent par bUnit (il affiche la page dans le test, sans navigateur). Quand aucun projet de tests ne l'a (`fortify.sh prereq --tests` : « COMPONENT TESTS: none »), une question « Composants » arrive avec celles de l'analyse : « Oui (recommandé) » l'ajoute en premier commit (`test-guardian.sh setup --components` : au projet de tests unitaires qui référence l'application, ou dans un nouveau projet) ; « Non » laisse ces pages sans filet, et la MR le dit.
-3. **Le filet d'abord, pour chaque page** : le test-guardian écrit les tests de ce que voient ses utilisateurs (les titres des colonnes dans l'ordre, la première page, les dates et montants en français, la page suivante, un tri par un clic), verts deux fois sur Blazorise, puis scellés. Ils cherchent des textes, jamais une classe CSS, un id ou un type Blazorise : les mêmes tests doivent passer tels quels sur la page native.
-4. **La page en natif** : le coder la réécrit ; l'étape est finie quand les tests scellés passent, sans une ligne changée, deux fois, sans couverture perdue.
-5. **La dernière étape** retire les paquets, les `@using`, `AddBlazorise…`, `ProductToken` (le jeton de licence : c'est toi qui le retires de la configuration), les liens `_content/Blazorise…` et les lignes Blazorise de l'aide des tests ; `git grep -i blazorise` ne trouve plus rien, le build et les tests sont verts.
+1. **L'inventaire** : l'analyste lance `blazor-native.sh inventory`, qui lit chaque page (jamais une liste apprise par cœur) : ses balises Blazorise, leur famille, les services injectés et leur remplaçant, les enregistrements de `Program.cs`, les liens `_content/Blazorise…`, les paquets et leur version, les clés de licence (leur nom, jamais leur valeur), l'équivalent natif de chaque balise, et l'ordre des pages : les plus simples d'abord (icônes, boutons, mise en page), puis les formulaires, les fenêtres et les messages, puis les grilles. Une balise qu'il ne connaît pas va dans « Décisions », à vérifier.
+2. **bUnit** : les tests d'une page Blazor passent par bUnit (il affiche la page dans le test, sans navigateur). Quand aucun projet de tests ne l'a (`fortify.sh prereq --tests` : « COMPONENT TESTS: none »), une question « Composants » arrive avec celles de l'analyse : « Oui (recommandé) » l'ajoute en premier commit (`test-guardian.sh setup --components`) ; « Non » laisse ces pages sans filet, et la MR le dit.
+3. **Les composants natifs** : la première étape du coder lance `blazor-native.sh scaffold <le projet web>` (refusé à tout autre agent) ; ils compilent à côté de Blazorise, tous nommés `Native…` pour n'en croiser aucun nom. Il enregistre aussi ce que les pages demanderont (`NativeDialogService`, `NativeToastService` et leurs hôtes dans la mise en page).
+4. **Le filet d'abord, pour chaque page** : le test-guardian écrit les tests de ce que voient ses utilisateurs (les titres des colonnes dans l'ordre, la première page, les dates et montants en français, la page suivante, un tri par un clic), verts deux fois sur Blazorise, puis scellés. Ils cherchent des textes, jamais une classe CSS, un id ou un type Blazorise : les mêmes tests doivent passer tels quels sur la page native.
+5. **La page en natif** : le coder la réécrit avec les équivalents du skill ; l'étape est finie quand les tests scellés passent, sans une ligne changée, deux fois, sans couverture perdue.
+6. **La dernière étape** retire les paquets, les `@using`, `AddBlazorise…`, `ProductToken` (le jeton de licence : c'est toi qui le retires de la configuration et des coffres de secrets), les liens `_content/Blazorise…` et les lignes Blazorise de l'aide des tests ; elle finit quand `blazor-native.sh check` dit « BLAZORISE: GONE », le build et tous les tests verts. Le checker refait la même vérification.
 
 Ce qui change sans erreur de compilation (le skill le donne au coder, les tests l'attrapent) :
 
-| Sur Blazorise | En natif, si on ne fait rien | Ce que la page native fait |
+| Sur Blazorise | Avec les composants natifs | À vérifier dans l'étape |
 |---|---|---|
 | un champ change sa valeur à chaque frappe | `InputText` la change quand on quitte le champ | une recherche qui filtre en tapant : `<input @bind="search" @bind:event="oninput">` |
-| chaque colonne se trie d'un clic | une colonne ne se trie pas | `Sortable="true"` sur chaque `PropertyColumn` |
-| la taille de page de la grille | 10 lignes par page | `PaginationState { ItemsPerPage = <la même> }` |
-| les messages de validation en rouge Bootstrap (`is-invalid`) | les classes `invalid` et `validation-message` | un `FieldCssClassProvider` qui donne les classes Bootstrap |
-| les textes du pager en français | « Page 1 of 3 », « Go to next page » | un pager de l'application, avec les mêmes mots (« Première », « Précédente », « Suivante », « Dernière ») |
-| un clic sur une ligne, un texte pour la liste vide | rien : QuickGrid n'a ni l'un ni l'autre | un bouton dans une colonne, un `@if` avec le même texte |
+| chaque colonne se trie d'un clic | `NativeColumn` aussi, un second clic du plus grand | une colonne de boutons se trie avec `SortBy` ; `Sortable="false"` pour l'en empêcher |
+| les pages, 10 lignes par défaut | `NativeGrid ShowPager PageSize`, les mêmes | le premier test de la page dit combien de lignes Blazorise montrait |
+| les textes du pager en français | « Première », « Précédente », « Suivante », « Dernière », « Page 1 sur 3 · 12 éléments » | rien |
+| un clic sur une ligne, la ligne sélectionnée, la liste vide | `RowClicked`, `@bind-SelectedItem`, `EmptyText` | un bouton dans une ligne cliquable : `@onclick:stopPropagation="true"` |
+| les messages de validation en rouge Bootstrap (`is-invalid`) | `NativeFieldCssClassProvider` | `editContext.SetFieldCssClassProvider(…)` dans la page |
+| une fenêtre avec ses boutons | `NativeModal` | son contenu et ses boutons nommés tous les deux : `<ChildContent>…</ChildContent><Footer>…</Footer>` |
+| une confirmation, une notification | `NativeDialogService.ConfirmAsync`, `NativeToastService.Success` | leurs hôtes dans la mise en page ; les tests de la page les affichent avec elle |
+| les dates : le sélecteur de Blazorise | `InputDate` : celui du navigateur, dans sa langue | la valeur est la même |
 
-Pour poser le filet d'une page à la main, sans rien changer : `/tests Components/Pages/Orders.razor` (avec la question « Composants » quand bUnit manque).
+Pour poser le filet d'une page à la main, sans rien changer : `/tests Components/Pages/Orders.razor` (avec la question « Composants » quand bUnit manque). Pour voir où en est le retrait, dans une session : « lance `blazor-native.sh check` » (lecture seule).
 
-**Prouvé pour de vrai à chaque push** (`tools/blazor-native-test.sh`, dans la CI, avec .NET 10 et .NET 8) : une page des commandes sur le DataGrid de Blazorise 2.2.2, le projet de tests créé avec bUnit par `setup --components`, quatre tests de ce que voient ses utilisateurs écrits sur Blazorise (verts deux fois, scellés), la même page réécrite avec QuickGrid et le pager français du skill : les quatre tests passent sans une ligne changée, rien n'est perdu, puis Blazorise retiré entièrement ; 43 contrôles en tout (21 par version de .NET, et les 8 blocs de code du skill), avec le code du skill tel qu'il est écrit.
+**Prouvé pour de vrai à chaque push** (`tools/blazor-native-test.sh`, dans la CI, avec .NET 10 et .NET 8) : l'inventaire d'une application, une page des commandes sur le DataGrid de Blazorise 2.2.2, le projet de tests créé avec bUnit par `setup --components`, quatre tests de ce que voient ses utilisateurs écrits sur Blazorise (verts deux fois, scellés), les composants natifs écrits par `scaffold` qui buildent à côté de Blazorise, la même page réécrite avec `NativeGrid` : les quatre tests passent sans une ligne changée, rien n'est perdu ; puis treize tests bUnit des composants eux-mêmes (données d'un serveur, tri, pages, colonne sous condition, sélection, fenêtre, questions, messages, toasts, classes d'un champ) ; enfin Blazorise retiré entièrement et `check` « GONE », avec le code du skill tel qu'il est écrit.
 
 ## Versions de .NET, environnement et librairies
 
@@ -895,7 +899,7 @@ Une fois par environnement, dans une session du dépôt :
 ```
 Ses questions partent de ce que le code dit déjà (`env-setup.sh scan`) : les URL des jobs de déploiement de `.gitlab-ci.yml`, l'autorité et l'audience que l'API vérifie dans ses appsettings, le scope Entra ID qu'elles donnent, le proxy de ta machine. Deux QCM :
 1. le nom, l'URL de base de l'API, l'accès (un client OpenID Connect, recommandé quand l'API vérifie des jetons ; un jeton fixe dans une variable ; ou aucun), le proxy (celui de ta machine, avec les identifiants que porte déjà son `HTTPS_PROXY` ; aucun ; ou un autre, et alors s'il demande des identifiants), l'usage (lecture seule, écriture permise, production : jamais testée) ;
-2. avec OIDC : l'autorité (Keycloak : `https://<hôte>/realms/<realm>` ; Entra ID : `https://login.microsoftonline.com/<tenant>/v2.0`), le client id (dans une variable, ou tel quel : ce n'est pas un secret), le scope (Entra ID : `api://<application>/.default`), le fichier PEM des autorités de certification internes quand un proxy re-signe le TLS ou que le certificat est interne, et l'authentification du client en Basic quand le fournisseur l'exige.
+2. avec OIDC : l'autorité (Keycloak : `https://<hôte>/realms/<realm>` ; Entra ID : `https://login.microsoftonline.com/<tenant>/v2.0`), le client id (dans une variable, ou tel quel : ce n'est pas un secret), le scope (Entra ID : `api://<application>/.default`), le fichier PEM des autorités de certification internes quand un proxy re-signe le TLS ou que le certificat est interne, et l'authentification du client en Basic quand le fournisseur l'exige ; et « Secret » : dans une variable de ta machine (recommandé quand tu n'as pas de coffre), ou dans HashiCorp Vault (son chemin et son champ, par exemple `secret/acme/recette` et `client_secret` ; de même pour les identifiants du proxy).
 
 Il écrit le bloc de cet environnement dans la section « ## Environnements » d'AGENTS.md, jamais un secret : seulement les noms des variables de ta machine, déduits du nom de l'environnement. Pour `recette` :
 ```text
@@ -913,13 +917,23 @@ Il écrit le bloc de cet environnement dans la section « ## Environnements » d
 - `preprod` : https://api-preprod.example.com (jeton : `API_TOKEN_PREPROD`)
 - `prod` : https://api.example.com (production)
 ```
-Les réglages possibles : `oidc` (l'autorité ; l'URL du jeton vient de son document de découverte, écrite à côté dans `token-url` quand le fournisseur répond) ou `token-url` seul, `client` (une valeur, ou `` `RECETTE_CLIENT_ID` ``), `secret` (toujours une variable), `scope`, `audience` et `resource` (Auth0, ADFS), `auth-client : basic` ; `jeton : `<VARIABLE>`` sur la ligne pour un jeton fixe ; `proxy` (`aucun`, ou son URL sans identifiants), `proxy-identifiants`, `sans-proxy` (les hôtes joints sans lui), `certificat` (relatif au dépôt, ou `~/…`), `santé` (le chemin qui dit que l'API répond).
+Avec Vault, la ligne garde la place du secret, jamais sa valeur : `` - secret : `vault:secret/acme/recette#client_secret` `` (et `` - proxy-identifiants : `vault:secret/acme/proxy#credentials` ``).
+
+Les réglages possibles : `oidc` (l'autorité ; l'URL du jeton vient de son document de découverte, écrite à côté dans `token-url` quand le fournisseur répond) ou `token-url` seul, `client` (une valeur, ou `` `RECETTE_CLIENT_ID` ``), `secret` (une variable, ou `vault:<chemin>#<champ>`), `scope`, `audience` et `resource` (Auth0, ADFS), `auth-client : basic` ; `jeton : `<VARIABLE>`` sur la ligne pour un jeton fixe ; `proxy` (`aucun`, ou son URL sans identifiants), `proxy-identifiants`, `sans-proxy` (les hôtes joints sans lui), `certificat` (relatif au dépôt, ou `~/…`), `santé` (le chemin qui dit que l'API répond).
 
 Les secrets, dans `~/.zshenv` de la machine d'OpenCode, jamais dans un message ni une commande (le secret du client de service de l'environnement, jamais le tien ; les identifiants du proxy : `<utilisateur>:<mot de passe>`, un mot de passe avec `@`, `:` ou `#` tel quel, le script l'encode) :
 ```sh
 export RECETTE_CLIENT_SECRET='…'
 export RECETTE_PROXY_CREDENTIALS='jdupont:…'
 ```
+Ou dans Vault, que les scripts lisent avec le CLI `vault` de la machine, déjà connecté (le CLI installé, `VAULT_ADDR` dans `~/.zshenv`, `vault login` une fois dans ton terminal, comme ton Vault le demande) :
+```sh
+export VAULT_ADDR='https://vault.example.com'     # dans ~/.zshenv ; VAULT_CACERT si son autorité est interne
+vault login -method=oidc
+vault kv put secret/acme/recette client_secret='…'
+```
+Seuls `env-tests.sh` et `http-files.sh` lisent Vault, au moment où il le faut, sans jamais rien afficher ; un agent ne lance jamais `vault` (ce qu'il affiche irait au modèle). Ce que Vault refuse est dit en une ligne : pas connecté (`vault login`), un chemin que la politique de ton jeton ne donne pas ou un jeton expiré, rien à ce chemin ou pas ce champ, Vault scellé, injoignable (VPN, `VAULT_ADDR`), ou son certificat inconnu (`VAULT_CACERT`).
+
 `~/.zshenv` est relu à chaque commande d'un agent : rien à redémarrer. Puis il vérifie l'accès, étape par étape (`env-tests.sh --check recette`) : les variables, le document de découverte, un jeton (son émetteur, son audience, son client, ses scopes et ses rôles, jamais le jeton lui-même), l'API sans le jeton, puis un GET authentifié du code avec le jeton. Relance `/tests env config recette` après avoir réglé ce qu'il dit.
 
 ### `/tests env` : lancer les tests d'un environnement
@@ -972,13 +986,13 @@ env-tests:
 ```
 Un projet xUnit v3 sur Microsoft.Testing.Platform filtre par `--filter-trait "Category=Environment"` ; MSTest, par `--filter "TestCategory=Environment"`. Une autorité de certification interne : `SSL_CERT_FILE` vers un fichier qui contient celles du système et la tienne (image Linux).
 
-## Requêtes `.http` pour Rider (`/outil http`)
+## Requêtes `.http` pour Rider et Visual Studio (`/outil http`)
 
 Pour appeler toi-même chaque endpoint dans Rider (ou Visual Studio), sans Postman :
 ```text
 /outil http
 ```
-Il te montre d'abord ce qu'il écrirait (rien n'est encore écrit), puis UN QCM : les contrôleurs (tous, ou ceux que tu coches), le client (Rider, ou Visual Studio), et, quand des fichiers existent déjà, les garder (tes requêtes modifiées restent telles quelles) ou les remplacer. Il écrit, depuis le code, un fichier `.http` par contrôleur dans `<projet de l'API>/http/`, chaque requête avec sa route, son jeton quand l'endpoint l'exige, un corps rempli depuis son DTO et un contrôle de son statut ; `http-client.env.json` avec `local` (l'URL de `launchSettings.json`) et tes environnements d'AGENTS.md (jamais la production) ; `http-client.private.env.json` pour tes secrets, ajouté au `.gitignore`, jamais réécrit.
+Il te montre d'abord ce qu'il écrirait (rien n'est encore écrit), puis UN QCM : les contrôleurs (tous, ou ceux que tu coches), le client (Rider, ou Visual Studio), quand des fichiers existent déjà, les garder (tes requêtes modifiées restent telles quelles) ou les remplacer, et quand AGENTS.md dit où sont les secrets, « Secrets » : les remplir depuis `~/.zshenv` et Vault (recommandé), ou les coller toi-même. Il écrit, depuis le code, un fichier `.http` par contrôleur dans `<projet de l'API>/http/`, chaque requête avec sa route, son jeton quand l'endpoint l'exige, un corps rempli depuis son DTO et un contrôle de son statut ; `http-client.env.json` avec `local` (l'URL de `launchSettings.json`) et tes environnements d'AGENTS.md (jamais la production) ; le fichier privé de tes secrets (`http-client.private.env.json` pour Rider, `http-client.env.json.user` pour Visual Studio, qui ne lit pas celui de Rider), ajouté au `.gitignore`, jamais réécrit. Avec « Les remplir », `http-files.sh --private` y met chaque secret qu'AGENTS.md nomme, lu dans la variable ou dans Vault : il te dit lesquels (FILLED) et ce qui reste à coller (EMPTY), jamais une valeur ; une valeur déjà là n'est jamais remplacée (un secret changé : vide sa valeur, puis `/outil http`). Aucun agent ne lit ni n'écrit un fichier privé, et le contrôle avant push le refuse s'il était ajouté de force.
 
 Dans Rider : ouvre un `.http`, choisis l'environnement en haut de l'éditeur, puis ▶ sur une requête ou « Run All Requests in File ». Pour un environnement OIDC, Rider demande le jeton lui-même (OAuth 2.0 client credentials de son client HTTP, renouvelé tout seul), avec ce qu'`http-client.env.json` dit :
 ```json
@@ -1004,7 +1018,7 @@ Chaque requête dit `Authorization: Bearer {{$auth.token("api")}}`. Le secret, u
 ```json
 { "recette": { "clientSecret": "…" }, "local": { "token": "…" } }
 ```
-Rider passe par le proxy de ses réglages (Settings > Appearance & Behavior > System Settings > HTTP Proxy). Visual Studio ne lit pas la configuration OAuth de Rider : avec le client « Visual Studio », chaque requête dit `Bearer {{token}}`, un jeton à coller par environnement.
+Rider passe par le proxy de ses réglages (Settings > Appearance & Behavior > System Settings > HTTP Proxy). Visual Studio ne lit pas la configuration OAuth de Rider : avec le client « Visual Studio », chaque requête dit `Bearer {{token}}`, un jeton à coller par environnement dans `http-client.env.json.user` (sans gestionnaire de réponse `> {% %}`, propre à Rider).
 
 ## Planifier une commande (`/outil planifier`)
 
@@ -1029,7 +1043,7 @@ Pour voir d'un coup d'œil ce que fait le pack, ou le présenter à quelqu'un qu
 ```text
 /outil carte
 ```
-`pack-map.sh` lit le pack tel qu'il est installé (ses commandes, leurs étapes, les agents qui y travaillent, leurs questions, les outils de `/outil`, les skills, les fonctions du plugin, les scripts) et écrit une page HTML en français : « En une minute » (le pack expliqué sans jargon), la carte d'ensemble, puis une section par commande (à quoi elle sert, comment la lancer, ses étapes en schéma et en liste avec qui travaille et ce qu'il te demande, comment elle peut finir), les agents et ce qu'ils ont le droit d'écrire, les skills et les garde-fous. Rien n'est lu dans ton dépôt. L'agent te dit où est la page (par défaut dans le dossier de configuration d'OpenCode : `~/oc2/config/opencode/carte-des-flux.html` pendant l'essai à côté de la 1.19, `~/.config/opencode/carte-des-flux.html` sinon) et la résume en un tableau. Ouvre-la dans un navigateur ; quand OpenCode tourne sur une autre machine que la tienne, copie-la chez toi (`scp <machine>:<fichier> .`) ou écris-la dans le dépôt (ci-dessous). Les schémas viennent de Mermaid : sans Internet, la liste des étapes reste.
+`pack-map.sh` lit le pack tel qu'il est installé (ses commandes, leurs étapes, les agents qui y travaillent, leurs questions, les outils de `/outil`, les skills, les fonctions du plugin, les scripts) et écrit une page HTML en français : « En une minute » (le pack expliqué sans jargon), la carte d'ensemble, puis une section par commande (à quoi elle sert, comment la lancer, ses étapes en schéma et en liste avec qui travaille et ce qu'il te demande, comment elle peut finir), les agents et ce qu'ils ont le droit d'écrire, les skills et les garde-fous. Rien n'est lu dans ton dépôt. L'agent te dit où est la page (par défaut dans le dossier de configuration d'OpenCode : `~/oc2/config/opencode/carte-des-flux.html` pendant l'essai à côté de la 1.19, `~/.config/opencode/carte-des-flux.html` sinon) et la résume en un tableau. Ouvre-la dans un navigateur ; quand OpenCode tourne sur une autre machine que la tienne, copie-la chez toi (`scp <machine>:<fichier> .`) ou écris-la dans le dépôt (ci-dessous). Les schémas de cette page générée viennent de Mermaid, chargé depuis `cdn.jsdelivr.net` : sans Internet, ou quand le proxy de l'entreprise bloque ce site, la liste des étapes reste. La carte tenue à la main, elle, a ses schémas dessinés dans la page : `docs/carte-des-flux.html` du dépôt du pack (`opencode-v2/docs/`), à ouvrir dans n'importe quel navigateur, hors ligne aussi.
 
 Pour la mettre dans un dépôt (la partager, la pousser) :
 ```text

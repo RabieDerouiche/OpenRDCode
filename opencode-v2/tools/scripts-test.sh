@@ -220,6 +220,42 @@ check "obj: said" 1 '1 file\(s\) of obj added \(src/Api/obj/project.assets.json\
 check "dist: a warning" 1 'WARNING: 1 file\(s\) of dist added'
 truth "node_modules: the branch is not on origin" '! git ls-remote --exit-code --heads origin feature/ABC-8-modules >/dev/null 2>&1'
 
+# ---------- diff-guard.sh: the files of the HTTP clients (/outil http), keys, .env, tokens ----------
+# guard_case <branch> <files: path=content pairs, one per line>: a branch from origin/develop with these files committed
+# (added even when git ignores them), then diff-guard.sh on it
+guard_case() {
+  git switch -q -c "$1" origin/develop 2>/dev/null
+  printf '%s\n' "$2" | while IFS= read -r pair; do
+    [ -n "$pair" ] || continue
+    f=${pair%%=*}
+    mkdir -p "$(dirname "$f")"
+    printf '%s\n' "${pair#*=}" > "$f"
+    git add -f "$f"
+  done
+  git commit -q -m "feat: $1"
+  run diff-guard.sh
+}
+printf 'http/http-client.private.env.json\n*.env.json.user\n' >> .git/info/exclude
+guard_case feature/G-1-rider-private 'src/Api/http/http-client.private.env.json={ "recette": { "clientSecret": "Rr8-real-secret-of-recette" } }'
+check "guard: the private environment file of Rider, added by force: nothing pushed" 1 '^- private environment file of an HTTP client \(its secrets\) added: src/Api/http/http-client\.private\.env\.json$'
+check "guard: its secret is never printed" 1 'GUARD: STOP' 'Rr8-real-secret'
+guard_case feature/G-2-vs-user 'src/Api/http/http-client.env.json.user={ "recette": { "token": "eY-not-a-jwt-but-a-token" } }'
+check "guard: the user file of Visual Studio, added: nothing pushed" 1 '^- private environment file of an HTTP client \(its secrets\) added: src/Api/http/http-client\.env\.json\.user$'
+guard_case feature/G-3-rider-public 'src/Api/http/http-client.env.json={ "recette": { "baseUrl": "https://api-recette.example.com", "Security": { "Auth": { "api": { "Type": "OAuth2", "Client Secret": "{{clientSecret}}", "Token": "{{token}}" } } } } }
+src/Api/http/Orders.http=GET {{baseUrl}}/api/orders
+Authorization: Bearer {{$auth.token("api")}}'
+check "guard: the public environment file and its variables ({{clientSecret}}): pushed" 0 '^GUARD: OK '
+guard_case feature/G-4-rider-public-secret 'src/Api/http/http-client.env.json={ "recette": { "baseUrl": "https://api-recette.example.com", "clientSecret": "Xq7-a-real-value-pasted" } }'
+check "guard: a secret pasted in the public environment file: nothing pushed" 1 '^- secret value in a configuration file in src/Api/http/http-client\.env\.json:1 '
+guard_case feature/G-5-key 'certs/client.key=-----BEGIN PRIVATE KEY-----'
+check "guard: a key file and a private key: nothing pushed" 1 '^- key or certificate file added: certs/client\.key$'
+check "guard: the private key line" 1 '^- private key in certs/client\.key:1 '
+guard_case feature/G-6-dotenv 'src/Api/.env=Payments__ApiKey=pk-live-0123456789abcdef'
+check "guard: a .env file: nothing pushed" 1 '^- \.env file added: src/Api/\.env$'
+guard_case feature/G-7-example 'src/Api/.env.example=Payments__ApiKey=<your key>'
+check "guard: a .env.example with a placeholder: pushed" 0 '^GUARD: OK '
+git switch -q develop
+
 # ---------- /sync on develop: a fast-forward to origin, never a merge ----------
 git switch -q develop
 git reset -q --hard "$(git rev-parse develop)"
@@ -352,11 +388,12 @@ check "pause: the seconds asked" 0 '^PAUSE: 0 s$'
 PAUSE_MAX=1
 export PAUSE_MAX
 run pause.sh 500
-check "pause: never more than its maximum (110 s, under the 2 minutes of a command)" 0 '^PAUSE: 1 s$'
+check "pause: never more than its maximum (290 s by default, under the 6 minutes the plugin gives it)" 0 '^PAUSE: 1 s$'
 run pause.sh "60; rm -rf ~"
 check "pause: a value that is not a number: the default, capped" 0 '^PAUSE: 1 s$'
 unset PAUSE_MAX
-truth "pause: 110 s at most by default" 'grep -q "max=\${PAUSE_MAX:-110}" "$scripts/pause.sh"'
+truth "pause: 290 s at most by default (fewer turns of the model while the CI runs)" 'grep -q "max=\${PAUSE_MAX:-290}" "$scripts/pause.sh"'
+truth "pause: /fix waits 4 minutes at a time, 8 times at most (about 30 minutes)" 'grep -q "pause.sh 240\` and the status of the pipeline again" "$pack/commands/fix.md" && grep -q "8 pauses at most" "$pack/commands/fix.md"'
 
 # ---------- /outil vitesse: where the time of the runs went, from the lines of the plugin (its point 29) ----------
 mkdir -p "$work/vlog"

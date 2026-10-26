@@ -65,7 +65,7 @@ sync	free	récupérer ce qu'un autre poste a poussé	Met la branche à jour avec
 daily	read	le point du matin	Le point du matin, en lecture seule : ton sprint, les reviews qui t'attendent, tes merge requests et leurs pipelines, ce qu'il faut prendre ensuite, ta todo.
 review	read	relire la MR d'un collègue	Relit la merge request d'un collègue sans toucher ta branche ni tes fichiers : des commentaires prêts à coller dans GitLab, avec le fichier, la ligne et la gravité.
 compare	read	pourquoi ça marche ailleurs et plus ici	Compare une fonctionnalité avec un dépôt où elle marche (du code migré, une ancienne version) : paquets, code et historique comparés par un script, puis la première différence expliquée, preuves à l'appui.
-outil	tools	les autres outils, à la demande	Les autres outils du pack, chacun à la demande : documentation, audit, licences, notes de version, dépôts liés, requêtes HTTP pour Rider, planification, carte des flux. Leur liste vient du pack lui-même.
+outil	tools	les autres outils, à la demande	Les autres outils du pack, chacun à la demande : documentation, audit, licences, notes de version, dépôts liés, requêtes HTTP pour Rider ou Visual Studio, planification, carte des flux. Leur liste vient du pack lui-même.
 EOF
 # <agent> <what it is for>
 cat > "$tmp/agents.fr" <<'EOF'
@@ -81,7 +81,7 @@ EOF
 cat > "$tmp/skills.fr" <<'EOF'
 api-tests	Les tests d'intégration d'une API ASP.NET Core : en mémoire, et sur un environnement déployé (OpenID Connect, proxy).
 best-practices	Les bonnes pratiques par type de projet : erreurs et Result, feature flags, performance, tests.
-blazorise	Blazorise : la langue de son DataGrid, l'API de sa version, et son remplacement page par page par du Razor natif, sous un filet de tests bUnit.
+blazorise	Blazorise : son remplacement par du Razor 100 % natif, sans paquet, page par page sous un filet de tests bUnit (inventaire, composants de l'application et vérification par un script) ; tant qu'il est là, la langue de son DataGrid et l'API de sa version.
 build-fix	Réparer un build cassé par le plus petit changement, quelle que soit la version de .NET.
 dotnet-cqrs-conventions	Les conventions des API CQRS (commands, queries, handlers, validators).
 explain-code	Expliquer un fichier, un endpoint ou une page de bout en bout, pour un nouvel arrivant.
@@ -116,6 +116,10 @@ cat > "$tmp/plugin.fr" <<'EOF'
 24	Refuse une commande qui ne finit jamais (un serveur, un mode watch) aux agents du pack.
 25	Refuse aux agents une commande qui change les dépendances du dépôt (npm install, dotnet package add).
 26	Lance à leur heure les commandes de /outil planifier, seulement ce qui n'écrit rien.
+27	Coupe après 5 minutes un appel à un serveur MCP qui ne répond plus (OpenCode v2 attendait jusqu'à 12 heures).
+28	Envoie au modèle les réglages de chaque agent (température, effort de réflexion), que la v2 lisait sans les envoyer.
+29	Chronomètre chaque run (le modèle, les sous-agents, les outils, tes réponses) pour /outil vitesse, jamais le texte des demandes.
+30	Allège chaque requête des agents du pack : les règles qui ne servent qu'à la conversation ne leur partent plus.
 EOF
 
 # ---------- what the files of the pack say ----------

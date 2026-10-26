@@ -13,18 +13,20 @@
 #   - `prod` : https://api.example.com (production)
 # On its line: its name between backquotes, its base URL, then optionally « jeton : `<VARIABLE>` » (a fixed token),
 # « écriture permise » (tests that write may run there), « production ». Its settings, one per indented line
-# « - <setting> : <value> »; between backquotes, the name of a variable of this machine (set outside OpenCode, in
-# ~/.zshenv: never a secret in AGENTS.md, never in a command):
+# « - <setting> : <value> »; between backquotes, where a secret is: the name of a variable of this machine (set
+# outside OpenCode, in ~/.zshenv), or `vault:<path>#<field>`, a secret of HashiCorp Vault that env-tests.sh and
+# http-files.sh read with the vault CLI of this machine (never a secret in AGENTS.md, never in a command):
 #   oidc            the authority (issuer) of the OpenID Connect provider: its token endpoint comes from its discovery
 #                   document (/.well-known/openid-configuration); a token by client credentials
 #   token-url       the token endpoint itself (a provider without discovery; /tests env config writes it beside oidc)
 #   client          the client id: a value, or `<VARIABLE>`
-#   secret          `<VARIABLE>` that holds the client secret (a value here is refused)
+#   secret          `<VARIABLE>` or `vault:<path>#<field>` that holds the client secret (a value here is refused)
 #   scope           the scopes asked (Entra ID: api://<application>/.default), audience, resource: what the provider needs
 #   auth-client     how the client authenticates: post (client_secret_post, the default) or basic (client_secret_basic)
-#   jeton           `<VARIABLE>` that holds a fixed token (instead of oidc)
+#   jeton           `<VARIABLE>` or `vault:<path>#<field>` that holds a fixed token (instead of oidc)
 #   proxy           système (the HTTPS_PROXY of this machine, the default), aucun (direct), or http://<host>:<port>
-#   proxy-identifiants  `<VARIABLE>` that holds <user>:<password> of the proxy (never in its URL)
+#   proxy-identifiants  `<VARIABLE>` or `vault:<path>#<field>` that holds <user>:<password> of the proxy (never in
+#                   its URL)
 #   sans-proxy      the hosts reached without the proxy (NO_PROXY form: .example.com,10.0.0.1)
 #   certificat      a PEM file of the internal certificate authorities (~ allowed): TLS through a proxy that
 #                   re-signs, an environment with an internal certificate
@@ -79,6 +81,8 @@ awk -v want="$want" -v mode="$mode" '
     return ""
   }
   function isvar(s) { return s ~ /^[A-Za-z_][A-Za-z0-9_]*$/ }
+  # where a secret is: a variable of this machine, or a secret of HashiCorp Vault (vault:<path>#<field>)
+  function isref(s) { return isvar(s) || s ~ /^vault:[A-Za-z0-9_.\/-]+#[A-Za-z0-9_.-]+$/ }
   # the text between the first pair of backquotes, or "" (bq: whether there was one)
   function quoted(s) {
     bq = 0
@@ -152,8 +156,8 @@ awk -v want="$want" -v mode="$mode" '
       t = substr(after, RSTART, RLENGTH)
       sub(/`$/, "", t)
       sub(/.*`/, "", t)
-      if (isvar(t)) tokvar = t
-      else warn(cur ": the token variable is not a variable name: " t)
+      if (isref(t)) tokvar = t
+      else warn(cur ": the token variable is not a variable name (nor vault:<path>#<field>): " t)
     }
     if (low ~ /criture permise|writes allowed/) writes = "yes"
     if (low ~ /production/) prod = "yes"
@@ -186,8 +190,8 @@ awk -v want="$want" -v mode="$mode" '
       else if (v ~ /^[A-Za-z0-9._:\/@-]+$/) client = v
       else warn(cur ": client id not understood: " v)
     } else if (key == "secret" || key == "client-secret" || key == "secret-du-client" || key == "secret-client") {
-      if (bq && isvar(q)) secretvar = q
-      else { warn(cur ": a secret is never written in AGENTS.md: secret : `<VARIABLE>` names the variable of this machine that holds it"); invalid = invalid (invalid == "" ? "" : ",") "secret-value" }
+      if (bq && isref(q)) secretvar = q
+      else { warn(cur ": a secret is never written in AGENTS.md: secret : `<VARIABLE>` names the variable of this machine that holds it, or `vault:<path>#<field>` its place in HashiCorp Vault"); invalid = invalid (invalid == "" ? "" : ",") "secret-value" }
     } else if (key == "scope" || key == "scopes") {
       scope = bq ? q : v
     } else if (key == "audience") {
@@ -200,8 +204,8 @@ awk -v want="$want" -v mode="$mode" '
       else if (v ~ /^(basic|client_secret_basic)$/) clientauth = "basic"
       else warn(cur ": auth-client is post or basic: " v)
     } else if (key == "jeton" || key == "token") {
-      if (bq && isvar(q)) tokvar = q
-      else { warn(cur ": a token is never written in AGENTS.md: jeton : `<VARIABLE>` names the variable of this machine that holds it"); invalid = invalid (invalid == "" ? "" : ",") "token-value" }
+      if (bq && isref(q)) tokvar = q
+      else { warn(cur ": a token is never written in AGENTS.md: jeton : `<VARIABLE>` names the variable of this machine that holds it, or `vault:<path>#<field>` its place in HashiCorp Vault"); invalid = invalid (invalid == "" ? "" : ",") "token-value" }
     } else if (key == "proxy") {
       v = bq ? q : v
       if (tolower(v) ~ /^(syst\303\250me|systeme|system|machine|d\303\251faut|defaut|default)$/) proxy = "system"
@@ -213,8 +217,8 @@ awk -v want="$want" -v mode="$mode" '
         else { sub(/\/+$/, "", u); proxy = u }
       }
     } else if (key == "proxy-identifiants" || key == "identifiants-du-proxy" || key == "proxy-credentials" || key == "identifiants-proxy") {
-      if (bq && isvar(q)) proxycred = q
-      else { warn(cur ": the proxy credentials are never written in AGENTS.md: proxy-identifiants : `<VARIABLE>`"); invalid = invalid (invalid == "" ? "" : ",") "proxy-credentials-value" }
+      if (bq && isref(q)) proxycred = q
+      else { warn(cur ": the proxy credentials are never written in AGENTS.md: proxy-identifiants : `<VARIABLE>` or `vault:<path>#<field>`"); invalid = invalid (invalid == "" ? "" : ",") "proxy-credentials-value" }
     } else if (key == "sans-proxy" || key == "no-proxy" || key == "noproxy") {
       noproxy = bq ? q : v
       gsub(/[ \t]+/, "", noproxy)

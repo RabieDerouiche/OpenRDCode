@@ -3,24 +3,30 @@
 # environments, then the block of one environment written in AGENTS.md « ## Environnements » (environments.sh reads it),
 # never a secret: only the names of the variables of this machine that hold them, by convention from the name of the
 # environment (recette: RECETTE_CLIENT_ID, RECETTE_CLIENT_SECRET, RECETTE_PROXY_CREDENTIALS, API_TOKEN_RECETTE), set by
-# the developer in ~/.zshenv. The other lines of AGENTS.md, and the other environments, are kept as they are.
+# the developer in ~/.zshenv; or, for a secret kept in HashiCorp Vault, its place there (vault:<path>#<field>), read at
+# each run by the vault CLI of this machine (secrets.sh). The other lines of AGENTS.md, and the other environments, are
+# kept as they are.
 #   scan                 the environments declared (and whether their variables are set), the hints of the code for a new
 #                        one (URLs of the deploy jobs of .gitlab-ci.yml, the authority and the audience the API checks in
 #                        its appsettings files: those keys only, never another value), the proxy of this machine (its
-#                        credentials masked), and the names of the variables of each environment
+#                        credentials masked), the vault CLI of HashiCorp when this machine has one (never called), and
+#                        the names of the variables of each environment
 #   set <name> --url <url> [--oidc <authority> | --token-url <url>] [--client <id> | --client-var]
 #       [--scope <scopes>] [--audience <aud>] [--resource <res>] [--auth-client post|basic] [--token-var]
-#       [--proxy system|none|<url>] [--proxy-auth] [--no-proxy <hosts>] [--ca <PEM file>] [--health <path>]
-#       [--writes] [--production] [--role <text>]
+#       [--vault <path>#<field>] [--proxy system|none|<url>] [--proxy-auth | --proxy-vault <path>#<field>]
+#       [--no-proxy <hosts>] [--ca <PEM file>] [--health <path>] [--writes] [--production] [--role <text>]
 #                        writes (or replaces) the block of <name>: OpenID Connect by client credentials (--oidc or
 #                        --token-url: its client id as a value or, --client-var, in <NAME>_CLIENT_ID; its secret always
 #                        in <NAME>_CLIENT_SECRET), or a fixed token (--token-var: API_TOKEN_<NAME>), or none; the proxy
 #                        (--proxy-auth: <NAME>_PROXY_CREDENTIALS holds <user>:<password>), the certificate authorities,
+#                        --vault: the client secret (OpenID Connect) or the fixed token (--token-var) is in HashiCorp
+#                        Vault at <path>, field <field>, instead of its variable; --proxy-vault: the <user>:<password>
+#                        of the proxy there,
 #                        the path that tells the API is up, writes allowed, production (never tested: its line only).
 #                        With --oidc, the token endpoint of its discovery document is written too (token-url), when the
 #                        provider answers from here (http-files.sh needs it for Rider)
 #   remove <name>        takes the block of <name> out
-# Output: "DECLARED:", "HINT …:", "PROXY OF THIS MACHINE:", "VARIABLES OF <name>:" (scan); "WRITTEN:" and the block,
+# Output: "DECLARED:", "HINT …:", "PROXY OF THIS MACHINE:", "VAULT:", "VARIABLES OF <name>:" (scan); "WRITTEN:" and the block,
 # "TOKEN URL:", "VARIABLES:" and the export lines to put in ~/.zshenv, "NEXT:" (set); "REMOVED:"; "STOP:" when an
 # argument is not valid (nothing is written then).
 # Usage: env-setup.sh scan | set <name> --url <url> [<options>] | remove <name>
@@ -34,7 +40,12 @@ agents=AGENTS.md
 
 # NAME of the variables of an environment: recette -> RECETTE, pre-prod -> PRE_PROD
 prefix() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g; s/^\([0-9]\)/E\1/'; }
-isset() { [ -n "$(printenv "$1" 2>/dev/null)" ] && echo set || echo "not set"; }
+isset() {
+  case "$1" in
+    vault:*) echo "in Vault, read at each run" ;;
+    *) [ -n "$(printenv "$1" 2>/dev/null)" ] && echo set || echo "not set" ;;
+  esac
+}
 masked() { printf '%s' "$1" | sed -E 's#://[^/@]*@#://***@#'; }
 
 case "$1" in
@@ -155,6 +166,12 @@ case "$1" in
     else
       echo "PROXY OF THIS MACHINE: none (no HTTPS_PROXY in the environment of OpenCode)"
     fi
+    # HashiCorp Vault: its CLI and its address, never called here (a secret there: env-setup.sh set --vault)
+    if command -v vault > /dev/null 2>&1; then
+      echo "VAULT: the vault CLI is on this machine (VAULT_ADDR $([ -n "${VAULT_ADDR:-}" ] && echo set || echo "not set in the environment of OpenCode")): a secret may stay in Vault, AGENTS.md naming its place (vault:<path>#<field>)"
+    else
+      echo "VAULT: no vault CLI on this machine: the secrets go in ~/.zshenv"
+    fi
     sh "$here/environments.sh" | grep -v '^WARNING:' | cut -f1 | while IFS= read -r n; do
       [ -n "$n" ] || continue
       p=$(prefix "$n")
@@ -242,7 +259,7 @@ fi
 
 # ---------- set ----------
 url="" authority="" tokenurl="" client="" clientvar=0 scope="" audience="" resource="" clientauth="" tokenvar=0
-proxy=system proxyauth=0 noproxy="" ca="" health="" writes=0 production=0 role=""
+proxy=system proxyauth=0 noproxy="" ca="" health="" writes=0 production=0 role="" vault="" proxyvault=""
 need() { [ -n "$2" ] || { echo "STOP: $1 needs a value"; exit 1; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -258,6 +275,8 @@ while [ $# -gt 0 ]; do
     --token-var) tokenvar=1; shift ;;
     --proxy) need "$1" "$2"; proxy=$2; shift 2 ;;
     --proxy-auth) proxyauth=1; shift ;;
+    --vault) need "$1" "$2"; vault=$2; shift 2 ;;
+    --proxy-vault) need "$1" "$2"; proxyvault=$2; proxyauth=1; shift 2 ;;
     --no-proxy) need "$1" "$2"; noproxy=$2; shift 2 ;;
     --ca) need "$1" "$2"; ca=$2; shift 2 ;;
     --health) need "$1" "$2"; health=$2; shift 2 ;;
@@ -287,6 +306,17 @@ else
   { [ -n "$client" ] || [ "$clientvar" -eq 1 ] || [ -n "$scope" ] || [ -n "$audience" ] || [ -n "$resource" ] || [ -n "$clientauth" ]; } &&
     { echo "STOP: --client, --scope, --audience, --resource and --auth-client go with --oidc or --token-url"; exit 1; }
 fi
+# a place in Vault: <path>#<field> (the vault: prefix may be given)
+vaultref() { printf '%s' "${1#vault:}" | grep -q -E '^[A-Za-z0-9_./-]+#[A-Za-z0-9_.-]+$'; }
+if [ -n "$vault" ]; then
+  vault=${vault#vault:}
+  vaultref "$vault" || { echo "STOP: --vault is <path>#<field> of the secret in HashiCorp Vault (secret/recette/api#client_secret): $vault"; exit 1; }
+  [ "$oidc" -eq 1 ] || [ "$tokenvar" -eq 1 ] || { echo "STOP: --vault goes with OpenID Connect (--oidc, --token-url: the client secret) or --token-var (the fixed token)"; exit 1; }
+fi
+if [ -n "$proxyvault" ]; then
+  proxyvault=${proxyvault#vault:}
+  vaultref "$proxyvault" || { echo "STOP: --proxy-vault is <path>#<field> of <user>:<password> in HashiCorp Vault: $proxyvault"; exit 1; }
+fi
 for t in "$scope" "$audience" "$resource"; do
   case "$t" in *'`'*|*'
 '*) echo "STOP: a backquote or a new line in a setting"; exit 1 ;; esac
@@ -309,14 +339,16 @@ case "$role" in *'`'*|*'
   opts=""
   [ "$writes" -eq 1 ] && opts="écriture permise"
   [ "$production" -eq 1 ] && opts="production"
-  [ "$tokenvar" -eq 1 ] && opts="jeton : \`API_TOKEN_$P\`${opts:+, $opts}"
+  if [ "$tokenvar" -eq 1 ]; then
+    if [ -n "$vault" ]; then opts="jeton : \`vault:$vault\`${opts:+, $opts}"; else opts="jeton : \`API_TOKEN_$P\`${opts:+, $opts}"; fi
+  fi
   printf -- '- `%s` : %s%s\n' "$name" "$url" "${opts:+ ($opts)}"
   if [ "$production" -eq 0 ]; then
     if [ "$oidc" -eq 1 ]; then
       [ -n "$authority" ] && printf '  - oidc : %s\n' "$authority"
       [ -n "$tokenurl" ] && printf '  - token-url : %s\n' "$tokenurl"
       if [ "$clientvar" -eq 1 ]; then printf '  - client : `%s_CLIENT_ID`\n' "$P"; else printf '  - client : %s\n' "$client"; fi
-      printf '  - secret : `%s_CLIENT_SECRET`\n' "$P"
+      if [ -n "$vault" ]; then printf '  - secret : `vault:%s`\n' "$vault"; else printf '  - secret : `%s_CLIENT_SECRET`\n' "$P"; fi
       [ -n "$scope" ] && printf '  - scope : %s\n' "$scope"
       [ -n "$audience" ] && printf '  - audience : %s\n' "$audience"
       [ -n "$resource" ] && printf '  - resource : %s\n' "$resource"
@@ -325,7 +357,9 @@ case "$role" in *'`'*|*'
     case "$proxy" in
       system) ;;
       none) printf '  - proxy : aucun\n' ;;
-      *) printf '  - proxy : %s\n' "$proxy"; [ "$proxyauth" -eq 1 ] && printf '  - proxy-identifiants : `%s_PROXY_CREDENTIALS`\n' "$P" ;;
+      *) printf '  - proxy : %s\n' "$proxy"
+         if [ -n "$proxyvault" ]; then printf '  - proxy-identifiants : `vault:%s`\n' "$proxyvault"
+         elif [ "$proxyauth" -eq 1 ]; then printf '  - proxy-identifiants : `%s_PROXY_CREDENTIALS`\n' "$P"; fi ;;
     esac
     [ -n "$noproxy" ] && printf '  - sans-proxy : %s\n' "$(printf '%s' "$noproxy" | tr -d ' ')"
     [ -n "$ca" ] && printf '  - certificat : %s\n' "$ca"
@@ -361,9 +395,9 @@ fi
 if [ "$production" -eq 0 ]; then
   vars=""
   [ "$oidc" -eq 1 ] && [ "$clientvar" -eq 1 ] && vars="$vars ${P}_CLIENT_ID"
-  [ "$oidc" -eq 1 ] && vars="$vars ${P}_CLIENT_SECRET"
-  [ "$tokenvar" -eq 1 ] && vars="$vars API_TOKEN_$P"
-  [ "$proxyauth" -eq 1 ] && vars="$vars ${P}_PROXY_CREDENTIALS"
+  [ "$oidc" -eq 1 ] && [ -z "$vault" ] && vars="$vars ${P}_CLIENT_SECRET"
+  [ "$tokenvar" -eq 1 ] && [ -z "$vault" ] && vars="$vars API_TOKEN_$P"
+  [ "$proxyauth" -eq 1 ] && [ -z "$proxyvault" ] && vars="$vars ${P}_PROXY_CREDENTIALS"
   if [ -n "$vars" ]; then
     s=""
     for v in $vars; do s="$s${s:+, }$v ($(isset "$v"))"; done
@@ -377,6 +411,9 @@ if [ "$production" -eq 0 ]; then
       esac
     done
   fi
+  for v in $vault $proxyvault; do
+    echo "VAULT: ${v%%#*}, field ${v#*#}: read at each run by the vault CLI of this machine (vault login first, as your Vault asks); never in AGENTS.md, never in a command of an agent"
+  done
   echo "NEXT: env-tests.sh --check $name checks the access (variables, proxy, certificate, provider, token, API)"
 fi
 exit 0

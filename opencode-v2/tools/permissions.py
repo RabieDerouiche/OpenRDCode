@@ -94,7 +94,10 @@ SUBST = ["*$(*", "*${*", "*`*"]
 SECRET_FILES = ["*?u?et.?onfig*", "*.nuget/NuGet*", "*/.z*", "*zshrc*", "*/.bash*", "*/.profile*", "*/.ssh/*",
                 "*/.aws/*", "*/.docker/*", "*.npmrc*", "*.yarnrc*", "*.netrc*", "*.pypirc*", "*.git-credentials*",
                 "*/proc/*environ*", "*appsec-ci.env*", "* .env*", "*/.env*", "*opencode.json*",
-                "*opencode/auth.json*", "*/git/credential*", "*git-credential*"]
+                "*opencode/auth.json*", "*/git/credential*", "*git-credential*",
+                # the secrets of the HTTP clients that /outil http prepares (Rider: http-client.private.env.json,
+                # Visual Studio: http-client.env.json.user): the developer's, in the repository but never read
+                "*private.env.json*", "*.env.json.user*"]
 # Environment dumps and credential-bearing git output (a remote URL or the git config can hold a token)
 ENV_DUMP = ["env", "env *", "printenv*", "set", "compgen*", "*echo *$*", "*printf *$*", "*artifactory_*",
             "dotnet user-secrets*", "git config*", "git remote -v*", "git remote get-url*", "git remote show*"]
@@ -107,7 +110,17 @@ SECRETS = SECRET_FILES + ENV_DUMP + SECRET_NAMES
 # keychain tools (macOS `security`, which may also hold the Artifactory token; Linux `secret-tool`). Global rules
 # only, for build and dev: the agents with their own bash rules never allow these commands.
 # (their files, ~/.git-credentials and ~/.config/git/credentials, are in SECRET_FILES)
-CREDENTIAL_STORES = ["git credential*", "security", "security *", "secret-tool*"]
+CREDENTIAL_STORES = ["git credential*", "security", "security *", "secret-tool*",
+                     # the clients of secret stores and the commands that print a token (HashiCorp Vault, 1Password,
+                     # Bitwarden, Azure Key Vault, AWS Secrets Manager and Parameter Store, Google Secret Manager,
+                     # Kubernetes secrets, Doppler, SOPS, the tokens of gh, glab and npm): a secret printed in the
+                     # conversation goes to the model server and stays in the session history. env-tests.sh and
+                     # http-files.sh --private read a Vault secret themselves, never printed.
+                     "vault", "vault *", "op", "op *", "bw", "bw *", "az keyvault secret*", "aws secretsmanager get*",
+                     "aws secretsmanager batch-get*", "aws ssm get-parameter*", "gcloud secrets versions access*",
+                     "kubectl get secret*", "kubectl describe secret*", "kubectl view-secret*", "doppler *", "sops *",
+                     "gh auth token*", "glab config get*", "*--show-token*", "npm config get*", "*authToken*",
+                     "*AuthToken*", "dotnet nuget config*"]
 # build and dev: never look inside a package or build a tool to look inside an assembly (reflection program in /tmp
 # or a console project, decompilers, `strings`). What the agents need about packages is printed by package-refs.sh
 # (in-house or not, frameworks, XML documentation path), the API comes from the existing calls (AGENTS.md).
@@ -149,6 +162,10 @@ CONFIG_SCRIPTS = ["*scripts/env-setup.sh*"]
 # The environment tests that write (env-tests.sh --ecriture, on an environment AGENTS.md allows): the pilot of /tests env
 # when the developer asked for them, and the conversation; the other agents run them read only
 ENV_WRITES = ["*env-tests.sh*criture*", "*env-tests.sh*allow-writes*"]
+# The native components that replace a component library (blazor-native.sh scaffold) are production code: the coder
+# and the conversation write them; the read-only agents, the pilot and the test-guardian never (inventory and check
+# only read)
+CODE_SCRIPTS = ["*blazor-native.sh scaffold*"]
 # The seal of a proof (test-guardian.sh seal and restore): the test-guardian's only. The coder never seals its own
 # version of the tests it is checked against, nor puts them back; a read-only agent never writes a test file. Checking
 # a seal (test-guardian.sh sealed) stays open: the pilot does it before each commit. The conversation agents keep it
@@ -213,7 +230,7 @@ def read_only_bash(extra_allows=(), after_secrets=(), package_guard=True):
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + list(extra_allows))
     rules += REDIRECT
     rules += deny(GIT_READ_GUARD + OTHER_DENY + SUBST + SECRETS + WRITE_SCRIPTS + CONVERSATION_SCRIPTS + ENV_WRITES
-                  + CONFIG_SCRIPTS + (PACKAGE_GUARD if package_guard else [])
+                  + CONFIG_SCRIPTS + CODE_SCRIPTS + (PACKAGE_GUARD if package_guard else [])
                   + (FRONT_TEST_DENY if any(p in extra_allows for p in FRONT_TEST) else []))
     rules += allow(after_secrets)
     return rules
@@ -229,6 +246,9 @@ SILENT = [("webfetch", "deny"), ("websearch", "deny"), ("question", "deny")]
 # The same tool call repeated three times in a row (doom_loop) is refused for every agent (global rule below): a
 # subagent of /go then ends with an error that the pilot handles, instead of waiting for an approval nobody gives
 NO_TASK = [("task", "deny")]
+# The procedures of /outil (the skills pack-*) are the conversation's (build): the agents of the pack never load them,
+# and a skill they may not use leaves the list of skills of their requests
+NO_TOOLS_SKILLS = [("skill", [("pack-*", "deny")])]
 SHEET = [("edit", only([TICKET_SHEETS, TICKET_SHEETS_OUTSIDE]))]
 NO_EDIT = [("edit", "deny")]
 
@@ -247,7 +267,8 @@ def pilot_bash():
     rules = [("*", "deny")]
     rules += allow(READ + GIT_READ + SCRIPTS + DOTNET_INFO + DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS)
     rules += REDIRECT
-    rules += deny(GIT_READ_GUARD + OTHER_DENY + SECRETS + PACKAGE_GUARD + DEVELOPER_SCRIPTS + SEAL_SCRIPTS + CONVERSATION_SCRIPTS)
+    rules += deny(GIT_READ_GUARD + OTHER_DENY + SECRETS + PACKAGE_GUARD + DEVELOPER_SCRIPTS + SEAL_SCRIPTS + CONVERSATION_SCRIPTS
+                  + CODE_SCRIPTS)
     rules += allow([SSC_NAME] + TEXT_SCRIPTS)
     rules += deny(SUBST)
     return rules
@@ -307,36 +328,37 @@ def coder_bash(guardian=False):
     # (the commands of CREDENTIAL_STORES and DECOMPILE are not in the allowlist; their paths are outside the repository)
     # the test-guardian seals its proofs and puts them back; the coder never does; setup, park and unpark are the pilot's
     rules += deny(GIT_READ_GUARD + CODER_OTHER_DENY + CODER_RM_GUARD + SECRETS + WRITE_SCRIPTS + CONVERSATION_SCRIPTS
-                  + ENV_WRITES + CONFIG_SCRIPTS + ([] if guardian else SEAL_SCRIPTS) + PILOT_SCRIPTS + PACKAGE_GUARD + FRONT_SCRIPT_DENY
+                  + ENV_WRITES + CONFIG_SCRIPTS + ([] if guardian else SEAL_SCRIPTS) + (CODE_SCRIPTS if guardian else [])
+                  + PILOT_SCRIPTS + PACKAGE_GUARD + FRONT_SCRIPT_DENY
                   + ["* /tmp/*", "* /tmp", "*=/tmp/*", "*\"/tmp/*", "*'/tmp/*"] + SUBST)
     return rules
 
 
 AGENTS = {
     # /go, /fix, /daily: every MCP server, read-only, except the creation of the merge request of the branch
-    "pilot": SHEET + BASE + [("task", only(["analyst", "coder", "checker", "debugger", "test-guardian"]))]
+    "pilot": SHEET + BASE + NO_TOOLS_SKILLS + [("task", only(["analyst", "coder", "checker", "debugger", "test-guardian"]))]
     + [("bash", pilot_bash())] + MCP_WRITE_DENY + [("*create_merge_request", "allow")]
     + mcp_only(["jira", "confluence", "gitlab", "sonar", "fortify"]),
-    "analyst": SHEET + SILENT + NO_TASK + [("bash", read_only_bash() + deny(SEAL_SCRIPTS + PILOT_SCRIPTS))] + MCP_WRITE_DENY
+    "analyst": SHEET + SILENT + NO_TASK + NO_TOOLS_SKILLS + [("bash", read_only_bash() + deny(SEAL_SCRIPTS + PILOT_SCRIPTS))] + MCP_WRITE_DENY
     + mcp_only(["jira", "confluence", "gitlab"]),
     # code and tests anywhere in the repository except .git (the ticket sheet is the pilot's), no MCP
     "coder": [("edit", [("*", "allow"), ("../*", "deny"), (".git/**", "deny"), ("*/.git/**", "deny")])] + SILENT
-    + NO_TASK + [("bash", coder_bash())] + mcp_only([]),
+    + NO_TASK + NO_TOOLS_SKILLS + [("bash", coder_bash())] + mcp_only([]),
     # /fortify, /go and /fix: the tests of one vulnerability, bug or change, in the test projects only (test-guardian.sh
     # tests-only checks it again), no MCP
     "test-guardian": [("edit", only(["*Tests/**", "*Test/**", "tests/**", "test/**", "*/tests/**", "*/test/**"]))] + SILENT
-    + NO_TASK + [("bash", coder_bash(guardian=True))] + mcp_only([]),
-    "checker": NO_EDIT + SILENT + NO_TASK
+    + NO_TASK + NO_TOOLS_SKILLS + [("bash", coder_bash(guardian=True))] + mcp_only([]),
+    "checker": NO_EDIT + SILENT + NO_TASK + NO_TOOLS_SKILLS
     + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD + CHECKS) + deny(SEAL_SCRIPTS + PILOT_SCRIPTS))] + MCP_WRITE_DENY
     + mcp_only(["jira"]),
     # /compare asks me which check I make when the cause is not confirmed (as the agent of the command); as a subagent
     # of /go or /fix it cannot ask (experimental.primary_tools in opencode.json)
-    "debugger": NO_EDIT + BASE + NO_TASK
+    "debugger": NO_EDIT + BASE + NO_TASK + NO_TOOLS_SKILLS
     + [("bash", read_only_bash(DOTNET_RUN + FRONT_TEST + FRONT_BUILD, package_guard=False) + deny(SEAL_SCRIPTS + PILOT_SCRIPTS))]
     + MCP_WRITE_DENY + mcp_only(["kibana"]),
     # /outil doc: writes docs/ and the root README.md only, never opens a configuration file, never publishes
     "doc-writer": [("edit", only(["docs/**", "README.md"])), ("read", deny(CONFIG_FILES_READ))] + SILENT
-    + NO_TASK + [("bash", read_only_bash() + deny(CONFIG_FILES_BASH + SEAL_SCRIPTS + PILOT_SCRIPTS))] + MCP_WRITE_DENY + mcp_only([]),
+    + NO_TASK + NO_TOOLS_SKILLS + [("bash", read_only_bash() + deny(CONFIG_FILES_BASH + SEAL_SCRIPTS + PILOT_SCRIPTS))] + MCP_WRITE_DENY + mcp_only([]),
 }
 
 TOOL_KEYS = {"edit", "read", "bash", "webfetch", "websearch", "question", "task", "doom_loop"}
@@ -429,7 +451,8 @@ SNIPPET = as_dict([
         # files are refused instead of asked: "always" on that question would allow every read of every agent.
         ("read", deny(["*/.nuget/NuGet/*", "*?u?et.?onfig", "*appsec-ci.env", "*opencode.json",
                        "*opencode/auth.json", "*/.ssh/*", "*/.aws/*", "*/.z*", "*zshrc*", "*.netrc",
-                       "*.git-credentials", "*.npmrc", "*.yarnrc.yml", "*.yarnrc", "*.env", "*.env.*"])
+                       "*.git-credentials", "*.npmrc", "*.yarnrc.yml", "*.yarnrc", "*.env", "*.env.*",
+                       "*.private.env.json", "*.env.json.user"])
          + allow(["*.env.example", "*.env.sample", "*.env.template"])),
     ] + MCP_WRITE_DENY),
     # A subagent never gets the question tool: nobody answers during /go or /fix (the debugger keeps it as the agent of

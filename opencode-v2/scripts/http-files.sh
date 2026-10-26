@@ -3,36 +3,47 @@
 # of Visual Studio, written from the code (api-routes.sh), in <API project folder>/http/:
 #   - one <Controller>.http per controller and one <File>.http per file of minimal APIs: each request with its verb and
 #     route (route parameters as {{name}}), its token when the endpoint needs authentication, an empty JSON body to
-#     fill in when it takes one (its type in the comment above it), and a check of its success status (a response
-#     handler of the JetBrains HTTP client: Rider runs it, Visual Studio leaves it);
+#     fill in when it takes one (its type in the comment above it), and for Rider a check of its success status (a
+#     response handler of the JetBrains HTTP client; Visual Studio runs none, its requests have none);
 #   - http-client.env.json: `local` (the https URL of Properties/launchSettings.json) and each environment of AGENTS.md
 #     « ## Environnements » (environments.sh) but production ones, with baseUrl and a value for each route parameter.
 #     For Rider (the default), the token of each environment is Rider's own: an environment with OpenID Connect gets the
 #     OAuth 2.0 client credentials of the HTTP client (its token URL, client id, scope, how the client authenticates:
 #     Rider asks the token and renews it), the others a token to paste (Type Mock); every request says
 #     `Authorization: Bearer {{$auth.token("api")}}`. For Visual Studio (--client vs): `Authorization: Bearer {{token}}`;
-#   - http-client.private.env.json: what each environment needs and nobody commits (the client secret, a token, the
-#     client id when AGENTS.md keeps it in a variable), empty, for the developer to fill in; never committed (its path is
-#     added to .gitignore when git does not ignore it yet), never rewritten once it exists (the missing keys are named).
+#   - the private file of the HTTP client, what each environment needs and nobody commits (the client secret, a token,
+#     the client id when AGENTS.md keeps it in a variable): http-client.private.env.json for Rider,
+#     http-client.env.json.user for Visual Studio (the only file it reads for that; it runs no response handler, so its
+#     requests have none); empty, for the developer to fill in; never committed (its path is added to .gitignore when
+#     git does not ignore it yet), never rewritten once it exists (the missing keys are named), never read by an agent.
 # A file that exists is kept (its requests may have been edited), unless --replace: the .http files of the groups
 # chosen and http-client.env.json are written again, never the private file.
+# --private fills the empty values of the private files that exist (Rider's and Visual Studio's) from where AGENTS.md
+# says each secret is: a variable of this machine (~/.zshenv) or HashiCorp Vault (vault:<path>#<field>, read by the
+# vault CLI: secrets.sh); the client id from its variable, the token URL from AGENTS.md. A value already there is never
+# replaced; nothing is ever printed but the names of what was filled. The developer's choice, in the conversation.
 # Usage: http-files.sh [--plan] [--only <group>[,<group>...]] [--replace] [--client rider|vs] [<folder>]
+#        http-files.sh --private [<folder>]
 #   --plan     what would be written, nothing written: "PLAN:", "GROUP:", "ENVIRONMENT:", "FILE:" lines
 # Output: "HTTP: <file> (<n> requests, <b> with a body to fill in)", "KEPT: <file> (exists)", "ENVIRONMENTS: <names>",
 # "IGNORED: <path added to .gitignore>", "PRIVATE: <what to fill in>", "NOTE:", "LEFT OUT: <endpoint>: <why>"; "STOP:"
-# when there is no endpoint.
+# when there is no endpoint. --private: "FILLED: <file>: <environment> <key> (from <where>)", "EMPTY: <file>: <environment>
+# <key>: <why>", "UNCHANGED: <file>" when it had nothing empty to fill.
 
 LC_ALL=C
 export LC_ALL
 here=$(cd "$(dirname "$0")" && pwd)
-plan=0 only="" replace=0 client=rider folder=""
+# shellcheck source=secrets.sh
+. "$here/secrets.sh"
+plan=0 only="" replace=0 client=rider folder="" fill=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan) plan=1; shift ;;
+    --private) fill=1; shift ;;
     --only) only=$2; shift 2 ;;
     --replace) replace=1; shift ;;
     --client) client=$2; shift 2 ;;
-    -*) echo "STOP: unknown option $1 (http-files.sh [--plan] [--only <groups>] [--replace] [--client rider|vs] [<folder>])"; exit 1 ;;
+    -*) echo "STOP: unknown option $1 (http-files.sh [--plan] [--only <groups>] [--replace] [--client rider|vs] [<folder>] | --private [<folder>])"; exit 1 ;;
     *) folder=$1; shift ;;
   esac
 done
@@ -41,6 +52,93 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "STOP: not a git rep
 cd "$root" || exit 1
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/http-files.XXXXXX") || exit 1
 trap 'rm -rf "$tmp"' EXIT
+
+# ---------- --private: the empty values of the private files, from the variables of this machine and from Vault ----------
+if [ "$fill" -eq 1 ]; then
+  find "${folder:-.}" \( -name node_modules -o -name bin -o -name obj -o -name .git \) -prune -o -type f \
+    \( -name http-client.private.env.json -o -name http-client.env.json.user \) -print 2>/dev/null | sed 's#^\./##' | sort > "$tmp/privates"
+  if [ ! -s "$tmp/privates" ]; then
+    echo "STOP: no private file of an HTTP client${folder:+ in $folder} (http-client.private.env.json for Rider, http-client.env.json.user for Visual Studio): /outil http writes it first"
+    exit 1
+  fi
+  # the values go through a file of this run only (never on a command line), escaped for JSON
+  umask 077
+  jval() { printf '%s' "$1" | awk 'BEGIN { RS = "\001" } { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "\\r"); gsub(/\n/, "\\n"); printf "%s", $0 }'; }
+  while IFS= read -r pf; do
+    # the environments and the keys of the file: '  "<env>": {' then '    "<key>": "<value>"'
+    awk '/^  "[^"]+": *\{/ { e = $0; sub(/^  "/, "", e); sub(/".*/, "", e); next }
+         /^    "[^"]+": *""/ && e != "" { k = $0; sub(/^    "/, "", k); sub(/".*/, "", k); print e "\t" k }' "$pf" > "$tmp/empty"
+    : > "$tmp/values"
+    : > "$tmp/report"
+    while IFS="$(printf '\t')" read -r e k; do
+      [ -n "$e" ] || continue
+      if [ "$e" = local ]; then
+        printf 'EMPTY: %s: local %s: a token of the API on this machine, to paste (its local identity provider, or a token of a test user)\n' "$pf" "$k" >> "$tmp/report"
+        continue
+      fi
+      sh "$here/environments.sh" --details "$e" > "$tmp/details" 2>/dev/null || { printf 'EMPTY: %s: %s %s: no environment %s in AGENTS.md\n' "$pf" "$e" "$k" "$e" >> "$tmp/report"; continue; }
+      d() { sed -n "s/^$1=//p" "$tmp/details" | head -n 1; }
+      ref="" what=""
+      case "$k" in
+        clientSecret) ref=$(d secret_var); what="its client secret" ;;
+        clientId)
+          cv=$(d client_var)
+          if [ -n "$cv" ]; then ref=$cv; what="its client id"
+          else v=$(d client); [ -n "$v" ] && { printf '%s\t%s\t%s\n' "$e" "$k" "$(jval "$v")" >> "$tmp/values"; printf 'FILLED: %s: %s clientId (from AGENTS.md)\n' "$pf" "$e" >> "$tmp/report"; }; continue
+          fi ;;
+        tokenUrl)
+          v=$(d token_url)
+          [ -n "$v" ] || v=$(sh "$here/env-tests.sh" --discover "$e" 2>/dev/null | sed -n 's/^TOKEN ENDPOINT: //p' | head -n 1)
+          if [ -n "$v" ]; then
+            printf '%s\t%s\t%s\n' "$e" "$k" "$(jval "$v")" >> "$tmp/values"; printf 'FILLED: %s: %s tokenUrl (from AGENTS.md and its provider)\n' "$pf" "$e" >> "$tmp/report"
+          else
+            printf 'EMPTY: %s: %s tokenUrl: its provider does not answer from here: /tests env config %s writes it in AGENTS.md\n' "$pf" "$e" "$e" >> "$tmp/report"
+          fi
+          continue ;;
+        token)
+          if [ "$(d auth)" = token ]; then ref=$(d token_var); what="its token"
+          elif [ "$(d auth)" = oidc ]; then
+            printf 'EMPTY: %s: %s token: %s asks a token to its OpenID Connect provider; Visual Studio cannot: paste a fresh one (Rider asks it itself)\n' "$pf" "$e" "$e" >> "$tmp/report"; continue
+          else
+            printf 'EMPTY: %s: %s token: AGENTS.md gives no token for %s (an API without one: leave it empty)\n' "$pf" "$e" "$e" >> "$tmp/report"; continue
+          fi ;;
+        *) printf 'EMPTY: %s: %s %s: a key of yours, left as it is\n' "$pf" "$e" "$k" >> "$tmp/report"; continue ;;
+      esac
+      if [ -z "$ref" ]; then
+        printf 'EMPTY: %s: %s %s: AGENTS.md does not say where %s is (/tests env config %s)\n' "$pf" "$e" "$k" "$what" "$e" >> "$tmp/report"
+        continue
+      fi
+      value=""
+      if [ "$k" = clientId ]; then value=$(printenv "$ref" 2>/dev/null); [ -n "$value" ] || secret_why="the variable $ref is not set in the environment of OpenCode"
+      else secret_get "$ref" value || :; fi
+      if [ -n "$value" ]; then
+        printf '%s\t%s\t%s\n' "$e" "$k" "$(jval "$value")" >> "$tmp/values"
+        printf 'FILLED: %s: %s %s (from %s)\n' "$pf" "$e" "$k" "$(secret_where "$ref")" >> "$tmp/report"
+      else
+        # shellcheck disable=SC2154 # secret_why: set by secret_get (secrets.sh)
+        printf 'EMPTY: %s: %s %s: %s\n' "$pf" "$e" "$k" "$secret_why" >> "$tmp/report"
+      fi
+      value=""
+    done < "$tmp/empty"
+    if [ -s "$tmp/values" ]; then
+      # the empty values replaced, the rest of the file as it is (its other keys, those already filled)
+      awk -v values="$tmp/values" '
+        BEGIN { while ((getline l < values) > 0) { i = index(l, "\t"); e = substr(l, 1, i - 1); r = substr(l, i + 1); j = index(r, "\t"); v[e SUBSEP substr(r, 1, j - 1)] = substr(r, j + 1) } }
+        /^  "[^"]+": *\{/ { env = $0; sub(/^  "/, "", env); sub(/".*/, "", env) }
+        /^    "[^"]+": *""/ { k = $0; sub(/^    "/, "", k); sub(/".*/, "", k); if ((env SUBSEP k) in v) { sub(/""/, "\"" v[env SUBSEP k] "\""); } }
+        { print }' "$pf" > "$tmp/filled" && cat "$tmp/filled" > "$pf"
+      : > "$tmp/filled"
+      : > "$tmp/values"
+    fi
+    if [ -s "$tmp/report" ]; then cat "$tmp/report"; else echo "UNCHANGED: $pf (nothing empty to fill)"; fi
+    if ! git check-ignore -q "$pf"; then
+      [ -s .gitignore ] && [ -n "$(tail -c 1 .gitignore)" ] && echo >> .gitignore
+      printf '%s\n' "$pf" >> .gitignore
+      echo "IGNORED: $pf added to .gitignore (its secrets are never committed)"
+    fi
+  done < "$tmp/privates"
+  exit 0
+fi
 
 sh "$here/api-routes.sh" ${folder:+"$folder"} > "$tmp/routes.md" 2>&1
 # The endpoints, one per line: <group>\t<source file>\t<verb>\t<route>\t<handler>\t<authorization>\t<parameters>\t<returns>\t<summary>
@@ -162,20 +260,22 @@ if [ "$plan" -eq 1 ]; then
       done
     lu=""
     [ -f "$pdir/Properties/launchSettings.json" ] && lu=$(sed -n 's/.*"applicationUrl"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pdir/Properties/launchSettings.json" | tr ';' '\n' | grep '^https://' | head -n 1)
-    [ -n "$lu" ] && echo "  ENVIRONMENT: local $lu — a token to paste in http-client.private.env.json"
+    [ -n "$lu" ] && echo "  ENVIRONMENT: local $lu — a token to paste in the private file (Rider: http-client.private.env.json, Visual Studio: http-client.env.json.user)"
     while IFS= read -r e; do
       [ -n "$e" ] || continue
       u=$(sed -n 's/^url=//p' "$tmp/env.$e")
       if [ "$(sed -n 's/^auth=//p' "$tmp/env.$e")" = oidc ]; then
         tu=$(sed -n 's/^token_url=//p' "$tmp/env.$e" | head -n 1)
-        echo "  ENVIRONMENT: $e $u — OpenID Connect: Rider asks the token itself (OAuth 2.0 client credentials, token URL ${tu:-to fill in}), client secret in http-client.private.env.json; Visual Studio: a token to paste"
+        echo "  ENVIRONMENT: $e $u — OpenID Connect: Rider asks the token itself (OAuth 2.0 client credentials, token URL ${tu:-to fill in}), client secret in http-client.private.env.json ($(secret_where "$(sed -n 's/^secret_var=//p' "$tmp/env.$e")"): --private fills it); Visual Studio: a token to paste in http-client.env.json.user"
       else
-        echo "  ENVIRONMENT: $e $u — a token to paste in http-client.private.env.json"
+        tv=$(sed -n 's/^token_var=//p' "$tmp/env.$e")
+        echo "  ENVIRONMENT: $e $u — $([ -n "$tv" ] && echo "its token in the private file ($(secret_where "$tv"): --private fills it)" || echo "a token to paste in the private file")"
       fi
     done < "$tmp/envs"
     [ -s "$tmp/prod" ] && echo "  LEFT OUT: $(tr '\n' ' ' < "$tmp/prod" | sed 's/ $//') (production: never in the HTTP files)"
     [ -f "$out/http-client.env.json" ] && echo "  FILE: $out/http-client.env.json exists ($([ "$replace" -eq 1 ] && echo replaced || echo kept unless --replace))"
     [ -f "$out/http-client.private.env.json" ] && echo "  FILE: $out/http-client.private.env.json exists (never rewritten: your secrets are there)"
+    [ -f "$out/http-client.env.json.user" ] && echo "  FILE: $out/http-client.env.json.user exists (never rewritten: your secrets are there)"
   done
   cat "$tmp/notes"
   echo "GROUPS: $(cut -f1 "$tmp/all" | sort -u | tr '\n' ',' | sed 's/,$//')"
@@ -218,7 +318,9 @@ cut -f2 "$tmp/dirs" | sort -u | while IFS= read -r pdir; do
     } > "$out/http-client.env.json"
     echo "ENVIRONMENTS: $( { [ -n "$local_url" ] && echo local; cat "$tmp/envs"; } | tr '\n' ' ' | sed 's/ $//') in $out/http-client.env.json$( [ -s "$tmp/prod" ] && printf ' (production left out: %s)' "$(tr '\n' ' ' < "$tmp/prod" | sed 's/ $//')")"
   fi
+  # Rider reads its secrets in http-client.private.env.json, Visual Studio in http-client.env.json.user
   private="$out/http-client.private.env.json"
+  [ "$client" = vs ] && private="$out/http-client.env.json.user"
   if [ ! -f "$private" ]; then
     {
       echo "{"
@@ -252,7 +354,7 @@ cut -f2 "$tmp/dirs" | sort -u | while IFS= read -r pdir; do
       echo "KEPT: $file (exists)"
       continue
     fi
-    awk -F '\t' -v group="$group" -v file="$file" -v bearer="$([ "$client" = vs ] && echo '{{token}}' || echo '{{$auth.token("api")}}')" '
+    awk -F '\t' -v group="$group" -v file="$file" -v vs="$([ "$client" = vs ] && echo 1 || echo 0)" -v bearer="$([ "$client" = vs ] && echo '{{token}}' || echo '{{$auth.token("api")}}')" '
       function status(returns,   s, n, i, a) {
         s = returns; if (!match(s, /\([0-9, ]+\)/)) return ""
         s = substr(s, RSTART + 1, RLENGTH - 2); n = split(s, a, /, */)
@@ -283,7 +385,7 @@ cut -f2 "$tmp/dirs" | sort -u | while IFS= read -r pdir; do
         n++
         if (n == 1) {
           print "# The requests of " group ", written by the pack (http-files.sh) from the code. Fill in the bodies, the route"
-          print "# values in http-client.env.json and what http-client.private.env.json asks (never committed)."
+          print "# values in http-client.env.json and what " (vs ? "http-client.env.json.user" : "http-client.private.env.json") " asks (never committed)."
           print ""
         }
         print "### " title
@@ -294,13 +396,16 @@ cut -f2 "$tmp/dirs" | sort -u | while IFS= read -r pdir; do
         if ($6 != "-" && $6 !~ /anonymous/) print "Authorization: Bearer " bearer
         if (body != "") { print "Content-Type: application/json"; print ""; print "{}" }
         print ""
-        print "> {%"
-        print "    client.test(\"" verb " " route "\", function () {"
-        if (code != "") print "        client.assert(response.status === " code ", \"status \" + response.status);"
-        else print "        client.assert(response.status >= 200 && response.status < 300, \"status \" + response.status);"
-        print "    });"
-        print "%}"
-        print ""
+        # the check of its status: a response handler of the JetBrains HTTP client (Visual Studio runs none)
+        if (!vs) {
+          print "> {%"
+          print "    client.test(\"" verb " " route "\", function () {"
+          if (code != "") print "        client.assert(response.status === " code ", \"status \" + response.status);"
+          else print "        client.assert(response.status >= 200 && response.status < 300, \"status \" + response.status);"
+          print "    });"
+          print "%}"
+          print ""
+        }
         if (body != "") bodies++
       }
       END { print n "\t" bodies > (file ".count") }' "$tmp/mine" > "$file.new" 2>> "$tmp/left"
