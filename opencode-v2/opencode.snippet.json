@@ -581,6 +581,7 @@
           "*env-tests.sh*allow-writes*": "deny",
           "*scripts/env-setup.sh*": "deny",
           "*blazor-native.sh scaffold*": "deny",
+          "*mapperly.sh scaffold*": "deny",
           "*.nuget/packages*": "deny",
           "*.dll*": "deny",
           "*.nupkg*": "deny"

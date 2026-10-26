@@ -27,8 +27,9 @@
 #   record <test project> [<filter>]
 #                            the golden files of the snapshot tests (Mapping/Snapshots/*.json), written from what
 #                            AutoMapper gives (MAPPING_RECORD=1, the tests of the filter, FullyQualifiedName~Mapping by
-#                            default); a golden file already committed is never changed: it is the contract the
-#                            generated mapper must meet. Tests that fail: nothing recorded.
+#                            default); a golden file there already is never written again: it is the contract the
+#                            generated mapper must meet (a committed one edited since: STOP). Tests that fail: nothing
+#                            recorded.
 #   check [<folder>]         read only: what is left of AutoMapper, each with its file and line (a quote of a map left in
 #                            a comment included); "AUTOMAPPER: GONE" when nothing is left (the Markdown documentation
 #                            excepted), exit 1 otherwise.
@@ -230,7 +231,9 @@ if [ "$action" = inventory ]; then
   np=$(grep -c . "$tmp/profiles")
   nm=$(grep -c . "$tmp/maps")
   echo "INVENTORY: $np file(s) with maps, $nm map(s)${version:+, AutoMapper $version}"
-  git grep --untracked -h -o -E 'Include="AutoMapper[^"]*"[^>]*' -- '*.csproj' '*.props' 2>/dev/null | sed -E 's/Include="([^"]*)".*Version="([^"]*)".*/\1 \2/; s/Include="([^"]*)".*/\1/' | sort -u |
+  # each AutoMapper package once, with its version (from the project, or from Directory.Packages.props)
+  git grep --untracked -h -o -E 'Include="AutoMapper[^"]*"[^>]*' -- '*.csproj' '*.props' 2>/dev/null | sed -E 's/Include="([^"]*)".*Version="([^"]*)".*/\1 \2/; s/Include="([^"]*)".*/\1/' |
+    awk '{ if (!($1 in v) || $2 != "") v[$1] = $2 } END { for (k in v) print k (v[k] == "" ? "" : " " v[k]) }' | sort |
     awk '{ printf "%s%s", (NR > 1 ? ", " : "PACKAGE: "), $0 } END { if (NR) print "" }'
   case "$version" in
     1[5-9]*|[2-9][0-9]*) echo "PACKAGE: AutoMapper $version is under a commercial license (since 15.0): its removal ends it" ;;
@@ -825,17 +828,29 @@ if [ "$action" = record ]; then
   project=$(from_root "$1") filter=${2:-FullyQualifiedName~Mapping}
   [ -n "$project" ] && [ -f "$project" ] || { echo "STOP: mapperly.sh record <the test project .csproj> [<filter>]"; exit 1; }
   dir=$(dirname "$project")
-  # the golden files there already: committed (the contract) or not, never written again
+  # a committed golden file changed and not committed: the contract is the committed one, never an edit
+  edited=$(git diff --name-only HEAD -- "$dir" 2>/dev/null | grep -E '/Snapshots/[^/]+\.json$' | tr '\n' ' ' | sed 's/ $//')
+  if [ -n "$edited" ]; then
+    echo "STOP: golden files committed and changed since ($edited): the contract of the maps is the committed version, never edited (git checkout -- <file> puts it back); nothing recorded"
+    exit 1
+  fi
+  # the golden files there already, committed or not, kept as they are: never written again
   snapshots() { git ls-files --cached --others --exclude-standard -- "$dir" | grep -E '/Snapshots/[^/]+\.json$' | sort -u; }
   snapshots > "$tmp/before"
+  mkdir -p "$tmp/kept"
+  while IFS= read -r f; do mkdir -p "$tmp/kept/$(dirname "$f")" && cp "$f" "$tmp/kept/$f"; done < "$tmp/before"
   out=$(MAPPING_RECORD=1 sh "$here/build-test.sh" "$project" --filter "$filter" 2>&1)
   status=$?
   snapshots | comm -13 "$tmp/before" - > "$tmp/new"
-  changed=$(git diff --name-only -- "$dir" 2>/dev/null | grep -E '/Snapshots/[^/]+\.json$')
+  changed=""
+  while IFS= read -r f; do
+    cmp -s "$f" "$tmp/kept/$f" 2>/dev/null && continue
+    cp "$tmp/kept/$f" "$f" 2>/dev/null
+    changed="$changed${changed:+ }$f"
+  done < "$tmp/before"
   if [ -n "$changed" ]; then
-    printf '%s\n' "$changed" | tr '\n' '\0' | xargs -0 git checkout -q --
     tr '\n' '\0' < "$tmp/new" | xargs -0 rm -f
-    echo "STOP: golden files already committed were written ($(printf '%s\n' "$changed" | tr '\n' ' ' | sed 's/ $//')): the contract of the maps is never recorded again; put back as they were, nothing recorded"
+    echo "STOP: the tests wrote golden files that were there already ($changed): never recorded again (MappingSnapshot.Verify of the skill never does); put back as they were, nothing recorded"
     exit 1
   fi
   if [ "$status" -ne 0 ] || ! printf '%s\n' "$out" | grep -q '^TESTS: OK'; then

@@ -568,7 +568,7 @@ scenario() {
   # what AutoMapper gave, for the log (the contract Mapperly meets below)
   [ "$tfm" = net10.0 ] && for f in tests/Shop.Tests/Mapping/Snapshots/*.json; do
     echo "GOLDEN $(basename "$f"): $(tr -d '\n' < "$f" | tr -s ' ')"
-  done
+  done | tee -a "${MAPPERLY_TEST_SHOW:-/dev/null}"
   run mapperly.sh record "$t"
   check "$tfm: record again: no golden file written again" 0 '^RECORD: 0 golden file\(s\)'
   MAPPING_SQL="$work/sql-$tfm-automapper.txt"
@@ -585,14 +585,18 @@ scenario() {
     tests/Shop.Tests/Mapping/RegistrationTests.cs tests/Shop.Tests/Mapping/Snapshots/*.json
   check "$tfm: the tests and their golden files sealed" 0 '^SEALED: 19 test files'
   commit "test: the snapshot tests of the maps, recorded on AutoMapper"
-  # a golden file that no longer matches: record writes nothing, and says why
+  # a golden file edited: the contract is the committed one, record refuses
   golden=tests/Shop.Tests/Mapping/Snapshots/OrderDto.Paid.json
-  sed -i 's/"(aucun)"/"(rien)"/; s/"Comment": "Comment-1"/"Comment": "autre"/' "$golden"
+  sed -i 's/"Comment": "Comment-1"/"Comment": "autre"/' "$golden"
+  run mapperly.sh record "$t"
+  check "$tfm: record with a golden file edited: STOP, nothing run" 1 '^STOP: golden files committed and changed since \(tests/Shop\.Tests/Mapping/Snapshots/OrderDto\.Paid\.json\)'
+  # a golden file committed that no longer matches what AutoMapper gives: record writes nothing, and says where
+  commit "test: a golden file that no longer matches"
   run mapperly.sh record "$t"
   check "$tfm: record with a golden file that no longer matches: nothing recorded" 1 '^STOP: the snapshot tests do not pass on AutoMapper: nothing recorded$'
-  check "$tfm: record says which line differs" 1 'OrderDto\.Paid: line [0-9]+ of .*expected: "Comment": "autre"'
-  git checkout -q -- "$golden"
-  [ -z "$(git status --porcelain)" ]
+  check "$tfm: record says which line differs" 1 'expected: "Comment": "autre"'
+  git reset -q --hard HEAD~1
+  [ -z "$(git status --porcelain)" ] && grep -q '"Comment": "Comment-1"' "$golden"
   verdict "$tfm: record left nothing behind ($(git status --porcelain | head -n 3 | tr '\n' ' '))" $?
 
   # ---- the pilot, once the developer agreed: Mapperly in the project ----
@@ -656,7 +660,7 @@ EOF
   note "$tfm, the projection of Mapperly in SQLite: $(head -n 12 "$work/sql-$tfm-mapperly.txt" 2>/dev/null | tr '\n' ' ' | tr -s ' ' | cut -c1-400)"
   # the generated code: plain C#, no reflection
   gen="$work/generated-$tfm"
-  dotnet build src/Shop/Shop.csproj -nologo -v q -p:EmitCompilerGeneratedFiles=true -p:CompilerGeneratedFilesOutputPath="$gen" > "$work/gen-$tfm.log" 2>&1
+  dotnet build src/Shop/Shop.csproj --no-incremental -nologo -v q -p:EmitCompilerGeneratedFiles=true -p:CompilerGeneratedFilesOutputPath="$gen" > "$work/gen-$tfm.log" 2>&1
   files=$(find "$gen" -name '*Mapper*.g.cs' 2>/dev/null | sort)
   [ -n "$files" ] && ! printf '%s\n' "$files" | xargs grep -l -E 'System\.Reflection|Activator\.|GetType\(\)\.GetPropert|Expression\.Lambda' > /dev/null 2>&1
   verdict "$tfm: the generated code, without reflection ($(printf '%s\n' "$files" | sed 's/.*\///' | tr '\n' ' '))" $?
@@ -664,8 +668,9 @@ EOF
     for f in $files; do
       echo "GENERATED $(basename "$f"):"
       sed 's/^/    /' "$f"
-    done
+    done | tee -a "${MAPPERLY_TEST_SHOW:-/dev/null}"
   fi
+  [ -n "$files" ] || tail -n 5 "$work/gen-$tfm.log" | sed 's/^/    /'
   commit "refactor: the maps of the orders and of the invoices by Mapperly"
 
   # ---- what the build refuses now ----

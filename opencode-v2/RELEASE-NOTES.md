@@ -14,7 +14,7 @@ Format d'une entrée (vérifié par la CI) :
 
 ## 2026-10-26 17:12 — Remplacer AutoMapper par Mapperly (brouillon)
 - **Ajouté** : `scripts/mapperly.sh` (`inventory`, `setup`, `scaffold`, `helpers`, `record`, `check`), le skill `automapper`, `tools/mapperly-test.sh` et son job de CI.
-- **Changé** : FICHIERS.md, le workflow (six jobs).
+- **Changé** : FICHIERS.md, le workflow (six jobs), les permissions (`setup` au pilote, `helpers` et `record` au test-guardian, `scaffold` au coder), les agents, `/go` (la question « Mapperly »), `detect-project-type.sh`, `package-licenses.sh`, `pack-map.sh`.
 - **Retiré** : rien.
 - **But** : retirer AutoMapper (payant depuis la 15.0, vulnérable avant) pour Mapperly, sous un filet de tests enregistrés sur AutoMapper.
 

@@ -215,7 +215,11 @@ jobs:
           dotnet --list-sdks > "$logs/sdks.log" 2>&1
           log="$logs/mapperly.log"
           failed=0
-          sh tools/mapperly-test.sh dash > "$log" 2>&1 || failed=1
+          MAPPERLY_TEST_SHOW="$logs/show.txt" sh tools/mapperly-test.sh dash > "$log" 2>&1 || failed=1
+          # what AutoMapper wrote in the golden files and the code Mapperly generated, in the log of the job
+          echo "::group::Fichiers de référence d'AutoMapper et code généré par Mapperly"
+          cat "$logs/show.txt" 2> /dev/null
+          echo "::endgroup::"
           awk -v t="mapperly-test" '
             function flush() { if (msg != "") { print "::error title=" t "::" msg; msg = ""; n = 0 } }
             { gsub(/%/, "%25"); gsub(/\r/, "") }

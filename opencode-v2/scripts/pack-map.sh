@@ -80,6 +80,7 @@ EOF
 # <skill> <what it knows>
 cat > "$tmp/skills.fr" <<'EOF'
 api-tests	Les tests d'intégration d'une API ASP.NET Core : en mémoire, et sur un environnement déployé (OpenID Connect, proxy).
+automapper	AutoMapper (payant depuis la 15.0, vulnérable avant) : son remplacement par Mapperly, profil par profil sous des tests enregistrés sur AutoMapper (inventaire, ajout, squelette des mappers et vérification par un script) ; chaque forme d'AutoMapper et son équivalent.
 best-practices	Les bonnes pratiques par type de projet : erreurs et Result, feature flags, performance, tests.
 blazorise	Blazorise : son remplacement par du Razor 100 % natif, sans paquet, page par page sous un filet de tests bUnit (inventaire, composants de l'application et vérification par un script) ; tant qu'il est là, la langue de son DataGrid et l'API de sa version.
 build-fix	Réparer un build cassé par le plus petit changement, quelle que soit la version de .NET.
