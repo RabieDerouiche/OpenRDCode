@@ -570,5 +570,48 @@ for (const a of [...ALL, "plan", "test-guardian"]) {
 for (const t of ["jira_create_issue", "jira_add_comment", "gitlab_create_merge_request", "jira_update_issue"]) tool("build", t, "deny")
 tool("build", "jira_get_issue", "allow")
 
+// ---------- the secrets of the HTTP clients that /outil http prepares, and the clients of secret stores ----------
+// Rider keeps the client secret and the tokens in http-client.private.env.json, Visual Studio in http-client.env.json.user:
+// in the repository (ignored by git), never read by an agent, through the read tool or the shell
+for (const p of ["src/Api/http/http-client.private.env.json", "http/http-client.private.env.json", "src/Api/http/http-client.env.json.user"]) {
+  readCase([...ALL, "plan", "test-guardian"], p, "deny")
+}
+add([...ALL, "test-guardian"], ["cat src/Api/http/http-client.private.env.json", "grep -n clientSecret src/Api/http/http-client.private.env.json",
+  "head -5 http/http-client.private.env.json", "cat src/Api/http/http-client.env.json.user", "jq . http/http-client.private.env.json"], "deny")
+// a secret printed by the client of a secret store would reach the model server and the session history: refused to the
+// conversation agents as well (env-tests.sh and http-files.sh --private read a Vault secret themselves, never printed)
+const SECRET_CLIS = ["vault kv get secret/recette/api", "vault kv get -field=client_secret secret/recette/api", "vault read secret/x",
+  "vault token lookup", "op read op://Dev/recette/secret", "op item get recette", "bw get password recette",
+  "az keyvault secret show --vault-name kv-acme --name client-secret", "aws secretsmanager get-secret-value --secret-id recette/api",
+  "aws ssm get-parameter --name /recette/api/secret --with-decryption", "gcloud secrets versions access latest --secret=api-secret",
+  "kubectl get secret api -o yaml", "kubectl get secrets -n recette -o json", "kubectl describe secret api", "doppler secrets get API_KEY",
+  "sops -d secrets.enc.yaml", "gh auth token", "glab auth status --show-token", "glab config get token",
+  "npm config get //registry.npmjs.org/:_authToken", "yarn config get npmAuthToken", "dotnet nuget config get all"]
+add([...ALL, "general", "explore", "test-guardian"], SECRET_CLIS, "deny")
+// the procedures of /outil (skills pack-*) are the conversation's: hidden from the agents of the pack, which keep the
+// skills of their work
+for (const a of ["pilot", "analyst", "coder", "test-guardian", "checker", "debugger", "doc-writer"]) {
+  for (const s of ["pack-http", "pack-carte", "pack-setup"]) cases.push({ agent: a, perm: "skill", pattern: s, expect: "deny" })
+  for (const s of ["blazorise", "api-tests", "fortify-remediation"]) cases.push({ agent: a, perm: "skill", pattern: s, expect: "allow" })
+}
+cases.push({ agent: "build", perm: "skill", pattern: "pack-http", expect: "allow" })
+cases.push({ agent: "build", perm: "skill", pattern: "pack-carte", expect: "allow" })
+// Blazorise replaced by native Razor: the inventory and the check of what is left only read; the native components
+// are production code, written by the coder (and the conversation), never by an agent that reads or by the test-guardian
+P(["analyst"], [S + "blazor-native.sh inventory"])
+P(["coder"], [S + "blazor-native.sh scaffold src/Web", S + "blazor-native.sh check"])
+P(["checker"], [S + "blazor-native.sh check"])
+add(["build"], [S + "blazor-native.sh inventory", S + "blazor-native.sh scaffold src/Web", S + "blazor-native.sh check"], "allow")
+add(["debugger", "pilot"], [S + "blazor-native.sh inventory", S + "blazor-native.sh check"], "allow")
+add(["pilot", "analyst", "checker", "debugger", "doc-writer", "test-guardian"], [S + "blazor-native.sh scaffold src/Web"], "deny")
+// /fix waits for the CI of its push in fewer, longer pauses
+P(["pilot"], [S + "pause.sh 240"])
+// an environment whose secret is in HashiCorp Vault (env-setup.sh --vault), and the private file of the HTTP client filled
+// from the variables of this machine or from Vault (http-files.sh --private: the developer's, in the conversation)
+P(["pilot"], [S + "env-setup.sh set recette --url https://api-recette.example.com --oidc https://login.example.com/realms/acme --client shop-tests --vault secret/recette/api#client_secret ; " + S + "env-tests.sh --check recette"])
+add(["build"], [S + "env-setup.sh set recette --url https://api-recette.example.com --token-var --vault secret/recette/api#token",
+  S + "http-files.sh --private", S + "http-files.sh --private src/Api"], "allow")
+add(["pilot", "coder", "test-guardian", "analyst", "checker", "debugger", "doc-writer"], [S + "http-files.sh --private"], "deny")
+
 // ---------- nothing an autonomous agent is told to run may ask ----------
 add(["pilot"], [S + "ship.sh --base \"feat(export): add the PDF export (ABC-123)\""], "allow", { note: "never asks: the run is unattended" })

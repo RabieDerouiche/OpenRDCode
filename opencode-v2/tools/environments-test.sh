@@ -387,6 +387,102 @@ check "env-tests --check: an environment down behind its gateway" 1 '^ENVIRONMEN
 run env-tests.sh --check prod
 check "env-tests --check: never production" 1 '^STOP: prod is a production environment'
 
+# ---------- a secret kept in HashiCorp Vault (vault:<path>#<field>), read by the vault CLI of this machine ----------
+# the fake CLI answers as the real one (messages of vault 1.x): kv get -field=<field> <path>, from a store file; the
+# real Vault in Docker is tools/oidc-real-test.sh
+cat > "$work/bin/vault" <<'EOF'
+#!/bin/sh
+[ "$1" = kv ] && [ "$2" = get ] || { echo "fake vault: kv get only" >&2; exit 1; }
+field=${3#-field=} path=$4
+echo "$*" >> "$FAKE_VAULT_LOG"
+case "${FAKE_VAULT_MODE:-}" in
+  notoken) printf 'Error making API request.\n\nURL: GET %s/v1/sys/internal/ui/mounts/%s\nCode: 403. Errors:\n\n* missing client token\n' "$VAULT_ADDR" "$path" >&2; exit 2 ;;
+  denied) printf 'Error making API request.\n\nURL: GET %s/v1/%s\nCode: 403. Errors:\n\n* permission denied\n' "$VAULT_ADDR" "$path" >&2; exit 2 ;;
+  down) printf 'Get "%s/v1/sys/internal/ui/mounts/%s": dial tcp 127.0.0.1:8200: connect: connection refused\n' "$VAULT_ADDR" "$path" >&2; exit 2 ;;
+esac
+grep -q "^$path#" "$FAKE_VAULT_STORE" || { printf 'No value found at %s\n' "$path" >&2; exit 2; }
+line=$(grep "^$path#$field=" "$FAKE_VAULT_STORE" | head -n 1)
+[ -n "$line" ] || { printf 'Field "%s" not present in secret\n' "$field" >&2; exit 1; }
+printf '%s' "${line#*=}"
+EOF
+chmod +x "$work/bin/vault"
+FAKE_VAULT_STORE="$work/vault-store" FAKE_VAULT_LOG="$work/vault.log" VAULT_ADDR=https://vault.lab.test:8200
+export FAKE_VAULT_STORE FAKE_VAULT_LOG VAULT_ADDR
+printf 'secret/lab/recette#client_secret=s3cr3t-recette\nsecret/lab/proxy#credentials=dev:p@ss w0rd\nsecret/lab/fixed#token=s3cr3t-fixed-token\n' > "$FAKE_VAULT_STORE"
+cat > "$work/vault-envs" <<EOF
+- \`vaulted\` : http://api.lab.test
+  - oidc : http://idp.lab.test/realms/test
+  - client : tests-recette
+  - secret : \`vault:secret/lab/recette#client_secret\`
+  - scope : api://acme-api/.default
+  - proxy : $P
+  - proxy-identifiants : \`vault:secret/lab/proxy#credentials\`
+- \`vaultnofield\` : http://api.lab.test
+  - oidc : http://idp.lab.test/realms/test
+  - client : tests-recette
+  - secret : \`vault:secret/lab/recette#nope\`
+  - proxy : $P
+  - proxy-identifiants : \`vault:secret/lab/proxy#credentials\`
+- \`vaultnopath\` : http://api.lab.test
+  - oidc : http://idp.lab.test/realms/test
+  - client : tests-recette
+  - secret : \`vault:secret/lab/nothing#client_secret\`
+  - proxy : $P
+- \`vaultbad\` : http://api.lab.test
+  - secret : \`vault:secret/lab recette\`
+EOF
+add_envs "$work/vault-envs"
+run environments.sh --details vaulted
+check "environments --details: a secret and the proxy credentials in Vault" 0 '^secret_var=vault:secret/lab/recette#client_secret$'
+check "environments --details: the proxy credentials in Vault" 0 '^proxy_credentials_var=vault:secret/lab/proxy#credentials$'
+run environments.sh --details vaultbad
+check "environments --details: a place in Vault that is not <path>#<field> is refused" 0 '^invalid=.*secret-value' "$SECRETS"
+run env-tests.sh --check vaulted
+check "env-tests --check: the secret and the proxy credentials read from Vault, never printed" 0 '^CHECK: OK$' "$SECRETS"
+check "env-tests --check: where each secret was read" 0 '^CHECK: variables: Vault secret/lab/recette \(field client_secret\) read, Vault secret/lab/proxy \(field credentials\) read$'
+truth "env-tests --check: the vault CLI was asked each field, once" '[ "$(grep -c "kv get -field=client_secret secret/lab/recette" "$work/vault.log")" -eq 1 ] && grep -q "kv get -field=credentials secret/lab/proxy" "$work/vault.log"'
+run env-tests.sh --check vaultnofield
+check "env-tests --check: Vault has the path, not the field" 1 '^ENVIRONMENT PROBLEM: the client secret of vaultnofield \(Vault secret/lab/recette \(field nope\)\) cannot be read: Vault has secret/lab/recette but no field nope in it' "$SECRETS"
+run env-tests.sh --check vaultnopath
+check "env-tests --check: nothing in Vault at that path" 1 '^ENVIRONMENT PROBLEM: the client secret of vaultnopath .*cannot be read: nothing in Vault at secret/lab/nothing .*never run vault yourself'
+FAKE_VAULT_MODE=notoken
+export FAKE_VAULT_MODE
+run env-tests.sh --check vaulted
+check "env-tests --check: not logged in to Vault" 1 'cannot be read: you are not logged in to Vault \(https://vault\.lab\.test:8200\): vault login, in your terminal'
+FAKE_VAULT_MODE=denied
+run env-tests.sh --check vaulted
+check "env-tests --check: a token Vault refuses" 1 'cannot be read: Vault refuses secret/lab/recette to your token'
+FAKE_VAULT_MODE=down
+run env-tests.sh --check vaulted
+check "env-tests --check: Vault out of reach" 1 'cannot be read: Vault cannot be reached from this machine \(https://vault\.lab\.test:8200\): VPN, or VAULT_ADDR'
+unset FAKE_VAULT_MODE
+mv "$work/bin/vault" "$work/vault-cli"
+if command -v vault > /dev/null 2>&1; then
+  echo "NOTE: a vault CLI on this machine ($(command -v vault)): the checks without one are left out"
+else
+  run env-tests.sh --check vaulted
+  check "env-tests --check: no vault CLI on this machine" 1 'cannot be read: the vault CLI of HashiCorp is not on the PATH'
+  run env-setup.sh scan
+  check "env-setup scan: no vault CLI, the secrets go in ~/.zshenv" 0 '^VAULT: no vault CLI on this machine'
+fi
+mv "$work/vault-cli" "$work/bin/vault"
+run env-setup.sh scan
+check "env-setup scan: the vault CLI found, never called" 0 '^VAULT: the vault CLI is on this machine \(VAULT_ADDR set\)'
+check "env-setup scan: the secrets in Vault of an environment" 0 '^  variables: vault:secret/lab/recette#client_secret in Vault, read at each run'
+: > "$work/vault.log"
+run env-setup.sh set coffre --url http://api.lab.test --oidc http://idp.lab.test/realms/test --client tests-recette --vault secret/lab/recette#client_secret --proxy "$P" --proxy-vault vault:secret/lab/proxy#credentials
+check "env-setup set --vault: its place in Vault, never a value" 0 '^    - secret : `vault:secret/lab/recette#client_secret`$' "$SECRETS"
+check "env-setup set --proxy-vault: the proxy credentials in Vault" 0 '^    - proxy-identifiants : `vault:secret/lab/proxy#credentials`$'
+check "env-setup set --vault: no variable to set, how Vault is read" 0 '^VAULT: secret/lab/recette, field client_secret: read at each run by the vault CLI' "export COFFRE_CLIENT_SECRET"
+truth "env-setup set: the wizard never reads the client secret (only the proxy credentials, to reach the discovery document)" '! grep -q client_secret "$work/vault.log" && grep -q "credentials secret/lab/proxy" "$work/vault.log"'
+run env-tests.sh --check coffre
+check "env-tests --check: the environment the wizard wrote with Vault" 0 '^CHECK: OK$' "$SECRETS"
+run env-setup.sh set coffre2 --url http://api.lab.test --vault secret/lab/fixed#token
+check "env-setup set --vault: neither OIDC nor a fixed token" 1 '^STOP: --vault goes with OpenID Connect'
+run env-setup.sh set coffre2 --url http://api.lab.test --oidc http://idp.lab.test/realms/test --client x --vault 'secret/lab x'
+check "env-setup set --vault: not <path>#<field>" 1 '^STOP: --vault is <path>#<field>'
+run env-setup.sh remove coffre
+
 # ---------- env-tests.sh: a run, with the fake dotnet ----------
 cat > tests/Api.IntegrationTests/OrdersEnvironmentTests.cs <<EOF
 using Xunit;
@@ -441,6 +537,19 @@ run env-tests.sh tls tests/Api.IntegrationTests/Api.IntegrationTests.csproj --fi
 check "env-tests: the tests get the certificate authorities (SSL_CERT_FILE)" 0 '^  OK  Api\.IntegrationTests\.CaEnvironmentTests\.Bundle'
 
 # ---------- http-files.sh: the OAuth 2.0 of Rider for an OpenID Connect environment ----------
+# two more environments for the private files: a fixed token kept in Vault, a secret with quotes and a backslash
+cat > "$work/http-envs" <<'ENVS'
+- `fixed` : http://api.lab.test (jeton : `vault:secret/lab/fixed#token`)
+- `quoted` : http://api.lab.test
+  - token-url : http://idp.lab.test/realms/test/protocol/openid-connect/token
+  - client : tests-quoted
+  - secret : `QUOTED_SECRET`
+ENVS
+add_envs "$work/http-envs"
+# shellcheck disable=SC2089 # the quote and the backslash are the value
+QUOTED_SECRET='s3cr3t-q"uo\te'
+# shellcheck disable=SC2090
+export QUOTED_SECRET
 run http-files.sh --plan
 check "http-files --plan: nothing written, the groups" 0 '^  GROUP: Orders — 2 request\(s\)' 'HTTP:'
 check "http-files --plan: Rider asks the token of an OIDC environment" 0 '^  ENVIRONMENT: recette http://api\.lab\.test — OpenID Connect: Rider asks the token itself \(OAuth 2\.0 client credentials, token URL http://idp\.lab\.test/realms/test/protocol/openid-connect/token\)'
@@ -452,9 +561,32 @@ truth "http-files: the OAuth 2.0 client credentials of Rider, from AGENTS.md" 'n
 truth "http-files: every request asks the token of Rider" 'grep -q "^Authorization: Bearer {{\$auth.token(\"api\")}}$" src/Api/http/Orders.http'
 truth "http-files: the private file is ignored by git" 'git check-ignore -q src/Api/http/http-client.private.env.json'
 truth "http-files: no secret in the files written" '! grep -rqE "$SECRETS" src/Api/http'
+run http-files.sh --plan
+check "http-files --plan: where the token of an environment is (Vault), filled by --private" 0 '^  ENVIRONMENT: fixed http://api\.lab\.test — its token in the private file \(Vault secret/lab/fixed \(field token\): --private fills it\)$'
+truth "http-files: Rider checks the status of each request (its response handler)" 'grep -q "^> {%$" src/Api/http/Orders.http'
+# --private: the empty values of the private file, from the variables of this machine and from Vault, never printed
+run http-files.sh --private
+check "http-files --private: the client secret from its variable" 0 '^FILLED: src/Api/http/http-client\.private\.env\.json: recette clientSecret \(from the variable RECETTE_CLIENT_SECRET\)$' "$SECRETS"
+check "http-files --private: the client id from its variable" 0 '^FILLED: src/Api/http/http-client\.private\.env\.json: recette clientId \(from the variable RECETTE_CLIENT_ID\)$'
+check "http-files --private: a client secret from Vault" 0 '^FILLED: src/Api/http/http-client\.private\.env\.json: vaulted clientSecret \(from Vault secret/lab/recette \(field client_secret\)\)$'
+check "http-files --private: a fixed token from Vault" 0 '^FILLED: src/Api/http/http-client\.private\.env\.json: fixed token \(from Vault secret/lab/fixed \(field token\)\)$'
+check "http-files --private: the token URL Rider needs, from the provider" 0 '^FILLED: src/Api/http/http-client\.private\.env\.json: vaulted tokenUrl \(from AGENTS\.md and its provider\)$'
+check "http-files --private: local stays to paste" 0 '^EMPTY: src/Api/http/http-client\.private\.env\.json: local token: a token of the API on this machine, to paste'
+truth "http-files --private: the values in the file, as JSON, quotes and backslash included" 'node -e "const e = JSON.parse(require(\"fs\").readFileSync(\"src/Api/http/http-client.private.env.json\", \"utf8\")); if (e.recette.clientSecret !== \"s3cr3t-recette\" || e.recette.clientId !== \"tests-recette\" || e.vaulted.clientSecret !== \"s3cr3t-recette\" || e.fixed.token !== \"s3cr3t-fixed-token\" || e.quoted.clientSecret !== process.env.QUOTED_SECRET || e.local.token !== \"\") process.exit(1)"'
+truth "http-files --private: the file stays ignored by git" 'git check-ignore -q src/Api/http/http-client.private.env.json'
+run http-files.sh --private
+check "http-files --private: a value already there is never replaced" 0 '^EMPTY: src/Api/http/http-client\.private\.env\.json: local token' 'recette clientSecret|vaulted clientSecret'
 run http-files.sh --replace --client vs --only Orders
-check "http-files: Visual Studio, the files replaced but the private one" 0 '^PRIVATE: src/Api/http/http-client\.private\.env\.json exists, never rewritten' '^KEPT: src/Api/http/Orders\.http'
+check "http-files: Visual Studio, its own private file (http-client.env.json.user)" 0 '^PRIVATE: src/Api/http/http-client\.env\.json\.user written, empty: local \(token\) recette \(token\)' '^KEPT: src/Api/http/Orders\.http'
 truth "http-files: Visual Studio pastes a token" 'grep -q "^Authorization: Bearer {{token}}$" src/Api/http/Orders.http && ! grep -q Security src/Api/http/http-client.env.json'
+truth "http-files: Visual Studio runs no response handler: none written" '! grep -q "{%" src/Api/http/Orders.http'
+truth "http-files: the file of Visual Studio is ignored by git, the one of Rider kept as it was" 'git check-ignore -q src/Api/http/http-client.env.json.user && grep -q "s3cr3t-recette" src/Api/http/http-client.private.env.json'
+run http-files.sh --private src/Api
+check "http-files --private: Visual Studio, a fixed token from Vault" 0 '^FILLED: src/Api/http/http-client\.env\.json\.user: fixed token \(from Vault secret/lab/fixed \(field token\)\)$' "$SECRETS"
+check "http-files --private: Visual Studio cannot ask an OIDC token" 0 '^EMPTY: src/Api/http/http-client\.env\.json\.user: recette token: recette asks a token to its OpenID Connect provider; Visual Studio cannot'
+rm -rf src/Api/http
+run http-files.sh --private
+check "http-files --private: no private file yet" 1 '^STOP: no private file of an HTTP client'
 git checkout -q -- . 2>/dev/null; rm -rf src/Api/http; git checkout -q -- .gitignore 2>/dev/null
 
 # ---------- tests.sh: the facts of /tests ----------

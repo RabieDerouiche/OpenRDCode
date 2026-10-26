@@ -17,7 +17,11 @@
 #     authority, a host the proxy forbids, a name it cannot resolve, a variable not set, the API stopped; and the
 #     messages of .NET that env-tests.sh reads (the 407 of the proxy tunnel, an unknown name, a certificate not trusted)
 #   - /outil http: the requests written for Rider (OAuth 2.0 client credentials of its HTTP client), sent as Rider sends
-#     them: the token asked as their Security.Auth says, through the proxy, each GET answered by the deployed API
+#     them: the token asked as their Security.Auth says, through the proxy, each GET answered by the deployed API; their
+#     private file filled by http-files.sh --private, from a variable and from HashiCorp Vault
+#   - HashiCorp Vault (a real Vault server and its own CLI): the secret of the client and the credentials of the proxy
+#     kept there (env-setup.sh --vault, --proxy-vault), read by env-tests.sh with a token whose policy gives them, and
+#     what Vault answers otherwise (no token, a token of another policy, a path or a field that does not exist)
 # The secrets of the lab (client secrets, a proxy password with characters that need encoding) and the tokens are never
 # printed by the pack's scripts: every output is checked for them.
 # Needs Docker, the .NET 10 and 8 SDKs, curl, openssl, node and git, and the registries (quay.io, mcr.microsoft.com,
@@ -34,6 +38,7 @@ docker info >/dev/null 2>&1 || { echo "oidc-real-test: the Docker daemon does no
 
 # the images, and the versions of the packages of the API (ASP.NET Core and EF Core of each .NET)
 KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:26.6.1
+VAULT_IMAGE=hashicorp/vault:1.17
 SQL_IMAGE=mcr.microsoft.com/mssql/server:2022-latest
 ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0
 UBUNTU_IMAGE=ubuntu:24.04
@@ -47,11 +52,11 @@ keep=${OIDC_LAB_LOGS:-}
 cleanup() {
   if [ -n "$keep" ]; then
     mkdir -p "$keep"
-    for c in idp api sql squid; do docker logs "$lab-$c" > "$keep/$c.log" 2>&1; done
+    for c in idp api sql squid vault; do docker logs "$lab-$c" > "$keep/$c.log" 2>&1; done
     docker exec "$lab-squid" cat /var/log/squid/access.log > "$keep/squid-access.log" 2>&1
     docker exec "$lab-squid" cat /var/log/squid/cache.log > "$keep/squid-cache.log" 2>&1
   fi
-  docker rm -f "$lab-idp" "$lab-api" "$lab-sql" "$lab-squid" > /dev/null 2>&1
+  docker rm -f "$lab-idp" "$lab-api" "$lab-sql" "$lab-squid" "$lab-vault" > /dev/null 2>&1
   docker network rm "$lab-int" "$lab-edge" > /dev/null 2>&1
   docker image rm "$lab-squid" > /dev/null 2>&1
   rm -rf "$work"
@@ -736,6 +741,93 @@ check "env-tests --check: the API through the proxy, its certificate trusted" 0 
 check "env-tests --check: the token accepted by the API (JwtBearer: signature, issuer, audience)" 0 '^CHECK: API GET /api/orders answers 200 with the token \(401 without\)$'
 check "env-tests --check: OK" 0 '^CHECK: OK$' "$SECRETS"
 
+# ---------- HashiCorp Vault: the secrets of an environment kept there, read by its own CLI ----------
+# a Vault server (dev mode: KV version 2 at secret/), its CLI copied from its image (a static binary), a policy that
+# gives the developer's token the secrets of the lab only, as the team that runs Vault would set it
+VAULT_ROOT=$(openssl rand -hex 16)
+docker run -d --name "$lab-vault" --cap-add=IPC_LOCK -p 127.0.0.1::8200 -e VAULT_DEV_ROOT_TOKEN_ID="$VAULT_ROOT" \
+  -e VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200 "$VAULT_IMAGE" >> "$work/docker.log" 2>&1 || stop "Vault ($VAULT_IMAGE)" "$work/docker.log"
+mkdir -p "$work/bin"
+vault_bin=$(docker exec "$lab-vault" sh -c 'command -v vault' 2>/dev/null)
+docker cp "$lab-vault:${vault_bin:-/bin/vault}" "$work/bin/vault" >> "$work/docker.log" 2>&1 || stop "the vault CLI from its image" "$work/docker.log"
+PATH="$work/bin:$PATH"
+VAULT_ADDR="http://127.0.0.1:$(docker port "$lab-vault" 8200/tcp | head -n 1 | sed 's/.*://')"
+export PATH VAULT_ADDR
+vault_up() { VAULT_TOKEN=$VAULT_ROOT vault status > /dev/null 2>&1; }
+wait_for "Vault" 60 vault_up || stop "Vault does not answer on $VAULT_ADDR" "$work/docker.log"
+echo "NOTE: $(vault version 2>/dev/null | head -n 1)"
+printf 'path "secret/data/lab/*" {\n  capabilities = ["read"]\n}\n' > "$work/lab-read.hcl"
+printf 'path "secret/data/other/*" {\n  capabilities = ["read"]\n}\n' > "$work/other-read.hcl"
+{
+  VAULT_TOKEN=$VAULT_ROOT vault kv put secret/lab/recette client_secret="$SECRET_TESTS"
+  VAULT_TOKEN=$VAULT_ROOT vault kv put secret/lab/proxy credentials="$CRED"
+  VAULT_TOKEN=$VAULT_ROOT vault policy write lab-read "$work/lab-read.hcl"
+  VAULT_TOKEN=$VAULT_ROOT vault policy write other-read "$work/other-read.hcl"
+} > "$work/vault-setup.log" 2>&1 || stop "the secrets and the policies of Vault" "$work/vault-setup.log"
+DEV_TOKEN=$(VAULT_TOKEN=$VAULT_ROOT vault token create -policy=lab-read -field=token 2>/dev/null)
+OTHER_TOKEN=$(VAULT_TOKEN=$VAULT_ROOT vault token create -policy=other-read -field=token 2>/dev/null)
+[ -n "$DEV_TOKEN" ] && [ -n "$OTHER_TOKEN" ] || stop "the tokens of Vault"
+SECRETS="$SECRETS|$VAULT_ROOT|$DEV_TOKEN|$OTHER_TOKEN"
+# the developer's login: the token in the environment, as a token helper would give it
+VAULT_TOKEN=$DEV_TOKEN
+export VAULT_TOKEN
+run env-setup.sh scan
+check "Vault: env-setup scan sees its CLI, never calls it" 0 '^VAULT: the vault CLI is on this machine \(VAULT_ADDR set\)'
+run env-setup.sh set coffre --url https://api.lab.test:8443 --oidc https://idp.lab.test:8443/realms/acme --client shop-tests \
+  --scope profile --vault secret/lab/recette#client_secret --proxy "$P" --proxy-vault secret/lab/proxy#credentials --ca certs/lab-ca.pem --health /health
+check "Vault: env-setup set writes the places in Vault, never a secret" 0 '^    - secret : `vault:secret/lab/recette#client_secret`$' "$SECRETS"
+check "Vault: the token URL read through the proxy, its credentials from Vault" 0 '^TOKEN URL: https://idp\.lab\.test:8443/realms/acme/protocol/openid-connect/token \(discovery document of the authority\)$'
+! grep -q -E "$SECRETS" AGENTS.md
+verdict "Vault: AGENTS.md holds no secret" $?
+run env-tests.sh --check coffre
+check "Vault: env-tests --check reads both secrets from Vault, through the proxy, with Keycloak" 0 '^CHECK: OK$' "$SECRETS"
+check "Vault: where each secret was read" 0 '^CHECK: variables: Vault secret/lab/recette \(field client_secret\) read, Vault secret/lab/proxy \(field credentials\) read$'
+check "Vault: the token of Keycloak, asked with the secret of Vault" 0 '^CHECK: token OK: expires in (299|300) s; .*client shop-tests' "$SECRETS"
+# what Vault answers otherwise: no token, a token of another policy, a path or a field that does not exist
+commit
+vault_case() {
+  # vault_case <token, or "" for none> <environment>: env-tests.sh --check with that login, in an empty home (no token
+  # helper file)
+  mkdir -p "$work/vault-home"
+  if [ -n "$1" ]; then
+    out=$(HOME="$work/vault-home" VAULT_TOKEN="$1" "$SHELL_UNDER_TEST" "$scripts/env-tests.sh" --check "$2" 2>&1)
+  else
+    out=$(HOME="$work/vault-home" env -u VAULT_TOKEN "$SHELL_UNDER_TEST" "$scripts/env-tests.sh" --check "$2" 2>&1)
+  fi
+  status=$?
+}
+# what the real Vault answered, for the notes of the run
+vnote() { echo "NOTE: $1: $(printf '%s\n' "$2" | grep -m 1 '^ENVIRONMENT PROBLEM' | sed 's/.*cannot be read: //' | cut -c1-200)"; }
+vault_case "" coffre
+vnote "Vault without a token" "$out"
+check "Vault: no token (not logged in)" 1 'ENVIRONMENT PROBLEM: the client secret of coffre \(Vault secret/lab/recette \(field client_secret\)\) cannot be read: (you are not logged in to Vault|Vault refuses secret/lab/recette to your token)' "$SECRETS"
+vault_case "$OTHER_TOKEN" coffre
+vnote "Vault with a token of another policy" "$out"
+check "Vault: a token whose policy does not give the secret" 1 'cannot be read: Vault refuses secret/lab/recette to your token' "$SECRETS"
+cat >> AGENTS.md <<EOF
+- \`coffrevide\` : https://api.lab.test:8443
+  - oidc : https://idp.lab.test:8443/realms/acme
+  - client : shop-tests
+  - secret : \`vault:secret/lab/nothing#client_secret\`
+  - proxy : $P
+  - proxy-identifiants : \`vault:secret/lab/proxy#credentials\`
+  - certificat : certs/lab-ca.pem
+- \`coffrechamp\` : https://api.lab.test:8443
+  - oidc : https://idp.lab.test:8443/realms/acme
+  - client : shop-tests
+  - secret : \`vault:secret/lab/recette#nope\`
+  - proxy : $P
+  - proxy-identifiants : \`vault:secret/lab/proxy#credentials\`
+  - certificat : certs/lab-ca.pem
+EOF
+vault_case "$DEV_TOKEN" coffrevide
+vnote "Vault, a path that does not exist" "$out"
+check "Vault: nothing at that path" 1 'cannot be read: nothing in Vault at secret/lab/nothing' "$SECRETS"
+vault_case "$DEV_TOKEN" coffrechamp
+vnote "Vault, a field that does not exist" "$out"
+check "Vault: no such field" 1 'cannot be read: Vault has secret/lab/recette but no field nope in it' "$SECRETS"
+git checkout -q -- AGENTS.md 2>/dev/null || true
+
 # ---------- /tests env: the environment tests of the skill on the deployed API ----------
 tp=tests/Shop.IntegrationTests/Shop.IntegrationTests.csproj
 kind=$(sh "$scripts/test-platform.sh" kind "$tp" 2>/dev/null)
@@ -769,8 +861,8 @@ for how in post basic; do
   set --
   check "EnvironmentClient alone ($how): its own token, through the proxy (credentials encoded in HTTPS_PROXY), the internal authority" 0 '^TESTS: OK'
   if [ -f "$work/client/client.trx" ]; then
-    [ "$(grep -c 'outcome="Passed"' "$work/client/client.trx")" -eq 3 ]
-    verdict "EnvironmentClient alone ($how): the 3 environment tests passed" $?
+    if [ "$(grep -c 'outcome="Passed"' "$work/client/client.trx")" -eq 3 ]; then passed=0; else passed=1; fi
+    verdict "EnvironmentClient alone ($how): the 3 environment tests passed" "$passed"
   fi
   [ "$(squid_tunnels idp.lab.test)" -gt "$before" ]
   verdict "EnvironmentClient alone ($how): it asked its token to Keycloak through the proxy" $?
@@ -821,8 +913,12 @@ node -e 'const e = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"
   process.exit(a.Type === "OAuth2" && a["Grant Type"] === "Client Credentials" && a["Token URL"] === process.argv[2] && a["Client ID"] === "shop-tests" &&
     a["Client Secret"] === "{{clientSecret}}" && a["Client Credentials"] === "in body" && a.Scope === "profile" && e.recette.id === "1" ? 0 : 1)' "$h/http-client.env.json" "$TOKEN_URL"
 verdict "http-files: http-client.env.json is JSON, recette with the OAuth 2.0 client credentials of Rider" $?
-# the developer fills the private file, once
-node -e 'const fs = require("fs"); const f = process.argv[1]; const p = JSON.parse(fs.readFileSync(f, "utf8")); p.recette.clientSecret = process.argv[2]; fs.writeFileSync(f, JSON.stringify(p, null, 2))' "$h/http-client.private.env.json" "$SECRET_TESTS"
+# the private file filled by the pack: the secret of recette from its variable, the one of coffre from Vault
+run http-files.sh --private
+check "http-files --private: the secret of recette, from its variable" 0 '^FILLED: src/Shop\.Api/http/http-client\.private\.env\.json: recette clientSecret \(from the variable RECETTE_CLIENT_SECRET\)$' "$SECRETS"
+check "http-files --private: the secret of coffre, from Vault" 0 '^FILLED: src/Shop\.Api/http/http-client\.private\.env\.json: coffre clientSecret \(from Vault secret/lab/recette \(field client_secret\)\)$' "$SECRETS"
+git check-ignore -q "$h/http-client.private.env.json"
+verdict "http-files --private: the private file stays ignored by git" $?
 cat > "$work/rider.mjs" <<'EOF'
 // What the HTTP client of Rider does with the files of http-files.sh, for one environment: the token request of its
 // Security.Auth "api" (OAuth 2.0 client credentials) as a curl configuration, then the GET requests of the .http files
@@ -854,8 +950,8 @@ EOF
 requests=$(node "$work/rider.mjs" "$h" recette "$work/rider-token.curl" 2>&1)
 token=$(printf 'proxy = "%s"\nproxy-user = "%s"\n' "$P" "$CRED" | curl -K "$work/rider-token.curl" -K - -sS --cacert "$pki/ca.pem" --max-time 20 2>&1 |
   node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { try { console.log(JSON.parse(s).access_token || "") } catch { console.log("") } })')
-[ -n "$token" ]
-verdict "http-files: the token, asked as the Security.Auth of recette says" $?
+if [ -n "$token" ]; then asked=0; else asked=1; fi
+verdict "http-files: the token, asked as the Security.Auth of recette says" "$asked"
 seen=$(printf '%s\n' "$requests" | while IFS="$(printf '\t')" read -r u auth; do
   [ -n "$u" ] || continue
   LAB_HEADER=""

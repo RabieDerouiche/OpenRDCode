@@ -3,12 +3,14 @@
 # say. /go and /fix push without a human in between, so this check is the last gate.
 # STOP (exit 1, nothing pushed): a secret in a line added by any commit about to be pushed, even one removed by a later
 # commit (the history is pushed too): private key, cloud or GitLab/GitHub/Slack token, user and password in a URL, a
-# password in a connection string, a secret value in a configuration file; a key or certificate file or a .env file
-# added by one of these commits; a merge conflict marker left in the code; a package whose added version is paid or
-# copyleft (package-licenses.sh); installed dependencies or build outputs (node_modules, obj, bin/Debug, TestResults)
-# that a .gitignore misses; the value of a secret variable of the environment (a name with PASSWORD, PASSWD,
-# TOKEN, SECRET, API_KEY or CREDENTIAL: the Artifactory password of ~/.zshenv) anywhere in an added line, test files
-# and "gitleaks:allow" included. The value of a secret is never printed: only its kind and its place.
+# password in a connection string, a secret value in a configuration file; a key or certificate file, a .env file or
+# the private environment file of an HTTP client (Rider: http-client.private.env.json, Visual Studio:
+# http-client.env.json.user, where /outil http keeps the secrets) added by one of these commits; a merge conflict
+# marker left in the code; a package whose added version is paid or copyleft (package-licenses.sh); installed
+# dependencies or build outputs (node_modules, obj, bin/Debug, TestResults) that a .gitignore misses; the value of a
+# secret variable of the environment (a name with PASSWORD, PASSWD, TOKEN, SECRET, API_KEY or CREDENTIAL: the
+# Artifactory password of ~/.zshenv) anywhere in an added line, test files and "gitleaks:allow" included. The value of
+# a secret is never printed: only its kind and its place.
 # WARNING (exit 0): the same findings in test files (fake tokens in fixtures), a binary or a file over 1 MB added, a
 # dist/ or coverage/ folder added.
 # PACKAGES (exit 0): every package added or changed, for the merge request.
@@ -77,7 +79,7 @@ scan() {
   }
   function config_file(f) {
     f = tolower(f)
-    return f ~ /(^|\/)appsettings[^\/]*\.json$/ || f ~ /\.(config|yml|yaml|properties|ini|toml|env)$/ || f ~ /(^|\/)\.env(\.[^\/]*)?$/ || f ~ /(^|\/)launchsettings\.json$/
+    return f ~ /(^|\/)appsettings[^\/]*\.json$/ || f ~ /\.(config|yml|yaml|properties|ini|toml|env)$/ || f ~ /(^|\/)\.env(\.[^\/]*)?$/ || f ~ /(^|\/)launchsettings\.json$/ || f ~ /(^|\/)http-client[^\/]*\.json(\.user)?$/
   }
   # a value that only stands for a secret: empty, a placeholder, a variable, a reference to a secret store
   function placeholder(v,   l) {
@@ -85,6 +87,8 @@ scan() {
     gsub(/^["'\'']+|["'\'',;]+$/, "", l)
     if (length(l) < 6) return 1
     if (l ~ /^(<.*>|\{.*\}|\$\{.*\}|\$\(.*\)|#\{.*\}#?|__.*__|%.*%|\*+|x+|\.+)$/) return 1
+    # a variable of an HTTP client ({{clientSecret}}, {{$auth.token("api")}}, {{$processEnv NAME}}), cut at its first }
+    if (l ~ /^(\{\{|\$\{|\$\()/) return 1
     if (l ~ /^(changeme|change_me|password|passwd|secret|token|apikey|api_key|your[-_].*|my[-_].*|example.*|dummy.*|fake.*|sample.*|test.*|todo|tbd|null|none|undefined|replace.*|placeholder.*|\[.*\])$/) return 1
     if (l ~ /^(env|vault|secret|keyvault|azurekeyvault|aws|ssm|arn):/) return 1
     return 0
@@ -156,6 +160,7 @@ while IFS= read -r f; do
   case "$lower" in
     *.pfx|*.p12|*.key|*.jks|*.keystore|*.kdbx|*.ppk|*/id_rsa|id_rsa|*/id_ed25519|id_ed25519|*/id_ecdsa|id_ecdsa) kind="key or certificate file" ;;
     .env|*/.env|.env.*|*/.env.*) kind=".env file" ;;
+    *private.env.json|*.env.json.user) kind="private environment file of an HTTP client (its secrets)" ;;
   esac
   [ -n "$kind" ] || continue
   case "/$lower" in

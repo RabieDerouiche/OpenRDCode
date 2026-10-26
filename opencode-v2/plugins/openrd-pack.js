@@ -64,7 +64,8 @@
 //    and branch.sh 5 minutes. The agents of the pack never run a shell command or a subagent in the background: /go,
 //    /fix and /fortify wait for each result, and the folder lock (9) ends with the turn. Nor a command without a time
 //    limit: OpenCode v2 lets an agent turn the limit off (timeout 0), and a command that waits for a network that never
-//    answers would hold the run for good; such a command gets 20 minutes, and none more than 2 hours.
+//    answers would hold the run for good; such a command gets 20 minutes, and none more than 2 hours. The pause of
+//    /fix while the CI of its push runs (pause.sh) gets 6 minutes: fewer, longer waits, fewer turns of the model.
 // 9. Starts only one /go, /fix, /fortify, /tests, /push or /sync at a time per folder: two pilots in one working tree would
 //    commit each other's changes. The second one gets a one-line answer and no tool runs in its turn. The lock is also a file in
 //    the git folder of the working tree, so that a second OpenCode of the machine (the terminal client) sees it too;
@@ -178,6 +179,12 @@
 //    on the path of the run; the retries, the summaries of the context, the silences of the model server, the answers
 //    a gateway held back and gave all at once; the tokens the server counted. Never a prompt, a command or a text of the
 //    conversation: names, durations and counts.
+// 30. Takes out of the requests of the agents of the pack (pilot, analyst, coder, checker, debugger, doc-writer,
+//    test-guardian) the parts of the global AGENTS.md written for the free conversation only, between
+//    "<!-- conversation only … -->" and "<!-- /conversation only -->" (the routing of plain words to the commands, the
+//    day of the developer, the release groups): about 2 700 tokens in each of their requests that they never use, in a
+//    context that fills and slows the model. The conversation keeps them; an AGENTS.md without these marks is sent as
+//    it is.
 // Every refusal of 6, 7, 9, 12, 16, 23, 24 and 25 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
@@ -259,6 +266,9 @@ const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
 // Commands that take minutes (8): a build or tests, a restore, the front-end tooling; the pack's git scripts
 const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*front-test\.sh|\S*env-tests\.sh|\S*fortify\.sh\s+prereq|\S*test-guardian\.sh\s+(?:coverage|red|green|changes|build|setup)|dotnet\s+(?:build|test|restore|format|ef|clean|pack)|npm\s+(?:test|ci|install|i|run\s+\S+)|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint|generate|g))|yarn\s+(?:test|install|build|lint|run\s+\S+)|pnpm\s+(?:test|install|build|lint|run\s+\S+))(?=\s|$|[;&|)])/
 const GIT_SCRIPT = /(?:^|[\s;&|(])\S*(?:ship|branch)\.sh(?=\s|$)/
+// 8. the pause of /fix while the CI of its push runs (pause.sh caps itself at 290 s)
+const PAUSE_SCRIPT = /(?:^|[\s;&|(])\S*pause\.sh(?=\s|$)/
+const PAUSE_MS = 6 * 60000
 // 8. the time of a full build and tests, and the longest a command of an agent of the pack may run
 const COMMAND_MAX_MS = 20 * 60000
 const COMMAND_CAP_MS = 2 * 3600000
@@ -995,7 +1005,8 @@ export const Guards = async (input) => {
       }
       if (call.tool === "bash" && typeof output.args.command === "string") {
         // 8. long commands get the time they need (OpenCode stops a command after 2 minutes by default)
-        const need = LONG_COMMAND.test(output.args.command) ? COMMAND_MAX_MS : GIT_SCRIPT.test(output.args.command) ? 5 * 60000 : 0
+        const need = LONG_COMMAND.test(output.args.command) ? COMMAND_MAX_MS : GIT_SCRIPT.test(output.args.command) ? 5 * 60000
+          : PAUSE_SCRIPT.test(output.args.command) ? PAUSE_MS : 0
         if (need && !(Number(output.args.timeout) >= need)) output.args.timeout = need
         // 8. and a command of an agent of the pack always ends: never without a limit (OpenCode v2 turns it off with
         // timeout 0): the 20 minutes of a full build and tests instead, and 2 hours at most when the agent asks for more
@@ -1308,6 +1319,32 @@ export function withAgentOptions(body, options) {
 
 // The metadata of a user message that the web interface shows instead of its text
 const presentation = (metadata, displayText) => ({ ...(metadata && typeof metadata === "object" ? metadata : {}), displayText, comments: [], attachments: [] })
+
+// ---------- 30. the instructions of the free conversation, out of the requests of the agents of the pack ----------
+// A part of the global AGENTS.md marked for the free conversation only: "<!-- conversation only: why -->" … "<!-- /conversation only -->"
+const CONVERSATION_ONLY = /[ \t]*<!-- conversation only\b[^>]*-->[\s\S]*?<!-- \/conversation only -->[ \t]*\r?\n?/g
+// The text without these parts, or null when it has none
+export function withoutConversationOnly(text) {
+  if (typeof text !== "string" || !text.includes("<!-- conversation only")) return null
+  const out = text.replace(CONVERSATION_ONLY, "")
+  return out === text ? null : out
+}
+// The system parts of a request (strings or { type: "text", text }) without the conversation-only parts: each part that
+// changes is replaced by a new one (the objects OpenCode keeps for the other agents stay as they are). Returns the
+// number of characters taken out.
+export function stripConversationOnly(system) {
+  if (!Array.isArray(system)) return 0
+  let removed = 0
+  for (let i = 0; i < system.length; i++) {
+    const part = system[i]
+    const text = typeof part === "string" ? part : part && typeof part.text === "string" ? part.text : undefined
+    const out = withoutConversationOnly(text)
+    if (out === null) continue
+    removed += text.length - out.length
+    system[i] = typeof part === "string" ? out : { ...part, text: out }
+  }
+  return removed
+}
 
 // ---------- 17. a run that goes on after a summary of its conversation ----------
 // The text of a message of a request (a string, or parts)
@@ -3168,7 +3205,8 @@ export default Plugin.define({
       return agentBodies.map.get(agentID)
     }
 
-    // 12, 13, 17 and 19. what each request to the model carries
+    // 12, 13, 17, 19 and 30. what each request to the model carries
+    const strippedLogged = new Set()
     if (typeof api.hook === "function") {
       await api.hook("context", async (event) => {
         try {
@@ -3176,6 +3214,14 @@ export default Plugin.define({
           if (event.tools) {
             for (const name of V2_HIDDEN) delete event.tools[name]
             if (event.tools.question && (await isSubagent(event.sessionID))) delete event.tools.question
+          }
+          // 30. the instructions of the free conversation stay out of the requests of the agents of the pack
+          if (PACK_AGENTS.has(String(event.agent || ""))) {
+            const removed = stripConversationOnly(event.system)
+            if (removed && !strippedLogged.has(event.agent)) {
+              strippedLogged.add(event.agent)
+              log("conversation-only instructions taken out of the requests of the agent", { agent: event.agent, chars: removed })
+            }
           }
           if (pruning) prune(event.messages)
           // 21. the loops of the conversation are kept once (an answer cut in a loop is taken out, with the note that

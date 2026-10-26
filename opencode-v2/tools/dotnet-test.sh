@@ -1,8 +1,9 @@
 #!/bin/sh
-# Tests of the pack's .NET scripts (build-test.sh, test-platform.sh, test-guardian.sh, fortify.sh prereq) with a fake
-# dotnet (tools/fake-dotnet.sh): VSTest, Microsoft.Testing.Platform (xUnit v3, MSTest.Sdk, TUnit), a solution that mixes
-# them, and a project that dotnet test of the .NET 10 SDK refuses. No .NET SDK needed; the real one is tried by the
-# first run on a developer's machine. Usage, from opencode-v2/: sh tools/dotnet-test.sh [<shell>] (default sh).
+# Tests of the pack's .NET scripts (build-test.sh, test-platform.sh, test-guardian.sh, fortify.sh prereq,
+# blazor-native.sh) with a fake dotnet (tools/fake-dotnet.sh): VSTest, Microsoft.Testing.Platform (xUnit v3, MSTest.Sdk,
+# TUnit), a solution that mixes them, a project that dotnet test of the .NET 10 SDK refuses, an application that leaves
+# Blazorise. No .NET SDK needed; the real one is tried by the first run on a developer's machine.
+# Usage, from opencode-v2/: sh tools/dotnet-test.sh [<shell>] (default sh).
 SHELL_UNDER_TEST=${1:-sh}
 pack=$(cd "$(dirname "$0")/.." && pwd)
 scripts="$pack/scripts"
@@ -1067,6 +1068,135 @@ check "prereq: no test project, the setup needed" 0 '^PREREQ: SETUP NEEDED$'
 run test-guardian.sh setup --components xunit src/Web/Components/Pages/Home.razor
 check "setup --components without test project: created, with bUnit" 0 '^SETUP: tests/Web\.UnitTests/Web\.UnitTests\.csproj created \(xunit, net10\.0\), it references src/Web/Web\.csproj; packages: .*bunit 2\.11\.3; build OK$'
 truth "setup --components without test project: its coverage collector too" 'grep -q "coverlet.collector" tests/Web.UnitTests/Web.UnitTests.csproj'
+
+# ---------- blazor-native.sh: the inventory of a Blazorise application, its native components, what is left ----------
+mkdir -p "$work/blazorise"
+cd "$work/blazorise" || exit 1
+git init -q
+mkdir -p src/Web/Components/Pages src/Web/Components/Layout src/Lib docs
+cat > src/Web/Web.csproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Blazorise.Bootstrap5" Version="2.2.2" />
+    <PackageReference Include="Blazorise.DataGrid" Version="2.2.2" />
+  </ItemGroup>
+</Project>
+EOF
+printf '<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n    <TargetFramework>net10.0</TargetFramework>\n  </PropertyGroup>\n</Project>\n' > src/Lib/Lib.csproj
+printf '@using Microsoft.AspNetCore.Components.Web\n@using Blazorise\n@using Blazorise.DataGrid\n' > src/Web/Components/_Imports.razor
+printf '<link href="_content/Blazorise/blazorise.css" rel="stylesheet" />\n<Routes />\n' > src/Web/Components/App.razor
+printf 'var builder = WebApplication.CreateBuilder(args);\nbuilder.Services.AddBlazorise(o => o.ProductToken = "SECRET-TOKEN-VALUE").AddBootstrap5Providers();\n' > src/Web/Program.cs
+printf '{ "Blazorise": { "ProductToken": "SECRET-TOKEN-VALUE" } }\n' > src/Web/appsettings.json
+printf '@inherits LayoutComponentBase\n<Bar><Icon Name="IconName.Home" /></Bar>\n@Body\n' > src/Web/Components/Layout/MainLayout.razor
+cat > src/Web/Components/Pages/Orders.razor <<'EOF'
+@page "/commandes"
+@* <DataGrid> in a Razor comment is no tag *@
+<DataGrid TItem="Order" Data="@orders" ShowPager>
+    <DataGridColumn TItem="Order" Field="Number" Caption="Numéro" />
+    <DataGridColumn TItem="Order" Field="Total" Caption="Total" />
+</DataGrid>
+<Button Clicked="Reload">Recharger</Button>
+<SfGrid />
+<Frobnicate />
+@code {
+    private List<Order> orders = new();
+    private Dictionary<string, Alert> other = new();
+}
+EOF
+cat > src/Web/Components/Pages/Edit.razor <<'EOF'
+@page "/edit"
+@inject IMessageService Messages
+<Validations>
+    <Field><FieldLabel>Nom</FieldLabel><TextInput @bind-Value="name" /></Field>
+</Validations>
+EOF
+printf '@page "/confirm"\n<Modal @ref="modal"><ModalContent>Oui ?</ModalContent></Modal>\n' > src/Web/Components/Pages/Confirm.razor
+printf '@page "/"\n<PageTitle>Accueil</PageTitle>\n<h1>Accueil</h1>\n' > src/Web/Components/Pages/Home.razor
+printf '# Notes\nBlazorise leaves: DataGrid, IMessageService, ProductToken.\n' > docs/notes.md
+printf 'bin/\nobj/\n' > .gitignore
+git add -A && git commit -q -m init
+# a page of the step under way, not committed yet
+printf '<Badge>neuf</Badge>\n' > src/Web/Components/Pages/Draft.razor
+# shellcheck disable=SC2034 # read in the eval of truth
+before=$(git status --porcelain)
+run blazor-native.sh inventory
+check "native inventory: the files that use Blazorise, its version" 0 '^INVENTORY: 5 \.razor file\(s\) use Blazorise \(14 tags in all\), Blazorise 2\.2\.2$'
+check "native inventory: the leaves first (simple, form, dialog, grid), the page not committed yet included" 0 '^PAGE: src/Web/Components/Pages/Draft\.razor — simple: Badge×1 — step 1$'
+check "native inventory: the layout, a simple page" 0 '^PAGE: src/Web/Components/Layout/MainLayout\.razor — simple: Icon×1, Bar×1 — step 2$'
+check "native inventory: the form" 0 '^PAGE: src/Web/Components/Pages/Edit\.razor — form: Validations×1, TextInput×1, FieldLabel×1, Field×1 — step 3$'
+check "native inventory: the dialog" 0 '^PAGE: src/Web/Components/Pages/Confirm\.razor — dialog: ModalContent×1, Modal×1 — step 4$'
+check "native inventory: the grid last, without the tag of its Razor comment" 0 '^PAGE: src/Web/Components/Pages/Orders\.razor — grid: DataGridColumn×2, DataGrid×1, Button×1 — step 5$'
+check "native inventory: a tag of nobody named to check" 0 '^UNKNOWN TAG: <Frobnicate> in src/Web/Components/Pages/Orders\.razor:9 '
+check "native inventory: never a tag of another library, of ASP.NET Core, of a C# generic, of a page without Blazorise" 0 . '<SfGrid>|<PageTitle>|<Order>|<Alert>|Home\.razor'
+check "native inventory: the service, and its native one" 0 '^SERVICE: IMessageService in src/Web/Components/Pages/Edit\.razor:2 -> NativeDialogService \(ConfirmAsync; '
+check "native inventory: the registration, its license value masked" 0 '^REGISTRATION: src/Web/Program\.cs:2 builder\.Services\.AddBlazorise\(o => o\.ProductToken = "…"\)'
+check "native inventory: the link" 0 '^LINK: src/Web/Components/App\.razor:1 _content/Blazorise/blazorise\.css$'
+check "native inventory: the packages" 0 '^PACKAGE: Blazorise\.Bootstrap5 2\.2\.2, Blazorise\.DataGrid 2\.2\.2$'
+check "native inventory: the license keys, by their names" 0 '^LICENSE KEY: src/Web/appsettings\.json:1 ProductToken \(its value is never printed'
+check "native inventory: the license value never printed" 0 . 'SECRET-TOKEN-VALUE'
+check "native inventory: the native equivalent of each tag" 0 '^EQUIVALENT: <DataGrid> -> NativeGrid \(Items=, ShowPager'
+check "native inventory: the plan, the components first" 0 '^PLAN: a first step that writes the native components \(blazor-native\.sh scaffold <the web project>\), then one page per step .*\(1 with a grid: NativeGrid\) \(1 with dialogs or messages'
+truth "native inventory: reads only" '[ "$(git status --porcelain)" = "$before" ]'
+run blazor-native.sh check
+check "native check: what is left, exit 1" 1 '^BLAZORISE: 23 place\(s\) left$'
+check "native check: the packages, the usings, the registration, the link, the service" 1 '^LEFT: project: src/Web/Web\.csproj:6:.*Blazorise\.Bootstrap5'
+check "native check: the configuration and the license keys, never their values" 1 '^LEFT: configuration: src/Web/appsettings\.json:1 the section "Blazorise"$' 'SECRET-TOKEN-VALUE'
+check "native check: the tags, those of a file not committed yet included" 1 '^LEFT: tag: src/Web/Components/Pages/Draft\.razor:1 <Badge>$'
+check "native check: never the Markdown documentation" 1 . 'docs/notes\.md'
+run blazor-native.sh frob
+check "native: an unknown action" 1 '^STOP: blazor-native\.sh inventory'
+run blazor-native.sh scaffold
+check "native scaffold: the project is needed" 1 '^STOP: blazor-native\.sh scaffold <the folder of the web project'
+run blazor-native.sh scaffold src/Lib
+check "native scaffold: never in a project that is no Blazor one" 1 '^STOP: src/Lib/Lib\.csproj is not a Blazor or Razor project'
+truth "native scaffold: nothing written in it" '[ ! -d src/Lib/Components ]'
+run blazor-native.sh scaffold src/Web
+check "native scaffold: in Components/Native, the namespace of the project" 0 '^SCAFFOLD: src/Web/Components/Native \(namespace Web\.Components\.Native, net10\.0\)$'
+check "native scaffold: the grid, its columns, the dialogs, the messages, the classes of a field" 0 '^WRITTEN: src/Web/Components/Native/NativeFieldCssClassProvider\.cs$'
+truth "native scaffold: 11 files written" '[ "$(printf "%s\n" "$out" | grep -c "^WRITTEN: ")" -eq 11 ]'
+check "native scaffold: their @using in _Imports.razor" 0 '^IMPORTS: @using Web\.Components\.Native added to src/Web/Components/_Imports\.razor$'
+check "native scaffold: what the pages need once" 0 '^NEXT: .*AddScoped<NativeDialogService>\(\); .*<NativeDialogHost /> <NativeToastHost /> in the layout'
+truth "native scaffold: _Imports.razor ends with the @using" '[ "$(tail -n 1 src/Web/Components/_Imports.razor)" = "@using Web.Components.Native" ]'
+truth "native scaffold: the namespace in every file, no placeholder left" '! grep -l "__NS__" src/Web/Components/Native/* && [ "$(grep -l -E "^(@namespace|namespace) Web\.Components\.Native;?$" src/Web/Components/Native/* | wc -l)" -eq 11 ]'
+truth "native scaffold: never a word of Blazorise in the components (nothing left of it at the end)" '! grep -i -l -E "blazorise|IMessageService|INotificationService|IModalService|IToastService" src/Web/Components/Native/*'
+truth "native scaffold: every type named Native… (none meets a name of Blazorise while both are there)" '! grep -h -o -E "^(public|internal)( sealed| abstract| static)* (class|record|enum) [A-Za-z]+" src/Web/Components/Native/*.cs | grep -v -E " Native[A-Za-z]+$" && ! ls src/Web/Components/Native | grep -v "^Native"'
+printf '\n// mine\n' >> src/Web/Components/Native/NativeGrid.razor
+run blazor-native.sh scaffold src/Web/Web.csproj
+check "native scaffold again: every file kept" 0 '^KEPT: src/Web/Components/Native/NativeGrid\.razor \(exists: the application owns it\)$' '^WRITTEN: '
+check "native scaffold again: the @using once" 0 '^IMPORTS: src/Web/Components/_Imports\.razor has @using Web\.Components\.Native already$'
+truth "native scaffold again: the changes of the application kept" 'tail -n 1 src/Web/Components/Native/NativeGrid.razor | grep -q "// mine"'
+truth "native scaffold again: one @using" '[ "$(grep -c "^@using Web.Components.Native$" src/Web/Components/_Imports.razor)" -eq 1 ]'
+run blazor-native.sh inventory
+check "native inventory after scaffold: the native components are never pages to replace" 0 '^INVENTORY: 5 \.razor file' 'Components/Native/|UNKNOWN TAG: <(TItem|Guid|NativeGrid)'
+# a project with its RootNamespace and only a Shared folder; one for .NET 6
+mkdir -p src/Shop/Shared src/Old
+printf '<Project Sdk="Microsoft.NET.Sdk.Razor">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n    <RootNamespace>Acme.Shop</RootNamespace>\n  </PropertyGroup>\n</Project>\n' > src/Shop/Shop.csproj
+printf '@using Microsoft.AspNetCore.Components.Web\n' > src/Shop/_Imports.razor
+run blazor-native.sh scaffold src/Shop
+check "native scaffold: the RootNamespace, the Shared folder" 0 '^SCAFFOLD: src/Shop/Shared/Native \(namespace Acme\.Shop\.Shared\.Native, net8\.0\)$'
+check "native scaffold: the @using in the _Imports.razor of the project" 0 '^IMPORTS: @using Acme\.Shop\.Shared\.Native added to src/Shop/_Imports\.razor$'
+printf '<Project Sdk="Microsoft.NET.Sdk.Web">\n  <PropertyGroup>\n    <TargetFramework>net6.0</TargetFramework>\n  </PropertyGroup>\n</Project>\n' > src/Old/Old.csproj
+run blazor-native.sh scaffold src/Old
+check "native scaffold: .NET 8 and later only" 1 '^STOP: the native components are written for \.NET 8 and later; src/Old/Old\.csproj targets net6\.0$'
+rm -rf src/Shop src/Old
+# the last step done: nothing left of Blazorise
+sed -i '/Blazorise/d' src/Web/Web.csproj src/Web/Components/_Imports.razor src/Web/Components/App.razor
+printf 'var builder = WebApplication.CreateBuilder(args);\n' > src/Web/Program.cs
+printf '{ }\n' > src/Web/appsettings.json
+printf '<NativeGrid Items="@orders"><NativeColumn Field="@(o => o.Number)" Title="Numéro" /></NativeGrid>\n@code {\n    private List<Order> orders = new();\n}\n' > src/Web/Components/Pages/Orders.razor
+printf '@page "/edit"\n@inject NativeDialogService Dialogs\n<EditForm Model="this"><InputText @bind-Value="name" /></EditForm>\n' > src/Web/Components/Pages/Edit.razor
+printf '<NativeModal @bind-Visible="shown"><Footer><button type="button">OK</button></Footer></NativeModal>\n' > src/Web/Components/Pages/Confirm.razor
+printf '<span class="badge text-bg-primary">neuf</span>\n' > src/Web/Components/Pages/Draft.razor
+printf '@inherits LayoutComponentBase\n<nav class="navbar"></nav>\n@Body\n<NativeDialogHost />\n<NativeToastHost />\n' > src/Web/Components/Layout/MainLayout.razor
+run blazor-native.sh check
+check "native check: nothing left, the Markdown documentation not looked at" 0 '^BLAZORISE: GONE ' '^LEFT: '
+run blazor-native.sh inventory
+check "native inventory: nothing left to replace" 0 '^INVENTORY: 0 \.razor file\(s\) use Blazorise \(0 tags in all\)$'
+check "native inventory: no plan of pages" 0 '^PLAN: no \.razor file uses Blazorise'
+cd "$work" || exit 1
 
 # never dotnet run, in any of these runs
 truth "never dotnet run" '! grep -q "^dotnet run" "$work/all-calls.log"'

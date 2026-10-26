@@ -340,7 +340,7 @@ grep -n '^## ' ~/.config/opencode/AGENTS.md
 ```sh
 grep -n '^## ' ~/oc2/config/opencode/AGENTS.md
 ```
-Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `82:## Daily`, `86:## Release groups` et `93:## NuGet / Artifactory`.
+Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `90:## Daily`, `94:## Release groups` et `101:## NuGet / Artifactory`.
 3. Dans le nouveau fichier, remplace d'abord la section « Release groups » (de sa ligne `## Release groups` jusqu'à la ligne avant `## NuGet / Artifactory`) par la tienne, copiée dans ta 1.19 de la même façon. Puis la section « Daily » (de `## Daily` jusqu'à la ligne avant `## Release groups`). Dans cet ordre : en commençant par le bas, les numéros de ligne du haut ne bougent pas.
 4. Vérifie que les sections sont les mêmes que dans ta 1.19 :
 ```sh
@@ -1036,7 +1036,7 @@ grep -n '^## ' ~/opencode-config-avant-pack-v2/AGENTS.md
 ```sh
 grep -n '^## ' ~/.config/opencode/AGENTS.md
 ```
-Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `82:## Daily`, `86:## Release groups` et `93:## NuGet / Artifactory`.
+Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `90:## Daily`, `94:## Release groups` et `101:## NuGet / Artifactory`.
 
 3. Dans le nouveau fichier, remplace d'abord la section « Release groups » par la tienne : de sa ligne `## Release groups` jusqu'à la ligne avant `## NuGet / Artifactory`, copiée de la même façon dans `~/opencode-config-avant-pack-v2/AGENTS.md`. Puis la section « Daily », de `## Daily` jusqu'à la ligne avant `## Release groups`. Dans cet ordre : en commençant par le bas, les numéros de ligne du haut ne bougent pas.
 4. Vérifie :

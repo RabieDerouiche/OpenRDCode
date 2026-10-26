@@ -35,7 +35,7 @@ mkdirSync(join(stub, "node_modules", "@opencode", "plugin"), { recursive: true }
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "package.json"), '{"name":"@opencode/plugin","type":"module","main":"index.js"}')
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "index.js"), "export const Plugin = { define: (definition) => definition }\n")
 writeFileSync(join(stub, "openrd-pack.js"), readFileSync(join(pack, "plugins", "openrd-pack.js"), "utf8"))
-const { Guards, prune, fillNullContent, withAgentOptions, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
+const { Guards, prune, fillNullContent, withAgentOptions, withoutConversationOnly, stripConversationOnly, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
 
 // ---------- fake OpenCode client ----------
 const sessions = new Map()
@@ -292,6 +292,7 @@ await check("npm test gets 20 min", async () => assert.equal(await timeout("npm 
 await check("ship.sh gets 5 min", async () => assert.equal(await tool("pilot-1", "bash", { command: S + "ship.sh --no-push \"feat: x (ABC-1)\"" }).then((a) => a.timeout), 300000))
 await check("git status keeps the default", async () => assert.equal(await timeout("git status"), undefined))
 await check("a longer timeout is kept", async () => assert.equal(await timeout(S + "build-test.sh", 3600000), 3600000))
+await check("the pause of /fix while its CI runs gets 6 min", async () => assert.equal(await timeout(S + "pause.sh 240"), 360000))
 // a command of an agent of the pack never runs without a limit (OpenCode v2: timeout 0 turns it off)
 await check("[coder] timeout 0 of a short command: 20 min, never no limit", async () =>
   assert.equal((await tool("coder-1", "bash", { command: "git log --oneline", timeout: 0 })).timeout, 1200000))
@@ -578,6 +579,61 @@ await check("[v2 28] the options sent are logged once per agent, by their names 
   const pilot = lines.filter((l) => l.includes('"agent":"pilot"'))
   assert.equal(pilot.length, 1)
   assert.ok(pilot[0].includes('"options":["temperature","top_p","chat_template_kwargs"]') && !pilot[0].includes("medium"), pilot[0])
+})
+
+// ---------- 30. the instructions of the free conversation, out of the requests of the agents of the pack ----------
+const GLOBAL_MD = "# Global rules\n\n## Language\n- Answer me in French.\n\n<!-- conversation only: the routing of plain words -->\n## Routing\n- \"pousse\" -> offer /push.\n<!-- /conversation only -->\n\n## Git\n- Never force-push.\n" +
+  "  <!-- conversation only -->\n## Release groups\n- [GROUP]\n  <!-- /conversation only -->\n## NuGet\n- No credential.\n"
+const STRIPPED_MD = "# Global rules\n\n## Language\n- Answer me in French.\n\n\n## Git\n- Never force-push.\n## NuGet\n- No credential.\n"
+const contextWith = async (sessionID, agent, system) => {
+  const event = { sessionID, agent, model: { id: "qwen", providerID: "fake" }, system, messages: [], options: {}, tools: {} }
+  await v2.hooks["session.context"](event)
+  return event
+}
+await check("[v2 30] the conversation-only parts of AGENTS.md: out of a text that has them, null for one that has none", () => {
+  assert.equal(withoutConversationOnly(GLOBAL_MD), STRIPPED_MD)
+  assert.equal(withoutConversationOnly("## Git\n- x\n"), null)
+  assert.equal(withoutConversationOnly(undefined), null)
+})
+for (const agent of ["pilot", "analyst", "coder", "checker", "debugger", "doc-writer", "test-guardian"]) {
+  await check(`[v2 30] ${agent}: its requests without the routing and the release groups, the rest as it is`, async () => {
+    const shared = { type: "text", text: GLOBAL_MD }
+    const event = await contextWith("t-30-" + agent, agent, [{ type: "text", text: "You are OpenCode." }, shared])
+    assert.equal(event.system[1].text, STRIPPED_MD)
+    assert.equal(event.system[0].text, "You are OpenCode.")
+    assert.equal(shared.text, GLOBAL_MD, "the part OpenCode keeps is not changed in place")
+  })
+}
+await check("[v2 30] the conversation keeps every instruction (build, general, plan)", async () => {
+  for (const agent of ["build", "general", "plan", ""]) {
+    const event = await contextWith("t-30-c", agent, [{ type: "text", text: GLOBAL_MD }])
+    assert.equal(event.system[0].text, GLOBAL_MD)
+  }
+})
+await check("[v2 30] a system part given as a string, and an AGENTS.md without the marks", async () => {
+  const event = await contextWith("t-30-s", "coder", [GLOBAL_MD, "## Git\n- no marks here\n"])
+  assert.equal(event.system[0], STRIPPED_MD)
+  assert.equal(event.system[1], "## Git\n- no marks here\n")
+  assert.equal(stripConversationOnly(undefined), 0)
+})
+await check("[v2 30] the same request text from one call to the next (the prefix cache of the server)", async () => {
+  const a = await contextWith("t-30-p", "coder", [{ type: "text", text: GLOBAL_MD }])
+  const b = await contextWith("t-30-p", "coder", [{ type: "text", text: GLOBAL_MD }])
+  assert.equal(a.system[0].text, b.system[0].text)
+})
+await check("[v2 30] logged once per agent, with the characters taken out", () => {
+  const lines = readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8").split("\n").filter((l) => l.includes("conversation-only instructions taken out"))
+  const coder = lines.filter((l) => l.includes('"agent":"coder"'))
+  assert.equal(coder.length, 1)
+  assert.ok(coder[0].includes('"chars":' + (GLOBAL_MD.length - STRIPPED_MD.length)), coder[0])
+})
+await check("[v2 30] the global AGENTS.md of the pack marks the routing, the day and the questions of the conversation for it only", () => {
+  const text = readFileSync(join(pack, "AGENTS.global.md"), "utf8")
+  const out = withoutConversationOnly(text)
+  assert.ok(out && !out.includes("## Routing") && !out.includes("My day: /daily") && !out.includes("In a free conversation, ask me"), "marked parts")
+  // Daily and Release groups are replaced by the developer's own (MIGRATION.md): never marked, their marks would go
+  for (const kept of ["## Language", "## Working style", "## Speed", "## Project types", "## Git", "## Daily", "## Release groups", "## NuGet / Artifactory", "## Jira (MCP)", "## Fortify SSC (MCP)"]) assert.ok(out.includes(kept), kept)
+  assert.ok(text.length - out.length > 8000, "about 2 700 tokens taken out: " + (text.length - out.length) + " characters")
 })
 
 // ---------- 12. what v2 opens that the pack closes ----------

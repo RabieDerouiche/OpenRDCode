@@ -28,7 +28,7 @@ Never invent a URL. If none is available, write the key alone.
 
 ## Step 3 - Jira
 Speed: once the scope is known, send the Jira queries A to D and the two GitLab searches of step 4 together in one turn (they run in parallel), then fetch the next pages where needed.
-Ask for at least 50 results per query (maxResults / limit parameter) and fetch the next page while there are more.
+Ask for at least 50 results per query (maxResults / limit parameter) and fetch the next page while there are more. Ask only the fields kept below (the `fields` parameter of the search, when the tool has one: `summary,status,issuetype,priority,updated,duedate,labels,flagged,issuelinks` and the story points field): 50 whole issues are cut by OpenCode, and the query would have to run again.
 - A. Active sprint: name, start date, end date.
 - B. My sprint tickets, Done included (for progress):
   `project = <KEY> AND sprint in openSprints() AND assignee = currentUser() ORDER BY Rank ASC`

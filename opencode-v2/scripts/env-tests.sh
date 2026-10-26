@@ -7,7 +7,9 @@
 # The access to the environment, as its settings say (/tests env config writes them):
 #   - its token: a fixed one (jeton : `VAR`), or an OpenID Connect token by client credentials (oidc, or token-url;
 #     client; secret : `VAR`; scope, audience, resource; auth-client post or basic), asked to the provider just before
-#     the tests run (a token lives 5 minutes on a default Keycloak), its discovery document read first;
+#     the tests run (a token lives 5 minutes on a default Keycloak), its discovery document read first; a secret is a
+#     variable of this machine (~/.zshenv), or a secret of HashiCorp Vault (`vault:<path>#<field>`, read by the vault
+#     CLI of this machine, secrets.sh);
 #   - its proxy: the one of this machine (HTTPS_PROXY, the default), none, or its own URL with its credentials from a
 #     variable (proxy-identifiants : `VAR`, <user>:<password>), and the hosts reached without it (sans-proxy);
 #   - its certificate authorities (certificat : <PEM file>): added to those of the system for curl and, on Linux, for
@@ -35,6 +37,8 @@
 LC_ALL=C
 export LC_ALL
 here=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=secrets.sh
+. "$here/secrets.sh"
 mode=run name="" project="" writes=0 extra=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -130,10 +134,18 @@ mask() {
 }
 # the value of a variable of this machine (printenv: never through the shell of an agent)
 var() { printenv "$1" 2>/dev/null; }
+# missing <reference> <what it holds>: the secret could not be read (secret_get said why in $secret_why)
 missing() {
-  echo "ENVIRONMENT PROBLEM: the variable $1, which holds $2 of $name, is not set in the environment of OpenCode. Stop and tell the user in one line: set it in ~/.zshenv (export $1='…'; OpenCode reads ~/.zshenv again at each command: nothing to restart), then /tests env config $name checks the access. Never set it in a command, never read ~/.zshenv."
+  # shellcheck disable=SC2154 # secret_why: set by secret_get (secrets.sh)
+  if secret_is_vault "$1"; then
+    echo "ENVIRONMENT PROBLEM: $2 of $name ($(secret_where "$1")) cannot be read: $secret_why. Stop and tell the user in one line; never run vault yourself (what it prints would reach the model)."
+  else
+    echo "ENVIRONMENT PROBLEM: the variable $1, which holds $2 of $name, is not set in the environment of OpenCode. Stop and tell the user in one line: set it in ~/.zshenv (export $1='…'; OpenCode reads ~/.zshenv again at each command: nothing to restart), then /tests env config $name checks the access. Never set it in a command, never read ~/.zshenv."
+  fi
   exit 1
 }
+# how a secret was found, for the CHECK line: "X set", "Vault <path> (field <field>) read"
+found() { if secret_is_vault "$1"; then printf '%s read' "$(secret_where "$1")"; else printf '%s set' "$1"; fi; }
 # percent-encoding (a password in the URL of a proxy)
 urlenc() {
   printf '%s' "$1" | awk 'BEGIN { for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i }
@@ -146,9 +158,8 @@ cesc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 token="" clientid="" secret=""
 [ "$mode" = discover ] || case "$auth" in
   token)
-    case "$tokenvar" in *[!A-Za-z0-9_]*|[0-9]*) echo "STOP: the token variable of $name is not a variable name: $tokenvar"; exit 1 ;; esac
-    token=$(var "$tokenvar")
-    [ -n "$token" ] || missing "$tokenvar" "the token"
+    secret_ref_ok "$tokenvar" || { echo "STOP: the token variable of $name is not a variable name (nor vault:<path>#<field>): $tokenvar"; exit 1; }
+    secret_get "$tokenvar" token || missing "$tokenvar" "the token"
     hide "$token" ;;
   oidc)
     if [ -n "$clientvar" ]; then
@@ -157,8 +168,7 @@ token="" clientid="" secret=""
     else
       clientid=$client
     fi
-    secret=$(var "$secretvar")
-    [ -n "$secret" ] || missing "$secretvar" "the client secret"
+    secret_get "$secretvar" secret || missing "$secretvar" "the client secret"
     hide "$secret"
     hide "$(urlenc "$secret")" ;;
 esac
@@ -183,9 +193,9 @@ case "$proxy" in
   *)
     full=$proxy
     if [ -n "$proxycredvar" ]; then
-      cred=$(var "$proxycredvar")
-      [ -n "$cred" ] || missing "$proxycredvar" "the credentials (<user>:<password>) of the proxy"
-      case "$cred" in *:*) ;; *) echo "ENVIRONMENT PROBLEM: the variable $proxycredvar does not hold <user>:<password> (the credentials of the proxy of $name). Stop and tell the user in one line; never read it."; exit 1 ;; esac
+      cred=""
+      secret_get "$proxycredvar" cred || missing "$proxycredvar" "the credentials (<user>:<password>) of the proxy"
+      case "$cred" in *:*) ;; *) echo "ENVIRONMENT PROBLEM: $(secret_where "$proxycredvar") does not hold <user>:<password> (the credentials of the proxy of $name). Stop and tell the user in one line; never read it."; exit 1 ;; esac
       puser=$(urlenc "${cred%%:*}") ppass=$(urlenc "${cred#*:}")
       hide "$cred"
       hide "${cred#*:}"
@@ -418,9 +428,9 @@ fi
 if [ "$mode" = check ]; then
   echo "$ENVLINE"
   case "$auth" in
-    oidc) echo "CHECK: variables: $([ -n "$clientvar" ] && echo "$clientvar set, ")$secretvar set$([ -n "$proxycredvar" ] && echo ", $proxycredvar set")" ;;
-    token) echo "CHECK: variables: $tokenvar set$([ -n "$proxycredvar" ] && echo ", $proxycredvar set")" ;;
-    *) [ -n "$proxycredvar" ] && echo "CHECK: variables: $proxycredvar set" ;;
+    oidc) echo "CHECK: variables: $([ -n "$clientvar" ] && echo "$clientvar set, ")$(found "$secretvar")$([ -n "$proxycredvar" ] && echo ", $(found "$proxycredvar")")" ;;
+    token) echo "CHECK: variables: $(found "$tokenvar")$([ -n "$proxycredvar" ] && echo ", $(found "$proxycredvar")")" ;;
+    *) [ -n "$proxycredvar" ] && echo "CHECK: variables: $(found "$proxycredvar")" ;;
   esac
   need_curl
   if [ "$auth" = oidc ]; then
