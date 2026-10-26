@@ -157,21 +157,23 @@ function facts(line,   s, p, q, name, a, n, i, k) {
   # the agents of the pack it names, as `name`
   n = split(agents, a, " ")
   for (i = 1; i <= n; i++) if (a[i] != "" && index(line, "`" a[i] "`")) cur_agents = add(cur_agents, a[i])
-  # the questions of a QCM: header « … » or header "…"
+  # the questions of a QCM, in the order the line asks them: header « … » or header "…"
   s = line
-  while ((p = index(s, "header « ")) > 0) {
-    s = substr(s, p + length("header « ")); q = index(s, " »")
-    if (q == 0) break
-    # « header « **/tests** — … » » is the first line of an answer, not a question
-    name = substr(s, 1, q - 1); if (name != "Suite" && name !~ /^\*\*/) cur_q = add(cur_q, name)
-    s = substr(s, q)
-  }
-  s = line
-  while ((p = index(s, "header \"")) > 0) {
-    s = substr(s, p + length("header \"")); q = index(s, "\"")
-    if (q == 0) break
-    name = substr(s, 1, q - 1); if (name != "Suite") cur_q = add(cur_q, name)
-    s = substr(s, q + 1)
+  while (1) {
+    p = index(s, "header « "); k = index(s, "header \"")
+    if (p == 0 && k == 0) break
+    if (p > 0 && (k == 0 || p < k)) {
+      s = substr(s, p + length("header « ")); q = index(s, " »")
+      if (q == 0) break
+      # « header « **/tests** — … » » is the first line of an answer, not a question
+      name = substr(s, 1, q - 1); if (name != "Suite" && name !~ /^\*\*/) cur_q = add(cur_q, name)
+      s = substr(s, q)
+    } else {
+      s = substr(s, k + length("header \"")); q = index(s, "\"")
+      if (q == 0) break
+      name = substr(s, 1, q - 1); if (name != "Suite") cur_q = add(cur_q, name)
+      s = substr(s, q + 1)
+    }
   }
   if (index(line, "« Suite »") || index(line, "header \"Suite\"")) suite = 1
   # the stops it may end with

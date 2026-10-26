@@ -1,5 +1,6 @@
 // OpenCode v2 plugin of the pack: ~/.config/opencode/plugins/openrd-pack.js (restart OpenCode after a change).
-// Written for OpenCode v2.1.3 (Plugin.define, hooks by domain, the v2 event stream), tested with v2.1.2 and v2.1.3.
+// Written for OpenCode v2.1.3 (Plugin.define, hooks by domain, the v2 event stream), tested with v2.1.2 and v2.1.3;
+// v2.1.4 changes nothing it uses (both sources compared: ANALYSE.md, analysis of 26 October).
 // What it does:
 //
 // 1. Runs the "[[run <script> <arguments>]]" lines of the pack's commands with the pack's scripts, in the git root of
@@ -61,7 +62,9 @@
 // 8. Gives the long commands the time they need: a build or test command 20 minutes (OpenCode stops any command after
 //    2 minutes unless the agent asks for more, and a stopped full test suite is run again from the start), ship.sh
 //    and branch.sh 5 minutes. The agents of the pack never run a shell command or a subagent in the background: /go,
-//    /fix and /fortify wait for each result, and the folder lock (9) ends with the turn.
+//    /fix and /fortify wait for each result, and the folder lock (9) ends with the turn. Nor a command without a time
+//    limit: OpenCode v2 lets an agent turn the limit off (timeout 0), and a command that waits for a network that never
+//    answers would hold the run for good; such a command gets 20 minutes, and none more than 2 hours.
 // 9. Starts only one /go, /fix, /fortify, /tests, /push or /sync at a time per folder: two pilots in one working tree would
 //    commit each other's changes. The second one gets a one-line answer and no tool runs in its turn. The lock is also a file in
 //    the git folder of the working tree, so that a second OpenCode of the machine (the terminal client) sees it too;
@@ -158,11 +161,29 @@
 //    writes nothing in git or in Jira: /daily, /outil audit, /outil licences, /tests env <environment> (read only);
 //    another line, even written by hand, is refused. The OpenCode service must run at that time; what it missed is not
 //    started later. Each start, or why it did not start, goes to the log of the plugin.
+// 27. Bounds the calls of the MCP servers (Jira, Confluence, GitLab, Sonar, Fortify) to 5 minutes: OpenCode v2 waits up
+//    to 12 hours for an answer (1.19 gave up after its timeout), so a server or an API that never answers held the
+//    run, its title showing the tool, for good. The call now ends in an error the agent handles (another way, or a
+//    line in its report). A server whose configuration gives its own "timeout": { "execution": <ms> } keeps it.
+// 28. Sends the options of each agent with its requests to the model, as 1.19 did: its temperature and top_p, and the
+//    "options" of its configuration (top_k, chat_template_kwargs with reasoning_effort or enable_thinking…). OpenCode
+//    v2 reads them into the agent but no request uses them (its source, v2.1.3 and v2.1.4): the 1.0 / 0.95 of the
+//    agents of the pack, the reasoning effort of an agent and the title written without thinking were never sent.
+//    They are merged into the body of each chat completions request of that agent (the title agent for a title, the
+//    agent of the session for a summary), over the options of the model; never its messages, tools, model or output
+//    limit, and never below the presence penalty of 21.
+// 29. Measures where the time of each run goes and writes one line per run of a command of the pack to
+//    <log folder>/openrd-pack-runs.tsv, read by /outil vitesse: the whole run; the model (its wait before the first
+//    token, its thinking, its writing, per request and in all), the tools, the subagents (by agent) and the questions
+//    on the path of the run; the retries, the summaries of the context, the silences of the model server, the answers
+//    a gateway held back and gave all at once; the tokens the server counted. Never a prompt, a command or a text of the
+//    conversation: names, durations and counts.
 // Every refusal of 6, 7, 9, 12, 16, 23, 24 and 25 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
-// the summaries of a run (17), its automatic resumes (19), the loops cut (21), the resumes I ask for (22) and the end of a
-// run at its « Suite » question (4). Any error leaves the prompt or the call as it is.
+// the summaries of a run (17), its automatic resumes (19), the loops cut (21), the resumes I ask for (22), the end of a
+// run at its « Suite » question (4), the MCP servers bounded (27), the options sent for each agent (28) and the time of
+// each run (29). Any error leaves the prompt or the call as it is.
 import { execFile, execFileSync, spawn } from "node:child_process"
 import { Plugin } from "@opencode/plugin"
 import {
@@ -238,6 +259,9 @@ const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/g
 // Commands that take minutes (8): a build or tests, a restore, the front-end tooling; the pack's git scripts
 const LONG_COMMAND = /(?:^|[\s;&|(])(?:\S*build-test\.sh|\S*front-test\.sh|\S*env-tests\.sh|\S*fortify\.sh\s+prereq|\S*test-guardian\.sh\s+(?:coverage|red|green|changes|build|setup)|dotnet\s+(?:build|test|restore|format|ef|clean|pack)|npm\s+(?:test|ci|install|i|run\s+\S+)|npx\s+(?:jest|vitest|tsc|eslint|prettier|ng\s+(?:test|build|lint|generate|g))|yarn\s+(?:test|install|build|lint|run\s+\S+)|pnpm\s+(?:test|install|build|lint|run\s+\S+))(?=\s|$|[;&|)])/
 const GIT_SCRIPT = /(?:^|[\s;&|(])\S*(?:ship|branch)\.sh(?=\s|$)/
+// 8. the time of a full build and tests, and the longest a command of an agent of the pack may run
+const COMMAND_MAX_MS = 20 * 60000
+const COMMAND_CAP_MS = 2 * 3600000
 // A build tool called by its full path at the start of a command (11): ~/.bin/dotnet, $HOME/.dotnet/dotnet, /usr/bin/git
 const TOOL_PATH = /(^\s*|[;&|(`\n]\s*)((?:~|\$\{HOME\}|\$HOME)?\/(?:[^\s;&|()<>'"`]*\/)?)(dotnet|node|npm|npx|yarn|pnpm|git)(?=$|[\s;&|)`])/g
 
@@ -548,7 +572,9 @@ function run(script, args, cwd) {
         cwd,
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: cleanEnv({ ...process.env, GIT_TERMINAL_PROMPT: "0" }),
+        // 29. the folder of the log of the plugin, where vitesse.sh reads the time of the runs (the XDG folders of an
+        // OpenCode v2 in ~/oc2 are taken out of the environment: 2)
+        env: cleanEnv({ ...process.env, GIT_TERMINAL_PROMPT: "0", OPENRD_PACK_LOG_DIR: dirname(LOG_FILE) }),
       })
     } catch (error) {
       resolve(script + " failed: " + String((error && error.message) || error))
@@ -969,8 +995,15 @@ export const Guards = async (input) => {
       }
       if (call.tool === "bash" && typeof output.args.command === "string") {
         // 8. long commands get the time they need (OpenCode stops a command after 2 minutes by default)
-        const need = LONG_COMMAND.test(output.args.command) ? 20 * 60000 : GIT_SCRIPT.test(output.args.command) ? 5 * 60000 : 0
+        const need = LONG_COMMAND.test(output.args.command) ? COMMAND_MAX_MS : GIT_SCRIPT.test(output.args.command) ? 5 * 60000 : 0
         if (need && !(Number(output.args.timeout) >= need)) output.args.timeout = need
+        // 8. and a command of an agent of the pack always ends: never without a limit (OpenCode v2 turns it off with
+        // timeout 0): the 20 minutes of a full build and tests instead, and 2 hours at most when the agent asks for more
+        if (output.args.timeout !== undefined && PACK_AGENTS.has(call.agent || agents.get(call.sessionID) || "")) {
+          const asked = Number(output.args.timeout)
+          if (!(asked > 0)) output.args.timeout = COMMAND_MAX_MS
+          else if (asked > COMMAND_CAP_MS) output.args.timeout = COMMAND_CAP_MS
+        }
       }
     },
     // 2. the environment of every shell command of the agents
@@ -1024,6 +1057,27 @@ function writeLog(line) {
     appendFileSync(LOG_FILE, new Date().toISOString() + " " + line + "\n", { mode: 0o600 })
   } catch {
     // the log is best-effort
+  }
+}
+// 29. One line per run of a command of the pack, next to the log, for /outil vitesse (vitesse.sh): the date, "run", then
+// key=value fields separated by tabs (seconds, counts, names: never a prompt nor a command)
+const RUNS_FILE = join(dirname(LOG_FILE), "openrd-pack-runs.tsv")
+function writeRunLine(fields) {
+  try {
+    try {
+      if (statSync(RUNS_FILE).size > LOG_MAX) renameSync(RUNS_FILE, RUNS_FILE + ".1")
+    } catch {
+      // no file yet
+    }
+    mkdirSync(dirname(RUNS_FILE), { recursive: true })
+    const date = new Date()
+    const two = (n) => String(n).padStart(2, "0")
+    // the local time of the machine too, as the developer reads it
+    const local = date.getFullYear() + "-" + two(date.getMonth() + 1) + "-" + two(date.getDate()) + " " + two(date.getHours()) + ":" + two(date.getMinutes())
+    const values = Object.entries({ at: local, ...fields }).map(([key, value]) => key + "=" + String(value === undefined ? "" : value).replace(/[\t\r\n]+/g, " "))
+    appendFileSync(RUNS_FILE, [date.toISOString(), "run", ...values].join("\t") + "\n", { mode: 0o600 })
+  } catch {
+    // the measure is best-effort
   }
 }
 // ---------- 26. scheduled commands ----------
@@ -1091,6 +1145,10 @@ const ADOPT_MS = 2 * 60000
 // 14. how long a prompt waits for the MCP servers still connecting, during the first minutes of an instance
 const MCP_WAIT_MS = 30000
 const MCP_BOOT_MS = 5 * 60000
+// 27. the longest a call of an MCP server may take, when its configuration gives none (OpenCode v2: 12 hours)
+const MCP_CALL_MS = 5 * 60000
+// 28. how often the options of the agents are read again (a configuration that changed)
+const AGENT_OPTIONS_MS = 60000
 // 16. the identical calls of one answer of the model that make a loop (1.19: DOOM_LOOP_THRESHOLD)
 const LOOP_CALLS = 3
 // 13. what 1.19 kept of the tool outputs when it pruned (compaction.prune)
@@ -1209,6 +1267,43 @@ export function fillNullContent(body) {
     }
   }
   return changed ? JSON.stringify(request) : null
+}
+
+// 28. What the options of an agent never change in a request: what OpenCode builds (the conversation, the tools, the
+// model, the stream, the output limit it fits to the context window)
+const REQUEST_OWN = new Set(["model", "messages", "tools", "tool_choice", "functions", "function_call", "stream",
+  "stream_options", "n", "max_tokens", "max_completion_tokens", "parallel_tool_calls", "response_format", "prompt"])
+const plainObject = (value) => !!value && typeof value === "object" && !Array.isArray(value)
+// `over` merged into `base`, objects key by key (chat_template_kwargs of the model and of the agent together), the value
+// of `over` winning; a new object, the inputs unchanged
+function mergeOptions(base, over) {
+  const out = { ...base }
+  for (const [key, value] of Object.entries(over)) {
+    if (value === undefined) continue
+    out[key] = plainObject(value) && plainObject(out[key]) ? mergeOptions(out[key], value) : value
+  }
+  return out
+}
+// The options of the agent (temperature, top_p, top_k, chat_template_kwargs…: the "request.body" OpenCode v2 reads from
+// its configuration) in the JSON body of one of its chat completions requests. The presence penalty of a loop cut (21)
+// stays when it is higher. Returns the new body, or null when there is nothing to change (not a chat completions body,
+// no option, the same values already).
+export function withAgentOptions(body, options) {
+  if (typeof body !== "string" || !plainObject(options)) return null
+  const own = Object.entries(options).filter(([key, value]) => !REQUEST_OWN.has(key) && value !== undefined)
+  if (!own.length) return null
+  let request
+  try {
+    request = JSON.parse(body)
+  } catch {
+    return null
+  }
+  if (!plainObject(request) || !Array.isArray(request.messages)) return null
+  const merged = mergeOptions(request, Object.fromEntries(own))
+  const loopPenalty = Number(request.presence_penalty)
+  if (Number.isFinite(loopPenalty) && !(Number(merged.presence_penalty) >= loopPenalty)) merged.presence_penalty = loopPenalty
+  const text = JSON.stringify(merged)
+  return text === JSON.stringify(request) ? null : text
 }
 
 // The metadata of a user message that the web interface shows instead of its text
@@ -1921,10 +2016,13 @@ export default Plugin.define({
     const nudgeMs = Math.min(NUDGE_MS, tickMs)
     const mcpWaitMs = Number(options.mcpWaitMs) >= 0 ? Number(options.mcpWaitMs) : MCP_WAIT_MS
     const mcpBootMs = Number(options.mcpBootMs) >= 0 ? Number(options.mcpBootMs) : MCP_BOOT_MS
+    const mcpCallMs = Number(options.mcpCallMs) > 0 ? Number(options.mcpCallMs) : MCP_CALL_MS
     const adoptMs = Number(options.adoptMs) > 0 ? Number(options.adoptMs) : ADOPT_MS
     const resumeFailureMs = Array.isArray(options.resumeFailureMs) ? options.resumeFailureMs.map(Number) : RESUME_AFTER_FAILURE_MS
     const resumeUnfinishedMs = Number(options.resumeUnfinishedMs) >= 0 ? Number(options.resumeUnfinishedMs) : RESUME_AFTER_UNFINISHED_MS
     const patienceMs = Array.isArray(options.patienceMs) ? options.patienceMs.map(Number) : PATIENCE_MS
+    // 29. the clock of the measures (a test gives its own)
+    const clockNow = typeof options.now === "function" ? () => Number(options.now()) : () => Date.now()
     const directory = String((ctx && ctx.location && ctx.location.directory) || process.cwd())
     const git = (args, cwd) => {
       try {
@@ -2422,8 +2520,8 @@ export default Plugin.define({
       const stopped = type === "session.execution.failed" || (type === "session.execution.interrupted" && reason !== "superseded")
       void (async () => {
         await finish(sessionID)
+        let mark
         if (run && run.pilot && reason !== "superseded") {
-          let mark
           if (suite !== undefined) {
             // 4. its final answer came before its « Suite » question: that outcome, never a resume
             mark = suite
@@ -2436,6 +2534,12 @@ export default Plugin.define({
             else if (!stopped) resumes.delete(sessionID)
           }
           await markOutcome(sessionID, mark)
+        }
+        // 29. the time of this turn of the run
+        try {
+          closeRunClock(sessionID, mark || (stopped ? "⛔ " : suite || ""))
+        } catch {
+          // the measure is best-effort
         }
         // the command I chose: after a turn that ended well, or after the « Suite » question of a run whatever
         // failed then (never after a stop I asked for)
@@ -2640,6 +2744,222 @@ export default Plugin.define({
       }
     }
 
+    // ---------- 29. where the time of a run goes ----------
+    // run clock: one turn of a command of the pack in a top-level session, with the subagents it ran; session clock: the
+    // model request under way in a session (its step), its tools, a summary or a question that waits
+    const runClocks = new Map()
+    const clocks = new Map()
+    const timedTools = new Map()
+    function startRunClock(sessionID, run, now) {
+      const key = /^[A-Z][A-Z0-9_]*-\d+$/.test((run.args || "").split(/\s+/)[0] || "") ? run.args.split(/\s+/)[0]
+        : /^sans ticket\b/i.test(run.args || "") ? "sans-ticket" : ""
+      const clock = { command: run.command, key, start: now, prep: 0, steps: 0, model: { wait: 0, think: 0, write: 0 },
+        top: { model: 0, tools: 0, subagents: 0, questions: 0 }, ttft: [], warm: [], ttftMax: 0, stallMax: 0, stalls: 0,
+        cold: [], buffered: 0, tokens: { in: 0, cached: 0, out: 0, reasoning: 0 }, chars: 0, retries: 0, retryWait: 0,
+        compactions: 0, compaction: 0, questions: 0, loops: 0, agents: new Map(), tools: new Map(), toolMax: ["", 0] }
+      runClocks.set(sessionID, clock)
+      clocks.set(sessionID, { run: clock, top: true, steps: 0, tools: new Map() })
+    }
+    // the clock of a session: its own, or a new one for a subagent of a run
+    function clockOf(sessionID) {
+      const own = clocks.get(sessionID)
+      if (own) return own
+      const parent = parents.get(sessionID)
+      const run = parent && runClocks.get(parent)
+      if (!run) return undefined
+      const clock = { run, top: false, steps: 0, tools: new Map() }
+      clocks.set(sessionID, clock)
+      return clock
+    }
+    const addTo = (map, label, ms) => {
+      const entry = map.get(label) || { n: 0, ms: 0 }
+      entry.n++
+      entry.ms += ms
+      map.set(label, entry)
+    }
+    // the name of a tool in the measures: a script of the pack (with the mode of test-guardian.sh and fortify.sh), the
+    // program of a shell command, or the tool itself; never its arguments
+    function toolLabel(name, input) {
+      if (name !== "shell" && name !== "bash") return String(name || "outil").replace(/[,:\s]+/g, "_").slice(0, 40)
+      const command = String((input && input.command) || "")
+      const script = /scripts\/([a-z0-9-]+\.sh)(?:\s+([a-z-]+))?/.exec(command)
+      if (script) return script[1] + (/^(?:test-guardian|fortify)\.sh$/.test(script[1]) && script[2] ? "_" + script[2] : "")
+      const first = (command.trim().split(/\s+/)[0] || "shell").split("/").pop()
+      return first.replace(/[,:\s]+/g, "_").slice(0, 30) || "shell"
+    }
+    // the end of the model request of a step (its stream), then of the step (its tools)
+    function streamEnd(clock, step, now) {
+      if (step.streamed) return
+      step.streamed = now
+      const run = clock.run
+      // the wait for the first token, then the time after the last delta with what that delta was doing
+      step.wait = (step.first || now) - step.start
+      run.model.wait += step.wait
+      if (step.first) {
+        if (step.lastKind === "think") step.think += now - step.last
+        else step.write += now - step.last
+        run.model.think += step.think
+        run.model.write += step.write
+      }
+      if (clock.top) run.top.model += now - step.start
+    }
+    function stepEnd(clock, data, now) {
+      const step = clock.step
+      if (!step) return
+      streamEnd(clock, step, now)
+      clock.step = undefined
+      const run = clock.run
+      const tokens = (data && data.tokens) || {}
+      const output = (Number(tokens.output) || 0) + (Number(tokens.reasoning) || 0)
+      run.tokens.in += (Number(tokens.input) || 0) + (Number(tokens.cache && tokens.cache.read) || 0)
+      run.tokens.cached += Number(tokens.cache && tokens.cache.read) || 0
+      run.tokens.out += Number(tokens.output) || 0
+      run.tokens.reasoning += Number(tokens.reasoning) || 0
+      if (step.first) {
+        // an answer that came all at once after a long wait: a gateway held it back (its buffer); its wait is not the
+        // time to the first token of the server, nor are its deltas a stream
+        if (step.streamed - step.first < 1000 && (output > 300 || step.chars > 1200)) run.buffered++
+        else {
+          run.ttft.push(step.wait)
+          // the first request of a session reads its whole prompt; the next ones only what was added, when the
+          // server keeps the prefix of the conversation (prefix caching)
+          if (clock.steps > 1) run.warm.push(step.wait)
+          else run.cold.push(step.wait)
+          run.ttftMax = Math.max(run.ttftMax, step.wait)
+          if (step.gap > 60000) run.stalls++
+          run.stallMax = Math.max(run.stallMax, step.gap)
+        }
+      }
+      if (clock.top) {
+        const after = Math.max(0, now - step.streamed)
+        if (step.asked) run.top.questions += after
+        else if (step.subagents) run.top.subagents += after
+        else run.top.tools += after
+      }
+    }
+    function timeEvent(sessionID, type, data, now) {
+      const clock = clockOf(sessionID)
+      if (!clock) return
+      const run = clock.run
+      switch (type) {
+        case "session.step.started": {
+          const started = Number(data.started)
+          clock.steps++
+          run.steps++
+          clock.step = { start: started > 0 && started <= now && now - started < 600000 ? started : now, first: 0, last: 0,
+            gap: 0, streamed: 0, think: 0, write: 0, lastKind: "", chars: 0, subagents: false, asked: false }
+          return
+        }
+        case "session.reasoning.started":
+        case "session.reasoning.delta":
+        case "session.text.started":
+        case "session.text.delta":
+        case "session.tool.input.started":
+        case "session.tool.input.delta": {
+          if (type === "session.tool.input.started" && data.id) timedTools.set(data.id, String(data.name || ""))
+          const step = clock.step
+          if (!step || step.streamed) return
+          const kind = type.startsWith("session.reasoning") ? "think" : "write"
+          if (typeof data.delta === "string") {
+            step.chars += data.delta.length
+            run.chars += data.delta.length
+          }
+          // the time since the last delta goes with what that delta was doing (thinking, or writing)
+          if (!step.first) step.first = now
+          else {
+            step.gap = Math.max(step.gap, now - step.last)
+            if (step.lastKind === "think") step.think += now - step.last
+            else step.write += now - step.last
+          }
+          step.last = now
+          step.lastKind = kind
+          return
+        }
+        case "session.step.streamed":
+          if (clock.step) streamEnd(clock, clock.step, now)
+          return
+        case "session.step.ended":
+        case "session.step.failed":
+          stepEnd(clock, data, now)
+          return
+        case "session.tool.called": {
+          const name = timedTools.get(data.id) || ""
+          clock.tools.set(data.id, { name, label: toolLabel(name, data.input), start: now,
+            agent: name === "subagent" && data.input && data.input.agent ? String(data.input.agent) : "" })
+          if (clock.step && name === "subagent") clock.step.subagents = true
+          if (clock.step && name === "question") clock.step.asked = true
+          return
+        }
+        case "session.tool.success":
+        case "session.tool.failed": {
+          timedTools.delete(data.id)
+          const tool = clock.tools.get(data.id)
+          if (!tool) return
+          clock.tools.delete(data.id)
+          const ms = now - tool.start
+          if (tool.name === "question") return
+          if (tool.name === "subagent") addTo(run.agents, (tool.agent || "subagent").replace(/[,:\s]+/g, "_"), ms)
+          else {
+            addTo(run.tools, tool.label, ms)
+            if (ms > run.toolMax[1]) run.toolMax = [tool.label, ms]
+          }
+          return
+        }
+        case "session.retry.scheduled":
+          run.retries++
+          run.retryWait += Math.max(0, Math.min(Number(data.at) - now, 3600000) || 0)
+          return
+        case "session.compaction.started":
+          clock.compaction = now
+          return
+        case "session.compaction.ended":
+        case "session.compaction.failed":
+          if (clock.compaction) {
+            run.compactions++
+            run.compaction += now - clock.compaction
+            clock.compaction = 0
+          }
+          return
+        case "form.created":
+        case "permission.asked":
+          clock.asked = now
+          if (clock.step) clock.step.asked = true
+          return
+        case "form.replied":
+        case "form.cancelled":
+        case "permission.replied":
+          if (clock.asked) run.questions += now - clock.asked
+          clock.asked = 0
+          return
+      }
+    }
+    // The line of a run in openrd-pack-runs.tsv, when its turn ends: seconds, counts and names only
+    function closeRunClock(sessionID, mark) {
+      const run = runClocks.get(sessionID)
+      if (!run) return
+      runClocks.delete(sessionID)
+      for (const [id, clock] of clocks) if (clock.run === run) clocks.delete(id)
+      if (timedTools.size > 500) timedTools.clear()
+      const now = clockNow()
+      const s = (ms) => Math.round(ms / 1000)
+      const avg = (list) => (list.length ? Math.round(list.reduce((a, b) => a + b, 0) / list.length / 100) / 10 : 0)
+      const list = (map, max) => [...map].sort((a, b) => b[1].ms - a[1].ms).slice(0, max).map(([label, e]) => label + ":" + e.n + ":" + s(e.ms)).join(",")
+      const fields = {
+        command: run.command, key: run.key, outcome: (mark || "").trim() || "-", total: s(now - run.start), prep: s(run.prep),
+        top_model: s(run.top.model), top_tools: s(run.top.tools), top_subagents: s(run.top.subagents), questions: s(run.questions),
+        steps: run.steps, wait: s(run.model.wait), think: s(run.model.think), write: s(run.model.write),
+        ttft_avg: avg(run.ttft), ttft_cold: avg(run.cold), cold_n: run.cold.length, ttft_warm: avg(run.warm), warm_n: run.warm.length,
+        ttft_max: s(run.ttftMax), stall_max: s(run.stallMax), stalls: run.stalls,
+        buffered: run.buffered, retries: run.retries, retry_wait: s(run.retryWait), compactions: run.compactions,
+        compaction: s(run.compaction), loops: run.loops, tokens_in: run.tokens.in, tokens_cached: run.tokens.cached,
+        tokens_out: run.tokens.out, tokens_reasoning: run.tokens.reasoning, chars: run.chars,
+        agents: list(run.agents, 12), tools: list(run.tools, 8), tool_max: run.toolMax[0] ? run.toolMax[0] + ":" + s(run.toolMax[1]) : "",
+      }
+      writeRunLine(fields)
+      log("time of the run", { command: "/" + run.command, total: fields.total, model: fields.top_model, tools: fields.top_tools,
+        subagents: fields.top_subagents, questions: fields.questions, retries: fields.retries, compactions: fields.compactions })
+    }
+
     function onEvent(e) {
       if (!e || !e.type) return
       const data = e.data || e.properties || {}
@@ -2663,6 +2983,12 @@ export default Plugin.define({
         if (lock && lock.session === sessionID && lock.pid === process.pid) release(sessionID)
       }
       if (!mine.has(sessionID)) return
+      // 29. the measures of the run, before anything else changes its state
+      try {
+        timeEvent(sessionID, e.type, data, clockNow())
+      } catch {
+        // the measure is best-effort
+      }
       if (idle) {
         if (!parents.has(sessionID) && !subagentSessions.has(sessionID)) release(sessionID)
         return
@@ -2716,11 +3042,23 @@ export default Plugin.define({
     }
     adoptLock(isService())
 
-    // 12. the MCP servers as plain tools (code mode is taken out of every request)
+    // 12. the MCP servers as plain tools (code mode is taken out of every request), and 27. their calls bounded
     if (ctx.mcp && typeof ctx.mcp.transform === "function") {
       try {
+        // the transform runs again with each change of the configuration: each server is logged once
+        const bounded = new Set()
         await ctx.mcp.transform((editor) => {
-          for (const [, server] of editor.list()) server.codemode = false
+          const fresh = []
+          for (const [name, server] of editor.list()) {
+            server.codemode = false
+            const timeout = server.timeout && typeof server.timeout === "object" ? server.timeout : {}
+            if (!(Number(timeout.execution) > 0)) {
+              server.timeout = { ...timeout, execution: mcpCallMs }
+              if (!bounded.has(String(name))) fresh.push(String(name))
+              bounded.add(String(name))
+            }
+          }
+          if (fresh.length) log("calls of the MCP servers bounded to " + Math.round(mcpCallMs / 1000) + " s", { servers: fresh })
         })
       } catch (error) {
         log("MCP servers left as they are", { error: String((error && error.message) || error) })
@@ -2801,6 +3139,33 @@ export default Plugin.define({
         id = parent
       }
       return false
+    }
+
+    // 28. the options of each agent, as OpenCode v2 reads them from the configuration (its request.body): read at the
+    // first request, then again every minute (a configuration that changed) without making a request wait
+    const agentBodies = { at: 0, map: new Map(), loading: undefined }
+    const loadAgentBodies = async () => {
+      try {
+        if (!ctx.agent || typeof ctx.agent.list !== "function") return
+        const out = await ctx.agent.list()
+        const list = Array.isArray(out) ? out : out && Array.isArray(out.data) ? out.data : []
+        const map = new Map()
+        for (const agent of list) {
+          const body = agent && agent.request && agent.request.body
+          if (agent && agent.id && plainObject(body) && Object.keys(body).length) map.set(String(agent.id), body)
+        }
+        agentBodies.map = map
+      } catch {
+        // the options read before
+      } finally {
+        agentBodies.at = Date.now()
+        agentBodies.loading = undefined
+      }
+    }
+    async function agentOptions(agentID) {
+      if (!agentBodies.loading && Date.now() - agentBodies.at > AGENT_OPTIONS_MS) agentBodies.loading = loadAgentBodies()
+      if (agentBodies.loading && agentBodies.at === 0) await agentBodies.loading
+      return agentBodies.map.get(agentID)
     }
 
     // 12, 13, 17 and 19. what each request to the model carries
@@ -2884,6 +3249,8 @@ export default Plugin.define({
                 const cut = loopCuts.get(sessionID) || { count: 0 }
                 cut.count++
                 loopCuts.set(sessionID, cut)
+                const clock = clocks.get(sessionID)
+                if (clock) clock.run.loops++
                 log("an answer that repeated itself was cut", { agent: event.agent || "", repeats: found.repeats, block: found.chars, chars: found.total, cut: cut.count })
               },
               onEnd: () => loopCuts.delete(sessionID),
@@ -2895,20 +3262,37 @@ export default Plugin.define({
         }
       })
 
+      // 28. the options of the agent of each request, as 1.19 sent them (OpenCode v2 reads them and never sends them)
+      const optionsLogged = new Set()
       await api.hook("http.request", async (event) => {
         try {
           const request = event && event.request
           if (!request || request.method !== "POST" || !request.body) return
           if (!/json/i.test(request.headers.get("content-type") || "")) return
-          const fixed = fillNullContent(await request.clone().text())
-          if (fixed === null) return
+          const original = await request.clone().text()
+          let body = original
+          const filled = fillNullContent(body)
+          if (filled !== null) {
+            body = filled
+            if (!filledLogged) {
+              filledLogged = true
+              log("assistant messages made only of tool calls are sent with an empty content instead of null")
+            }
+          }
+          const agent = String((event && event.agent) || "")
+          const options = agent ? await agentOptions(agent) : undefined
+          const optioned = options ? withAgentOptions(body, options) : null
+          if (optioned !== null) {
+            body = optioned
+            if (!optionsLogged.has(agent)) {
+              optionsLogged.add(agent)
+              log("the options of the agent are sent with its requests", { agent, options: Object.keys(options).filter((key) => !REQUEST_OWN.has(key)) })
+            }
+          }
+          if (body === original) return
           const headers = new Headers(request.headers)
           headers.delete("content-length")
-          event.request = new Request(request.url, { method: request.method, headers, body: fixed, signal: request.signal })
-          if (!filledLogged) {
-            filledLogged = true
-            log("assistant messages made only of tool calls are sent with an empty content instead of null")
-          }
+          event.request = new Request(request.url, { method: request.method, headers, body, signal: request.signal })
         } catch {
           // the request goes as it is
         }
@@ -3031,6 +3415,8 @@ export default Plugin.define({
         refusedRuns.delete(sessionID)
       }
       if (command) commandRuns.set(sessionID, { command, args, pilot: PILOT_COMMANDS.has(command) })
+      // 29. the time of the run, from its scripts on
+      if (command && !subagent) startRunClock(sessionID, commandRuns.get(sessionID), clockNow())
       // 17. the instructions of the run, for the requests that follow a summary of its conversation (a resume keeps
       // those of the run it resumes)
       if (PILOT_COMMANDS.has(command) && !resume) remember(procedures, sessionID, { command, args, text: procedureOf(prompt.text) })
@@ -3043,11 +3429,14 @@ export default Plugin.define({
         if (state) void show(sessionID, state)
       }
       // 1. the scripts of the command, in the git root of the folder
+      const prepared = clockNow()
       try {
         if (prompt.text.includes("[[run ")) prompt.text = await resolveRuns(prompt.text, worktree)
       } catch {
         // keep the lines: the model runs them
       }
+      const runClock = command && runClocks.get(sessionID)
+      if (runClock) runClock.prep += clockNow() - prepared
       if (state) {
         state.phase = "waiting"
         state.last = Date.now()

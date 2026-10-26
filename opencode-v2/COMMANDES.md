@@ -214,7 +214,7 @@ L'effort de réflexion (`reasoning_effort`, nouveau dans Qwen 3.8) : la même re
 ```sh
 curl -s https://adresse-du-serveur/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"<nom du modèle>","messages":[{"role":"user","content":"Réponds OK"}],"max_tokens":4000,"chat_template_kwargs":{"reasoning_effort":"low"}}' | grep -oE '"completion_tokens": ?[0-9]+'
 ```
-S'il en tient compte, l'effort se règle par agent dans `~/oc2/config/opencode/opencode.json`, section `agent`, par exemple pour le pilote, qui orchestre et n'a pas besoin de réfléchir longtemps : `"pilot": { "options": { "chat_template_kwargs": { "reasoning_effort": "medium" } } }`. À valider sur un `/go` réel avant de le garder ; le coder, l'analyste et le checker gardent l'effort par défaut.
+S'il en tient compte, l'effort se règle par agent dans `~/oc2/config/opencode/opencode.json`, section `agent`, par exemple pour le pilote, qui orchestre et n'a pas besoin de réfléchir longtemps : `"pilot": { "options": { "chat_template_kwargs": { "reasoning_effort": "medium" } } }`. La v2 lit ces options sans les envoyer : c'est le plugin du pack qui les met dans chaque requête de l'agent (point 28 ; le journal du plugin le dit une fois par agent : `grep 'options of the agent' ~/oc2/data/opencode/log/openrd-pack.log`). C'est le levier de vitesse qui ne touche à rien d'autre : mesure avec `/outil vitesse` (section suivante) avant et après, sur quelques `/go`, et relis les MR comme d'habitude ; le coder, l'analyste et le checker gardent l'effort par défaut tant que la qualité de leurs MR n'est pas confirmée.
 
 Les « Gateway Time-out » (504) : combien, et les derniers :
 ```sh
@@ -225,11 +225,27 @@ grep 'Gateway Time-out' ~/oc2/serve.log | tail -5 | cut -c1-200
 ```
 OpenCode réessaie seul, et chaque essai repart de zéro : la v2 fait jusqu'à 10 nouveaux essais (la 1.19 en faisait 5). Seule, elle les fait en environ 1 min 30 ; pendant un `/go`, `/fix` ou `/fortify` et ses sous-agents, le plugin les étale sur environ 8 minutes (10 s, 20 s, 30 s, 45 s, puis 1 min), pour qu'une passerelle qui redémarre ou une série de 504 n'arrête pas un run. Le titre de la session dit « nouvel essai <n> dans <délai> (serveur du modèle) ». Si le serveur ne répond toujours pas, le run s'arrête, puis le plugin le reprend tout seul 2 minutes plus tard, puis 5 (section « Un run qui reprend tout seul »). À demander à l'équipe qui héberge le modèle, avec ces chiffres : le délai de la passerelle devant vLLM pour `/v1/chat/completions` (une réponse avec réflexion peut durer plusieurs minutes : 10 minutes laisse de la marge), et des réponses en streaming transmises sans mise en tampon (nginx : `proxy_read_timeout 600s` et `proxy_buffering off`).
 
+Un run qui ne reçoit plus rien du serveur (le titre dit « rien reçu depuis <n> min ») : OpenCode attend 15 minutes sans un octet avant de réessayer, et réessaie 3 fois au plus dans ce cas, près d'une heure figée quand le serveur est tombé sans fermer la connexion. Avec vLLM, la réflexion de Qwen arrive token par token : plusieurs minutes de silence au milieu d'une réponse ne sont pas normales. Dans les `options` de ton provider (au même niveau que `baseURL`) : `"chunkTimeout": 300000` (5 minutes). Garde plus long si `/outil vitesse` montre des attentes du premier token de plusieurs minutes : ce délai couvre aussi la file d'attente du serveur avant le premier token. `"headerTimeout"` (5 minutes par défaut) borne l'attente du début de la réponse.
+
 **`Provider request failed with HTTP 400` … `Request doesn't match the schema` … `/messages/<n>/content` … `expected string, received null`**, sur toutes les commandes, dès que l'agent a appelé un outil. OpenCode v2 envoie un message de l'assistant qui ne contient que des appels d'outils avec un contenu `null` (le format OpenAI l'autorise) ; la passerelle de la plateforme exige une chaîne ou un tableau et refuse toute la requête. Le plugin du pack (point 20) envoie ces messages avec un contenu vide `""` : vérifie que tu as bien collé le `openrd-pack.js` de cette version (empreintes de l'étape 5), puis redémarre OpenCode. Une fois corrigé, le log du plugin contient une fois par démarrage :
 ```sh
 grep 'empty content instead of null' ~/.local/share/opencode/log/openrd-pack.log | tail -1
 ```
 Une session déjà en erreur repart avec un simple message (« continue ») : l'historique n'est pas abîmé, c'est la requête qui était refusée.
+
+## Où passe le temps, ce qui bloque (`/outil vitesse`)
+
+Le plugin mesure chaque run d'une commande du pack (point 29) et en écrit une ligne, sans un mot du prompt, dans `openrd-pack-runs.tsv`, à côté de son journal. `/outil vitesse` les lit (les 10 derniers runs ; `/outil vitesse 30`, `/outil vitesse go` pour les seuls `/go`) et affiche tout de suite :
+- un tableau par run : sa durée, le temps du modèle du pilote, de ses sous-agents, de ses outils (builds, tests, scripts), de tes réponses aux questions, l'attente moyenne et maximale du premier token, les nouveaux essais, l'issue ;
+- où passe le temps, en pourcentages, sur le chemin des runs ;
+- le modèle de toutes les sessions : l'attente du premier token pour la première requête d'une session (le serveur lit tout le prompt) et pour les suivantes (il ne devrait relire que ce qui s'ajoute), la part de réflexion et de rédaction, les tokens par seconde ;
+- les sous-agents et les outils les plus longs ;
+- les points à regarder, chacun avec qui agit : le serveur qui échoue (504, 503 : délai de la passerelle), une passerelle qui garde le streaming en tampon (rien ne s'affiche, puis tout d'un coup : `proxy_buffering off`), un flux qui s'arrête au milieu d'une réponse (`chunkTimeout`), les requêtes suivantes aussi lentes que la première (le prefix caching de vLLM, l'affinité de session quand il y a plusieurs répliques), une file d'attente, une génération lente (MTP, charge), une réflexion longue (l'effort de réflexion par agent, section précédente), des résumés du contexte (`limit.context`, `background_compaction` de la v2.1.4), une préparation lente (`git fetch`), un appel MCP lent, des boucles, tes réponses.
+
+Ce qui revient à l'équipe qui héberge le modèle (passerelle, tampon, prefix caching, répliques, MTP), donne-lui la ligne de `/outil vitesse` et ses chiffres. Ce qui revient à ton `opencode.json` (effort de réflexion, `chunkTimeout`, `limit.context`) : section « Qwen 3.8 » ci-dessus. Les mesures brutes :
+```sh
+tail -5 ~/oc2/data/opencode/log/openrd-pack-runs.tsv | tr '\t' '\n' | grep -E '^(command|total|top_|wait|think|write|ttft|retries|buffered|stall)'
+```
 
 ## Logs d'OpenCode
 
@@ -321,6 +337,10 @@ time timeout 30 env GIT_TERMINAL_PROMPT=0 git fetch -q --no-tags origin; echo "c
 ```
 
 ## Un sous-agent qui semble bloqué
+
+**Ce qui ne peut plus bloquer pour toujours.** Un appel d'un serveur MCP (Jira, GitLab, Sonar, Fortify) qui ne répond pas finit en erreur après 5 minutes (la v2 attendait jusqu'à 12 heures ; plugin, point 27 ; `"timeout": { "execution": <ms> }` dans la configuration d'un serveur pour un autre délai), et l'agent continue sans lui. Une commande d'un agent du pack a toujours une limite de temps (20 minutes pour un build ou des tests, 2 heures au plus). Le serveur du modèle qui n'envoie plus rien : OpenCode réessaie au bout de 15 minutes, 5 avec `"chunkTimeout": 300000` dans les `options` du provider (section « Qwen 3.8 »). Une question ou une autorisation qui t'attend : le titre commence par ❓.
+
+**L'interface qui ne bouge plus** alors que le titre de la session avance dans la liste de l'accueil : l'interface a perdu son flux d'évènements (une passerelle ou un proxy devant OpenCode qui le coupe ou le garde en tampon) ; recharge la page, le run, lui, a continué.
 
 Le titre de la session du pilote dit ce que fait le sous-agent en cours, par exemple « ⏳ 31:02 outil · Auto-review · nouvel essai 3 dans 45 s (serveur du modèle) — /go ABC-123 », « … · rien reçu depuis 4 min », « … · résumé du contexte », ou « ❓ … · autorisation attendue ». Plusieurs sous-agents à la fois (les analyses de `/fortify`) : « ⏳ 3:10 outils (3) · Analyse V1, Analyse V2, Analyse V3 ». Le titre suit dans la seconde quand un outil démarre ou finit. Un sous-agent ne pose jamais de question (le plugin la refuse) : il ne peut pas attendre une réponse de toi. Ce que le serveur du modèle a renvoyé, et les nouveaux essais :
 ```sh
@@ -598,7 +618,7 @@ Une session devenue longue, ou qui répond « Service Unavailable » à chaque m
 /compact
 ```
 
-Un ticket, du début à la MR en Draft (tes consignes après la clé, facultatives). Relancé, il reprend où il s'était arrêté. Ta commande s'affiche en une ligne, « /go ABC-123 — mon-api · branche develop », le titre de la session montre l'avancement (⏳), et l'issue reste dans le titre et dans la dernière réponse : ✅ MR créée ou rien à faire, ⏸ une réponse du PO t'attend, ⛔ arrêté avec la raison, ❓ une question t'attend. Avant qu'une étape touche du code existant, son filet de non-régression (section « Le filet de non-régression ») : les tests du comportement actuel des méthodes touchées, écrits d'abord par le test-guardian s'il en manque. Un bug se corrige preuve à l'appui : le test-guardian écrit d'abord le test qui le reproduit (rouge), le coder corrige (vert), le test-guardian vérifie (vert deux fois, filet intact, couverture sans perte). À la fin, un QCM « Suite » : `/fix` d'un clic, quand la CI a tourné. En fin de `/go`, la suite complète mesure la couverture des lignes modifiées par la branche, et les lignes qu'aucun test n'exécute reçoivent leurs tests (le chiffre va dans la MR : Sonar demande 80 % sur le nouveau code) :
+Un ticket, du début à la MR en Draft (tes consignes après la clé, facultatives). Relancé, il reprend où il s'était arrêté. Ta commande s'affiche en une ligne, « /go ABC-123 — mon-api · branche develop », le titre de la session montre l'avancement (⏳), et l'issue reste dans le titre et dans la dernière réponse : ✅ MR créée ou rien à faire, ⏸ une réponse du PO t'attend, ⛔ arrêté avec la raison, ❓ une question t'attend. Avant qu'une étape touche du code existant, son filet de non-régression (section « Le filet de non-régression ») : les tests du comportement actuel des méthodes touchées, écrits d'abord par le test-guardian s'il en manque. Un bug se corrige preuve à l'appui : le test-guardian écrit d'abord le test qui le reproduit (rouge), le coder corrige (vert), le test-guardian vérifie (vert deux fois, filet intact, couverture sans perte). À la fin, un QCM « Suite » : `/fix` d'un clic, tout de suite (il attend la fin de la CI, 30 minutes au plus). En fin de `/go`, la suite complète mesure la couverture des lignes modifiées par la branche, et les lignes qu'aucun test n'exécute reçoivent leurs tests (le chiffre va dans la MR : Sonar demande 80 % sur le nouveau code) :
 ```text
 /go ABC-123
 ```
@@ -612,6 +632,16 @@ Comme une implémentation existante : un pattern de l'équipe, ou un autre dép�
 ```text
 /go ABC-123 comme dans ancienne-api (ExportService)
 ```
+Tu ne seras pas là : aucune question, chacune prend sa réponse recommandée (les questions du ticket ambigu, celle du PO, la création du projet de tests ou de bUnit), notée comme décision « choix recommandé, sans question : à valider en review » et listée en tête des décisions de la MR. Aussi pour `/fix` et `/fortify` (« vite » et « en autonomie » veulent dire la même chose) :
+```text
+/go ABC-123 sans question
+```
+Sans clé : un QCM avec tes tickets ouverts du sprint et « Sans ticket » (puis une question : ce qu'il faut faire) ; tu peux aussi écrire directement une clé, ou ce qu'il faut faire, à la place de choisir :
+```text
+/go
+```
+Une branche de ticket qui porte déjà du travail (commencé sur ton Mac, ou repris d'un collègue) : l'analyste le lit et le plan ne garde que ce qui reste. Un test qui échoue dans la suite complète mais passe à la seconde suite est dit « instable » dans la MR, jamais « corrigé » par le coder.
+
 Un gros ticket : l'analyse et le plan seulement, pour les relire avant le code (le `/go` suivant code) ; ou un arrêt après chaque étape :
 ```text
 /go ABC-123 analyse seule
@@ -669,12 +699,15 @@ Récupérer ce que tu as poussé depuis ton Mac (Rider), sans rien commiter ni p
 /sync merge hotfix/ABC-130-urgent
 ```
 
-Après la CI ou la review (jobs en échec, Sonar, Fortify, discussions de la MR), sur la branche d'un ticket (pour simplement pousser : `/push`). Une faille Fortify ou Sonar des fichiers de la branche, ou un bug qu'un test peut reproduire (3 au plus par `/fix`), est corrigé avec son filet de non-régression et sa preuve, comme dans `/fortify` ; un refactoring demandé (complexité Sonar, duplication, une discussion qui change le fonctionnement d'une méthode) a son filet d'abord ; une faille que le test-guardian ne parvient pas à montrer (le code résiste déjà) garde ses tests et part en « Faux positifs probables » :
+Après la CI ou la review (jobs en échec, Sonar, Fortify, discussions de la MR), sur la branche d'un ticket (pour simplement pousser : `/push`). Une faille Fortify ou Sonar des fichiers de la branche, ou un bug qu'un test peut reproduire (3 au plus par `/fix`), est corrigé avec son filet de non-régression et sa preuve, comme dans `/fortify` ; un refactoring demandé (complexité Sonar, duplication, une discussion qui change le fonctionnement d'une méthode) a son filet d'abord ; une faille que le test-guardian ne parvient pas à montrer (le code résiste déjà) garde ses tests et part en « Faux positifs probables ». Lancé pendant que la CI du commit poussé tourne encore (juste après `/go`, par exemple), il l'attend d'abord, 30 minutes au plus, par pauses de 100 secondes (le titre montre « pause.sh »), puis traite ses retours ; « sans attendre » ne l'attend pas. Un job en échec pour une raison hors du code (runner, réseau, délai du job, registre ou flux de paquets muet) n'est jamais « corrigé » : la réponse dit de le relancer dans GitLab :
 ```text
 /fix
 ```
 ```text
 /fix seulement la review
+```
+```text
+/fix sans attendre
 ```
 
 Ta todo : la voir, ajouter une tâche (l'échéance est lue dans le texte), la marquer faite, en supprimer une, voir seulement les rappels du jour :

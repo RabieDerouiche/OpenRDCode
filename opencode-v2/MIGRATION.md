@@ -133,7 +133,7 @@ cp -r ~/.config/opencode ~/opencode-config-1.19 && cp -r ~/.local/share/opencode
 
 ## Étape 4 — Télécharger OpenCode v2
 
-**D'où vient la v2.** Du registre npm, où l'équipe d'OpenCode publie chaque version. Le programme pour une machine Linux classique est dans le paquet **`@opencode/cli-linux-x64`**, version **2.1.3**, publiée le 22 octobre 2026. Ce paquet contient un seul programme compilé, `bin/opencode`, et aucun script. Tu n'as rien à chercher sur le site d'OpenCode : tout ce qu'il faut est dans ce guide.
+**D'où vient la v2.** Du registre npm, où l'équipe d'OpenCode publie chaque version. Le programme pour une machine Linux classique est dans le paquet **`@opencode/cli-linux-x64`**, version **2.1.3**, publiée le 22 octobre 2026. La v2.1.4 est sortie le 23 octobre : d'après son code, elle ne change rien de ce dont le pack dépend et corrige des défauts MCP qui pouvaient bloquer un run (ANALYSE.md, analyse du 26 octobre). Ce guide reste écrit pour la 2.1.3, la version vérifiée de bout en bout ; pour la 2.1.4, les mêmes étapes avec `@2.1.4` et le nom de fichier qu'affiche `npm pack`, et à l'étape 4.3 l'empreinte que donne le registre officiel, `npm view @opencode/cli-linux-x64@2.1.4 dist.integrity --registry https://registry.npmjs.org` (je n'ai pas pu la relever ici). Ce paquet contient un seul programme compilé, `bin/opencode`, et aucun script. Tu n'as rien à chercher sur le site d'OpenCode : tout ce qu'il faut est dans ce guide.
 
 **Comment.** `npm pack` télécharge l'archive d'un paquet dans le dossier courant, sans l'installer et sans rien exécuter ; avec `--ignore-scripts`, npm n'a même pas le droit de lancer un script. `tar` extrait ensuite le programme. N'utilise ni `npm install` (il lancerait le script d'installation du paquet `@opencode/cli`), ni `curl … | bash`, ni `brew`.
 
@@ -237,7 +237,7 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère : remplace tout son contenu ;
 - `FAILED open or read` : il n'existe pas encore : crée-le.
 
-La première fois, avec un pack 1.19 à jour, tu dois voir ces 34 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
+La première fois, avec un pack 1.19 à jour, tu dois voir ces 35 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
 ```text
 agents/analyst.md: FAILED
 agents/checker.md: FAILED
@@ -272,9 +272,10 @@ skills/pack-liens/SKILL.md: FAILED open or read
 skills/pack-planifier/SKILL.md: FAILED open or read
 skills/pack-release-notes/SKILL.md: FAILED
 skills/pack-setup/SKILL.md: FAILED
+skills/pack-vitesse/SKILL.md: FAILED open or read
 plugins/openrd-pack.js: FAILED open or read
 ```
-Si ton pack 1.19 est plus ancien, il y en a plus. Par exemple, `agents/test-guardian.md: FAILED open or read` veut dire : crée `~/oc2/config/opencode/agents/test-guardian.md` et colles-y le contenu de `opencode-v2/agents/test-guardian.md`. Un skill nouveau a besoin de son dossier d'abord, avant de créer son `SKILL.md` : `cd ~/oc2/config/opencode/skills && mkdir -p blazorise api-tests pack-http pack-liens pack-planifier pack-carte`.
+Si ton pack 1.19 est plus ancien, il y en a plus. Par exemple, `agents/test-guardian.md: FAILED open or read` veut dire : crée `~/oc2/config/opencode/agents/test-guardian.md` et colles-y le contenu de `opencode-v2/agents/test-guardian.md`. Un skill nouveau a besoin de son dossier d'abord, avant de créer son `SKILL.md` : `cd ~/oc2/config/opencode/skills && mkdir -p blazorise api-tests pack-http pack-liens pack-planifier pack-carte pack-vitesse`.
 
 Relance la commande après chaque série de fichiers collés. **Tu as fini quand elle affiche `OK : la configuration est identique à GitHub`.** Si elle n'affiche rien du tout, c'est la liste `CHECKSUMS-config.txt` elle-même qui est mal collée : recrée-la depuis Raw.
 
@@ -284,11 +285,11 @@ ls ~/oc2/config/opencode/agents ~/oc2/config/opencode/commands
 ```
 Tu dois voir, pour les agents : `analyst.md checker.md coder.md debugger.md doc-writer.md pilot.md test-guardian.md` ; pour les commandes : `compare.md daily.md fix.md fortify.md go.md outil.md push.md review.md sync.md tests.md`. Un autre nom est soit un fichier à toi (garde-le), soit un reste d'un ancien pack : envoie-moi son nom. Dans `skills`, tes skills `pattern-…` sont à toi : ils restent.
 
-**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `abandon.sh`, `api-surface.sh`, `base.sh`, `dotnet-problem.sh`, `dotnet-targets.sh`, `fortify.sh`, `front-info.sh`, `front-test.sh`, `related-repos.sh`, `related-setup.sh`, `test-guardian.sh`, `test-lint.sh`, `test-platform.sh`, `tests.sh`, `api-preflight.sh`, `environments.sh`, `env-setup.sh`, `env-tests.sh`, `http-files.sh`, `schedule.sh` et `pack-map.sh` ; douze d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `detect-project-type.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-licenses.sh`, `package-refs.sh`, `review-target.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public, `git fetch` de deux espaces de travail qui se croisent relancé tout seul, un dossier front-end buildé et testé une fois par `build-test.sh <dossier>`, un problème de la machine dit en une ligne, un `node_modules` jamais poussé, l'alternative gratuite de Blazorise dans `/outil licences`).
+**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `abandon.sh`, `api-surface.sh`, `base.sh`, `dotnet-problem.sh`, `dotnet-targets.sh`, `fortify.sh`, `front-info.sh`, `front-test.sh`, `related-repos.sh`, `related-setup.sh`, `test-guardian.sh`, `test-lint.sh`, `test-platform.sh`, `tests.sh`, `api-preflight.sh`, `environments.sh`, `env-setup.sh`, `env-tests.sh`, `http-files.sh`, `schedule.sh`, `pack-map.sh`, `vitesse.sh` et `pause.sh` ; douze d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `detect-project-type.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-licenses.sh`, `package-refs.sh`, `review-target.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public, `git fetch` de deux espaces de travail qui se croisent relancé tout seul, un dossier front-end buildé et testé une fois par `build-test.sh <dossier>`, un problème de la machine dit en une ligne, un `node_modules` jamais poussé, l'alternative gratuite de Blazorise dans `/outil licences`).
 ```sh
 cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
 ```
-Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 33 lignes :
+Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 35 lignes :
 ```text
 abandon.sh: FAILED open or read
 api-preflight.sh: FAILED open or read
@@ -312,6 +313,7 @@ outil.sh: FAILED
 pack-map.sh: FAILED open or read
 package-licenses.sh: FAILED
 package-refs.sh: FAILED
+pause.sh: FAILED open or read
 related-repos.sh: FAILED open or read
 related-setup.sh: FAILED open or read
 review-target.sh: FAILED
@@ -322,6 +324,7 @@ test-lint.sh: FAILED open or read
 test-platform.sh: FAILED open or read
 tests.sh: FAILED open or read
 todo.sh: FAILED
+vitesse.sh: FAILED open or read
 workflow-state.sh: FAILED
 ```
 `FAILED open or read` : crée le fichier dans `~/.config/opencode/scripts/` avec le contenu du même fichier de `opencode-v2/scripts/` ; `FAILED` : remplace tout son contenu. D'autres lignes veulent dire que tes scripts 1.19 ne sont pas les derniers : colle-les aussi depuis `opencode-v2/scripts/`. `diff-guard.sh` contient des tabulations : s'il reste en `FAILED`, c'est que ton éditeur les a remplacées par des espaces.
@@ -337,7 +340,7 @@ grep -n '^## ' ~/.config/opencode/AGENTS.md
 ```sh
 grep -n '^## ' ~/oc2/config/opencode/AGENTS.md
 ```
-Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `81:## Daily`, `85:## Release groups` et `92:## NuGet / Artifactory`.
+Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `82:## Daily`, `86:## Release groups` et `93:## NuGet / Artifactory`.
 3. Dans le nouveau fichier, remplace d'abord la section « Release groups » (de sa ligne `## Release groups` jusqu'à la ligne avant `## NuGet / Artifactory`) par la tienne, copiée dans ta 1.19 de la même façon. Puis la section « Daily » (de `## Daily` jusqu'à la ligne avant `## Release groups`). Dans cet ordre : en commençant par le bas, les numéros de ligne du haut ne bougent pas.
 4. Vérifie que les sections sont les mêmes que dans ta 1.19 :
 ```sh
@@ -531,7 +534,7 @@ grep 'configuration normalization diagnostic' ~/oc2/serve.log | grep -o 'path=[^
 
 **Ce que tu dois voir.** Une liste de réglages ignorés, sans aucune valeur. Ceux-ci sont attendus et sans effet :
 - `path=$.compaction.prune` et `path=$.experimental.primary_tools` : deux réglages de la 1.19 que la v2 ignore. Le plugin du pack les applique lui-même : il retire l'outil des questions aux sous-agents, et il efface des requêtes au modèle les sorties des anciens outils quand `compaction.prune` vaut `true` (vérifié) ;
-- `path=$.provider.<provider>.models.<modèle>.temperature` et `…reasoning` : des déclarations de la 1.19. La température est envoyée par les agents du pack, et la v2 affiche quand même la réflexion du modèle (vérifié avec un modèle de test qui réfléchit).
+- `path=$.provider.<provider>.models.<modèle>.temperature` et `…reasoning` : des déclarations de la 1.19. La température des agents du pack est envoyée par son plugin (son point 28 : la v2 la lit sans l'envoyer), et la v2 affiche quand même la réflexion du modèle (vérifié avec un modèle de test qui réfléchit).
 
 **Toute autre ligne**, par exemple `chat_template_kwargs`, `reasoning_effort`, `headerTimeout` ou `chunkTimeout` : envoie-moi la liste et je traduis ces réglages au format v2. En attendant, le modèle répond, mais peut-être sans son mode de raisonnement ou avec d'autres délais. `path=$` : voir l'étape 8, point 1.
 
@@ -675,9 +678,9 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
 | un sous-agent repris par son identifiant | son message n'a plus la ligne qui dit « sous-agent » | reconnu par sa session parente : toujours sans question |
 
 **Les vérifications automatiques passent** :
-- plugin : 789 sur 789, dont les commandes planifiées (l'heure et les jours, seulement ce qui n'écrit rien ni n'attend de réponse : un assistant comme `/tests env config` refusé, une seule session quand deux OpenCode tournent, une ligne `/go` refusée), puis les commandes qui ne finissent jamais (un serveur, un mode watch, `npm test` jugé sur ce que lance son script, la conversation en arrière-plan ou bornée), les changements de dépendances et les installations sur la machine refusés aux agents du pack en une phrase (`npm install`, `npx npm@11 install`, `dotnet package add`, brew…), `npm ci` permis, et le QCM « Suite » qui finit chaque commande (le dossier libre pendant qu'il attend, l'issue gardée dans le titre, aucune reprise automatique après lui, la commande choisie lancée même si le serveur du modèle tombe ensuite), le contenu `null` des messages d'appels d'outils remplacé par `""` (rejoué sur le vrai v2.1.3 contre un serveur qui refuse `null` comme la passerelle de la plateforme), puis la coupure des réponses qui bouclent, « continue » repris par le pilote et `dotnet run` limité aux projets commités, `/tests`, chaque commande que le pack prescrit à un agent passée aux gardes du plugin, et un `/go` dans le dossier principal en même temps qu'un `/go` dans son espace de travail ;
+- plugin : 819 sur 819, dont les appels MCP bornés, les commandes jamais sans limite de temps, les options de chaque agent envoyées, la mesure d'un `/go` simulé et le début de la conversation jamais réécrit, les commandes planifiées (l'heure et les jours, seulement ce qui n'écrit rien ni n'attend de réponse : un assistant comme `/tests env config` refusé, une seule session quand deux OpenCode tournent, une ligne `/go` refusée), puis les commandes qui ne finissent jamais (un serveur, un mode watch, `npm test` jugé sur ce que lance son script, la conversation en arrière-plan ou bornée), les changements de dépendances et les installations sur la machine refusés aux agents du pack en une phrase (`npm install`, `npx npm@11 install`, `dotnet package add`, brew…), `npm ci` permis, et le QCM « Suite » qui finit chaque commande (le dossier libre pendant qu'il attend, l'issue gardée dans le titre, aucune reprise automatique après lui, la commande choisie lancée même si le serveur du modèle tombe ensuite), le contenu `null` des messages d'appels d'outils remplacé par `""` (rejoué sur le vrai v2.1.3 contre un serveur qui refuse `null` comme la passerelle de la plateforme), puis la coupure des réponses qui bouclent, « continue » repris par le pilote et `dotnet run` limité aux projets commités, `/tests`, chaque commande que le pack prescrit à un agent passée aux gardes du plugin, et un `/go` dans le dossier principal en même temps qu'un `/go` dans son espace de travail ;
 - permissions : 2 582 cas sur 2 582 (2 571 à l'étape précédente), dont les 214 commandes que les commandes, agents et skills du pack prescrivent (dont `setup --components`, au pilote seul), chacune permise à l'agent qui la lance (dont celles de `/tests api`, `/tests env` et de leurs assistants), `env-tests.sh --ecriture` refusé à tous les sous-agents, `schedule.sh`, `http-files.sh` et `related-setup.sh` à la conversation seulement, `env-setup.sh` au pilote de `/tests env config` et à la conversation seulement, et les scripts de package.json (un client d'API généré oui ; publier, déployer, les tests de bout en bout non) ;
-- scripts git hors ticket (`/push`, `/sync`, `/go … depuis`, espace de travail en HEAD détachée, `/outil abandon`, un `node_modules` jamais poussé) et la carte des flux (`/outil carte`) : 95 contrôles sur 95 contre un dépôt distant de test (`tools/scripts-test.sh`, dash et bash) ;
+- scripts git hors ticket (`/push`, `/sync`, `/go … depuis`, espace de travail en HEAD détachée, `/outil abandon`, un `node_modules` jamais poussé) la carte des flux (`/outil carte`), `/outil vitesse` et la pause de `/fix` : 123 contrôles sur 123 contre un dépôt distant de test (`tools/scripts-test.sh`, dash et bash) ;
 - scripts .NET avec un `dotnet` simulé, VSTest et Microsoft.Testing.Platform, .NET 8 sans son SDK puis sans ses runtimes, librairie et validation de paquet, contrats, qualité des tests, dépôts liés, review d'une branche d'un collègue, Blazorise et son skill nommés, le projet de tests d'intégration d'une API .NET 8 et .NET 10, les tests d'un environnement (production refusée, écriture non permise, jeton absent puis masqué, environnement injoignable), les fichiers `.http`, les planifications, les pages Razor (leur filet, ce que coverlet mesure, bUnit ajouté par `setup --components`) : 264 contrôles sur 264 (`tools/dotnet-test.sh`, dash et bash) ;
 - scripts front-end avec un npm simulé (Angular avec Karma et avec Vitest, Create React App, Vitest, Jest, registre refusé, lockfile désynchronisé, npm qui échoue de lui-même, Chrome absent, run qui ne finit pas) : 79 contrôles sur 79 (`tools/frontend-test.sh`, dash et bash ; avec `--real`, les vrais Jest, Vitest et Angular, puis l'installation que fait le pack depuis leur lockfile, lancés par GitHub à chaque push) ;
 - les messages réels du SDK .NET (SDK de global.json absent, NETSDK1045, runtime des tests absent, .NET 8, CS9202, validation de paquet) et le code du skill `api-tests` sur une vraie API .NET 10 (projet créé par `setup --integration`, tests en mémoire, puis `env-tests.sh` contre l'API démarrée et contre une adresse qui ne répond pas) : `tools/real-dotnet-test.sh`, lancé par GitHub avec les SDK 10 et 8 ;
@@ -978,7 +981,7 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère. Par exemple, `agents/pilot.md: FAILED` veut dire : remplace tout le contenu de `~/.config/opencode/agents/pilot.md` par celui de `opencode-v2/agents/pilot.md` ;
 - `FAILED open or read` : il n'existe pas encore, crée-le.
 
-Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 17 lignes :
+Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 18 lignes :
 ```text
 skills/api-tests/SKILL.md: FAILED open or read
 skills/best-practices/SKILL.md: FAILED
@@ -996,9 +999,10 @@ skills/pack-liens/SKILL.md: FAILED open or read
 skills/pack-planifier/SKILL.md: FAILED open or read
 skills/pack-release-notes/SKILL.md: FAILED
 skills/pack-setup/SKILL.md: FAILED
+skills/pack-vitesse/SKILL.md: FAILED open or read
 plugins/openrd-pack.js: FAILED open or read
 ```
-Pour les six skills nouveaux, crée d'abord leurs dossiers : `cd ~/.config/opencode/skills && mkdir -p blazorise api-tests pack-http pack-liens pack-planifier pack-carte`. Une ligne en plus pour un agent ou une commande : il a été collé sans son dernier retour à la ligne, ou pas depuis Raw. Recolle-le (voir « Si un fichier collé reste en `FAILED` », à la fin de l'étape 5).
+Pour les sept skills nouveaux, crée d'abord leurs dossiers : `cd ~/.config/opencode/skills && mkdir -p blazorise api-tests pack-http pack-liens pack-planifier pack-carte pack-vitesse`. Une ligne en plus pour un agent ou une commande : il a été collé sans son dernier retour à la ligne, ou pas depuis Raw. Recolle-le (voir « Si un fichier collé reste en `FAILED` », à la fin de l'étape 5).
 
 Relance la commande après chaque série de fichiers collés. **Tu as fini quand elle affiche `OK : la configuration est identique à GitHub`.** Si elle n'affiche rien du tout, c'est `~/CHECKSUMS-config.txt` qui est mal collé : recrée-le.
 
@@ -1032,7 +1036,7 @@ grep -n '^## ' ~/opencode-config-avant-pack-v2/AGENTS.md
 ```sh
 grep -n '^## ' ~/.config/opencode/AGENTS.md
 ```
-Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `81:## Daily`, `85:## Release groups` et `92:## NuGet / Artifactory`.
+Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `82:## Daily`, `86:## Release groups` et `93:## NuGet / Artifactory`.
 
 3. Dans le nouveau fichier, remplace d'abord la section « Release groups » par la tienne : de sa ligne `## Release groups` jusqu'à la ligne avant `## NuGet / Artifactory`, copiée de la même façon dans `~/opencode-config-avant-pack-v2/AGENTS.md`. Puis la section « Daily », de `## Daily` jusqu'à la ligne avant `## Release groups`. Dans cet ordre : en commençant par le bas, les numéros de ligne du haut ne bougent pas.
 4. Vérifie :

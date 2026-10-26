@@ -35,7 +35,7 @@ mkdirSync(join(stub, "node_modules", "@opencode", "plugin"), { recursive: true }
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "package.json"), '{"name":"@opencode/plugin","type":"module","main":"index.js"}')
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "index.js"), "export const Plugin = { define: (definition) => definition }\n")
 writeFileSync(join(stub, "openrd-pack.js"), readFileSync(join(pack, "plugins", "openrd-pack.js"), "utf8"))
-const { Guards, prune, fillNullContent, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
+const { Guards, prune, fillNullContent, withAgentOptions, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
 
 // ---------- fake OpenCode client ----------
 const sessions = new Map()
@@ -292,6 +292,23 @@ await check("npm test gets 20 min", async () => assert.equal(await timeout("npm 
 await check("ship.sh gets 5 min", async () => assert.equal(await tool("pilot-1", "bash", { command: S + "ship.sh --no-push \"feat: x (ABC-1)\"" }).then((a) => a.timeout), 300000))
 await check("git status keeps the default", async () => assert.equal(await timeout("git status"), undefined))
 await check("a longer timeout is kept", async () => assert.equal(await timeout(S + "build-test.sh", 3600000), 3600000))
+// a command of an agent of the pack never runs without a limit (OpenCode v2: timeout 0 turns it off)
+await check("[coder] timeout 0 of a short command: 20 min, never no limit", async () =>
+  assert.equal((await tool("coder-1", "bash", { command: "git log --oneline", timeout: 0 })).timeout, 1200000))
+await check("[coder] timeout 0 of a build: 20 min", async () =>
+  assert.equal((await tool("coder-1", "bash", { command: S + "build-test.sh", timeout: 0 })).timeout, 1200000))
+await check("[pilot] timeout 0 of ship.sh: 5 min (what it needs)", async () =>
+  assert.equal((await tool("pilot-1", "bash", { command: S + "ship.sh --no-push \"feat: x (ABC-1)\"", timeout: 0 })).timeout, 300000))
+await check("[analyst] a negative or invalid timeout: 20 min", async () => {
+  assert.equal((await tool("analyst-1", "bash", { command: "git log", timeout: -5 })).timeout, 1200000)
+  assert.equal((await tool("analyst-1", "bash", { command: "git log", timeout: "never" })).timeout, 1200000)
+})
+await check("[coder] 5 hours asked: 2 hours at most", async () =>
+  assert.equal((await tool("coder-1", "bash", { command: "dotnet test", timeout: 18000000 })).timeout, 7200000))
+await check("[coder] a short timeout it asks is kept", async () =>
+  assert.equal((await tool("coder-1", "bash", { command: "git status", timeout: 30000 })).timeout, 30000))
+await check("[build] the conversation keeps its own timeout 0 (its background and bounded commands are mine)", async () =>
+  assert.equal((await tool("build-1", "bash", { command: "git log", timeout: 0 })).timeout, 0))
 for (const command of [S + "test-guardian.sh red tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_X_V1",
   S + "test-guardian.sh green tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_X_V1",
   S + "test-guardian.sh coverage V1-before tests/Api.Tests/Api.Tests.csproj src/A.cs", S + "test-guardian.sh changes origin/develop",
@@ -349,7 +366,7 @@ const ensure = (dir) => (mkdirSync(dir, { recursive: true }), dir)
 const configDir = ensure(join(home, ".config", "opencode"))
 writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ compaction: { prune: true }, references: { legacy: { path: "~/repos/legacy" } } }))
 writeFileSync(join(home, ".config", "opencode", "scripts", "hello.sh"), 'echo "hello from $(basename "$PWD")"\n')
-function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcpWaitMs: 600, resumeFailureMs: [600000], resumeUnfinishedMs: 600000 } } = {}) {
+function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcpWaitMs: 600, resumeFailureMs: [600000], resumeUnfinishedMs: 600000 }, agents } = {}) {
   const fake = { runCommands: false, runPrompts: false }
   const hooks = {}
   const queue = []
@@ -363,7 +380,17 @@ function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcp
   }
   const push = (type, data) => { queue.push({ type, data }); if (wake) { const w = wake; wake = undefined; w() } }
   const calls = { update: [], command: [], prompt: [], create: [] }
-  const servers = [["gitlab", { type: "local", command: ["node", "x"] }], ["jira", { type: "remote", url: "https://jira.invalid/mcp", codemode: true }]]
+  const servers = [["gitlab", { type: "local", command: ["node", "x"] }], ["jira", { type: "remote", url: "https://jira.invalid/mcp", codemode: true }],
+    ["fortify", { type: "local", command: ["node", "f"], timeout: { startup: 20000, execution: 900000 } }]]
+  // the agents as OpenCode v2 reads them (28: their options in request.body, from 1.19's temperature, top_p and options)
+  const agentList = agents || [
+    { id: "build", request: { settings: {}, headers: {}, body: { temperature: 1, top_p: 0.95 } } },
+    { id: "pilot", request: { settings: {}, headers: {}, body: { temperature: 1, top_p: 0.95, chat_template_kwargs: { reasoning_effort: "medium" } } } },
+    { id: "coder", request: { settings: {}, headers: {}, body: { temperature: 1, top_p: 0.95 } } },
+    { id: "title", request: { settings: {}, headers: {}, body: { chat_template_kwargs: { enable_thinking: false } } } },
+    { id: "explore", request: { settings: {}, headers: {}, body: {} } },
+  ]
+  const agentCalls = { list: 0 }
   const mcpState = { status: "connected" }
   const domain = (name) => ({ hook: async (hook, fn) => { hooks[name + "." + hook] = fn } })
   const ctx = {
@@ -409,8 +436,14 @@ function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcp
       transform: async (fn) => fn({ list: () => servers }),
       list: async () => ({ location: { directory }, data: [{ name: "gitlab", status: { status: mcpState.status } }] }),
     },
+    agent: {
+      list: async () => {
+        agentCalls.list++
+        return { location: { directory }, data: agentList }
+      },
+    },
   }
-  return Object.assign(fake, { ctx, hooks, push, sessions: sessionsAt, calls, servers, mcpState })
+  return Object.assign(fake, { ctx, hooks, push, sessions: sessionsAt, calls, servers, mcpState, agentList, agentCalls })
 }
 const wait = (ms = 60) => new Promise((r) => setTimeout(r, ms))
 const v2 = fakeV2(repo)
@@ -436,7 +469,18 @@ const TOOLS = ["edit", "glob", "grep", "question", "read", "shell", "skill", "su
 
 await check("[v2] the setup registers its hooks", () => assert.deepEqual(Object.keys(v2.hooks).sort(),
   ["session.compaction", "session.context", "session.http.request", "session.http.response", "session.prompt", "session.retry", "shell.create.before", "tool.execute.after", "tool.execute.before"]))
-await check("[v2 12] the MCP servers are plain tools, never code mode", () => assert.deepEqual(v2.servers.map(([, s]) => s.codemode), [false, false]))
+await check("[v2 12] the MCP servers are plain tools, never code mode", () => assert.deepEqual(v2.servers.map(([, s]) => s.codemode), [false, false, false]))
+// ---------- 27. the calls of the MCP servers bounded (OpenCode v2 waits 12 hours) ----------
+await check("[v2 27] a server without its own limit: its calls end after 5 minutes", () => {
+  assert.equal(v2.servers[0][1].timeout.execution, 300000)
+  assert.equal(v2.servers[1][1].timeout.execution, 300000)
+})
+await check("[v2 27] a server that sets its own limit keeps it, and its other limits", () =>
+  assert.deepEqual(v2.servers[2][1].timeout, { startup: 20000, execution: 900000 }))
+await check("[v2 27] the servers bounded are logged once", () => {
+  const lines = readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8").split("\n").filter((l) => l.includes("calls of the MCP servers bounded"))
+  assert.ok(lines.length >= 1 && lines[0].includes('"gitlab","jira"') && !lines[0].includes("fortify"), lines[0])
+})
 
 // ---------- 20. an assistant message made only of tool calls: "" instead of null ----------
 const chatBody = (messages) => JSON.stringify({ model: "qwen", stream: true, messages })
@@ -463,12 +507,77 @@ await check("[v2 20] the hook rewrites the body of the request it gets", async (
   assert.equal(event.request.headers.get("authorization"), "Bearer x")
   assert.equal(event.request.url, "https://gateway.example/api/v1/chat/completions")
 })
-await check("[v2 20] a request without null content is left as it is", async () => {
+await check("[v2 20] a request without null content, of an agent without options, is left as it is", async () => {
   const original = new Request("https://gateway.example/api/v1/chat/completions",
     { method: "POST", headers: { "content-type": "application/json" }, body: chatBody([{ role: "user", content: "hi" }]) })
-  const event = { sessionID: "t-1", agent: "pilot", kind: "primary", request: original }
+  const event = { sessionID: "t-1", agent: "explore", kind: "primary", request: original }
   await v2.hooks["session.http.request"](event)
   assert.equal(event.request, original)
+})
+
+// ---------- 28. the options of each agent in its requests (OpenCode v2 reads them, never sends them) ----------
+const chatRequest = (body) => new Request("https://gateway.example/api/v1/chat/completions",
+  { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer k" }, body: JSON.stringify(body) })
+const sentBy = async (agent, body, kind = "primary") => {
+  const event = { sessionID: "t-1", agent, kind, request: chatRequest(body) }
+  await v2.hooks["session.http.request"](event)
+  return { body: JSON.parse(await event.request.text()), request: event.request }
+}
+const plainChat = (extra = {}) => ({ model: "qwen", stream: true, stream_options: { include_usage: true }, max_tokens: 32000,
+  messages: [{ role: "system", content: "s" }, { role: "user", content: "x" }], ...extra })
+await check("[v2 28] the temperature and top_p of the agent go with each of its requests", async () => {
+  const { body, request } = await sentBy("coder", plainChat())
+  assert.equal(body.temperature, 1)
+  assert.equal(body.top_p, 0.95)
+  assert.equal(body.max_tokens, 32000)
+  assert.deepEqual(body.messages, plainChat().messages)
+  assert.equal(request.headers.get("authorization"), "Bearer k")
+  assert.equal(request.headers.get("content-length"), null)
+})
+await check("[v2 28] the options of the agent merge with those of the model (chat_template_kwargs key by key)", async () => {
+  const { body } = await sentBy("pilot", plainChat({ top_k: 20, chat_template_kwargs: { preserve_thinking: true } }))
+  assert.deepEqual(body.chat_template_kwargs, { preserve_thinking: true, reasoning_effort: "medium" })
+  assert.equal(body.top_k, 20)
+  assert.equal(body.temperature, 1)
+})
+await check("[v2 28] a title is written with the options of the title agent: no thinking", async () => {
+  const { body } = await sentBy("title", plainChat(), "title")
+  assert.deepEqual(body.chat_template_kwargs, { enable_thinking: false })
+  assert.equal(body.temperature, undefined)
+})
+await check("[v2 28] the presence penalty of a loop cut stays when it is higher", async () => {
+  const { body } = await sentBy("coder", plainChat({ presence_penalty: 1.5 }))
+  assert.equal(body.presence_penalty, 1.5)
+})
+await check("[v2 28] what OpenCode builds never changes: messages, tools, model, stream, output limit", () => {
+  const out = JSON.parse(withAgentOptions(JSON.stringify(plainChat({ tools: [{ type: "function" }] })),
+    { messages: [], model: "other", max_tokens: 5, max_completion_tokens: 5, tools: [], tool_choice: "none", stream: false, n: 3, temperature: 0.2 }))
+  assert.deepEqual(out.messages, plainChat().messages)
+  assert.deepEqual(out.tools, [{ type: "function" }])
+  assert.equal(out.model, "qwen")
+  assert.equal(out.max_tokens, 32000)
+  assert.equal(out.stream, true)
+  assert.equal(out.tool_choice, undefined)
+  assert.equal(out.n, undefined)
+  assert.equal(out.temperature, 0.2)
+})
+await check("[v2 28] nothing to change: null (no option, the same values, not a chat completions body)", () => {
+  assert.equal(withAgentOptions(JSON.stringify(plainChat({ temperature: 1 })), { temperature: 1 }), null)
+  assert.equal(withAgentOptions(JSON.stringify(plainChat()), {}), null)
+  assert.equal(withAgentOptions(JSON.stringify({ input: "x" }), { temperature: 1 }), null)
+  assert.equal(withAgentOptions("not json", { temperature: 1 }), null)
+})
+await check("[v2 28] null content filled and options added in the same request", async () => {
+  const { body } = await sentBy("coder", { model: "qwen", stream: true, messages: toolTurn })
+  assert.equal(body.messages[2].content, "")
+  assert.equal(body.temperature, 1)
+})
+await check("[v2 28] the agents are read once, not at each request", () => assert.equal(v2.agentCalls.list, 1))
+await check("[v2 28] the options sent are logged once per agent, by their names only", () => {
+  const lines = readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8").split("\n").filter((l) => l.includes("the options of the agent are sent"))
+  const pilot = lines.filter((l) => l.includes('"agent":"pilot"'))
+  assert.equal(pilot.length, 1)
+  assert.ok(pilot[0].includes('"options":["temperature","top_p","chat_template_kwargs"]') && !pilot[0].includes("medium"), pilot[0])
 })
 
 // ---------- 12. what v2 opens that the pack closes ----------
@@ -508,6 +617,10 @@ await check("[v2] a build gets 20 minutes and a tool path is rewritten", async (
   assert.equal(input.command, "dotnet build -nologo")
   assert.equal(input.timeout, 1200000)
 })
+await check("[v2 8] a command of an agent of the pack with timeout 0 (no limit in v2) gets 20 minutes", async () =>
+  assert.equal((await before("t-1", "shell", { command: "git fetch origin", timeout: 0 }, "coder")).timeout, 1200000))
+await check("[v2 8] the conversation keeps its timeout 0", async () =>
+  assert.equal((await before("t-1", "shell", { command: "git fetch origin", timeout: 0 }, "build")).timeout, 0))
 await check("[v2 8] the agents of the pack never run a command in the background", async () => {
   assert.equal((await before("t-1", "shell", { command: "dotnet test", background: true }, "coder")).background, false)
   assert.equal((await before("t-1", "subagent", { agent: "coder", description: "x", prompt: "y", background: true }, "pilot")).background, false)
@@ -972,6 +1085,29 @@ await check("[v2 13] nothing is cleared below 20k tokens to free", () => {
 await check("[v2 13] a request is pruned when opencode.json says compaction.prune", async () => {
   const event = await context("t-1", ["shell"], "build", conversation())
   assert.deepEqual(cleared(event.messages), ["r1", "r3", "r4"])
+})
+// the prefix cache of the server (vLLM): a request reuses what the server computed for the previous one only as far as
+// they are the same from the start. Within a turn (no new message of mine), what the plugin sends never changes the
+// part of the conversation it already sent: only what is new is read again
+await check("[v2 13, 17, 21] within a turn, each request starts with the whole previous one, as the plugin sent it", async () => {
+  const sent = []
+  let messages = conversation()
+  for (let n = 9; n <= 14; n++) {
+    const event = await context("t-1", ["shell", "read"], "build", structuredClone(messages))
+    sent.push(JSON.stringify(event.messages))
+    messages = [...messages, ...turn(n)]
+  }
+  for (let i = 1; i < sent.length; i++) {
+    const before = JSON.parse(sent[i - 1])
+    const after = JSON.parse(sent[i])
+    assert.deepEqual(after.slice(0, before.length), before, "request " + i + " rewrote what request " + (i - 1) + " sent")
+  }
+})
+await check("[v2 28] the options of an agent never touch the conversation: the same messages from one request to the next", async () => {
+  const body = plainChat({ messages: conversation().map((m) => ({ role: m.role, content: "x" })) })
+  const { body: first } = await sentBy("pilot", body)
+  const { body: second } = await sentBy("pilot", { ...body, messages: [...body.messages, { role: "user", content: "y" }] })
+  assert.deepEqual(second.messages.slice(0, first.messages.length), first.messages)
 })
 await check("[v2 13] and left whole otherwise", async () => {
   writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ compaction: { prune: false } }))
@@ -2028,6 +2164,113 @@ await check("[26] a schedule due now starts once, in a new session of its reposi
   assert.match(pluginLog(), /scheduled command refused: it may write .*"command":"\/go ABC-1"/)
   assert.match(pluginLog(), /scheduled command not started: its folder is missing .*"command":"\/outil audit"/)
 })
+
+// ---------- 29. where the time of a run goes: a simulated /go, on a clock of the test ----------
+{
+  const tmRepo = join(home, "repos", "timing-api")
+  mkdirSync(tmRepo, { recursive: true })
+  execFileSync("git", ["init", "-q", tmRepo])
+  let clock = 1_800_000_000_000
+  const base = clock
+  const tm = fakeV2(tmRepo, { options: { tickMs: 25, mcpWaitMs: 600, resumeFailureMs: [600000], resumeUnfinishedMs: 600000, now: () => clock } })
+  await v2Plugin.setup(tm.ctx)
+  // an event at <seconds> after the start of the run, handled before the clock moves on
+  const at = async (seconds, type, data) => {
+    clock = base + Math.round(seconds * 1000)
+    tm.push(type, data)
+    await wait(8)
+  }
+  const P = "tm-1"
+  const C = "tm-1-coder"
+  tm.sessions.set(P, { id: P, title: "x", agent: "pilot" })
+  await tm.hooks["session.prompt"]({ sessionID: P, messageID: "m", prompt: { text: "[[command go ABC-50 avec un Result]]\nTake the ticket from its analysis to its Draft merge request, in this single run." }, delivery: "steer" })
+  await at(0, "session.execution.started", { sessionID: P })
+  // the pilot: 2 s before its first token, it thinks, writes, then calls the coder
+  await at(0, "session.step.started", { sessionID: P, assistantMessageID: "p1", agent: "pilot", started: base })
+  await at(2, "session.reasoning.started", { sessionID: P, assistantMessageID: "p1" })
+  await at(2, "session.reasoning.delta", { sessionID: P, assistantMessageID: "p1", ordinal: 0, delta: "r".repeat(400) })
+  await at(12, "session.text.delta", { sessionID: P, assistantMessageID: "p1", ordinal: 0, delta: "Étape 1/2…" })
+  await at(13, "session.tool.input.started", { sessionID: P, assistantMessageID: "p1", id: "c1", name: "subagent" })
+  await at(14, "session.tool.called", { sessionID: P, assistantMessageID: "p1", id: "c1", input: { agent: "coder", description: "Étape 1/2", prompt: "x" }, executed: true })
+  await at(14, "session.tool.progress", { sessionID: P, assistantMessageID: "p1", id: "c1", metadata: { sessionID: C, status: "running" } })
+  await at(15, "session.step.streamed", { sessionID: P, assistantMessageID: "p1" })
+  // the coder: 4 s before its first token, a build of 60 s, then an answer a gateway held back 58 s and gave at once
+  await at(16, "session.step.started", { sessionID: C, assistantMessageID: "c1", agent: "coder", started: base + 16000 })
+  await at(20, "session.reasoning.delta", { sessionID: C, assistantMessageID: "c1", ordinal: 0, delta: "r".repeat(800) })
+  await at(30, "session.text.delta", { sessionID: C, assistantMessageID: "c1", ordinal: 0, delta: "Je lance le build." })
+  await at(31, "session.tool.input.started", { sessionID: C, assistantMessageID: "c1", id: "k1", name: "shell" })
+  await at(32, "session.tool.called", { sessionID: C, assistantMessageID: "c1", id: "k1", input: { command: "sh ~/.config/opencode/scripts/build-test.sh src/A.sln --filter X" }, executed: true })
+  await at(32, "session.step.streamed", { sessionID: C, assistantMessageID: "c1" })
+  await at(92, "session.tool.success", { sessionID: C, assistantMessageID: "c1", id: "k1", content: [{ type: "text", text: "BUILD: OK" }], executed: true })
+  await at(92, "session.step.ended", { sessionID: C, assistantMessageID: "c1", finish: "tool-calls", tokens: { input: 5000, output: 300, reasoning: 1500, cache: { read: 15000, write: 0 } } })
+  await at(92, "session.step.started", { sessionID: C, assistantMessageID: "c2", agent: "coder", started: base + 92000 })
+  await at(150, "session.text.delta", { sessionID: C, assistantMessageID: "c2", ordinal: 0, delta: "x".repeat(1500) })
+  await at(150.3, "session.text.delta", { sessionID: C, assistantMessageID: "c2", ordinal: 0, delta: "RÉSULTAT : OK" })
+  await at(150.6, "session.step.streamed", { sessionID: C, assistantMessageID: "c2" })
+  await at(150.6, "session.step.ended", { sessionID: C, assistantMessageID: "c2", finish: "stop", tokens: { input: 1000, output: 400, reasoning: 0, cache: { read: 21000, write: 0 } } })
+  await at(152, "session.tool.success", { sessionID: P, assistantMessageID: "p1", id: "c1", content: [{ type: "text", text: "RÉSULTAT : OK" }], metadata: { sessionID: C }, executed: true })
+  await at(152, "session.step.ended", { sessionID: P, assistantMessageID: "p1", finish: "tool-calls", tokens: { input: 2000, output: 100, reasoning: 400, cache: { read: 30000, write: 0 } } })
+  // a 504 of the gateway: a retry 10 s later, then the final answer
+  await at(152, "session.retry.scheduled", { sessionID: P, assistantMessageID: "p2", attempt: 2, at: base + 162000, error: { type: "provider.internal", message: "Gateway Time-out" } })
+  await at(162, "session.step.started", { sessionID: P, assistantMessageID: "p2", agent: "pilot", started: base + 162000 })
+  await at(165, "session.text.delta", { sessionID: P, assistantMessageID: "p2", ordinal: 0, delta: "🚀 MR en Draft" })
+  await at(165, "session.text.ended", { sessionID: P, assistantMessageID: "p2", ordinal: 0, text: "**ABC-50**\n🚀 MR en Draft : https://gitlab/x/-/merge_requests/50" })
+  await at(166, "session.step.streamed", { sessionID: P, assistantMessageID: "p2" })
+  await at(166, "session.step.ended", { sessionID: P, assistantMessageID: "p2", finish: "stop", tokens: { input: 500, output: 50, reasoning: 0, cache: { read: 33000, write: 0 } } })
+  await at(166, "session.execution.succeeded", { sessionID: P })
+  await wait(150)
+  const runsFile = join(home, ".local", "share", "opencode", "log", "openrd-pack-runs.tsv")
+  const line = readFileSync(runsFile, "utf8").trim().split("\n").filter((l) => l.includes("\tkey=ABC-50\t")).pop() || ""
+  const field = (name) => (new RegExp("\\t" + name + "=([^\\t]*)").exec(line) || [])[1]
+  await check("[v2 29] one line per run, its command, its key and its outcome", () => {
+    assert.match(line, /^\d{4}-\d\d-\d\dT[\d:.]+Z\trun\t/)
+    assert.equal(field("command"), "go")
+    assert.equal(field("key"), "ABC-50")
+    assert.equal(field("outcome"), "✅")
+    assert.equal(field("total"), "166")
+  })
+  await check("[v2 29] the path of the run: the model of the pilot, its subagents, its tools", () => {
+    // the pilot: 15 s to its first answer, 4 s to its last one; the coder kept it 137 s
+    assert.equal(field("top_model"), "19")
+    assert.equal(field("top_subagents"), "137")
+    assert.equal(field("top_tools"), "0")
+    assert.equal(field("questions"), "0")
+  })
+  await check("[v2 29] the model in all: requests, wait before the first token, thinking, writing", () => {
+    assert.equal(field("steps"), "4")
+    assert.equal(field("wait"), "67")
+    // the answer the gateway held back 58 s is not a time to the first token: the pilot 2 s and 3 s, the coder 4 s
+    assert.equal(field("ttft_avg"), "3")
+    assert.equal(field("ttft_cold"), "3")
+    assert.equal(field("cold_n"), "2")
+    assert.equal(field("ttft_warm"), "3")
+    assert.equal(field("warm_n"), "1")
+    assert.equal(field("ttft_max"), "4")
+    assert.equal(field("think"), "20")
+    assert.equal(field("write"), "7")
+  })
+  await check("[v2 29] the retries, the answers a gateway held back, the silences", () => {
+    assert.equal(field("retries"), "1")
+    assert.equal(field("retry_wait"), "10")
+    assert.equal(field("buffered"), "1")
+    assert.equal(field("stall_max"), "10")
+    assert.equal(field("stalls"), "0")
+  })
+  await check("[v2 29] the subagents by agent, the tools by script, the longest call", () => {
+    assert.equal(field("agents"), "coder:1:138")
+    assert.equal(field("tools"), "build-test.sh:1:60")
+    assert.equal(field("tool_max"), "build-test.sh:60")
+  })
+  await check("[v2 29] the tokens the server counted, and the characters streamed", () => {
+    assert.equal(field("tokens_in"), String(5000 + 15000 + 1000 + 21000 + 2000 + 30000 + 500 + 33000))
+    assert.equal(field("tokens_cached"), String(15000 + 21000 + 30000 + 33000))
+    assert.equal(field("tokens_out"), String(300 + 400 + 100 + 50))
+    assert.equal(field("tokens_reasoning"), String(1500 + 400))
+  })
+  await check("[v2 29] never a prompt, a command or a directive in the line", () => {
+    assert.ok(!line.includes("avec un Result") && !line.includes("--filter") && !line.includes("Étape") && !line.includes("src/A.sln"), line)
+  })
+}
 
 // ---------- every command the pack prescribes passes the guards of the plugin, for the agent that runs it ----------
 // (tools/permission-corpus.mjs, the cases noted "prescribed by the pack": the permission rules check them too)

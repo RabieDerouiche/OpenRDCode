@@ -300,7 +300,7 @@ git worktree remove --force "$work/wt-abandon"
 pack=$(dirname "$scripts")
 run pack-map.sh --pack "$pack" --out "$work/map/carte.html"
 check "carte: the page and what it counts" 0 "^CARTE: $work/map/carte\\.html \\([0-9]+ commandes, [0-9]+ outils de /outil, [0-9]+ agents, [0-9]+ skills, [0-9]+ fonctions du plugin, [0-9]+ scripts\\)$"
-check "carte: /go, its steps, its agents and its questions" 0 '^COMMANDE: /go — pilot — .* — [0-9]+ étapes — agents : analyst, .* — questions : Ticket, Ticket ambigu'
+check "carte: /go, its steps, its agents and its questions, in the order they are asked" 0 '^COMMANDE: /go — pilot — .* — [0-9]+ étapes — agents : analyst, .* — questions : Ticket, Changement, Ticket ambigu, Tests unitaires, Composants$'
 truth "carte: the commands in the order of their families, /go first" 'printf "%s\n" "$out" | grep "^COMMANDE:" | head -n 1 | grep -q "^COMMANDE: /go "'
 check "carte: a tool whose arguments hold « : »" 0 '^OUTIL: pattern — capture une bonne implémentation'
 check "carte: an agent and what it may write" 0 '^AGENT: test-guardian — subagent — écrit : les projets de tests$'
@@ -345,6 +345,72 @@ check "carte: otherwise the usual configuration folder" 0 "^CARTE: $work/map/usu
 rm -rf "$HOME/.config/opencode"
 run pack-map.sh --out "$work/map/above.html"
 check "carte: otherwise the folder above the scripts" 0 "^CARTE: $work/map/above\\.html \\(10 commandes, "
+
+# ---------- pause.sh: the pause of /fix while the CI of the pushed commit runs ----------
+run pause.sh 0
+check "pause: the seconds asked" 0 '^PAUSE: 0 s$'
+PAUSE_MAX=1
+export PAUSE_MAX
+run pause.sh 500
+check "pause: never more than its maximum (110 s, under the 2 minutes of a command)" 0 '^PAUSE: 1 s$'
+run pause.sh "60; rm -rf ~"
+check "pause: a value that is not a number: the default, capped" 0 '^PAUSE: 1 s$'
+unset PAUSE_MAX
+truth "pause: 110 s at most by default" 'grep -q "max=\${PAUSE_MAX:-110}" "$scripts/pause.sh"'
+
+# ---------- /outil vitesse: where the time of the runs went, from the lines of the plugin (its point 29) ----------
+mkdir -p "$work/vlog"
+OPENRD_PACK_LOG_DIR="$work/vlog"
+export OPENRD_PACK_LOG_DIR
+run vitesse.sh
+check "vitesse: no measure yet" 0 "^Vitesse des runs : aucune mesure pour l'instant"
+T=$(printf '\t')
+vline() {
+  # vline <date> <local time> <command> <key> <outcome> <total> <more key=value fields, tab-separated>
+  printf '%s\trun\tat=%s\tcommand=%s\tkey=%s\toutcome=%s\ttotal=%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$7"
+}
+{
+  vline 2026-10-25T08:00:00.000Z "2026-10-25 09:00" go ABC-1 "✅" 1800 "prep=60${T}top_model=300${T}top_tools=240${T}top_subagents=1140${T}questions=0${T}steps=120${T}wait=600${T}think=1500${T}write=300${T}ttft_avg=5${T}ttft_cold=12${T}cold_n=10${T}ttft_warm=4.4${T}warm_n=110${T}ttft_max=40${T}stall_max=12${T}stalls=0${T}buffered=0${T}retries=0${T}retry_wait=0${T}compactions=0${T}compaction=0${T}loops=0${T}tokens_in=900000${T}tokens_cached=700000${T}tokens_out=20000${T}tokens_reasoning=52000${T}chars=0${T}agents=coder:4:700,test-guardian:3:300,analyst:1:140${T}tools=build-test.sh:5:200,ship.sh:4:20${T}tool_max=build-test.sh:90"
+  vline 2026-10-25T10:00:00.000Z "2026-10-25 11:00" fix "" "⛔" 900 "prep=30${T}top_model=200${T}top_tools=100${T}top_subagents=500${T}questions=70${T}steps=60${T}wait=900${T}think=500${T}write=100${T}ttft_avg=15${T}ttft_cold=20${T}cold_n=5${T}ttft_warm=18${T}warm_n=55${T}ttft_max=200${T}stall_max=130${T}stalls=2${T}buffered=3${T}retries=4${T}retry_wait=150${T}compactions=1${T}compaction=240${T}loops=1${T}tokens_in=0${T}tokens_cached=0${T}tokens_out=0${T}tokens_reasoning=0${T}chars=21000${T}agents=coder:2:400${T}tools=build-test.sh:2:80${T}tool_max=gitlab_get_job_log:420"
+} > "$work/vlog/openrd-pack-runs.tsv"
+run vitesse.sh
+check "vitesse: the runs, the most recent last, with their local time" 0 '^\| 25/10 11:00 \| /fix \| 15 min 00 s \| 3 min 20 s \| 8 min 20 s \| 2 min 10 s \| 1 min 10 s \| 15 s / 3 min 20 s \| 4 \(2 min 30 s\) \| ⛔ \|$'
+check "vitesse: a run with its key and its outcome" 0 '^\| 25/10 09:00 \| /go ABC-1 \| 30 min 00 s \| 5 min 00 s \| 19 min 00 s \| 5 min 00 s \| — \| 5 s / 40 s \| — \| ✅ \|$'
+check "vitesse: where the time goes, on the path of the runs" 0 '^Où passe le temps \(ces 2 runs, 45 min 00 s\) : sous-agents 61 %, modèle du pilote 19 %, outils du pilote 13 %, préparation 3 %, questions 3 %\.$'
+check "vitesse: the model, the first token of a session and of the next requests" 0 '^Le modèle, toutes sessions : 180 requêtes ; 1er token après 8,3 s en moyenne \(14,7 s pour la première requête d.une session, 8,9 s pour les suivantes\) ; réflexion 83 %, rédaction 17 % ; ≈ 33 tokens/s \(estimé en partie sur les caractères\)\.$'
+check "vitesse: the subagents by time" 0 '^Sous-agents : coder 6 \(18 min 20 s\), test-guardian 3 \(5 min 00 s\), analyst 1 \(2 min 20 s\)\.$'
+check "vitesse: the longest tools" 0 '^Outils les plus longs : build-test\.sh 7 \(4 min 40 s\), ship\.sh 4 \(20 s\)\.$'
+check "vitesse: the retries of the model server" 0 '^- Le serveur du modèle a échoué 4 fois .*2 min 30 s d.attente'
+check "vitesse: the answers a gateway held back" 0 "^- 3 réponses arrivées d'un seul bloc .*proxy_buffering off"
+check "vitesse: a stream that stopped in the middle of an answer" 0 "^- Le flux du modèle s'est arrêté jusqu'à 2 min 10 s .*\\(2 fois plus d'une minute\\).*chunkTimeout"
+check "vitesse: the summaries of the context" 0 '^- 1 résumé du contexte \(4 min 00 s\).*background_compaction'
+check "vitesse: a slow MCP call" 0 "^- L'appel le plus long : gitlab_get_job_log \\(7 min 00 s\\)"
+check "vitesse: the thinking, and its lever" 0 '^- La réflexion fait 83 % de la génération.*reasoning_effort'
+check "vitesse: the loops cut, and the developer's answers" 0 "^- Tes réponses aux questions : 1 min 10 s d'attente \\(le run attendait, pas le modèle\\)\\. Pour un run sans toi : « sans question » après /go, /fix ou /fortify"
+check "vitesse: no prefix-caching alarm when the next requests start faster" 0 '^Points à regarder' 'prefix caching'
+run vitesse.sh 1 go
+check "vitesse: one command, its last run" 0 '^⏱ Vitesse du dernier run de /go \(sur 1 mesuré, depuis le 25/10 09:00\)' '/fix'
+check "vitesse: the speed from the tokens the server counted" 0 '≈ 40 tokens/s\.$'
+# a server that keeps nothing between two requests of a session: the next ones wait as long as the first one
+vline 2026-10-25T12:00:00.000Z "2026-10-25 13:00" tests "" "✅" 600 "prep=0${T}top_model=500${T}top_tools=0${T}top_subagents=0${T}questions=0${T}steps=40${T}wait=500${T}think=50${T}write=50${T}ttft_avg=12.5${T}ttft_cold=13${T}cold_n=2${T}ttft_warm=12.5${T}warm_n=38${T}ttft_max=20${T}stall_max=3${T}stalls=0${T}buffered=0${T}retries=0${T}retry_wait=0${T}compactions=0${T}compaction=0${T}loops=0${T}tokens_in=0${T}tokens_cached=0${T}tokens_out=500${T}tokens_reasoning=0${T}chars=0${T}agents=${T}tools=${T}tool_max=" > "$work/vlog/openrd-pack-runs.tsv.1"
+mv "$work/vlog/openrd-pack-runs.tsv" "$work/vlog/keep.tsv"
+mv "$work/vlog/openrd-pack-runs.tsv.1" "$work/vlog/openrd-pack-runs.tsv"
+run vitesse.sh tests
+check "vitesse: the prefix of the conversation not kept by the server" 0 '^- Les requêtes suivantes d.une session attendent 12,5 s .* la première 13 s .*prefix caching'
+check "vitesse: a slow generation" 0 '^- Génération lente : ≈ 5 tokens/s'
+mv "$work/vlog/openrd-pack-runs.tsv" "$work/vlog/openrd-pack-runs.tsv.1"
+mv "$work/vlog/keep.tsv" "$work/vlog/openrd-pack-runs.tsv"
+run vitesse.sh 50
+check "vitesse: the rotated file first, then the current one" 0 '^⏱ Vitesse des 3 derniers runs \(sur 3 mesurés, depuis le 25/10 13:00\)'
+run outil.sh vitesse 1 fix
+check "outil vitesse: the table shown at once, then its skill" 0 '^\[\[visible\]\]$'
+check "outil vitesse: the skill of the procedure" 0 '^Skill : pack-vitesse$'
+check "outil vitesse: the arguments reach the script" 0 '^\| 25/10 11:00 \| /fix '
+unset OPENRD_PACK_LOG_DIR
+mkdir -p "$HOME/oc2/data/opencode/log"
+cp "$work/vlog/openrd-pack-runs.tsv" "$HOME/oc2/data/opencode/log/"
+run vitesse.sh
+check "vitesse: OpenCode v2 next to 1.19, its data folder in ~/oc2" 0 '^⏱ Vitesse des 2 derniers runs'
 
 echo "$pass checks passed, $fail failed ($SHELL_UNDER_TEST)"
 [ "$fail" -eq 0 ]

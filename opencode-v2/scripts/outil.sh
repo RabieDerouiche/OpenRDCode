@@ -35,6 +35,7 @@ case "$name" in
   liens|lien|depots|dépôts|depots-lies|dépôts-liés|repos|related|repositories) name=liens ;;
   planifier|planification|planifie|planifications|schedule) name=planifier ;;
   carte|cartes|carte-des-flux|flux|map) name=carte ;;
+  vitesse|lenteur|lenteurs|perf|performance|performances|speed|temps) name=vitesse ;;
   *)
     [ -n "$name" ] && echo "Outil inconnu : $name"
     cat <<'EOF'
@@ -53,6 +54,7 @@ Outils disponibles (/outil <nom> [arguments]) :
 - liens : les dépôts de la même application (front, API, librairies), pas à pas : leur rôle dans AGENTS.md, des deux côtés, et la lecture de leur code par les agents
 - planifier [<heure> <jours> /commande | suppr <n>] : /daily, /outil audit, /outil licences ou /tests env <environnement> lancés tout seuls à heure fixe ; sans argument, pas à pas
 - carte [<dossier ou page .html du dépôt>] : la carte des flux du pack, générée depuis ses propres fichiers (commandes et leurs étapes, agents, questions, outils, garde-fous), une page à ouvrir ou à présenter ; avec un chemin, écrite dans le dépôt pour la pousser
+- vitesse [<nombre de runs>] [<commande>] : où passe le temps des derniers runs (modèle, sous-agents, outils, questions) et ce qui les a ralentis ou bloqués (passerelle, tampon, cache du serveur, réflexion, résumés), avec où agir
 EOF
     exit 0 ;;
 esac
@@ -65,6 +67,14 @@ fi
 # planifier with a schedule or « suppr <n> »: done at once, shown to me; without argument, the wizard of its skill
 if [ "$name" = planifier ] && [ -n "$rest" ]; then
   sh "$here/schedule.sh" --raw "$rest"
+  echo "[[visible]]"
+fi
+# vitesse: the time of the last runs, measured by the pack plugin, shown at once
+if [ "$name" = vitesse ]; then
+  set -f
+  # shellcheck disable=SC2086 # a count and a command, one per word
+  sh "$here/vitesse.sh" $rest
+  set +f
   echo "[[visible]]"
 fi
 if [ "$name" = stats ]; then

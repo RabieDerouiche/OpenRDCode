@@ -455,6 +455,10 @@ P(["pilot"], [
   S + "test-guardian.sh sealed N1 && " + S + "ship.sh --no-push \"fix(billing): split the VAT computation (ABC-123)\" \"- safety net: 50% -> 90% of the lines of 3 methods\" && " + S + "ticket-sheet.sh decision \"Découpage : une méthode par taux — demande de la review (/fix)\"",
   S + "ship.sh --no-push \"fix(billing): address the review (ABC-123)\" && " + S + "ticket-sheet.sh decision \"Nommage : Total plutôt que Sum — demande de la review (/fix)\"",
   "git diff abc1234..HEAD", S + "ship.sh --base \"fix(billing): address the CI, scan and review feedback (ABC-123)\"",
+  // /fix: a pause while the CI of the pushed commit runs, then the pipeline again
+  S + "pause.sh 100", S + "pause.sh 60",
+  // /go and /fix: the full suite once more, before a coder round on tests that failed in it (unstable or not)
+  S + "build-test.sh src/App.sln --filter \"Category!=Integration\"",
   S + "ticket-sheet.sh suivi \"/fix - 3 corrigés, 1 réponses, 0 hors périmètre - build ok - tests 14/14\"",
   // /fortify
   S + "test-guardian.sh park V2", S + "fortify.sh discard reprise", S + "fortify.sh discard V1 V2",
@@ -527,6 +531,8 @@ P(["build"], [
   S + "detect-project-type.sh", S + "workflow-state.sh --no-fetch",
   // /outil abandon: its script checks that the branch holds nothing, then deletes it and its sheet
   S + "abandon.sh --check", S + "abandon.sh",
+  // /outil vitesse: where the time of the last runs went (it only reads the measures of the plugin)
+  S + "vitesse.sh", S + "vitesse.sh 30 go",
   // /outil licences, release-notes, setup, doc, cqrs; build-fix
   "dotnet nuget why src/App.sln Newtonsoft.Json", "git rev-parse --verify origin/master",
   "git log --first-parent --merges --format=%h%x09%cs%x09%s origin/master..origin/develop",
