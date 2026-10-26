@@ -86,7 +86,7 @@ grep -n '"ask"' ~/.config/opencode/opencode.json
 
 Quand j'annonce une nouvelle version, avec la liste des fichiers modifiés :
 1. Recrée `~/oc2/CHECKSUMS-config.txt` et `~/oc2/CHECKSUMS-scripts.txt` depuis GitHub (vue Raw).
-2. Ce qui a changé dans la configuration, puis dans les scripts : chaque ligne `FAILED` est un fichier à recoller depuis `opencode-v2/` ; tu as fini quand la commande affiche son `OK`. Un skill nouveau (`skills/<nom>/SKILL.md: FAILED open or read`) a besoin de son dossier d'abord : `mkdir -p ~/oc2/config/opencode/skills/<nom>` (dans cette version : `pack-liens`).
+2. Ce qui a changé dans la configuration, puis dans les scripts : chaque ligne `FAILED` est un fichier à recoller depuis `opencode-v2/` ; tu as fini quand la commande affiche son `OK`. Un skill nouveau (`skills/<nom>/SKILL.md: FAILED open or read`) a besoin de son dossier d'abord : `mkdir -p ~/oc2/config/opencode/skills/<nom>` (dans cette version : `pack-vitesse`).
 ```sh
 cd ~/oc2/config/opencode && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-config.txt 2>/dev/null && echo "OK : la configuration est identique à GitHub"
 ```
