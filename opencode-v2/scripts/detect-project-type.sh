@@ -101,14 +101,15 @@ if [ -n "$projects" ]; then
 - Blazor components: $razor .razor files, $code_behind with a .razor.cs code-behind${ui_libs:+; component library: ${ui_libs% }}$blazorise"
   fi
 
-  # AutoMapper (paid from 15.0, a CVE in every free version) or Mapperly: their version and the skill that knows them
-  if git grep -q -i -E 'Include="(AutoMapper|Riok\.Mapperly)"' -- '*.csproj' 'Directory.Packages.props' 2>/dev/null; then
-    for lib in AutoMapper Riok.Mapperly; do
+  # AutoMapper (paid from 15.0, a CVE in every free version), Mapperly or Mapster: their version and the skill that knows them
+  if git grep -q -i -E 'Include="(AutoMapper|Riok\.Mapperly|Mapster)"' -- '*.csproj' 'Directory.Packages.props' 2>/dev/null; then
+    for lib in AutoMapper Riok.Mapperly Mapster; do
       git grep -q -i -E "Include=\"$lib\"" -- '*.csproj' 'Directory.Packages.props' 2>/dev/null || continue
       v=$(git grep -h -o -i -E "Include=\"$lib\"[^>]*Version=\"[0-9][^\"]*\"" -- '*.csproj' 'Directory.Packages.props' 2>/dev/null |
         sed -E 's/.*Version="([^"]+)".*/\1/' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)
       case "$lib" in
-        AutoMapper) why="paid from 15.0, CVE-2026-32933 in the free versions: the skill automapper (its maps and their Mapperly equivalent, its replacement)" ;;
+        AutoMapper) why="paid from 15.0, CVE-2026-32933 in the free versions: the skill automapper (its maps and their equivalent, its replacement by Mapperly or Mapster)" ;;
+        Mapster) why="the skills automapper and mapster (MapsterSetup.cs, the Registers, the test of the Registers)" ;;
         *) why="the skill automapper (its attributes, MapperDefaults.cs, its build errors RMG…)" ;;
       esac
       evidence="$evidence

@@ -80,7 +80,7 @@ EOF
 # <skill> <what it knows>
 cat > "$tmp/skills.fr" <<'EOF'
 api-tests	Les tests d'intégration d'une API ASP.NET Core : en mémoire, et sur un environnement déployé (OpenID Connect, proxy).
-automapper	AutoMapper (payant depuis la 15.0, vulnérable avant) : son remplacement par Mapperly, profil par profil sous des tests enregistrés sur AutoMapper (inventaire, ajout, squelette des mappers et vérification par un script) ; chaque forme d'AutoMapper et son équivalent.
+automapper	AutoMapper (payant depuis la 15.0, vulnérable avant) : son remplacement par Mapperly (recommandé) ou Mapster (le plus proche), profil par profil sous des tests enregistrés sur AutoMapper (inventaire, ajout, traduction des maps et vérification par un script) ; chaque forme d'AutoMapper et son équivalent Mapperly.
 best-practices	Les bonnes pratiques par type de projet : erreurs et Result, feature flags, performance, tests.
 blazorise	Blazorise : son remplacement par du Razor 100 % natif, sans paquet, page par page sous un filet de tests bUnit (inventaire, composants de l'application et vérification par un script) ; tant qu'il est là, la langue de son DataGrid et l'API de sa version.
 build-fix	Réparer un build cassé par le plus petit changement, quelle que soit la version de .NET.
@@ -88,6 +88,7 @@ dotnet-cqrs-conventions	Les conventions des API CQRS (commands, queries, handler
 explain-code	Expliquer un fichier, un endpoint ou une page de bout en bout, pour un nouvel arrivant.
 fortify-remediation	Corriger une faille Fortify ou Sonar selon sa catégorie, avec sa preuve.
 integrations-guardrails	Les pièges des intégrations : SharePoint, DocuSign, AWS S3, Piano Analytics.
+mapster	AutoMapper remplacé par Mapster : MapsterSetup.cs et les règles d'AutoMapper, le Register de chaque profil, le test qui remplace AssertConfigurationIsValid, la bascule des appels (automapper.sh switch) ; chaque forme d'AutoMapper et son équivalent Mapster.
 EOF
 # <number of the function> <what the plugin does there>
 cat > "$tmp/plugin.fr" <<'EOF'

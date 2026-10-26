@@ -336,7 +336,7 @@ git worktree remove --force "$work/wt-abandon"
 pack=$(dirname "$scripts")
 run pack-map.sh --pack "$pack" --out "$work/map/carte.html"
 check "carte: the page and what it counts" 0 "^CARTE: $work/map/carte\\.html \\([0-9]+ commandes, [0-9]+ outils de /outil, [0-9]+ agents, [0-9]+ skills, [0-9]+ fonctions du plugin, [0-9]+ scripts\\)$"
-check "carte: /go, its steps, its agents and its questions, in the order they are asked" 0 '^COMMANDE: /go — pilot — .* — [0-9]+ étapes — agents : analyst, .* — questions : Ticket, Changement, Ticket ambigu, Tests unitaires, Composants$'
+check "carte: /go, its steps, its agents and its questions, in the order they are asked" 0 '^COMMANDE: /go — pilot — .* — [0-9]+ étapes — agents : analyst, .* — questions : Ticket, Changement, Ticket ambigu, Tests unitaires, Composants, Cible$'
 truth "carte: the commands in the order of their families, /go first" 'printf "%s\n" "$out" | grep "^COMMANDE:" | head -n 1 | grep -q "^COMMANDE: /go "'
 check "carte: a tool whose arguments hold « : »" 0 '^OUTIL: pattern — capture une bonne implémentation'
 check "carte: an agent and what it may write" 0 '^AGENT: test-guardian — subagent — écrit : les projets de tests$'

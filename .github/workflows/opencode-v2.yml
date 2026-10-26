@@ -194,10 +194,10 @@ jobs:
           name: logs-real-blazor
           path: ${{ runner.temp }}/logs/
 
-  real-mapperly:
-    name: AutoMapper vers Mapperly (vrai .NET, AutoMapper 14, Mapperly, EF Core SQLite)
+  real-automapper:
+    name: AutoMapper vers Mapperly et Mapster (vrai .NET, AutoMapper 14, Mapperly, Mapster, EF Core SQLite)
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: opencode-v2
@@ -208,19 +208,19 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
-      - name: mapperly-test
+      - name: automapper-test
         run: |
           logs="$RUNNER_TEMP/logs"
           mkdir -p "$logs"
           dotnet --list-sdks > "$logs/sdks.log" 2>&1
-          log="$logs/mapperly.log"
+          log="$logs/automapper.log"
           failed=0
-          MAPPERLY_TEST_SHOW="$logs/show.txt" sh tools/mapperly-test.sh dash > "$log" 2>&1 || failed=1
-          # what AutoMapper wrote in the golden files and the code Mapperly generated, in the log of the job
-          echo "::group::Fichiers de référence d'AutoMapper et code généré par Mapperly"
+          AUTOMAPPER_TEST_SHOW="$logs/show.txt" sh tools/automapper-test.sh dash > "$log" 2>&1 || failed=1
+          # what AutoMapper wrote in the golden files, the code Mapperly generated and the switch to Mapster, in the log
+          echo "::group::Fichiers de référence d'AutoMapper, code généré par Mapperly, bascule vers Mapster"
           cat "$logs/show.txt" 2> /dev/null
           echo "::endgroup::"
-          awk -v t="mapperly-test" '
+          awk -v t="automapper-test" '
             function flush() { if (msg != "") { print "::error title=" t "::" msg; msg = ""; n = 0 } }
             { gsub(/%/, "%25"); gsub(/\r/, "") }
             /^NOTE: / { notes = notes (notes == "" ? "" : "%0A") substr($0, 7); flush(); next }
@@ -228,12 +228,12 @@ jobs:
             /^    / && msg != "" && n < 60 { msg = msg "%0A" $0; n++; next }
             { flush() }
             END { flush(); if (notes != "") print "::notice title=" t " (valeurs réelles)::" notes }' "$log"
-          echo "::notice title=mapperly-test::$(tail -n 1 "$log")"
+          echo "::notice title=automapper-test::$(tail -n 1 "$log")"
           exit "$failed"
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: logs-real-mapperly
+          name: logs-real-automapper
           path: ${{ runner.temp }}/logs/
 
   real-oidc:

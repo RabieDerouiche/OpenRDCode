@@ -237,7 +237,7 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère : remplace tout son contenu ;
 - `FAILED open or read` : il n'existe pas encore : crée-le.
 
-La première fois, avec un pack 1.19 à jour, tu dois voir ces 35 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
+La première fois, avec un pack 1.19 à jour, tu dois voir ces 37 lignes (chaque commande du pack v2 commence par une ligne `[[command …]]` que lit le plugin, d'où les dix commandes) :
 ```text
 agents/analyst.md: FAILED
 agents/checker.md: FAILED
@@ -257,11 +257,13 @@ commands/review.md: FAILED
 commands/sync.md: FAILED open or read
 commands/tests.md: FAILED open or read
 skills/api-tests/SKILL.md: FAILED open or read
+skills/automapper/SKILL.md: FAILED open or read
 skills/best-practices/SKILL.md: FAILED
 skills/blazorise/SKILL.md: FAILED open or read
 skills/build-fix/SKILL.md: FAILED
 skills/dotnet-cqrs-conventions/SKILL.md: FAILED
 skills/fortify-remediation/SKILL.md: FAILED
+skills/mapster/SKILL.md: FAILED open or read
 skills/pack-abandon/SKILL.md: FAILED
 skills/pack-audit/SKILL.md: FAILED
 skills/pack-carte/SKILL.md: FAILED open or read
@@ -275,7 +277,7 @@ skills/pack-setup/SKILL.md: FAILED
 skills/pack-vitesse/SKILL.md: FAILED open or read
 plugins/openrd-pack.js: FAILED open or read
 ```
-Si ton pack 1.19 est plus ancien, il y en a plus. Par exemple, `agents/test-guardian.md: FAILED open or read` veut dire : crée `~/oc2/config/opencode/agents/test-guardian.md` et colles-y le contenu de `opencode-v2/agents/test-guardian.md`. Un skill nouveau a besoin de son dossier d'abord, avant de créer son `SKILL.md` : `cd ~/oc2/config/opencode/skills && mkdir -p blazorise api-tests pack-http pack-liens pack-planifier pack-carte pack-vitesse`.
+Si ton pack 1.19 est plus ancien, il y en a plus. Par exemple, `agents/test-guardian.md: FAILED open or read` veut dire : crée `~/oc2/config/opencode/agents/test-guardian.md` et colles-y le contenu de `opencode-v2/agents/test-guardian.md`. Un skill nouveau a besoin de son dossier d'abord, avant de créer son `SKILL.md` : `cd ~/oc2/config/opencode/skills && mkdir -p blazorise automapper mapster api-tests pack-http pack-liens pack-planifier pack-carte pack-vitesse`.
 
 Relance la commande après chaque série de fichiers collés. **Tu as fini quand elle affiche `OK : la configuration est identique à GitHub`.** Si elle n'affiche rien du tout, c'est la liste `CHECKSUMS-config.txt` elle-même qui est mal collée : recrée-la depuis Raw.
 
@@ -285,11 +287,11 @@ ls ~/oc2/config/opencode/agents ~/oc2/config/opencode/commands
 ```
 Tu dois voir, pour les agents : `analyst.md checker.md coder.md debugger.md doc-writer.md pilot.md test-guardian.md` ; pour les commandes : `compare.md daily.md fix.md fortify.md go.md outil.md push.md review.md sync.md tests.md`. Un autre nom est soit un fichier à toi (garde-le), soit un reste d'un ancien pack : envoie-moi son nom. Dans `skills`, tes skills `pattern-…` sont à toi : ils restent.
 
-**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `abandon.sh`, `api-surface.sh`, `base.sh`, `dotnet-problem.sh`, `dotnet-targets.sh`, `fortify.sh`, `front-info.sh`, `front-test.sh`, `related-repos.sh`, `related-setup.sh`, `test-guardian.sh`, `test-lint.sh`, `test-platform.sh`, `tests.sh`, `api-preflight.sh`, `environments.sh`, `env-setup.sh`, `env-tests.sh`, `http-files.sh`, `schedule.sh`, `pack-map.sh`, `vitesse.sh`, `pause.sh`, `blazor-native.sh` et `secrets.sh` ; douze d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `detect-project-type.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-licenses.sh`, `package-refs.sh`, `review-target.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public, `git fetch` de deux espaces de travail qui se croisent relancé tout seul, un dossier front-end buildé et testé une fois par `build-test.sh <dossier>`, un problème de la machine dit en une ligne, un `node_modules` jamais poussé, l'alternative gratuite de Blazorise dans `/outil licences`).
+**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `abandon.sh`, `api-surface.sh`, `base.sh`, `dotnet-problem.sh`, `dotnet-targets.sh`, `fortify.sh`, `front-info.sh`, `front-test.sh`, `related-repos.sh`, `related-setup.sh`, `test-guardian.sh`, `test-lint.sh`, `test-platform.sh`, `tests.sh`, `api-preflight.sh`, `environments.sh`, `env-setup.sh`, `env-tests.sh`, `http-files.sh`, `schedule.sh`, `pack-map.sh`, `vitesse.sh`, `pause.sh`, `blazor-native.sh`, `secrets.sh` et `automapper.sh` ; douze d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `detect-project-type.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-licenses.sh`, `package-refs.sh`, `review-target.sh`, `ship.sh`, `todo.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public, `git fetch` de deux espaces de travail qui se croisent relancé tout seul, un dossier front-end buildé et testé une fois par `build-test.sh <dossier>`, un problème de la machine dit en une ligne, un `node_modules` jamais poussé, l'alternative gratuite de Blazorise dans `/outil licences`).
 ```sh
 cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
 ```
-Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 37 lignes :
+Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 38 lignes :
 ```text
 abandon.sh: FAILED open or read
 api-preflight.sh: FAILED open or read
@@ -310,6 +312,7 @@ fortify.sh: FAILED open or read
 front-info.sh: FAILED open or read
 front-test.sh: FAILED open or read
 http-files.sh: FAILED open or read
+automapper.sh: FAILED open or read
 outil.sh: FAILED
 pack-map.sh: FAILED open or read
 package-licenses.sh: FAILED
@@ -342,7 +345,7 @@ grep -n '^## ' ~/.config/opencode/AGENTS.md
 ```sh
 grep -n '^## ' ~/oc2/config/opencode/AGENTS.md
 ```
-Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `90:## Daily`, `94:## Release groups` et `101:## NuGet / Artifactory`.
+Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `91:## Daily`, `95:## Release groups` et `102:## NuGet / Artifactory`.
 3. Dans le nouveau fichier, remplace d'abord la section « Release groups » (de sa ligne `## Release groups` jusqu'à la ligne avant `## NuGet / Artifactory`) par la tienne, copiée dans ta 1.19 de la même façon. Puis la section « Daily » (de `## Daily` jusqu'à la ligne avant `## Release groups`). Dans cet ordre : en commençant par le bas, les numéros de ligne du haut ne bougent pas.
 4. Vérifie que les sections sont les mêmes que dans ta 1.19 :
 ```sh
@@ -706,6 +709,7 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
   - `commands/fortify.md`, `agents/test-guardian.md`, `scripts/fortify.sh`, `scripts/test-guardian.sh` ;
   - `commands/push.md`, `commands/sync.md`, `commands/tests.md` (le travail hors ticket), `scripts/base.sh` (la base d'une branche), `scripts/test-platform.sh` (les tests Microsoft.Testing.Platform), `scripts/abandon.sh` (`/outil abandon` sans jamais perdre de travail), `AGENTS.repo-template.md` ;
   - `skills/blazorise/SKILL.md` (Blazorise : la langue du DataGrid et de sa pagination, l'API de la version installée, son remplacement par du Razor natif page par page, sous tests bUnit) ;
+  - `skills/automapper/SKILL.md`, `skills/mapster/SKILL.md` et `scripts/automapper.sh` (AutoMapper remplacé par Mapperly ou par Mapster profil par profil, sous des tests enregistrés sur AutoMapper : l'inventaire, l'ajout du paquet, la traduction de chaque profil, le filet, la bascule des appels pour Mapster, ce qui reste) ;
   - `skills/api-tests/SKILL.md` (les tests d'intégration d'une API, en mémoire et sur un environnement), `scripts/tests.sh` (les modes et les faits de `/tests`), `scripts/api-preflight.sh` (ce qui empêcherait l'API de démarrer dans un test), `scripts/environments.sh`, `scripts/env-setup.sh` et `scripts/env-tests.sh` (`/tests env config` et `/tests env` : OIDC, proxy, certificats), `skills/pack-http/SKILL.md` et `scripts/http-files.sh` (`/outil http`), `skills/pack-liens/SKILL.md` et `scripts/related-setup.sh` (`/outil liens`), `skills/pack-planifier/SKILL.md` et `scripts/schedule.sh` (`/outil planifier`, que le plugin lance à l'heure dite), `skills/pack-carte/SKILL.md` et `scripts/pack-map.sh` (`/outil carte` : la carte des flux du pack, générée depuis ses fichiers), `skills/pack-vitesse/SKILL.md` et `scripts/vitesse.sh` (`/outil vitesse` : où passe le temps des derniers runs, que le plugin chronomètre), `scripts/pause.sh` (`/fix` qui attend la fin de la CI) ;
   - `CHECKSUMS-config.txt` et `CHECKSUMS-scripts.txt`, les listes d'empreintes de l'étape 5 ;
   - `scripts/blazor-native.sh` (Blazorise remplacé par du Razor natif sans paquet : l'inventaire, les composants de l'application, ce qui reste) et `scripts/secrets.sh` (les secrets d'un environnement lus dans une variable ou dans HashiCorp Vault, jamais affichés) ;
@@ -718,7 +722,7 @@ Ta 1.19 se lance alors avec `~/oc119/package/bin/opencode` à la place de `openc
   - `opencode.snippet.json` (règles de la v2, partage, mises à jour et recherche web coupés) ;
   - `COMMANDES.md` et `README.md`.
 - **Identiques** : les autres scripts et les autres skills.
-- **`tools/`** contient aussi `scripts-test.sh` (scripts git), `dotnet-test.sh` et `fake-dotnet.sh` (scripts .NET avec un `dotnet` simulé), `scenarios-test.sh` (les histoires complètes, plusieurs espaces de travail en parallèle), `fortify-test.sh` (le flux de `/fortify` et de son test-guardian de A à Z, avec le `dotnet` simulé ou, avec `--real`, le vrai), `blazor-native-test.sh` (Blazorise remplacé par du Razor natif, avec le vrai .NET).
+- **`tools/`** contient aussi `scripts-test.sh` (scripts git), `dotnet-test.sh` et `fake-dotnet.sh` (scripts .NET avec un `dotnet` simulé), `scenarios-test.sh` (les histoires complètes, plusieurs espaces de travail en parallèle), `fortify-test.sh` (le flux de `/fortify` et de son test-guardian de A à Z, avec le `dotnet` simulé ou, avec `--real`, le vrai), `blazor-native-test.sh` (Blazorise remplacé par du Razor natif, avec le vrai .NET), `automapper-test.sh` (AutoMapper remplacé par Mapperly, avec le vrai .NET).
 - **`tools/`** : mes outils de vérification. Ne les copie jamais dans ta configuration.
 
 ## Annexe A — La v2 a déjà remplacé ta 1.19 : tout remettre d'aplomb, avec l'interface web
@@ -984,14 +988,16 @@ Chaque ligne affichée est un fichier à coller depuis GitHub, au même chemin s
 - `FAILED` : le fichier existe mais il diffère. Par exemple, `agents/pilot.md: FAILED` veut dire : remplace tout le contenu de `~/.config/opencode/agents/pilot.md` par celui de `opencode-v2/agents/pilot.md` ;
 - `FAILED open or read` : il n'existe pas encore, crée-le.
 
-Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 18 lignes :
+Avec les agents et les commandes de `opencode-v2` déjà collés, tu dois voir ces 20 lignes :
 ```text
 skills/api-tests/SKILL.md: FAILED open or read
+skills/automapper/SKILL.md: FAILED open or read
 skills/best-practices/SKILL.md: FAILED
 skills/blazorise/SKILL.md: FAILED open or read
 skills/build-fix/SKILL.md: FAILED
 skills/dotnet-cqrs-conventions/SKILL.md: FAILED
 skills/fortify-remediation/SKILL.md: FAILED
+skills/mapster/SKILL.md: FAILED open or read
 skills/pack-abandon/SKILL.md: FAILED
 skills/pack-audit/SKILL.md: FAILED
 skills/pack-carte/SKILL.md: FAILED open or read
@@ -1005,7 +1011,7 @@ skills/pack-setup/SKILL.md: FAILED
 skills/pack-vitesse/SKILL.md: FAILED open or read
 plugins/openrd-pack.js: FAILED open or read
 ```
-Pour les sept skills nouveaux, crée d'abord leurs dossiers : `cd ~/.config/opencode/skills && mkdir -p blazorise api-tests pack-http pack-liens pack-planifier pack-carte pack-vitesse`. Une ligne en plus pour un agent ou une commande : il a été collé sans son dernier retour à la ligne, ou pas depuis Raw. Recolle-le (voir « Si un fichier collé reste en `FAILED` », à la fin de l'étape 5).
+Pour les neuf skills nouveaux, crée d'abord leurs dossiers : `cd ~/.config/opencode/skills && mkdir -p blazorise automapper mapster api-tests pack-http pack-liens pack-planifier pack-carte pack-vitesse`. Une ligne en plus pour un agent ou une commande : il a été collé sans son dernier retour à la ligne, ou pas depuis Raw. Recolle-le (voir « Si un fichier collé reste en `FAILED` », à la fin de l'étape 5).
 
 Relance la commande après chaque série de fichiers collés. **Tu as fini quand elle affiche `OK : la configuration est identique à GitHub`.** Si elle n'affiche rien du tout, c'est `~/CHECKSUMS-config.txt` qui est mal collé : recrée-le.
 
@@ -1039,7 +1045,7 @@ grep -n '^## ' ~/opencode-config-avant-pack-v2/AGENTS.md
 ```sh
 grep -n '^## ' ~/.config/opencode/AGENTS.md
 ```
-Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `90:## Daily`, `94:## Release groups` et `101:## NuGet / Artifactory`.
+Chaque ligne donne un numéro de ligne et le titre d'une section. Dans le nouveau fichier, tu dois voir notamment `91:## Daily`, `95:## Release groups` et `102:## NuGet / Artifactory`.
 
 3. Dans le nouveau fichier, remplace d'abord la section « Release groups » par la tienne : de sa ligne `## Release groups` jusqu'à la ligne avant `## NuGet / Artifactory`, copiée de la même façon dans `~/opencode-config-avant-pack-v2/AGENTS.md`. Puis la section « Daily », de `## Daily` jusqu'à la ligne avant `## Release groups`. Dans cet ordre : en commençant par le bas, les numéros de ligne du haut ne bougent pas.
 4. Vérifie :

@@ -1,33 +1,38 @@
 #!/bin/sh
-# The replacement of AutoMapper by Mapperly, for real, as /go runs it: the .NET SDKs 10 and 8, the real packages
-# (AutoMapper 14.0.0, Riok.Mapperly 4.3.1, xUnit, Entity Framework Core with SQLite), the pack's scripts and the code of
-# the skill automapper as it is written (its adapter on AutoMapper, its snapshot tests, its two mappers, its adapter on
-# Mapperly). An application whose two profiles use every form the skill translates: MapFrom, Ignore, BeforeMap,
-# AfterMap, Condition, NullSubstitute, ReverseMap with its unflattening, ProjectTo, a map onto an existing object with
-# MemberList.Source, ConvertUsing, Include, ForCtorParam, a resolver that takes a service, a member named in another
-# case; a service that maps with IMapper, registered by AddAutoMapper. For each target framework:
-#   - the analyst: mapperly.sh inventory (the profiles in their order, the maps and their options, the project to set up,
+# The replacement of AutoMapper by Mapperly and by Mapster, for real, as /go runs it: the .NET SDKs 10 and 8, the real
+# packages (AutoMapper 14.0.0, Riok.Mapperly 4.3.1, Mapster 10.0.13, xUnit, Entity Framework Core with SQLite), the
+# pack's scripts and the code of the skills automapper and mapster as they are written. An application whose two
+# profiles use every form the skills translate: MapFrom, Ignore, BeforeMap, AfterMap, Condition (on a new object and on
+# an existing one: a patch), NullSubstitute, ReverseMap with its unflattening, ProjectTo, a map onto an existing object
+# with MemberList.Source, ConvertUsing, Include, ForCtorParam, a resolver that takes a service, a member named in
+# another case; a service that maps with IMapper, registered by AddAutoMapper. For each target framework:
+#   - the analyst: automapper.sh inventory (the profiles in their order, the maps and their options, the project to set up,
 #     the resolver with a service, the calls, the registration, the plan)
-#   - before the change (the test-guardian, mission « filet »): mapperly.sh helpers, the tests of the skill and those of
-#     the invoices, of a projection in SQLite and of the registration, on AutoMapper; mapperly.sh record writes their
+#   - before the change (the test-guardian, mission « filet »): automapper.sh helpers, the tests of the skill and those of
+#     the invoices, of a projection in SQLite and of the registration, on AutoMapper; automapper.sh record writes their
 #     golden files from AutoMapper (never one again, nothing when the tests fail); green twice; sealed with the files
-#   - the pilot, once the developer agreed: mapperly.sh setup (a version the feed does not have: everything put back;
-#     then Riok.Mapperly for real, the diagnostics as errors, the rules of the mappers, the build)
-#   - the coder: mapperly.sh scaffold (static, and instance when a resolver takes a service; its skeleton fails the build
-#     on the members to map: RMG012), then the mappers of the skill and its adapter: the build, the sealed tests green
-#     twice: Mapperly gives what AutoMapper gave, member by member; the generated code, without reflection
-#   - what the build now refuses: a target member added without source (RMG012), a source enum member without target
-#     (RMG038)
-#   - the last step: AutoMapper removed (profiles, resolver, IMapper, AddAutoMapper, the package); mapperly.sh check says
-#     GONE, the build and every test green, no Mapperly assembly in the binaries
+#   - Mapperly: automapper.sh setup (a version the feed does not have: everything put back; then Riok.Mapperly for real,
+#     the diagnostics as errors, the rules of the mappers, the build); automapper.sh scaffold translates the profiles
+#     (the orders whole: its mapper builds and gives what AutoMapper gave, as it is; the resolver of the invoices left
+#     with a TODO line, which the build refuses: RMG012), then the mappers of the skill and its adapter, the sealed tests
+#     green twice; the generated code without reflection; what the build refuses (a target member without source RMG012,
+#     a source enum member without target RMG038); the last step: AutoMapper removed, check GONE, every test green, no
+#     Mapperly assembly in the binaries
+#   - Mapster, from the same safety net: automapper.sh setup --mapster (Microsoft.Extensions.DependencyInjection
+#     .Abstractions 8: STOP, nothing changed; raised, then Mapster, MapsterSetup.cs and the build), the test of the
+#     Registers of the skill, automapper.sh scaffold --mapster (the Register of the orders, the one of the skill, as it
+#     is; the resolver left with a TODO line, which the test of the Registers refuses), the Register and the adapter of
+#     the skill, the sealed tests green twice; what the test of the Registers refuses (a target member without source);
+#     the last step: automapper.sh switch (the service and its registration onto Mapster, IMapper and its calls kept),
+#     AutoMapper removed, check GONE, every test green, the registration through the container included
 # Needs dotnet (the CI installs the SDKs 10 and 8) and the NuGet feed of the machine (nuget.org in the CI); its own
 # package folder; no repository and no setting of this machine is changed. The golden files written by AutoMapper and the
-# queries of the projections go to the log. Usage, from opencode-v2/: sh tools/mapperly-test.sh [<shell>]
+# queries of the projections go to the log. Usage, from opencode-v2/: sh tools/automapper-test.sh [<shell>]
 SHELL_UNDER_TEST=${1:-sh}
 pack=$(cd "$(dirname "$0")/.." && pwd)
 scripts="$pack/scripts"
-command -v dotnet >/dev/null 2>&1 || { echo "mapperly-test: dotnet is not on the PATH of this machine"; exit 2; }
-work=$(mktemp -d "${TMPDIR:-/tmp}/mapperly-test.XXXXXX") || exit 1
+command -v dotnet >/dev/null 2>&1 || { echo "automapper-test: dotnet is not on the PATH of this machine"; exit 2; }
+work=$(mktemp -d "${TMPDIR:-/tmp}/automapper-test.XXXXXX") || exit 1
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/tmp" "$work/nuget"
 TMPDIR="$work/tmp"
@@ -40,7 +45,8 @@ export GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GI
 printf '[init]\n\tdefaultBranch = develop\n' > "$GIT_CONFIG_GLOBAL"
 AUTOMAPPER=14.0.0
 MAPPERLY=4.3.1
-echo "mapperly-test: SDKs $(dotnet --list-sdks | awk '{ printf "%s%s", sep, $1; sep = ", " }')"
+MAPSTER=10.0.13
+echo "automapper-test: SDKs $(dotnet --list-sdks | awk '{ printf "%s%s", sep, $1; sep = ", " }')"
 
 pass=0
 fail=0
@@ -86,6 +92,13 @@ awk -v dir="$blocks" '
   /^ *```$/ && inblock { inblock = 0; close(file); next }
   inblock { line = $0; if (indent > 0 && substr(line, 1, indent) ~ /^ *$/) line = substr(line, indent + 1); print line > file }' "$pack/skills/automapper/SKILL.md"
 if [ -s "$blocks/5" ] && [ ! -e "$blocks/6" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL: the skill automapper has not its 5 code blocks"; ls "$blocks"; fi
+# The code blocks of the skill mapster: m1 the Register of OrderProfile as scaffold writes it, m2 the Register of
+# InvoiceProfile finished, m3 the adapter of the tests on Mapster, m4 the test of the Registers
+awk -v dir="$blocks" '
+  /^ *```[a-z]+$/ { n++; inblock = 1; file = dir "/m" n; match($0, /^ */); indent = RLENGTH; next }
+  /^ *```$/ && inblock { inblock = 0; close(file); next }
+  inblock { line = $0; if (indent > 0 && substr(line, 1, indent) ~ /^ *$/) line = substr(line, indent + 1); print line > file }' "$pack/skills/mapster/SKILL.md"
+if [ -s "$blocks/m4" ] && [ ! -e "$blocks/m5" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL: the skill mapster has not its 4 code blocks"; ls "$blocks"; fi
 
 # The application: its domain, its DTOs, its two profiles, a service that maps with IMapper, its registration
 application() {
@@ -243,7 +256,9 @@ public class OrderProfile : Profile
 
         CreateMap<OrderLineUpdate, OrderLine>()
             .ForMember(d => d.Id, o => o.Ignore());
-        CreateMap<OrderUpdate, Order>(MemberList.Source);
+        // a patch: a null comment keeps the comment of the order
+        CreateMap<OrderUpdate, Order>(MemberList.Source)
+            .ForMember(d => d.Comment, o => o.Condition(s => s.Comment != null));
     }
 }
 EOF
@@ -540,11 +555,11 @@ scenario() {
   [ -n "$audit" ] && note "$tfm, NuGet audit on AutoMapper $AUTOMAPPER: $audit"
 
   # ---- the analyst: what maps with AutoMapper, the plan ----
-  run mapperly.sh inventory
+  run automapper.sh inventory
   check "$tfm: inventory: the files, the maps, the version" 0 "^INVENTORY: 2 file\\(s\\) with maps, 12 map\\(s\\), AutoMapper $AUTOMAPPER\$"
   check "$tfm: inventory: the CVE of the free versions" 0 "^PACKAGE: AutoMapper $AUTOMAPPER: a free version, with CVE-2026-32933"
   check "$tfm: inventory: the two profiles, in their order" 0 '^PROFILE: src/Shop/Billing/InvoiceProfile\.cs — InvoiceProfile — 6 map\(s\), 3 option\(s\) beyond an attribute per member — step 1$'
-  check "$tfm: inventory: the second profile" 0 '^PROFILE: src/Shop/Mapping/OrderProfile\.cs — OrderProfile — 6 map\(s\), 3 option\(s\) beyond an attribute per member — step 2$'
+  check "$tfm: inventory: the second profile" 0 '^PROFILE: src/Shop/Mapping/OrderProfile\.cs — OrderProfile — 6 map\(s\), 4 option\(s\) beyond an attribute per member — step 2$'
   check "$tfm: inventory: a map and its options" 0 '^MAP: src/Shop/Mapping/OrderProfile\.cs:15 Order -> OrderDto — ForMember×7, MapFrom×3, Ignore×2, BeforeMap, AfterMap, Condition, NullSubstitute$'
   check "$tfm: inventory: the project to set up" 0 '^PROJECTS: src/Shop/Shop\.csproj \(Riok\.Mapperly to add'
   check "$tfm: inventory: the resolver that takes a service" 0 '^CONVERTER: src/Shop/Billing/InvoiceProfile\.cs:[0-9]+ TaxResolver \(IValueResolver<Invoice, InvoiceDto, decimal>\) — takes services'
@@ -554,22 +569,22 @@ scenario() {
   check "$tfm: inventory: the plan" 0 "^PLAN: the developer's answer first"
 
   # ---- before the change: the safety net of the maps (the test-guardian, mission « filet ») ----
-  run mapperly.sh helpers "$t"
+  run automapper.sh helpers "$t"
   check "$tfm: helpers: written in the test project, its namespace" 0 '^HELPERS: tests/Shop\.Tests/Mapping/MappingSnapshot\.cs, namespace Shop\.Tests\.Mapping: ' || return 0
   cp "$blocks/1" tests/Shop.Tests/Mapping/Mapped.cs
   cp "$blocks/2" tests/Shop.Tests/Mapping/OrderMappingTests.cs
   more_tests
   run build-test.sh "$t" --filter FullyQualifiedName~Mapping
-  check "$tfm: without golden files, the tests say how to record them" 1 'No golden file .*mapperly\.sh record'
-  run mapperly.sh record "$t"
+  check "$tfm: without golden files, the tests say how to record them" 1 'No golden file .*automapper\.sh record'
+  run automapper.sh record "$t"
   if ! check "$tfm: record: the golden files written from AutoMapper" 0 '^RECORD: 14 golden file\(s\) written from AutoMapper'; then
     return 0
   fi
   # what AutoMapper gave, for the log (the contract Mapperly meets below)
   [ "$tfm" = net10.0 ] && for f in tests/Shop.Tests/Mapping/Snapshots/*.json; do
     echo "GOLDEN $(basename "$f"): $(tr -d '\n' < "$f" | tr -s ' ')"
-  done | tee -a "${MAPPERLY_TEST_SHOW:-/dev/null}"
-  run mapperly.sh record "$t"
+  done | tee -a "${AUTOMAPPER_TEST_SHOW:-/dev/null}"
+  run automapper.sh record "$t"
   check "$tfm: record again: no golden file written again" 0 '^RECORD: 0 golden file\(s\)'
   MAPPING_SQL="$work/sql-$tfm-automapper.txt"
   export MAPPING_SQL
@@ -588,50 +603,54 @@ scenario() {
   # a golden file edited: the contract is the committed one, record refuses
   golden=tests/Shop.Tests/Mapping/Snapshots/OrderDto.Paid.json
   sed -i 's/"Comment": "Comment-1"/"Comment": "autre"/' "$golden"
-  run mapperly.sh record "$t"
+  run automapper.sh record "$t"
   check "$tfm: record with a golden file edited: STOP, nothing run" 1 '^STOP: golden files committed and changed since \(tests/Shop\.Tests/Mapping/Snapshots/OrderDto\.Paid\.json\)'
   # a golden file committed that no longer matches what AutoMapper gives: record writes nothing, and says where
   commit "test: a golden file that no longer matches"
-  run mapperly.sh record "$t"
+  run automapper.sh record "$t"
   check "$tfm: record with a golden file that no longer matches: nothing recorded" 1 '^STOP: the snapshot tests do not pass on AutoMapper: nothing recorded$'
   check "$tfm: record says which line differs" 1 'expected: "Comment": "autre"'
   git reset -q --hard HEAD~1
   [ -z "$(git status --porcelain)" ] && grep -q '"Comment": "Comment-1"' "$golden"
   verdict "$tfm: record left nothing behind ($(git status --porcelain | head -n 3 | tr '\n' ' '))" $?
+  # the same repository, its safety net sealed, for the story of Mapster (below)
+  cp -R "$repo" "$work/$tfm-mapster" && rm -rf "$work/$tfm-mapster"/src/Shop/bin "$work/$tfm-mapster"/src/Shop/obj \
+    "$work/$tfm-mapster"/tests/Shop.Tests/bin "$work/$tfm-mapster"/tests/Shop.Tests/obj
 
   # ---- the pilot, once the developer agreed: Mapperly in the project ----
   mkdir -p "$NUGET_PACKAGES/riok.mapperly/99.0.0"
-  run mapperly.sh setup src/Shop
+  run automapper.sh setup src/Shop
   check "$tfm: setup with a version the feed does not have: STOP" 1 '^STOP: the build of src/Shop/Shop\.csproj fails with Riok\.Mapperly 99\.0\.0: every file put back, nothing changed$'
   rm -rf "$NUGET_PACKAGES/riok.mapperly/99.0.0"
   [ -z "$(git status --porcelain)" ]
   verdict "$tfm: setup that fails: every file as it was ($(git status --porcelain | head -n 3 | tr '\n' ' '))" $?
-  run mapperly.sh setup src/Shop
+  run automapper.sh setup src/Shop
   check "$tfm: setup: Mapperly, compile time only, its rules, the build" 0 "^SETUP: Riok\\.Mapperly $MAPPERLY added to src/Shop/Shop\\.csproj, compile time only .*build OK\$" || return 0
   grep -q "<PackageReference Include=\"Riok.Mapperly\" Version=\"$MAPPERLY\" ExcludeAssets=\"runtime\" PrivateAssets=\"all\" />" src/Shop/Shop.csproj &&
     grep -q '<GlobalAnalyzerConfigFiles Include="Mapperly.globalconfig" />' src/Shop/Shop.csproj &&
     grep -q '^dotnet_diagnostic.RMG012.severity = error$' src/Shop/Mapperly.globalconfig &&
     grep -q 'RequiredEnumMappingStrategy = RequiredMappingStrategy.Source' src/Shop/MapperDefaults.cs
   verdict "$tfm: setup: the PackageReference, the diagnostics as errors, the rules of the mappers" $?
-  run mapperly.sh setup src/Shop
+  run automapper.sh setup src/Shop
   check "$tfm: setup again: nothing added" 0 '^SETUP: Riok\.Mapperly already in src/Shop/Shop\.csproj; .*, kept as they were; build OK$'
   commit "build: add Mapperly"
 
   # ---- the coder: the mappers ----
-  run mapperly.sh scaffold src/Shop/Mapping/OrderProfile.cs
+  run automapper.sh scaffold src/Shop/Mapping/OrderProfile.cs
   check "$tfm: scaffold: the mapper of the orders" 0 '^WRITTEN: src/Shop/Mapping/OrderMapper\.cs$'
   check "$tfm: scaffold: a method per map, and the way back of ReverseMap" 0 '^METHOD: ToCustomer CustomerDto$'
-  run build-test.sh --build-only src/Shop/Shop.csproj
-  check "$tfm: the skeleton fails the build on the members to map (RMG012)" 1 'error RMG012: .*Created.*OrderDto'
-  note "$tfm, the skeleton of the mapper: $(errors | cut -c1-150 | head -n 4 | tr '\n' ' ')"
-  run mapperly.sh scaffold src/Shop/Mapping/OrderProfile.cs
+  check "$tfm: scaffold: every map of the orders translated" 0 '^NEXT: 0 TODO line\(s\)'
+  run automapper.sh scaffold src/Shop/Mapping/OrderProfile.cs
   check "$tfm: scaffold again: the mapper kept" 0 '^KEPT: src/Shop/Mapping/OrderMapper\.cs '
-  run mapperly.sh scaffold src/Shop/Billing/InvoiceProfile.cs
+  run automapper.sh scaffold src/Shop/Billing/InvoiceProfile.cs
   check "$tfm: scaffold: an instance mapper, the service of its resolver in its constructor" 0 '; an instance mapper: its resolvers take ITaxRates rates$'
+  check "$tfm: scaffold: the resolver left to finish" 0 '^NEXT: 1 TODO line\(s\)'
   grep -q '^public partial class InvoiceMapper(ITaxRates rates)$' src/Shop/Billing/InvoiceMapper.cs
   verdict "$tfm: scaffold: public partial class InvoiceMapper(ITaxRates rates)" $?
-  # the translation: the mappers of the skill, its adapter on Mapperly; the adapter of the invoices of this story
-  cp "$blocks/3" src/Shop/Mapping/OrderMapper.cs
+  run build-test.sh --build-only src/Shop/Shop.csproj
+  check "$tfm: the build refuses the member left to finish (RMG012 on Tax), nothing in the mapper of the orders" 1 'error RMG012: .*Tax.*InvoiceDto' 'OrderMapper\.cs\([0-9,]+\): error'
+  note "$tfm, the mappers as scaffold wrote them: $(errors | cut -c1-150 | head -n 4 | tr '\n' ' ')"
+  # the TODO line finished as the skill does it; the adapters of the tests on Mapperly
   cp "$blocks/5" src/Shop/Billing/InvoiceMapper.cs
   cp "$blocks/4" tests/Shop.Tests/Mapping/Mapped.cs
   cat > tests/Shop.Tests/Mapping/MappedInvoice.cs <<'EOF'
@@ -647,16 +666,24 @@ internal static class MappedInvoice
 }
 EOF
   run build-test.sh --build-only src/Shop/Shop.csproj
-  if ! check "$tfm: the mappers of the skill build, every member mapped" 0 '^BUILD: OK'; then
+  if ! check "$tfm: the mapper of the orders as scaffold wrote it builds, every member mapped" 0 '^BUILD: OK'; then
     return 0
   fi
   run test-guardian.sh sealed F1
   check "$tfm: the sealed tests and golden files, unchanged" 0 '^SEAL: OK'
+  run test-guardian.sh green "$t" FullyQualifiedName~Mapping
+  check "$tfm: the mapper scaffold wrote: what AutoMapper gave, member by member, green twice" 0 '^GREEN: 14 tests pass, twice$'
+  # the mapper of the orders of the skill, written by hand from it: the same
+  cp "$blocks/3" src/Shop/Mapping/OrderMapper.cs
+  run build-test.sh --build-only src/Shop/Shop.csproj
+  if ! check "$tfm: the mappers of the skill build, every member mapped" 0 '^BUILD: OK'; then
+    return 0
+  fi
   MAPPING_SQL="$work/sql-$tfm-mapperly.txt"
   export MAPPING_SQL
   run test-guardian.sh green "$t" FullyQualifiedName~Mapping
   unset MAPPING_SQL
-  check "$tfm: the same tests on Mapperly: what AutoMapper gave, member by member, green twice" 0 '^GREEN: 14 tests pass, twice$'
+  check "$tfm: the same tests on the mappers of the skill: what AutoMapper gave, member by member, green twice" 0 '^GREEN: 14 tests pass, twice$'
   note "$tfm, the projection of Mapperly in SQLite: $(head -n 12 "$work/sql-$tfm-mapperly.txt" 2>/dev/null | tr '\n' ' ' | tr -s ' ' | cut -c1-400)"
   # the generated code: plain C#, no reflection
   gen="$work/generated-$tfm"
@@ -668,7 +695,7 @@ EOF
     for f in $files; do
       echo "GENERATED $(basename "$f"):"
       sed 's/^/    /' "$f"
-    done | tee -a "${MAPPERLY_TEST_SHOW:-/dev/null}"
+    done | tee -a "${AUTOMAPPER_TEST_SHOW:-/dev/null}"
   fi
   [ -n "$files" ] || tail -n 5 "$work/gen-$tfm.log" | sed 's/^/    /'
   commit "refactor: the maps of the orders and of the invoices by Mapperly"
@@ -684,7 +711,7 @@ EOF
   git checkout -q -- src/Shop/Domain.cs
 
   # ---- the last step: AutoMapper leaves ----
-  run mapperly.sh check
+  run automapper.sh check
   check "$tfm: check before the last step: what is left, exit 1" 1 '^AUTOMAPPER: [0-9]+ place\(s\) left$'
   check "$tfm: check before the last step: the service, the registration, the package" 1 '^LEFT: project: src/Shop/Shop\.csproj:[0-9]+:.*AutoMapper' 'LEFT: .*(OrderMapper|InvoiceMapper)\.cs'
   rm -f src/Shop/Mapping/OrderProfile.cs src/Shop/Billing/InvoiceProfile.cs
@@ -717,7 +744,7 @@ public static class ServiceRegistration
         services.AddScoped<InvoiceMapper>().AddScoped<OrderService>();
 }
 EOF
-  run mapperly.sh check
+  run automapper.sh check
   check "$tfm: check: GONE" 0 '^AUTOMAPPER: GONE ' '^LEFT: '
   run build-test.sh "$t"
   check "$tfm: without AutoMapper, the build and every test green" 0 '^TESTS: OK' 'FAILED TESTS'
@@ -729,13 +756,125 @@ EOF
   commit "chore: remove AutoMapper"
 }
 
+# The same application, from its safety net sealed on AutoMapper, onto Mapster
+mapster() {
+  tfm=$1
+  repo="$work/$tfm-mapster"
+  [ -d "$repo" ] || { fail=$((fail + 1)); echo "FAIL: $tfm, Mapster: no repository with the safety net (the story of Mapperly stopped before it)"; return 0; }
+  cd "$repo" || return 0
+  t=tests/Shop.Tests/Shop.Tests.csproj
+
+  # ---- the pilot, once the developer answered « Cible : Mapster » ----
+  run automapper.sh setup --mapster src/Shop
+  check "$tfm, Mapster: setup with Microsoft.Extensions.DependencyInjection.Abstractions 8: STOP" 1 '^STOP: Mapster\.DependencyInjection [0-9.]+ needs Microsoft\.Extensions\.DependencyInjection\.Abstractions 9\.0\.0 or more .*src/Shop/Shop\.csproj:[0-9]+'
+  [ -z "$(git status --porcelain)" ]
+  verdict "$tfm, Mapster: setup that stops: nothing changed ($(git status --porcelain | head -n 3 | tr '\n' ' '))" $?
+  sed -i 's/Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2"/Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0"/' src/Shop/Shop.csproj
+  commit "build: Microsoft.Extensions.DependencyInjection.Abstractions 9.0.0"
+  run automapper.sh setup --mapster src/Shop
+  check "$tfm, Mapster: setup: the packages, MapsterSetup.cs, the build" 0 "^SETUP: Mapster $MAPSTER and Mapster\\.DependencyInjection $MAPSTER added to src/Shop/Shop\\.csproj; src/Shop/MapsterSetup\\.cs written .*; build OK\$" || return 0
+  grep -q 'AddDestinationTransform(DestinationTransform.EmptyCollectionIfNull);' src/Shop/MapsterSetup.cs &&
+    grep -q '^namespace Shop;$' src/Shop/MapsterSetup.cs
+  verdict "$tfm, Mapster: MapsterSetup.cs, the rules of AutoMapper, in the root namespace" $?
+  run automapper.sh setup --mapster src/Shop
+  check "$tfm, Mapster: setup again: nothing added" 0 '^SETUP: Mapster already in src/Shop/Shop\.csproj; src/Shop/MapsterSetup\.cs kept; build OK$'
+  commit "build: add Mapster"
+
+  # ---- the test-guardian, with the first profile: the test of the Registers ----
+  cp "$blocks/m4" tests/Shop.Tests/Mapping/MapsterConfigurationTests.cs
+  run build-test.sh "$t" --filter FullyQualifiedName~MapsterConfigurationTests
+  check "$tfm, Mapster: the test of the Registers, green before any Register" 0 '^TESTS: OK' || return 0
+  run test-guardian.sh seal F2 tests/Shop.Tests/Mapping/MapsterConfigurationTests.cs
+  check "$tfm, Mapster: the test of the Registers sealed" 0 '^SEALED: 1 test files'
+  commit "test: the test of the Registers of Mapster"
+
+  # ---- the coder: the Registers ----
+  run automapper.sh scaffold --mapster src/Shop/Mapping/OrderProfile.cs
+  check "$tfm, Mapster: scaffold: the Register of the orders, every map translated" 0 '^NEXT: 0 TODO line\(s\)'
+  cmp -s "$blocks/m1" src/Shop/Mapping/OrderRegister.cs
+  verdict "$tfm, Mapster: scaffold writes the Register of the skill, as it is" $?
+  run automapper.sh scaffold --mapster src/Shop/Mapping/OrderProfile.cs
+  check "$tfm, Mapster: scaffold again: the Register kept" 0 '^KEPT: src/Shop/Mapping/OrderRegister\.cs '
+  run automapper.sh scaffold --mapster src/Shop/Billing/InvoiceProfile.cs
+  check "$tfm, Mapster: scaffold: the resolver of the invoices left to finish" 0 '^NEXT: 1 TODO line\(s\)'
+  run build-test.sh "$t" --filter FullyQualifiedName~MapsterConfigurationTests
+  check "$tfm, Mapster: the test of the Registers refuses the member left to finish (Tax)" 1 'InvoiceDto do not have a corresponding source member mapped or ignored:Tax'
+  # the TODO line finished as the skill does it; the adapters of the tests on Mapster
+  cp "$blocks/m2" src/Shop/Billing/InvoiceRegister.cs
+  cp "$blocks/m3" tests/Shop.Tests/Mapping/Mapped.cs
+  cat > tests/Shop.Tests/Mapping/MappedInvoice.cs <<'EOF'
+using Billing;
+using MapsterMapper;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Shop.Tests.Mapping;
+
+// The maps of the invoices through Mapster as the application registers it (its resolver takes a service)
+internal static class MappedInvoice
+{
+    private static readonly IMapper Mapper = new ServiceCollection()
+        .AddSingleton<ITaxRates, FixedTaxRates>()
+        .AddMapsterMaps(typeof(InvoiceRegister))
+        .BuildServiceProvider()
+        .GetRequiredService<IMapper>();
+
+    public static InvoiceDto ToInvoiceDto(Invoice source) => Mapper.Map<InvoiceDto>(source);
+}
+EOF
+  run build-test.sh --build-only src/Shop/Shop.csproj
+  check "$tfm, Mapster: the Registers build" 0 '^BUILD: OK' || return 0
+  run test-guardian.sh sealed F1
+  check "$tfm, Mapster: the sealed tests and golden files, unchanged" 0 '^SEAL: OK'
+  MAPPING_SQL="$work/sql-$tfm-mapster.txt"
+  export MAPPING_SQL
+  run test-guardian.sh green "$t" FullyQualifiedName~Mapping
+  unset MAPPING_SQL
+  check "$tfm, Mapster: the same tests on Mapster: what AutoMapper gave, member by member, the test of the Registers too, green twice" 0 '^GREEN: 15 tests pass, twice$'
+  note "$tfm, the projection of Mapster in SQLite: $(head -n 12 "$work/sql-$tfm-mapster.txt" 2>/dev/null | tr '\n' ' ' | tr -s ' ' | cut -c1-400)"
+  commit "refactor: the maps of the orders and of the invoices by Mapster"
+
+  # ---- what the test of the Registers refuses now ----
+  sed -i 's/^    public string? Summary { get; set; }$/&\n    public string? Note { get; set; }/' src/Shop/Dtos.cs
+  run build-test.sh "$t" --filter FullyQualifiedName~MapsterConfigurationTests
+  check "$tfm, Mapster: a target member added without source: the test of the Registers fails" 1 'OrderDto do not have a corresponding source member mapped or ignored:Note'
+  git checkout -q -- src/Shop/Dtos.cs
+
+  # ---- the last step: switch, then AutoMapper leaves ----
+  run automapper.sh switch
+  check "$tfm, Mapster: switch: the service onto Mapster" 0 '^SWITCHED: src/Shop/OrderService\.cs — 3 line\(s\)$'
+  check "$tfm, Mapster: switch: its registration" 0 '^SWITCHED: src/Shop/ServiceRegistration\.cs — 1 line\(s\)$'
+  check "$tfm, Mapster: switch: nothing left by hand, the profiles left out" 0 '^SWITCH: 2 file\(s\) rewritten .*, 0 line\(s\) left by hand .*, 2 profile or resolver file\(s\) left out' '^LEFT: '
+  grep -q 'orders.ProjectToType<OrderListItemDto>(mapper.Config)' src/Shop/OrderService.cs &&
+    grep -q '^using MapsterMapper;$' src/Shop/OrderService.cs && grep -q 'mapper.Map(update, order)' src/Shop/OrderService.cs &&
+    grep -q 'services.AddMapsterMaps(typeof(OrderRegister)).AddScoped<OrderService>()' src/Shop/ServiceRegistration.cs
+  verdict "$tfm, Mapster: switch: ProjectToType, AddMapsterMaps, the calls of IMapper kept" $?
+  [ "$tfm" = net10.0 ] && git diff -- src | sed 's/^/    /' | tee -a "${AUTOMAPPER_TEST_SHOW:-/dev/null}"
+  run automapper.sh switch
+  check "$tfm, Mapster: switch again: nothing to rewrite" 0 '^SWITCH: 0 file\(s\) rewritten'
+  rm -f src/Shop/Mapping/OrderProfile.cs src/Shop/Billing/InvoiceProfile.cs
+  sed -i '/Include="AutoMapper"/d' src/Shop/Shop.csproj
+  run automapper.sh check
+  check "$tfm, Mapster: check: GONE" 0 '^AUTOMAPPER: GONE ' '^LEFT: '
+  run build-test.sh "$t"
+  check "$tfm, Mapster: without AutoMapper, the build and every test green (the registration through the container too)" 0 '^TESTS: OK' 'FAILED TESTS'
+  run test-guardian.sh sealed F1
+  check "$tfm, Mapster: the tests and golden files still as sealed" 0 '^SEAL: OK'
+  run test-guardian.sh sealed F2
+  check "$tfm, Mapster: the test of the Registers still as sealed" 0 '^SEAL: OK'
+  commit "chore: remove AutoMapper"
+}
+
 scenario net10.0
+cd "$work" || exit 1
+mapster net10.0
 cd "$work" || exit 1
 if dotnet --list-sdks | grep -q '^8\.'; then
   scenario net8.0
+  cd "$work" || exit 1
+  mapster net8.0
 else
   note "no .NET 8 SDK here: the net8.0 story is not tried"
 fi
 
-echo "mapperly-test ($SHELL_UNDER_TEST): $pass passed, $fail failed"
+echo "automapper-test ($SHELL_UNDER_TEST): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
