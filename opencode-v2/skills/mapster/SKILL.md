@@ -1,6 +1,6 @@
 ---
 name: mapster
-description: AutoMapper replaced by Mapster (« Cible : Mapster », the closest to AutoMapper - the same model at run time, IMapper and its calls kept) - MapsterSetup.cs and the rules of AutoMapper, the Register of each profile written by automapper.sh scaffold --mapster (ForMember, MapFrom, Ignore, Condition into IgnoreIf, NullSubstitute, BeforeMap, AfterMap, ReverseMap, ConvertUsing, Include, ForCtorParam, a resolver with a service, Items), the adapter of the snapshot tests, the test that replaces AssertConfigurationIsValid, automapper.sh switch and the last step. Load with the skill automapper when the target is Mapster, before writing, fixing, reviewing or testing code that uses Mapster.
+description: AutoMapper replaced by Mapster (the target Mapster of the question « Cible », the closest to AutoMapper - the same model at run time, IMapper and its calls kept) - MapsterSetup.cs and the rules of AutoMapper, the Register of each profile written by automapper.sh scaffold --mapster (ForMember, MapFrom, Ignore, Condition into IgnoreIf, NullSubstitute, BeforeMap, AfterMap, ReverseMap, ConvertUsing, Include, ForCtorParam, a resolver with a service, Items), the adapter of the snapshot tests, the test that replaces AssertConfigurationIsValid, automapper.sh switch and the last step. Load with the skill automapper when the target is Mapster, before writing, fixing, reviewing or testing code that uses Mapster.
 compatibility: opencode
 ---
 # AutoMapper → Mapster
