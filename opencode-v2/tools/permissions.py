@@ -162,18 +162,22 @@ CONFIG_SCRIPTS = ["*scripts/env-setup.sh*"]
 # The environment tests that write (env-tests.sh --ecriture, on an environment AGENTS.md allows): the pilot of /tests env
 # when the developer asked for them, and the conversation; the other agents run them read only
 ENV_WRITES = ["*env-tests.sh*criture*", "*env-tests.sh*allow-writes*"]
-# The native components that replace a component library (blazor-native.sh scaffold) are production code: the coder
-# and the conversation write them; the read-only agents, the pilot and the test-guardian never (inventory and check
-# only read)
-CODE_SCRIPTS = ["*blazor-native.sh scaffold*"]
-# The seal of a proof (test-guardian.sh seal and restore): the test-guardian's only. The coder never seals its own
-# version of the tests it is checked against, nor puts them back; a read-only agent never writes a test file. Checking
-# a seal (test-guardian.sh sealed) stays open: the pilot does it before each commit. The conversation agents keep it
-# all (the developer's own runs): opencode.snippet.json does not change.
-SEAL_SCRIPTS = ["*test-guardian.sh seal *", "*test-guardian.sh restore*"]
-# The unit test project of a repository that has none (once the developer agreed) and the proofs of a wave put away
-# until their turn: the pilot only (the conversation agents keep them, as for the seal)
-PILOT_SCRIPTS = ["*test-guardian.sh setup*", "*test-guardian.sh park*", "*test-guardian.sh unpark*"]
+# The native components that replace a component library (blazor-native.sh scaffold), the mapper or the Register that
+# replaces an AutoMapper profile (automapper.sh scaffold) and the code moved from AutoMapper onto Mapster (automapper.sh
+# switch) are production code: the coder and the conversation write them; the read-only agents, the pilot and the
+# test-guardian never (inventory and check only read)
+CODE_SCRIPTS = ["*blazor-native.sh scaffold*", "*automapper.sh scaffold*", "*automapper.sh switch*"]
+# The seal of a proof (test-guardian.sh seal and restore), and the snapshot tests of the maps with their golden files
+# written from AutoMapper (automapper.sh helpers and record): the test-guardian's only. The coder never seals its own
+# version of the tests it is checked against, nor puts them back, nor writes a golden file again from its own mapper;
+# a read-only agent never writes a test file. Checking a seal (test-guardian.sh sealed) stays open: the pilot does it
+# before each commit. The conversation agents keep it all (the developer's own runs): opencode.snippet.json does not
+# change.
+SEAL_SCRIPTS = ["*test-guardian.sh seal *", "*test-guardian.sh restore*", "*automapper.sh helpers*", "*automapper.sh record*"]
+# The unit test project of a repository that has none and Mapperly or Mapster in the projects of the profiles (each once
+# the developer agreed: a package), and the proofs of a wave put away until their turn: the pilot only (the conversation
+# agents keep them, as for the seal)
+PILOT_SCRIPTS = ["*test-guardian.sh setup*", "*test-guardian.sh park*", "*test-guardian.sh unpark*", "*automapper.sh setup*"]
 
 # The only allowed read of appsec-ci.env: the line with the Fortify application name (re-allowed after SECRETS)
 SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"

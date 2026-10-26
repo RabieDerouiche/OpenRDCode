@@ -1,6 +1,6 @@
 #!/bin/sh
 # Tests of the pack's .NET scripts (build-test.sh, test-platform.sh, test-guardian.sh, fortify.sh prereq,
-# blazor-native.sh) with a fake dotnet (tools/fake-dotnet.sh): VSTest, Microsoft.Testing.Platform (xUnit v3, MSTest.Sdk,
+# blazor-native.sh, automapper.sh) with a fake dotnet (tools/fake-dotnet.sh): VSTest, Microsoft.Testing.Platform (xUnit v3, MSTest.Sdk,
 # TUnit), a solution that mixes them, a project that dotnet test of the .NET 10 SDK refuses, an application that leaves
 # Blazorise. No .NET SDK needed; the real one is tried by the first run on a developer's machine.
 # Usage, from opencode-v2/: sh tools/dotnet-test.sh [<shell>] (default sh).
@@ -1196,6 +1196,306 @@ check "native check: nothing left, the Markdown documentation not looked at" 0 '
 run blazor-native.sh inventory
 check "native inventory: nothing left to replace" 0 '^INVENTORY: 0 \.razor file\(s\) use Blazorise \(0 tags in all\)$'
 check "native inventory: no plan of pages" 0 '^PLAN: no \.razor file uses Blazorise'
+cd "$work" || exit 1
+
+# ---------- automapper.sh: the inventory of an application on AutoMapper, its mappers, its setup, what is left ----------
+mkdir -p "$work/automapper"
+cd "$work/automapper" || exit 1
+git init -q
+mkdir -p src/Shop/Mapping src/Shop/Billing src/Legacy src/Web tests/Shop.Tests/Mapping docs
+cat > src/Shop/Shop.csproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AutoMapper" />
+  </ItemGroup>
+</Project>
+EOF
+cat > src/Shop/Directory.Packages.props <<'EOF'
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="AutoMapper" Version="14.0.0" />
+  </ItemGroup>
+</Project>
+EOF
+cat > src/Legacy/Legacy.csproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AutoMapper" Version="14.0.0" />
+  </ItemGroup>
+</Project>
+EOF
+cat > src/Shop/Mapping/OrderProfile.cs <<'EOF'
+using AutoMapper;
+using Shop.Domain;
+
+namespace Shop.Mapping;
+
+public class OrderProfile : Profile
+{
+    public OrderProfile()
+    {
+        // CreateMap<Ghost, GhostDto>() in a comment is no map
+        CreateMap<Order, OrderDto>()
+            .ForMember(d => d.Total, o => o.MapFrom(s => s.Lines.Sum(l => l.Amount)))
+            .ForMember(d => d.Note, o => o.NullSubstitute("(aucun; vraiment)"))
+            .ForMember(d => d.Discount, o => o.Condition(s => s.Paid))
+            .BeforeMap((s, d) => d.Audit = "mappé")
+            .AfterMap((s, d) => d.Summary = $"{d.Number}");
+        CreateMap<Customer, CustomerDto>().ReverseMap();
+        CreateMap(typeof(Page<>), typeof(PageDto<>));
+    }
+}
+EOF
+cat > src/Shop/Billing/InvoiceProfile.cs <<'EOF'
+using AutoMapper;
+
+namespace Billing;
+
+public class InvoiceProfile : Profile
+{
+    public InvoiceProfile()
+    {
+        CreateMap<Money, string>().ConvertUsing<MoneyConverter>();
+        CreateMap<Payment, PaymentDto>().Include<CardPayment, CardPaymentDto>();
+        CreateMap<Invoice, InvoiceDto>().ForMember(d => d.Tax, o => o.MapFrom<TaxResolver>());
+    }
+}
+
+public class TaxResolver(ITaxRates rates) : IValueResolver<Invoice, InvoiceDto, decimal>
+{
+    public decimal Resolve(Invoice s, InvoiceDto d, decimal m, ResolutionContext c) => s.Amount * rates.RateFor(s.Country);
+}
+
+public class MoneyConverter : ITypeConverter<Money, string>
+{
+    public string Convert(Money s, string d, ResolutionContext c) => s.ToString();
+}
+EOF
+cat > src/Legacy/LegacyProfile.cs <<'EOF'
+namespace Legacy
+{
+    public class LegacyProfile : AutoMapper.Profile
+    {
+        public LegacyProfile() { CreateMap<Row, RowDto>(); }
+    }
+}
+EOF
+cat > src/Shop/OrderService.cs <<'EOF'
+using AutoMapper;
+using AutoMapper.QueryableExtensions;
+
+namespace Shop;
+
+public class OrderService(IMapper mapper)
+{
+    public OrderDto Get(Order order) => mapper.Map<OrderDto>(order);
+    public void Update(Order order, OrderUpdate update) => mapper.Map(update, order);
+    public IQueryable<OrderDto> List(IQueryable<Order> q) => q.ProjectTo<OrderDto>(mapper.ConfigurationProvider);
+}
+EOF
+cat > src/Shop/Startup.cs <<'EOF'
+namespace Shop;
+
+public static class Startup
+{
+    public static void Add(IServiceCollection services) =>
+        services.AddAutoMapper(cfg => cfg.AllowNullCollections = true, typeof(Startup));
+}
+EOF
+printf 'var app = WebApplication.Create(args);\napp.Map("/health", () => "ok");\n' > src/Web/Program.cs
+cat > tests/Shop.Tests/Shop.Tests.csproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Acme.Shop.Tests</RootNamespace>
+  </PropertyGroup>
+  <!-- fake-test: Acme.Shop.Tests.Mapping.OrderMappingTests.Order_ToOrderDto env MAPPING_RECORD=1 No golden file: automapper.sh record -->
+</Project>
+EOF
+cat > tests/Shop.Tests/OrderServiceTests.cs <<'EOF'
+public class OrderServiceTests
+{
+    private readonly Mock<IMapper> mapper = new();
+    [Fact] public void Valid() => new MapperConfiguration(c => c.AddProfile<OrderProfile>()).AssertConfigurationIsValid();
+}
+EOF
+printf '# Notes\nAutoMapper leaves: CreateMap<Order, OrderDto>, IMapper.\n' > docs/notes.md
+printf 'bin/\nobj/\n' > .gitignore
+git add -A && git commit -q -m init
+# shellcheck disable=SC2034 # read in the eval of truth
+before=$(git status --porcelain)
+run automapper.sh inventory
+check "mapperly inventory: the files with maps, the maps, the version" 0 '^INVENTORY: 3 file\(s\) with maps, 7 map\(s\), AutoMapper 14\.0\.0$'
+check "mapperly inventory: each package once, with its version" 0 '^PACKAGE: AutoMapper 14\.0\.0$'
+check "mapperly inventory: the CVE of a free version" 0 '^PACKAGE: AutoMapper 14\.0\.0: a free version, with CVE-2026-32933'
+check "mapperly inventory: the simplest profile first" 0 '^PROFILE: src/Legacy/LegacyProfile\.cs — LegacyProfile — 1 map\(s\) — step 1$'
+check "mapperly inventory: the profile with its BeforeMap and AfterMap after it" 0 '^PROFILE: src/Shop/Mapping/OrderProfile\.cs — OrderProfile — 3 map\(s\), 3 option\(s\) beyond an attribute per member — step 2$'
+check "mapperly inventory: a map, its line and its options (never a map in a comment, a ; in a string kept in it)" 0 '^MAP: src/Shop/Mapping/OrderProfile\.cs:11 Order -> OrderDto — ForMember×3, MapFrom, BeforeMap, AfterMap, Condition, NullSubstitute$' 'Ghost'
+check "mapperly inventory: an open generic" 0 '^MAP: src/Shop/Mapping/OrderProfile\.cs:18 Page<> -> PageDto<>$'
+check "mapperly inventory: a resolver with its options" 0 '^MAP: src/Shop/Billing/InvoiceProfile\.cs:[0-9]+ Invoice -> InvoiceDto — ForMember, MapFrom, a resolver/converter/action class$'
+check "mapperly inventory: the projects where Mapperly goes" 0 '^PROJECTS: src/Legacy/Legacy\.csproj src/Shop/Shop\.csproj \(Riok\.Mapperly to add'
+check "mapperly inventory: a resolver that takes a service" 0 '^CONVERTER: src/Shop/Billing/InvoiceProfile\.cs:[0-9]+ TaxResolver \(IValueResolver<Invoice, InvoiceDto, decimal>\) — takes services'
+check "mapperly inventory: a converter without service" 0 '^CONVERTER: src/Shop/Billing/InvoiceProfile\.cs:[0-9]+ MoneyConverter \(ITypeConverter<Money, string>\)$'
+check "mapperly inventory: a global setting" 0 '^GLOBAL: src/Shop/Startup\.cs:6 .*AllowNullCollections'
+check "mapperly inventory: the calls" 0 '^CALL: src/Shop/OrderService\.cs:9 Map\(source, destination\) '
+check "mapperly inventory: the projection" 0 '^CALL: src/Shop/OrderService\.cs:10 ProjectTo '
+check "mapperly inventory: IMapper injected" 0 '^CALL: src/Shop/OrderService\.cs:6 IMapper injected'
+check "mapperly inventory: a test double of IMapper" 0 '^CALL: tests/Shop\.Tests/OrderServiceTests\.cs:3 a test double of IMapper'
+check "mapperly inventory: never the Map of a minimal API" 0 . 'src/Web/Program\.cs'
+check "mapperly inventory: the registration" 0 '^REGISTRATION: src/Shop/Startup\.cs:6 services\.AddAutoMapper'
+check "mapperly inventory: the tests of AutoMapper" 0 '^TEST: tests/Shop\.Tests/OrderServiceTests\.cs:4 .*AssertConfigurationIsValid'
+check "mapperly inventory: what scaffold leaves by hand, for each target" 0 '^TRANSLATED: automapper\.sh scaffold translates each map, for Mapperly or for Mapster; by hand \(a TODO line\): a resolver/converter/action class, an open generic \(Mapperly\), a resolver/converter/action class \(Mapster\)$'
+check "mapperly inventory: the facts of Mapperly" 0 '^TARGET: Mapperly \(recommended: .*\): 2 call\(s\) of IMapper and 1 ProjectTo rewritten into calls of the mappers, 1 constructor\(s\) without IMapper, 1 test double\(s\) of IMapper rewritten; 3 BeforeMap, AfterMap or Condition into methods written by scaffold; 1 resolver\(s\) with services into an instance mapper; 0 map\(s\) of runtime types and 0 use\(s\) of Items'
+check "mapperly inventory: the facts of Mapster" 0 '^TARGET: Mapster \(the closest to AutoMapper: .*\): the 2 call\(s\), the 1 constructor\(s\) and the 1 test double\(s\) unchanged .*; 0 use\(s\) of Items or of the mapper inside a map and 1 global setting\(s\)'
+check "mapperly inventory: the plan" 0 "^PLAN: the developer's answer first \\(« Cible » : Mapperly, Mapster or by hand; then automapper\\.sh setup \\[--mapster\\]"
+truth "mapperly inventory: reads only" '[ "$(git status --porcelain)" = "$before" ]'
+run automapper.sh inventory src/Legacy
+check "mapperly inventory of a folder" 0 '^INVENTORY: 1 file\(s\) with maps, 1 map\(s\)'
+run automapper.sh check
+check "mapperly check: what is left, exit 1" 1 '^AUTOMAPPER: [0-9]+ place\(s\) left$'
+check "mapperly check: the package, the usings, the maps, the configuration, IMapper, the resolvers" 1 '^LEFT: project: src/Legacy/Legacy\.csproj:[0-9]+:.*AutoMapper'
+check "mapperly check: a resolver" 1 '^LEFT: type: src/Shop/Billing/InvoiceProfile\.cs:[0-9]+:.*IValueResolver<'
+check "mapperly check: a using once" 1 '^LEFT: using: src/Shop/OrderService\.cs:2:using AutoMapper\.QueryableExtensions;$' '^LEFT: type: src/Shop/OrderService\.cs:2:'
+check "mapperly check: never the Markdown documentation, never a minimal API" 1 . 'docs/notes\.md|src/Web/Program\.cs'
+run automapper.sh frob
+check "mapperly: an unknown action" 1 '^STOP: automapper\.sh inventory'
+run automapper.sh scaffold
+check "mapperly scaffold: the profile is needed" 1 '^STOP: automapper\.sh scaffold \[--mapster\] <the \.cs file of a profile>$'
+run automapper.sh scaffold src/Shop/OrderService.cs
+check "mapperly scaffold: a file without map" 1 '^STOP: no CreateMap in src/Shop/OrderService\.cs$'
+run automapper.sh scaffold src/Shop/Mapping/OrderProfile.cs
+check "mapperly scaffold: a static mapper next to the profile" 0 '^SCAFFOLD: src/Shop/Mapping/OrderMapper\.cs \(OrderMapper, namespace Shop\.Mapping\) from OrderProfile, 3 map\(s\)$'
+check "mapperly scaffold: a method per map, the way back of ReverseMap" 0 '^METHOD: ToCustomer CustomerDto$'
+truth "mapperly scaffold: the static partial class, BeforeMap, Condition and AfterMap around the generated method" 'grep -q "^public static partial class OrderMapper$" src/Shop/Mapping/OrderMapper.cs && grep -q "^    public static OrderDto ToOrderDto(this Order source)$" src/Shop/Mapping/OrderMapper.cs && grep -q "^        MapOrderToOrderDto(source, target);$" src/Shop/Mapping/OrderMapper.cs && grep -q "if (s.Paid) { target.Discount = source.Discount; }" src/Shop/Mapping/OrderMapper.cs && grep -q "^    private static partial void MapOrderToOrderDto(Order source, OrderDto target);$" src/Shop/Mapping/OrderMapper.cs'
+truth "mapperly scaffold: a map not translated whole quoted above its code, its TODO lines" 'grep -q "^    // AutoMapper (to finish: its TODO lines):$" src/Shop/Mapping/OrderMapper.cs && grep -q "^    //   .BeforeMap((s, d) => d.Audit = \"mappé\")$" src/Shop/Mapping/OrderMapper.cs && grep -q "TODO: ProjectTo<OrderDto> of a map with code around its method" src/Shop/Mapping/OrderMapper.cs'
+truth "mapperly scaffold: NullSubstitute in a helper, a ; in its string kept" 'grep -q "NoteOrDefault(object /\* TODO: its type \*/ value) => value ?? \"(aucun; vraiment)\";" src/Shop/Mapping/OrderMapper.cs'
+truth "mapperly scaffold: an open generic left to write by hand" 'grep -q "TODO: an open generic" src/Shop/Mapping/OrderMapper.cs'
+truth "mapperly scaffold: the usings of the profile, never AutoMapper" 'grep -q "^using Shop.Domain;$" src/Shop/Mapping/OrderMapper.cs && ! grep -q "^using AutoMapper" src/Shop/Mapping/OrderMapper.cs'
+printf '// mine\n' >> src/Shop/Mapping/OrderMapper.cs
+run automapper.sh scaffold src/Shop/Mapping/OrderProfile.cs
+check "mapperly scaffold again: the mapper kept" 0 '^KEPT: src/Shop/Mapping/OrderMapper\.cs \(exists: the application owns it\)$'
+truth "mapperly scaffold again: the changes of the application kept" 'tail -n 1 src/Shop/Mapping/OrderMapper.cs | grep -q "// mine"'
+(cd src/Shop && "$SHELL_UNDER_TEST" "$scripts/automapper.sh" scaffold Billing/InvoiceProfile.cs) > "$work/scaffold.out" 2>&1
+out=$(cat "$work/scaffold.out") status=0
+check "mapperly scaffold from a folder of the project: an instance mapper, the service of its resolver" 0 '^SCAFFOLD: src/Shop/Billing/InvoiceMapper\.cs \(InvoiceMapper, namespace Billing\) from InvoiceProfile, 3 map\(s\); an instance mapper: its resolvers take ITaxRates rates$'
+check "mapperly scaffold: a conversion of a type pair" 0 '^METHOD: MoneyToString Money$'
+check "mapperly scaffold: registered in place of AddAutoMapper" 0 '^NEXT: .*the mapper registered in place of AddAutoMapper'
+truth "mapperly scaffold: the instance class, its methods, the conversion left to write" 'grep -q "^public partial class InvoiceMapper(ITaxRates rates)$" src/Shop/Billing/InvoiceMapper.cs && grep -q "^    public partial InvoiceDto ToInvoiceDto(Invoice source);$" src/Shop/Billing/InvoiceMapper.cs && grep -q "TODO: ConvertUsing<MoneyConverter>: the code of its Convert in a \[UserMapping(Default = true)\] method of the mapper, Money to string" src/Shop/Billing/InvoiceMapper.cs'
+run automapper.sh scaffold src/Legacy/LegacyProfile.cs
+check "mapperly scaffold: a profile in a block namespace" 0 '^SCAFFOLD: src/Legacy/LegacyMapper\.cs \(LegacyMapper, namespace Legacy\) from LegacyProfile, 1 map\(s\)$'
+rm -f src/Shop/Mapping/OrderMapper.cs src/Shop/Billing/InvoiceMapper.cs src/Legacy/LegacyMapper.cs
+# the Registers of Mapster
+run automapper.sh scaffold --mapster src/Shop/Mapping/OrderProfile.cs
+check "mapster scaffold: the Register next to the profile" 0 '^SCAFFOLD: src/Shop/Mapping/OrderRegister\.cs \(OrderRegister, namespace Shop\.Mapping\) from OrderProfile, 3 map\(s\), for Mapster$'
+check "mapster scaffold: what is left by hand (NullSubstitute of a member whose type is not declared)" 0 '^NEXT: 1 TODO line\(s\) to finish \(the skill mapster\)'
+truth "mapster scaffold: an IRegister, Condition into IgnoreIf, BeforeMapping, AfterMapping, the open generic, the way back unflattened" 'grep -q "^public class OrderRegister : IRegister$" src/Shop/Mapping/OrderRegister.cs && grep -q "^using Mapster;$" src/Shop/Mapping/OrderRegister.cs && ! grep -q "^using AutoMapper" src/Shop/Mapping/OrderRegister.cs && grep -q "\.IgnoreIf((s, _) => !(s.Paid), d => d.Discount)$" src/Shop/Mapping/OrderRegister.cs && grep -q "\.BeforeMapping((s, d) => d.Audit = \"mappé\")$" src/Shop/Mapping/OrderRegister.cs && grep -q "\.AfterMapping((s, d) => d.Summary = \$\"{d.Number}\")$" src/Shop/Mapping/OrderRegister.cs && grep -q "config.NewConfig(typeof(Page<>), typeof(PageDto<>));" src/Shop/Mapping/OrderRegister.cs && grep -q "\.Unflattening(true)$" src/Shop/Mapping/OrderRegister.cs'
+run automapper.sh scaffold --mapster src/Shop/Mapping/OrderProfile.cs
+check "mapster scaffold again: the Register kept" 0 '^KEPT: src/Shop/Mapping/OrderRegister\.cs \(exists: the application owns it\)$'
+run automapper.sh scaffold --mapster src/Shop/Billing/InvoiceProfile.cs
+check "mapster scaffold: the converter and the resolver classes left by hand" 0 '^NEXT: 2 TODO line\(s\) to finish \(the skill mapster\)'
+truth "mapster scaffold: Include" 'grep -q "\.Include<CardPayment, CardPaymentDto>()$" src/Shop/Billing/InvoiceRegister.cs'
+rm -f src/Shop/Mapping/OrderRegister.cs src/Shop/Billing/InvoiceRegister.cs
+# the helpers of the snapshot tests
+run automapper.sh helpers
+check "mapperly helpers: the test project is needed" 1 '^STOP: automapper\.sh helpers <the test project \.csproj>$'
+run automapper.sh helpers tests/Shop.Tests/Shop.Tests.csproj
+check "mapperly helpers: written, the namespace of the test project" 0 '^HELPERS: tests/Shop\.Tests/Mapping/MappingSnapshot\.cs, namespace Acme\.Shop\.Tests\.Mapping: '
+truth "mapperly helpers: MappingSample and MappingSnapshot, no placeholder left" 'grep -q "^namespace Acme.Shop.Tests.Mapping;$" tests/Shop.Tests/Mapping/MappingSnapshot.cs && grep -q "public static class MappingSample$" tests/Shop.Tests/Mapping/MappingSnapshot.cs && grep -q "public static class MappingSnapshot$" tests/Shop.Tests/Mapping/MappingSnapshot.cs && ! grep -q "__NAMESPACE__" tests/Shop.Tests/Mapping/MappingSnapshot.cs'
+run automapper.sh helpers tests/Shop.Tests/Shop.Tests.csproj
+check "mapperly helpers again: kept" 0 '^KEPT: tests/Shop\.Tests/Mapping/MappingSnapshot\.cs '
+# record: the snapshot tests run with MAPPING_RECORD=1 (the fake test passes only so)
+run automapper.sh record tests/Shop.Tests/Shop.Tests.csproj
+check "mapperly record: the tests run with MAPPING_RECORD=1" 0 '^RECORD: 0 golden file\(s\) written from AutoMapper \(FullyQualifiedName~Mapping\)'
+called "mapperly record: the tests of the filter" 'dotnet test .*Shop\.Tests\.csproj.*FullyQualifiedName~Mapping'
+run build-test.sh tests/Shop.Tests/Shop.Tests.csproj --filter FullyQualifiedName~Mapping
+check "without MAPPING_RECORD, the same test fails" 1 'No golden file'
+sed -i 's/env MAPPING_RECORD=1 No golden file/fail No golden file/' tests/Shop.Tests/Shop.Tests.csproj
+run automapper.sh record tests/Shop.Tests/Shop.Tests.csproj
+check "mapperly record: tests that fail, nothing recorded" 1 '^STOP: the snapshot tests do not pass on AutoMapper: nothing recorded$'
+git checkout -q -- tests/Shop.Tests/Shop.Tests.csproj
+mkdir -p tests/Shop.Tests/Mapping/Snapshots
+printf '{\n  "$type": "OrderDto"\n}\n' > tests/Shop.Tests/Mapping/Snapshots/OrderDto.json
+git add -A && git commit -q -m "test: the snapshot tests"
+printf '{\n  "$type": "Other"\n}\n' > tests/Shop.Tests/Mapping/Snapshots/OrderDto.json
+run automapper.sh record tests/Shop.Tests/Shop.Tests.csproj
+check "mapperly record: a committed golden file edited, STOP before any run" 1 '^STOP: golden files committed and changed since \(tests/Shop\.Tests/Mapping/Snapshots/OrderDto\.json\): the contract of the maps is the committed version'
+called "mapperly record: no test run then" '^$' 'dotnet test'
+truth "mapperly record: the edit left to the one who made it" 'grep -q Other tests/Shop.Tests/Mapping/Snapshots/OrderDto.json'
+git reset -q --hard HEAD~1
+rm -rf tests/Shop.Tests/Mapping
+# setup: a build that fails puts every file back; central versions; C# 9 for netstandard; once
+run automapper.sh setup
+check "mapperly setup: the project is needed" 1 '^STOP: automapper\.sh setup \[--mapster\] <the project of the profiles'
+printf '<Project ToolsVersion="15.0">\n</Project>\n' > src/Legacy/Old.csproj
+run automapper.sh setup src/Legacy/Old.csproj
+check "mapperly setup: never an old-style project" 1 '^STOP: src/Legacy/Old\.csproj is not an SDK-style project'
+rm -f src/Legacy/Old.csproj
+printf '// <!-- fake-build-error -->\n' > src/Legacy/Broken.cs
+run automapper.sh setup src/Legacy
+check "mapperly setup: a build that fails" 1 '^STOP: the build of src/Legacy/Legacy\.csproj fails with Riok\.Mapperly 4\.3\.1: every file put back, nothing changed$'
+rm -f src/Legacy/Broken.cs
+truth "mapperly setup that fails: every file as it was" '[ "$(git status --porcelain)" = "$before" ]'
+# Mapster: an older Microsoft.Extensions.DependencyInjection.Abstractions, a build that fails, central versions, once
+run automapper.sh switch
+check "mapster switch: setup first" 1 '^STOP: no MapsterSetup\.cs: automapper\.sh setup --mapster'
+sed -i 's#<PackageReference Include="AutoMapper" Version="14.0.0" />#&\n    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />#' src/Legacy/Legacy.csproj
+run automapper.sh setup --mapster src/Shop
+check "mapster setup: an older DependencyInjection.Abstractions referenced: STOP" 1 '^STOP: Mapster\.DependencyInjection 10\.0\.13 needs Microsoft\.Extensions\.DependencyInjection\.Abstractions 9\.0\.0 or more .*src/Legacy/Legacy\.csproj:[0-9]+'
+git checkout -q -- src/Legacy/Legacy.csproj
+printf '// <!-- fake-build-error -->\n' > src/Shop/Broken.cs
+run automapper.sh setup --mapster src/Shop
+check "mapster setup: a build that fails" 1 '^STOP: the build of src/Shop/Shop\.csproj fails with Mapster 10\.0\.13: every file put back, nothing changed$'
+rm -f src/Shop/Broken.cs
+truth "mapster setup that fails: every file as it was, no MapsterSetup.cs" '[ "$(git status --porcelain)" = "$before" ] && [ ! -e src/Shop/MapsterSetup.cs ]'
+run automapper.sh setup --mapster src/Shop
+check "mapster setup: the versions in Directory.Packages.props, MapsterSetup.cs" 0 '^SETUP: Mapster 10\.0\.13 and Mapster\.DependencyInjection 10\.0\.13 added to src/Shop/Shop\.csproj \(their version in src/Shop/Directory\.Packages\.props\); src/Shop/MapsterSetup\.cs written .*; build OK$'
+truth "mapster setup: the references without version, their versions central, the rules of AutoMapper, a null list kept null (AllowNullCollections)" 'grep -q "<PackageReference Include=\"Mapster\" />" src/Shop/Shop.csproj && grep -q "<PackageReference Include=\"Mapster.DependencyInjection\" />" src/Shop/Shop.csproj && grep -q "<PackageVersion Include=\"Mapster.DependencyInjection\" Version=\"10.0.13\" />" src/Shop/Directory.Packages.props && grep -q "^namespace Shop;$" src/Shop/MapsterSetup.cs && grep -q "NameMatchingStrategy(NameMatchingStrategy.IgnoreCase)" src/Shop/MapsterSetup.cs && grep -q "EnumMappingStrategy(EnumMappingStrategy.ByName);$" src/Shop/MapsterSetup.cs && ! grep -q EmptyCollectionIfNull src/Shop/MapsterSetup.cs && grep -q "a null list left null (AllowNullCollections = true)" src/Shop/MapsterSetup.cs'
+run automapper.sh setup --mapster src/Shop
+check "mapster setup again: nothing added" 0 '^SETUP: Mapster already in src/Shop/Shop\.csproj; src/Shop/MapsterSetup\.cs kept; build OK$'
+truth "mapster setup again: one PackageReference each" '[ "$(grep -c "Include=\"Mapster\"" src/Shop/Shop.csproj)" -eq 1 ] && [ "$(grep -c "Include=\"Mapster.DependencyInjection\"" src/Shop/Shop.csproj)" -eq 1 ]'
+# switch: the code onto Mapster, the profiles and resolvers left out, the rest listed
+run automapper.sh scaffold --mapster src/Shop/Mapping/OrderProfile.cs
+run automapper.sh switch
+check "mapster switch: the service" 0 '^SWITCHED: src/Shop/OrderService\.cs — 3 line\(s\)$'
+check "mapster switch: the test of the configuration" 0 '^SWITCHED: tests/Shop\.Tests/OrderServiceTests\.cs — 2 line\(s\)$'
+check "mapster switch: a registration with a setting, left by hand" 0 '^LEFT: src/Shop/Startup\.cs:6 services\.AddAutoMapper\(cfg => cfg\.AllowNullCollections = true, typeof\(Startup\)\);$'
+check "mapster switch: the summary" 0 '^SWITCH: 2 file\(s\) rewritten .*, 1 line\(s\) left by hand .*, 3 profile or resolver file\(s\) left out'
+truth "mapster switch: the usings, ProjectToType, the strict configuration of the test, its usings" 'grep -q "^using MapsterMapper;$" src/Shop/OrderService.cs && grep -q "^using Mapster;$" src/Shop/OrderService.cs && grep -q "q.ProjectToType<OrderDto>(mapper.Config);" src/Shop/OrderService.cs && grep -q "mapper.Map(update, order);" src/Shop/OrderService.cs && grep -q "=> MapsterSetup.Configure(new TypeAdapterConfig(), true, typeof(OrderRegister).Assembly).Compile(failFast: false);" tests/Shop.Tests/OrderServiceTests.cs && head -n 2 tests/Shop.Tests/OrderServiceTests.cs | grep -q "^using Shop;$" && grep -q "Mock<IMapper>" tests/Shop.Tests/OrderServiceTests.cs'
+truth "mapster switch: the profiles as they were" 'git diff --quiet -- src/Shop/Mapping/OrderProfile.cs src/Shop/Billing/InvoiceProfile.cs src/Legacy/LegacyProfile.cs'
+run automapper.sh switch
+check "mapster switch again: nothing to rewrite" 0 '^SWITCH: 0 file\(s\) rewritten'
+git checkout -q -- . && git clean -q -f -d src tests
+truth "mapster: every file as it was before the next stories" '[ "$(git status --porcelain)" = "$before" ]'
+run automapper.sh setup src/Legacy
+check "mapperly setup: the version in the project, compile time only, C# 9 for netstandard2.0" 0 '^SETUP: Riok\.Mapperly 4\.3\.1 added to src/Legacy/Legacy\.csproj, compile time only \(ExcludeAssets runtime, PrivateAssets all\); LangVersion latest \(Mapperly needs C# 9, the default of netstandard2\.0 is older\); .*; build OK$'
+truth "mapperly setup: the PackageReference, the LangVersion, the diagnostics, the rules" 'grep -q "<PackageReference Include=\"Riok.Mapperly\" Version=\"4.3.1\" ExcludeAssets=\"runtime\" PrivateAssets=\"all\" />" src/Legacy/Legacy.csproj && grep -q "<LangVersion>latest</LangVersion>" src/Legacy/Legacy.csproj && grep -q "<GlobalAnalyzerConfigFiles Include=\"Mapperly.globalconfig\" />" src/Legacy/Legacy.csproj && grep -q "^dotnet_diagnostic.RMG012.severity = error$" src/Legacy/Mapperly.globalconfig && grep -q "^is_global = true$" src/Legacy/Mapperly.globalconfig && grep -q "AutoUserMappings = false" src/Legacy/MapperDefaults.cs'
+run automapper.sh setup src/Shop/Shop.csproj
+check "mapperly setup: the version in Directory.Packages.props" 0 '^SETUP: Riok\.Mapperly 4\.3\.1 added to src/Shop/Shop\.csproj \(its version in src/Shop/Directory\.Packages\.props\), compile time only'
+truth "mapperly setup: no version in the project, its PackageVersion beside the others, no LangVersion for net10.0" 'grep -q "<PackageReference Include=\"Riok.Mapperly\" ExcludeAssets=\"runtime\" PrivateAssets=\"all\" />" src/Shop/Shop.csproj && grep -q "^    <PackageVersion Include=\"Riok.Mapperly\" Version=\"4.3.1\" />$" src/Shop/Directory.Packages.props && ! grep -q LangVersion src/Shop/Shop.csproj'
+run automapper.sh setup src/Shop
+check "mapperly setup again: nothing added" 0 '^SETUP: Riok\.Mapperly already in src/Shop/Shop\.csproj; .*, kept as they were; build OK$'
+truth "mapperly setup again: one PackageReference, one item of the diagnostics" '[ "$(grep -c Riok.Mapperly src/Shop/Shop.csproj)" -eq 1 ] && [ "$(grep -c Mapperly.globalconfig src/Shop/Shop.csproj)" -eq 1 ]'
+run automapper.sh inventory
+check "mapperly inventory after setup: Mapperly there" 0 '^PACKAGE: Riok\.Mapperly already in src/Legacy/Legacy\.csproj src/Shop/Shop\.csproj$'
+check "mapperly inventory after setup: no project left to set up" 0 '^PROJECTS: src/Legacy/Legacy\.csproj src/Shop/Shop\.csproj \(Mapperly already set up\)$'
+# the last step done: nothing left of AutoMapper
+rm -f src/Shop/Mapping/OrderProfile.cs src/Shop/Billing/InvoiceProfile.cs src/Legacy/LegacyProfile.cs tests/Shop.Tests/OrderServiceTests.cs
+sed -i '/Include="AutoMapper"/d' src/Shop/Shop.csproj src/Legacy/Legacy.csproj src/Shop/Directory.Packages.props
+printf 'namespace Shop;\n\npublic class OrderService\n{\n    public OrderDto Get(Order order) => order.ToOrderDto();\n}\n' > src/Shop/OrderService.cs
+printf 'namespace Shop;\n\npublic static class Startup\n{\n    public static void Add(IServiceCollection services) => services.AddScoped<InvoiceMapper>();\n}\n' > src/Shop/Startup.cs
+run automapper.sh check
+check "mapperly check: nothing left, the Markdown documentation not looked at" 0 '^AUTOMAPPER: GONE ' '^LEFT: '
+run automapper.sh inventory
+check "mapperly inventory: nothing left to replace" 0 '^PLAN: no map of AutoMapper'
 cd "$work" || exit 1
 
 # never dotnet run, in any of these runs

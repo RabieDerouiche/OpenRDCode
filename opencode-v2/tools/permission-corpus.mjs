@@ -592,7 +592,7 @@ add([...ALL, "general", "explore", "test-guardian"], SECRET_CLIS, "deny")
 // skills of their work
 for (const a of ["pilot", "analyst", "coder", "test-guardian", "checker", "debugger", "doc-writer"]) {
   for (const s of ["pack-http", "pack-carte", "pack-setup"]) cases.push({ agent: a, perm: "skill", pattern: s, expect: "deny" })
-  for (const s of ["blazorise", "api-tests", "fortify-remediation"]) cases.push({ agent: a, perm: "skill", pattern: s, expect: "allow" })
+  for (const s of ["blazorise", "automapper", "mapster", "api-tests", "fortify-remediation"]) cases.push({ agent: a, perm: "skill", pattern: s, expect: "allow" })
 }
 cases.push({ agent: "build", perm: "skill", pattern: "pack-http", expect: "allow" })
 cases.push({ agent: "build", perm: "skill", pattern: "pack-carte", expect: "allow" })
@@ -604,6 +604,24 @@ P(["checker"], [S + "blazor-native.sh check"])
 add(["build"], [S + "blazor-native.sh inventory", S + "blazor-native.sh scaffold src/Web", S + "blazor-native.sh check"], "allow")
 add(["debugger", "pilot"], [S + "blazor-native.sh inventory", S + "blazor-native.sh check"], "allow")
 add(["pilot", "analyst", "checker", "debugger", "doc-writer", "test-guardian"], [S + "blazor-native.sh scaffold src/Web"], "deny")
+// AutoMapper replaced by Mapperly or Mapster: the inventory and the check only read; Mapperly or Mapster in a project is
+// a package, set up by the pilot once the developer agreed; the snapshot tests and their golden files written from
+// AutoMapper are the test-guardian's (the coder never writes a golden file from its own mapper); the mapper or the
+// Register of a profile and the code moved onto Mapster (switch) are production code, the coder's
+P(["analyst"], [S + "automapper.sh inventory"])
+P(["pilot"], [S + "automapper.sh setup src/Shop/Shop.csproj && " + S + "ship.sh --no-push \"build: add Mapperly (ABC-123)\" \"- SETUP: Riok.Mapperly 4.3.1 added to src/Shop/Shop.csproj, compile time only; build OK\""])
+P(["pilot"], [S + "automapper.sh setup --mapster src/Shop && " + S + "ship.sh --no-push \"build: add Mapster (ABC-123)\" \"- Mapster and Mapster.DependencyInjection in src/Shop; MapsterSetup.cs\""])
+P(["test-guardian"], [S + "automapper.sh helpers tests/Shop.Tests/Shop.Tests.csproj", S + "automapper.sh record tests/Shop.Tests/Shop.Tests.csproj"])
+P(["coder"], [S + "automapper.sh scaffold src/Shop/Mapping/OrderProfile.cs", S + "automapper.sh scaffold --mapster src/Shop/Mapping/OrderProfile.cs", S + "automapper.sh switch", S + "automapper.sh check"])
+P(["checker"], [S + "automapper.sh check"])
+add(["build"], [S + "automapper.sh inventory", S + "automapper.sh setup src/Shop", S + "automapper.sh setup --mapster src/Shop", S + "automapper.sh scaffold src/Shop/Mapping/OrderProfile.cs",
+  S + "automapper.sh helpers tests/Shop.Tests/Shop.Tests.csproj", S + "automapper.sh record tests/Shop.Tests/Shop.Tests.csproj", S + "automapper.sh switch", S + "automapper.sh check"], "allow")
+add(["debugger", "pilot", "test-guardian"], [S + "automapper.sh inventory", S + "automapper.sh check"], "allow")
+add(["pilot", "analyst", "checker", "debugger", "doc-writer", "test-guardian"], [S + "automapper.sh scaffold src/Shop/Mapping/OrderProfile.cs",
+  S + "automapper.sh scaffold --mapster src/Shop/Mapping/OrderProfile.cs", S + "automapper.sh switch", S + "automapper.sh switch src"], "deny")
+add(["coder", "analyst", "checker", "debugger", "doc-writer", "test-guardian"], [S + "automapper.sh setup src/Shop", S + "automapper.sh setup --mapster src/Shop"], "deny")
+add(["coder", "pilot", "analyst", "checker", "debugger", "doc-writer"], [S + "automapper.sh record tests/Shop.Tests/Shop.Tests.csproj",
+  S + "automapper.sh helpers tests/Shop.Tests/Shop.Tests.csproj"], "deny")
 // /fix waits for the CI of its push in fewer, longer pauses
 P(["pilot"], [S + "pause.sh 240"])
 // an environment whose secret is in HashiCorp Vault (env-setup.sh --vault), and the private file of the HTTP client filled
