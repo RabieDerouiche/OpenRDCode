@@ -35,7 +35,7 @@ mkdirSync(join(stub, "node_modules", "@opencode", "plugin"), { recursive: true }
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "package.json"), '{"name":"@opencode/plugin","type":"module","main":"index.js"}')
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "index.js"), "export const Plugin = { define: (definition) => definition }\n")
 writeFileSync(join(stub, "openrd-pack.js"), readFileSync(join(pack, "plugins", "openrd-pack.js"), "utf8"))
-const { Guards, prune, fillNullContent, withAgentOptions, withoutConversationOnly, stripConversationOnly, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
+const { Guards, prune, fillNullContent, withAgentOptions, withoutConversationOnly, stripConversationOnly, narrowPilotTools, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
 
 // ---------- fake OpenCode client ----------
 const sessions = new Map()
@@ -286,7 +286,12 @@ for (const command of ["set -e; dotnet build", "export DOTNET_CLI_TELEMETRY_OPTO
 
 // ---------- 8. timeouts ----------
 const timeout = async (command, given) => (await tool("coder-1", "bash", given ? { command, timeout: given } : { command })).timeout
-await check("build-test.sh gets 20 min", async () => assert.equal(await timeout(S + "build-test.sh"), 1200000))
+await check("build-test.sh gets 45 min: it bounds its own run (42 min with the wait for the lock) and says what ran", async () =>
+  assert.equal(await timeout(S + "build-test.sh"), 2700000))
+await check("two scripts of the pack in one call get 45 min each (the measure of a .NET repository and its front-end)", async () =>
+  assert.equal(await timeout(S + "build-test.sh src/App.sln ; " + S + "build-test.sh ClientApp"), 5400000))
+await check("…three or more: 2 hours at most", async () =>
+  assert.equal(await timeout(S + "build-test.sh ; " + S + "build-test.sh a ; " + S + "build-test.sh b"), 7200000))
 await check("dotnet test gets 20 min", async () => assert.equal(await timeout("dotnet test --no-build 2>&1 | tail -80"), 1200000))
 await check("npm test gets 20 min", async () => assert.equal(await timeout("npm test -- src/app/foo.spec.ts"), 1200000))
 await check("ship.sh gets 5 min", async () => assert.equal(await tool("pilot-1", "bash", { command: S + "ship.sh --no-push \"feat: x (ABC-1)\"" }).then((a) => a.timeout), 300000))
@@ -296,8 +301,10 @@ await check("the pause of /fix while its CI runs gets 6 min", async () => assert
 // a command of an agent of the pack never runs without a limit (OpenCode v2: timeout 0 turns it off)
 await check("[coder] timeout 0 of a short command: 20 min, never no limit", async () =>
   assert.equal((await tool("coder-1", "bash", { command: "git log --oneline", timeout: 0 })).timeout, 1200000))
-await check("[coder] timeout 0 of a build: 20 min", async () =>
-  assert.equal((await tool("coder-1", "bash", { command: S + "build-test.sh", timeout: 0 })).timeout, 1200000))
+await check("[coder] timeout 0 of a build script of the pack: 45 min", async () =>
+  assert.equal((await tool("coder-1", "bash", { command: S + "build-test.sh", timeout: 0 })).timeout, 2700000))
+await check("[coder] timeout 0 of a dotnet build: 20 min", async () =>
+  assert.equal((await tool("coder-1", "bash", { command: "dotnet build", timeout: 0 })).timeout, 1200000))
 await check("[pilot] timeout 0 of ship.sh: 5 min (what it needs)", async () =>
   assert.equal((await tool("pilot-1", "bash", { command: S + "ship.sh --no-push \"feat: x (ABC-1)\"", timeout: 0 })).timeout, 300000))
 await check("[analyst] a negative or invalid timeout: 20 min", async () => {
@@ -314,8 +321,8 @@ for (const command of [S + "test-guardian.sh red tests/Api.Tests/Api.Tests.cspro
   S + "test-guardian.sh green tests/Api.Tests/Api.Tests.csproj FullyQualifiedName~Security_X_V1",
   S + "test-guardian.sh coverage V1-before tests/Api.Tests/Api.Tests.csproj src/A.cs", S + "test-guardian.sh changes origin/develop",
   S + "test-guardian.sh build tests/Api.Tests/Api.Tests.csproj", S + "test-guardian.sh setup xunit src/A.cs",
-  S + "fortify.sh prereq"]) {
-  await check("the tests of the test-guardian get 20 min: " + command.split("/").pop(), async () => assert.equal(await timeout(command), 1200000))
+  S + "test-guardian.sh verify V1 FullyQualifiedName~Security_X_V1", S + "fortify.sh prereq"]) {
+  await check("the tests of the test-guardian get 45 min (bounded by the script): " + command.split("/").pop(), async () => assert.equal(await timeout(command), 2700000))
 }
 for (const command of [S + "test-guardian.sh deps src/A.cs", S + "test-guardian.sh compare V1-before V1-after", S + "fortify.sh batch"]) {
   await check("a quick measure keeps the default: " + command.split("/").pop(), async () => assert.equal(await timeout(command), undefined))
@@ -635,6 +642,76 @@ await check("[v2 30] the global AGENTS.md of the pack marks the routing, the day
   for (const kept of ["## Language", "## Working style", "## Speed", "## Project types", "## Git", "## Daily", "## Release groups", "## NuGet / Artifactory", "## Jira (MCP)", "## Fortify SSC (MCP)"]) assert.ok(out.includes(kept), kept)
   assert.ok(text.length - out.length > 8000, "about 2 700 tokens taken out: " + (text.length - out.length) + " characters")
 })
+
+// ---------- 31. the pilot gets the tools of the MCP servers of the command under way only ----------
+const MCP_TOOLS = ["read", "shell", "subagent", "question", "jira_get_issue", "jira_search", "gitlab_get_merge_request",
+  "gitlab_create_merge_request", "sonar_search_issues", "SonarQube_get_hotspots", "fortify_list_issues", "atlassian_jira_get_issue",
+  "atlassian_confluence_get_page", "kibana_search", "artifactory_get_package"]
+const narrowed = (command) => {
+  const tools = Object.fromEntries(MCP_TOOLS.map((t) => [t, { description: t }]))
+  const out = narrowPilotTools(tools, command)
+  return { kept: Object.keys(tools).filter((t) => !["read", "shell", "subagent", "question"].includes(t)), out }
+}
+await check("[v2 31] /go: Jira and GitLab, and a server of another name", () => assert.deepEqual(narrowed("go").kept,
+  ["jira_get_issue", "jira_search", "gitlab_get_merge_request", "gitlab_create_merge_request", "atlassian_jira_get_issue", "artifactory_get_package"]))
+await check("[v2 31] /fix: Jira, GitLab, Sonar and Fortify", () => assert.deepEqual(narrowed("fix").kept,
+  ["jira_get_issue", "jira_search", "gitlab_get_merge_request", "gitlab_create_merge_request", "sonar_search_issues", "SonarQube_get_hotspots",
+    "fortify_list_issues", "atlassian_jira_get_issue", "artifactory_get_package"]))
+await check("[v2 31] /fortify: Fortify and GitLab (its merge request)", () => assert.deepEqual(narrowed("fortify").kept,
+  ["gitlab_get_merge_request", "gitlab_create_merge_request", "fortify_list_issues", "artifactory_get_package"]))
+await check("[v2 31] /daily: Jira and GitLab; /push: GitLab", () => {
+  assert.deepEqual(narrowed("daily").kept, ["jira_get_issue", "jira_search", "gitlab_get_merge_request", "gitlab_create_merge_request", "atlassian_jira_get_issue", "artifactory_get_package"])
+  assert.deepEqual(narrowed("push").kept, ["gitlab_get_merge_request", "gitlab_create_merge_request", "artifactory_get_package"])
+})
+await check("[v2 31] /tests and /sync: no server of the pack, the built-in tools kept", () => {
+  for (const command of ["tests", "sync"]) {
+    const tools = Object.fromEntries(MCP_TOOLS.map((t) => [t, {}]))
+    narrowPilotTools(tools, command)
+    assert.deepEqual(Object.keys(tools), ["read", "shell", "subagent", "question", "artifactory_get_package"])
+  }
+})
+await check("[v2 31] the servers taken out are named; a command it does not know changes nothing", () => {
+  assert.deepEqual(narrowed("go").out.sort(), ["confluence", "fortify", "kibana", "sonar"])
+  assert.equal(narrowed("review").kept.length, MCP_TOOLS.length - 4)
+  assert.deepEqual(narrowPilotTools(undefined, "go"), [])
+})
+const mcp31 = fakeV2(repo)
+await v2Plugin.setup(mcp31.ctx)
+const pilotContext = async (sessionID, agent = "pilot") => {
+  const event = { sessionID, agent, model: { id: "qwen", providerID: "fake" }, system: [], messages: [], options: {}, tools: Object.fromEntries(MCP_TOOLS.map((t) => [t, { description: t }])) }
+  await mcp31.hooks["session.context"](event)
+  return Object.keys(event.tools)
+}
+const endRun = async (sessionID) => { mcp31.push("session.execution.succeeded", { sessionID }); await wait(150) }
+mcp31.sessions.set("m31-go", { id: "m31-go", title: "/go ABC-31" })
+await mcp31.hooks["session.prompt"]({ sessionID: "m31-go", messageID: "m", prompt: { text: "[[command go ABC-31]]\nRequest: « ABC-31 »" }, delivery: "steer" })
+await check("[v2 31] a /go of the pilot: its requests without Sonar, Fortify, Confluence nor Kibana", async () => {
+  const tools = await pilotContext("m31-go")
+  assert.ok(tools.includes("jira_get_issue") && tools.includes("gitlab_create_merge_request") && tools.includes("read"))
+  assert.ok(!tools.some((t) => /sonar|fortify|confluence|kibana/i.test(t)), tools.join(","))
+})
+await check("[v2 31] the same tools from one request of the run to the next (the prefix cache of the server)", async () =>
+  assert.deepEqual(await pilotContext("m31-go"), await pilotContext("m31-go")))
+await check("[v2 31] another agent of the session is left to its own rules", async () =>
+  assert.equal((await pilotContext("m31-go", "coder")).length, MCP_TOOLS.length))
+await check("[v2 31] logged once per command, with the servers taken out", () => {
+  const lines = readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8").split("\n").filter((l) => l.includes("MCP servers the command does not use"))
+  assert.equal(lines.filter((l) => l.includes('"/go"')).length, 1)
+  assert.ok(lines[0].includes('"servers":["sonar","fortify","confluence","kibana"]') || lines[0].includes("sonar"), lines[0])
+})
+await endRun("m31-go")
+await check("[v2 31] the run over: nothing narrowed any more", async () => assert.equal((await pilotContext("m31-go")).length, MCP_TOOLS.length))
+await mcp31.hooks["session.prompt"]({ sessionID: "m31-go", messageID: "m2", prompt: { text: "[[command fix]]\nDirectives: « »" }, delivery: "steer" })
+await check("[v2 31] /fix chosen next in the same session: Sonar and Fortify back, Confluence and Kibana still out", async () => {
+  const tools = await pilotContext("m31-go")
+  assert.ok(tools.includes("sonar_search_issues") && tools.includes("fortify_list_issues") && tools.includes("jira_search"))
+  assert.ok(!tools.some((t) => /confluence|kibana/i.test(t)))
+})
+await endRun("m31-go")
+await mcp31.hooks["session.prompt"]({ sessionID: "m31-go", messageID: "m3", prompt: { text: "[[command tests InvoiceService]]\nRequest: « InvoiceService »" }, delivery: "steer" })
+await check("[v2 31] /tests: no server of the pack at all", async () =>
+  assert.ok(!(await pilotContext("m31-go")).some((t) => /jira|gitlab|sonar|fortify|confluence|kibana/i.test(t))))
+await endRun("m31-go")
 
 // ---------- 12. what v2 opens that the pack closes ----------
 top("t-1", "Conversation")

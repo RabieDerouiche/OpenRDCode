@@ -338,7 +338,7 @@ time timeout 30 env GIT_TERMINAL_PROMPT=0 git fetch -q --no-tags origin; echo "c
 
 ## Un sous-agent qui semble bloqué
 
-**Ce qui ne peut plus bloquer pour toujours.** Un appel d'un serveur MCP (Jira, GitLab, Sonar, Fortify) qui ne répond pas finit en erreur après 5 minutes (la v2 attendait jusqu'à 12 heures ; plugin, point 27 ; `"timeout": { "execution": <ms> }` dans la configuration d'un serveur pour un autre délai), et l'agent continue sans lui. Une commande d'un agent du pack a toujours une limite de temps (20 minutes pour un build ou des tests, 2 heures au plus). Le serveur du modèle qui n'envoie plus rien : OpenCode réessaie au bout de 15 minutes, 5 avec `"chunkTimeout": 300000` dans les `options` du provider (section « Qwen 3.8 »). Une question ou une autorisation qui t'attend : le titre commence par ❓.
+**Ce qui ne peut plus bloquer pour toujours.** Un appel d'un serveur MCP (Jira, GitLab, Sonar, Fortify) qui ne répond pas finit en erreur après 5 minutes (la v2 attendait jusqu'à 12 heures ; plugin, point 27 ; `"timeout": { "execution": <ms> }` dans la configuration d'un serveur pour un autre délai), et l'agent continue sans lui. Une commande d'un agent du pack a toujours une limite de temps (20 minutes pour un build ou des tests lancés directement, 45 minutes pour un script du pack qui se borne lui-même, 2 heures au plus). Un script du pack qui build et teste s'arrête de lui-même avant cette limite, attente du verrou du dossier comprise, et le dit : `TESTS: TIMEOUT` (section « Une suite trop longue pour la machine »). Le serveur du modèle qui n'envoie plus rien : OpenCode réessaie au bout de 15 minutes, 5 avec `"chunkTimeout": 300000` dans les `options` du provider (section « Qwen 3.8 »). Une question ou une autorisation qui t'attend : le titre commence par ❓.
 
 **L'interface qui ne bouge plus** alors que le titre de la session avance dans la liste de l'accueil : l'interface a perdu son flux d'évènements (une passerelle ou un proxy devant OpenCode qui le coupe ou le garde en tampon) ; recharge la page, le run, lui, a continué.
 
@@ -503,6 +503,15 @@ Ce que `/go` et `/fix` ont fait sur les tickets du dépôt, dans OpenCode :
 /outil stats
 ```
 
+## Une suite trop longue pour la machine
+
+Chaque script du pack qui build et teste se borne lui-même : 42 minutes en tout, l'attente du verrou du dossier comprise (un autre build du même dossier : 20 minutes au plus), dont 25 au plus pour une exécution des tests. Au-delà, il arrête les tests et le dit, au lieu d'être coupé par le plugin sans un mot :
+```text
+TESTS: TIMEOUT (the tests ran until the time of this command ran out, 42 min with the build and the wait for another build of this folder, and were stopped: no result for the whole run)
+NOTE: a test run this long cannot prove a change on this machine: AGENTS.md « Build & test », « Tests locaux », gives a filter that leaves its slow tests to the CI …
+```
+`/go` (et `/fortify`) s'arrêtent alors dès la mesure de la base, avant la première ligne de code : aucun travail perdu, aucune MR sans suite verte. Ce qu'il faut faire : les tests lents (intégration, bout en bout, ceux qui demandent Docker, une base ou le réseau) dans la ligne « Tests locaux » de la section « Build & test » d'`AGENTS.md` ; `/outil setup` la propose, et la CI les lance tous. Jamais une limite relevée, jamais les tests lancés autrement. Avec Microsoft.Testing.Platform, une exécution entière trop longue est dite `TIMEOUT:`, jamais prise pour un test bloqué (`HANG:`, un test à corriger).
+
 ## Contrôle avant push
 
 Avant chaque push de `/go` et `/fix`, un script, sans le modèle, relit tout ce qui va partir : chaque commit pas encore poussé (même un secret retiré par un commit suivant part avec l'historique) et l'état de la branche. Il arrête tout, rien n'est poussé, sur : une clé privée, un token GitLab, GitHub, AWS ou Slack, un utilisateur et un mot de passe dans une URL, un mot de passe dans une chaîne de connexion, une valeur secrète dans un fichier de configuration, un fichier de clé ou `.env` ajouté, un marqueur de conflit, une version payante d'un package, des dépendances installées ou des sorties de build qu'un `.gitignore` oublie (`node_modules`, `obj`, `bin/Debug`, `TestResults` ; `dist` et `coverage` : un avertissement), et la valeur exacte d'une variable secrète de ton environnement (un nom avec PASSWORD, TOKEN, SECRET, API_KEY ou CREDENTIAL : le mot de passe Artifactory de `~/.zshenv`), où qu'elle soit. Dans un fichier de test, c'est un avertissement (valeurs factices), sauf pour la valeur d'une variable secrète : elle n'est jamais factice. La valeur n'est jamais affichée : seulement le type et l'endroit.
@@ -514,7 +523,7 @@ lance `sh ~/.config/opencode/scripts/diff-guard.sh`
 
 - Faux positif : ajoute le commentaire `gitleaks:allow` en fin de la ligne signalée (dans Rider), puis relance `/go` (ou `/fix`). Il ne lève pas « value of the environment variable » : cette valeur est réellement ton secret.
 - Marqueur de conflit ou package payant : corrige dans Rider (le package : son option gratuite, `/outil licences <package>`), puis relance.
-- `node_modules`, `obj`… : ajoute le dossier au `.gitignore` du dépôt, puis retire-le des commits pas encore poussés comme pour un secret (ci-dessous), et relance.
+- `node_modules`, `obj`… : les scripts du pack ne les commitent plus (`ship.sh` les laisse hors du commit, avec une ligne `WARNING` : « add obj/ to .gitignore »). S'ils arrivent quand même au contrôle, c'est qu'un commit fait à la main les contient : ajoute le dossier au `.gitignore` du dépôt, puis retire-le des commits pas encore poussés comme pour un secret (ci-dessous), et relance.
 - Vrai secret : il n'est que dans tes commits locaux. Réécris-les sans lui : les commits locaux redeviennent des modifications non commitées, tu remplaces le secret (variable d'environnement, coffre de secrets, valeur factice), puis `/go` fait un seul commit propre et pousse. Branche déjà poussée une fois :
 ```sh
 git reset --soft "@{u}"
@@ -1114,13 +1123,14 @@ Appliqués automatiquement, sans question ni réglage :
 - **Une seule porte pour builder et tester** (`build-test.sh`, .NET et front-end) : une exécution, des lignes `BUILD:`/`TESTS:` explicites, jamais un mode watch, un problème de la machine dit en une ligne.
 - **Échouer tôt, sur la machine et pas sur le code** : `dotnet-problem.sh` et les lignes de `detect-project-type.sh` (SDK, runtimes, node, Chrome) arrêtent un run avant qu'un agent « corrige » le dépôt pour une machine incomplète.
 - **Le lockfile fait foi** : `npm ci` et ses équivalents, jamais un paquet ajouté ou monté par un agent (le plugin refuse `npm install`, `yarn add`, `dotnet package add` en disant quoi faire) ; un lockfile désynchronisé arrête.
-- **Un savoir chargé seulement quand il sert** : les skills (CQRS, intégrations, Blazorise, Fortify) ne coûtent rien tant que le code n'en a pas besoin ; `detect-project-type.sh` nomme celui d'une bibliothèque qu'il trouve (« Blazorise 2.2.2: the skill blazorise »).
+- **Un savoir chargé seulement quand il sert** : les skills (CQRS, intégrations, Blazorise, AutoMapper, EF Core, Fortify) ne coûtent rien tant que le code n'en a pas besoin ; `detect-project-type.sh` nomme celui d'une bibliothèque qu'il trouve (« Blazorise 2.2.2: the skill blazorise », « EF Core 8.0.11 (SqlServer): the skill efcore »).
+- **Des outils seulement quand ils servent** : le pilote ne reçoit que les outils MCP des serveurs de sa commande (`/go` : Jira et GitLab), ses sous-agents ceux de leurs règles (le coder et le test-guardian aucun) ; et ce qu'un script vérifie, le modèle ne le refait pas (`test-guardian.sh verify` : le contrôle après un correctif, le test-guardian rappelé seulement quand ce n'est pas vert).
 - **La version du projet fait foi** : C# et API du framework cible ; une migration de framework est un ticket à part.
 - **Contrats d'abord** : `api-surface.sh` (API publique, routes, champs des DTO), la validation de paquet d'une librairie, la section « Contrat » des fiches entre dépôts liés.
 - **Des tests qui prouvent** : scénarios avec valeurs dans la fiche, `test-lint.sh`, le filet de non-régression avant un correctif, la preuve rouge puis verte deux fois d'un bug ou d'une faille.
 - **Le temps injectable** : un test ne lit jamais l'horloge réelle ; `FakeTimeProvider` quand le code prend un `TimeProvider` (.NET 8 et plus).
-- **Rien d'inutile dans un push** : `node_modules`, `obj`, `bin/Debug`, `TestResults` arrêtés par le contrôle avant push, une installation refusée quand git n'ignore pas `node_modules`.
-- **Les commandes bornées** : ce qui ne finit jamais est refusé aux agents ; le reste a 20 minutes, un test bloqué est arrêté et nommé.
+- **Rien d'inutile dans un push** : `node_modules`, `obj`, `bin/Debug`, `TestResults` jamais commités par les scripts du pack (`ship.sh` les laisse hors du commit et le dit), arrêtés par le contrôle avant push s'ils sont commités à la main, une installation refusée quand git n'ignore pas `node_modules`.
+- **Les commandes bornées** : ce qui ne finit jamais est refusé aux agents ; le reste a 20 minutes (45 pour un script du pack, qui se borne lui-même et dit `TESTS: TIMEOUT`), un test bloqué est arrêté et nommé.
 
 Proposés par `/outil audit` (skill `best-practices`), chacun avec sa preuve dans le dépôt et le plus petit changement qui l'apporte, jamais imposés : validation de paquet et `PublicApiAnalyzers` pour une librairie, Source Link, `TimeProvider` au lieu de `DateTime.Now`, un client front généré depuis l'OpenAPI de l'API, tests d'intégration avec `WebApplicationFactory`, health checks, ProblemDetails, options validées au démarrage, `IHttpClientFactory` et résilience, et les autres pratiques par type de projet du skill.
 
@@ -1131,7 +1141,7 @@ Avant chaque correctif de code existant (une faille de `/fortify` ou de `/fix`, 
 NET: src/App/PathService.cs:Preview lines 0/4 (0%) branches 0/2 uncovered 10-13
 SAFETY NET: THIN (1/5 lines of these 2 methods run by the tests, 20% < 80%): …
 ```
-Sous le minimum (80 % de leurs lignes), il écrit d'abord les tests du comportement **actuel** qui manquent (jamais celui de la faille ou du bug : leurs propres tests le font), les prouve verts deux fois, et les scelle avec la preuve : le coder ne peut pas les modifier, et son correctif est fini quand eux aussi passent. Après le correctif, le test-guardian vérifie que le filet passe toujours et n'est pas descendu sous le minimum. Un test du filet qui échoue alors est une régression (le coder reprend), sauf si l'étape change ce comportement exprès : le test-guardian le met à jour et la MR le liste.
+Sous le minimum (80 % de leurs lignes), il écrit d'abord les tests du comportement **actuel** qui manquent (jamais celui de la faille ou du bug : leurs propres tests le font), les prouve verts deux fois, et les scelle avec la preuve : le coder ne peut pas les modifier, et son correctif est fini quand eux aussi passent. Après le correctif, la même vérification (le filet passe toujours, deux fois, et n'est pas descendu sous le minimum ; aucun fichier ne perd de couverture ; chaque ligne de la méthode d'une faille ou d'un bug est exécutée) est d'abord faite par un script que lance le pilote, `test-guardian.sh verify` : tout vert, l'étape est commitée sans un tour du modèle ; sinon, le test-guardian reprend dans sa session, lui seul remettant un test scellé ou mettant à jour un test du filet que le correctif change exprès. Un test du filet qui échoue alors est une régression (le coder reprend), sauf si l'étape change ce comportement exprès : le test-guardian le met à jour et la MR le liste.
 
 Une page `.razor` : coverlet mesure le C# de la page (son `@code`, et dans son balisage les `@if`, `@foreach` et gestionnaires d'événements), jamais ses balises et leurs attributs. `test-guardian.sh net` le dit (`NET: … BuildRenderTree not measured`) sans s'arrêter : le filet d'une page, ce sont les tests bUnit de ce que voient ses utilisateurs, qui doivent exister et passer avant qu'on la touche, quel que soit le chiffre.
 ```text

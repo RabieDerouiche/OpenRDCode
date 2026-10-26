@@ -93,6 +93,26 @@ run base.sh --why
 check "from: base.sh gives the recorded base" 0 '^feature/TEAM-9-teammate$'
 run workflow-state.sh --no-fetch
 check "from: workflow-state shows the recorded base" 0 'Base branch: origin/feature/TEAM-9-teammate \(the base recorded'
+# the lists of the workflow state are cut past their maximum: a legacy repository whose .gitignore misses obj/
+mkdir -p src/Legacy/obj/Debug
+i=0
+while [ "$i" -lt 75 ]; do : > "src/Legacy/obj/Debug/f$i.cache"; i=$((i + 1)); done
+run workflow-state.sh --no-fetch
+check "state: 60 untracked files listed, the rest counted" 0 '^  … and 15 more untracked files, not listed$'
+truth "state: …not 75 lines of them" '[ "$(printf "%s\n" "$out" | grep -c "^src/Legacy/obj/")" -eq 60 ]'
+check "state: the build outputs that .gitignore misses, said" 0 '^WARNING: 75 untracked file\(s\) of node_modules, obj, bin/Debug, bin/Release or TestResults: build outputs that .gitignore misses'
+rm -rf src/Legacy
+# the sheets: their count, and the Fortify batches whose branch is still here (/fortify does not choose them again)
+sheets="$(git rev-parse --git-common-dir)/opencode-tickets"
+mkdir -p "$sheets"
+printf '# Lot Fortify app / develop\n- Lot Fortify : app / develop - 2026-10-26\n- Branche : feature/ABC-2-suite-travail\n## Plan\n- [x] 1. V1 : Path Manipulation - src/A.cs:3 - Fortify 4512 - Critical\n- [ ] 2. V2 : Log Forging - src/B.cs:9 - Fortify 4513 - High\n' > "$sheets/LOCAL-9.md"
+printf '# Lot Fortify app / develop\n- Lot Fortify : app / develop - 2026-10-20\n- Branche : bugfix/LOCAL-8-gone\n## Plan\n- [x] 1. V1 : XSS - src/C.cs:1 - Fortify 4000 - High\n' > "$sheets/LOCAL-8.md"
+printf '# ABC-1 - Export\n- Branche : feature/ABC-1-ajout-export-csv\n## Plan\n- [ ] 1. x\n' > "$sheets/ABC-1.md"
+mkdir -p "$sheets/ABC-1.tests" "$sheets/LOCAL-9.fortify"
+run workflow-state.sh --no-fetch
+check "state: the count of the sheets, never the folder listed" 0 '^Existing ticket sheets: 3$' 'ABC-1\.tests|LOCAL-9\.fortify'
+check "state: the batch whose branch is here, its vulnerabilities" 0 '^Fortify batches in progress \(their branch is here\): LOCAL-9 \(feature/ABC-2-suite-travail, 1/2 done: Fortify 4512, 4513\)$' 'batches in progress.*LOCAL-8'
+rm -rf "$sheets/LOCAL-9.md" "$sheets/LOCAL-8.md" "$sheets/ABC-1.md" "$sheets/ABC-1.tests" "$sheets/LOCAL-9.fortify"
 printf 'mine\n' > mine.txt
 run ship.sh --no-push "feat: my change (ABC-2)"
 check "from: local commit" 0 'COMMIT: .* feat: my change'
@@ -213,12 +233,24 @@ printf 'module.exports = 1\n' > ClientApp/node_modules/left-pad/index.js
 printf 'x\n' > ClientApp/node_modules/left-pad/package.json
 printf '<html></html>\n' > ClientApp/dist/shop/index.html
 printf '{}\n' > src/Api/obj/project.assets.json
+printf 'namespace Api;\npublic class Orders {}\n' > src/Api/Orders.cs
+run ship.sh --no-push "feat: with an install (ABC-8)"
+check "node_modules: left out of the commit, said once with the count" 0 '^WARNING: 2 file\(s\) of node_modules left out of the commit \(ClientApp/node_modules/left-pad/[a-z.]*, …\): an install or a build output that .gitignore misses; add node_modules/ to .gitignore$'
+check "obj: left out of the commit, said" 0 '^WARNING: 1 file\(s\) of obj left out of the commit \(src/Api/obj/project.assets.json\)'
+check "…the rest committed" 0 '^COMMIT: .*feat: with an install \(ABC-8\)'
+truth "the commit holds the code and dist, never node_modules nor obj" '[ "$(git show --name-only --format= HEAD | sort | tr "\n" " ")" = "ClientApp/dist/shop/index.html src/Api/Orders.cs " ]'
+truth "node_modules and obj stay in the working tree, untracked" '[ -f src/Api/obj/project.assets.json ] && git status --porcelain | grep -q "^?? ClientApp/node_modules/"'
 run ship.sh "feat: with an install (ABC-8)"
-check "node_modules: nothing pushed" 1 'GUARD: STOP'
-check "node_modules: said once, with the count" 1 '2 file\(s\) of node_modules added \(ClientApp/node_modules/left-pad/[a-z.]*, …\)'
+check "dist: a warning at the push, nothing stops it" 0 'WARNING: 1 file\(s\) of dist added'
+check "…pushed" 0 '^PUSH: OK'
+# a build output committed by hand (git commit, not ship.sh): the check before the push still stops it
+git switch -q -c feature/ABC-8-by-hand origin/develop 2>/dev/null
+git add -f src/Api/obj/project.assets.json && git commit -q -m "chore: by hand"
+run ship.sh "feat: by hand (ABC-8)"
+check "obj committed by hand: nothing pushed" 1 'GUARD: STOP'
 check "obj: said" 1 '1 file\(s\) of obj added \(src/Api/obj/project.assets.json\)'
-check "dist: a warning" 1 'WARNING: 1 file\(s\) of dist added'
-truth "node_modules: the branch is not on origin" '! git ls-remote --exit-code --heads origin feature/ABC-8-modules >/dev/null 2>&1'
+truth "obj by hand: the branch is not on origin" '! git ls-remote --exit-code --heads origin feature/ABC-8-by-hand >/dev/null 2>&1'
+rm -rf ClientApp/node_modules src/Api/obj
 
 # ---------- diff-guard.sh: the files of the HTTP clients (/outil http), keys, .env, tokens ----------
 # guard_case <branch> <files: path=content pairs, one per line>: a branch from origin/develop with these files committed

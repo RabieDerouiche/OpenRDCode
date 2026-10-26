@@ -117,6 +117,17 @@ if [ -n "$projects" ]; then
     done
   fi
 
+  # Entity Framework Core: its version (its queries and migrations change with it) and its providers, and the skill that
+  # knows it
+  if git grep -q -i -E 'Include="(Microsoft\.EntityFrameworkCore|Npgsql\.EntityFrameworkCore\.PostgreSQL|Pomelo\.EntityFrameworkCore\.MySql|Oracle\.EntityFrameworkCore)' -- '*.csproj' 'Directory.Packages.props' 2>/dev/null; then
+    v=$(git grep -h -o -i -E 'Include="Microsoft\.EntityFrameworkCore(\.[A-Za-z]+)*"[^>]*Version="[0-9][^"]*"' -- '*.csproj' 'Directory.Packages.props' 2>/dev/null |
+      sed -E 's/.*Version="([^"]+)".*/\1/' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)
+    providers=$(git grep -h -o -i -E 'Include="(Microsoft\.EntityFrameworkCore\.(SqlServer|Sqlite|InMemory|Cosmos)|Npgsql\.EntityFrameworkCore\.PostgreSQL|Pomelo\.EntityFrameworkCore\.MySql|Oracle\.EntityFrameworkCore)"' -- '*.csproj' 'Directory.Packages.props' 2>/dev/null |
+      sed -E 's/Include="//; s/"$//; s/^Microsoft\.EntityFrameworkCore\.//; s/^Npgsql\.EntityFrameworkCore\.//; s/^Pomelo\.EntityFrameworkCore\.//; s/^Oracle\.EntityFrameworkCore$/Oracle/' | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/ $//; s/ /, /g')
+    evidence="$evidence
+- EF Core${v:+ $v}${providers:+ ($providers)}: the skill efcore (its queries, its migrations and the EF commands the agents may run, the tests of code that uses a DbContext)"
+  fi
+
   if [ -n "$abp" ]; then
     evidence="$evidence
 - ABP Framework (Volo.Abp packages, e.g. in $abp): follow the conventions of its existing modules (application services, repositories, permissions, DTO mapping)"

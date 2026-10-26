@@ -51,13 +51,15 @@ case "$lower" in
   "")
     echo "Mode : menu"
     echo "Candidats aux tests unitaires (fichiers de production modifiés depuis 90 jours qu'aucun test ne nomme) :"
-    git ls-files '*.cs' | grep -i -E '(^|/)[^/]*tests?[^/]*/' > "${TMPDIR:-/tmp}/tests-sh.$$" 2>/dev/null
+    # the names the test files use, read once (a word of letters, digits and _): a class one of them names has tests
+    # already (one pass over the tests, not one per file changed: a large repository answers within the time of a run)
+    git ls-files '*.cs' | grep -i -E '(^|/)[^/]*tests?[^/]*/' | tr '\n' '\0' | xargs -0 grep -h -o -E '[A-Za-z0-9_]+' 2>/dev/null |
+      sort -u > "${TMPDIR:-/tmp}/tests-sh.$$"
     git log --since=90.days --name-only --pretty=format: -- '*.cs' 2>/dev/null | grep . | grep -v -i -E '(^|/)[^/]*tests?[^/]*/|(^|/)(Migrations|obj|bin)/|Program\.cs$|Startup\.cs$|\.Designer\.cs$|(Dto|Options|Settings|Request|Response|Command|Query|Controller|DbContext|Extensions|Module|Registration|Configuration|Endpoints?)\.cs$' |
       sort | uniq -c | sort -rn | while read -r count file; do
         [ -f "$file" ] || continue
         cls=$(basename "$file" .cs)
-        # a test file that names the class: it has tests already
-        [ -s "${TMPDIR:-/tmp}/tests-sh.$$" ] && xargs grep -l -E "(^|[^A-Za-z0-9_])$cls([^A-Za-z0-9_]|$)" < "${TMPDIR:-/tmp}/tests-sh.$$" 2>/dev/null | grep -q . && continue
+        grep -q -x -F -- "$cls" "${TMPDIR:-/tmp}/tests-sh.$$" && continue
         echo "  - $file ($count modification(s))"
       done | head -n 6
     rm -f "${TMPDIR:-/tmp}/tests-sh.$$"

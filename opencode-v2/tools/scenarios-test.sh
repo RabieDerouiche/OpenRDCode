@@ -767,6 +767,9 @@ EOF
 run test-guardian.sh green "$T5" FullyQualifiedName~InvoiceDiscountTests
 check "the coder's done condition: the net catches the regression" 1 '^STOP: 1 of these tests FAIL'
 check "…and names it" 1 'App.Tests.InvoiceDiscountTests.Discount_NegativePercent_Unchanged'
+# a coder that reported OK all the same: the pilot's checks after the step (go.md 5.3) hand it to the test-guardian
+run test-guardian.sh verify S1 FullyQualifiedName~InvoiceDiscountTests
+check "verify: the regression goes to the test-guardian, never a STOP" 1 '^VERIFY: TEST-GUARDIAN \(the tests of the proof or of its net do not pass, twice the same way\)' '^STOP:'
 cat > src/App/Invoice.cs <<'EOF'
 namespace App;
 public class Invoice
@@ -778,7 +781,11 @@ public class Invoice
 EOF
 run test-guardian.sh green "$T5" FullyQualifiedName~InvoiceDiscountTests
 check "its next round: the net green" 0 '^GREEN: 3 tests pass, twice$'
-# the same test-guardian, phase « après la modification »
+# go.md 5.3: the pilot's checks after the step, by script: all green, no turn of the test-guardian
+run test-guardian.sh verify S1 FullyQualifiedName~InvoiceDiscountTests
+check "verify after the step: OK" 0 '^VERIFY: OK \(the sealed tests as sealed, green twice, no test failing that passed before, no file lost coverage, the net at its minimum\): commit it$'
+check "verify: the net kept, as the test-guardian measures it" 0 '^SAFETY NET: OK \(1/1 lines of this method run by the tests, 100%; minimum 80%\)$'
+# the same checks by the test-guardian, phase « après la modification », when verify hands them over
 run test-guardian.sh sealed S1
 check "after: the net as sealed" 0 '^SEAL: OK, 1 test files as sealed$'
 run test-guardian.sh coverage S1-after "$T5" src/App/Invoice.cs
@@ -879,6 +886,9 @@ public static class Shipping
 EOF
 run test-guardian.sh green "$T6" FullyQualifiedName~ShippingFeeTests
 check "the coder's done condition: the net green" 0 '^GREEN: 2 tests pass, twice$'
+run test-guardian.sh verify S1 FullyQualifiedName~ShippingFeeTests
+check "verify after the step, from a net measured with no test at all: OK" 0 '^VERIFY: OK \(' '^STOP:'
+check "verify: …nothing lost from no test at all" 0 '^COVERAGE: no file lost coverage$'
 run test-guardian.sh sealed S1
 check "after: the net as sealed" 0 '^SEAL: OK, 1 test files as sealed$'
 run test-guardian.sh coverage S1-after "$T6" src/Rules/Shipping.cs

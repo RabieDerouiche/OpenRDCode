@@ -17,6 +17,11 @@
 
 MAX_DIFF_LINES=1500
 MAX_SHEETS=10
+# The lists of files are cut past these counts, with what was left out: thousands of untracked files (bin/ and obj/ that
+# no .gitignore ignores, in a legacy repository) or of changed files would fill the context of the agent before its
+# first step, and every request of the run would carry them
+MAX_FILES=150
+MAX_UNTRACKED=60
 
 # English git messages whatever the language of the machine
 LC_ALL=C
@@ -101,6 +106,11 @@ if [ -n "$common" ] && [ -d "$common/opencode/tickets" ] && [ ! -e "$sheets" ]; 
 fi
 remote_url=$(git remote get-url origin 2>/dev/null | sed -E 's#://[^@/]+@#://#')
 
+# A list cut after <max> lines: "  … and <n> more <what>, not listed"
+capped() {
+  awk -v max="$1" -v what="$2" 'NR <= max { print; next } { more++ } END { if (more) printf "  … and %d more %s, not listed\n", more, what }'
+}
+
 # Remote copy of the branch: its upstream, otherwise origin/<branch> when it exists (pushed from another computer)
 remote_copy=$upstream
 if [ -z "$remote_copy" ] && [ -n "$branch" ] && git rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null; then
@@ -147,7 +157,7 @@ if [ -n "$remote_copy" ]; then
   echo "Pushed commit date: ${pushed#* }"
   if [ "${ahead:-0}" -gt 0 ]; then
     echo "Local commits not pushed:"
-    git log --oneline "$remote_copy..HEAD"
+    git log --oneline "$remote_copy..HEAD" | capped 40 "commits"
   fi
 else
   echo "Branch vs its remote copy: none"
@@ -166,15 +176,38 @@ fi
 echo "Uncommitted changes summary: $(git diff HEAD --shortstat)"
 echo "Staged changes summary: $(git diff --staged --shortstat)"
 echo "Uncommitted files (staged and unstaged):"
-git diff HEAD --name-status
+git diff HEAD --name-status | capped "$MAX_FILES" "uncommitted files (git status shows them all)"
 echo "Untracked files:"
-git ls-files --others --exclude-standard
+untracked=$(git ls-files --others --exclude-standard)
+printf '%s\n' "$untracked" | grep . | capped "$MAX_UNTRACKED" "untracked files"
+# installed dependencies and build outputs that the .gitignore misses: ship.sh leaves them out of its commits
+outputs=$(printf '%s\n' "$untracked" | grep -c -E '(^|/)(node_modules|obj|TestResults)/|(^|/)bin/(Debug|Release)/')
+[ "$outputs" -gt 0 ] && echo "WARNING: $outputs untracked file(s) of node_modules, obj, bin/Debug, bin/Release or TestResults: build outputs that .gitignore misses (never committed by the pack's scripts; add them to .gitignore)"
 if [ -n "$base" ]; then
   echo "Files changed on the branch (vs $base):"
-  git diff --name-status "$base...HEAD"
+  git diff --name-status "$base...HEAD" | capped "$MAX_FILES" "files (git diff --stat $base...HEAD gives them all)"
 fi
-echo "Existing ticket sheets:"
-ls "$sheets" 2>/dev/null
+# the sheets: their count here, the most recent in the summary below; the open Fortify batches, for /fortify
+count=0
+for f in "$sheets"/*.md; do [ -f "$f" ] && count=$((count + 1)); done
+echo "Existing ticket sheets: $count"
+if [ "$count" -gt 0 ]; then
+  # a batch of /fortify whose branch is still here: its vulnerabilities are not chosen again by the next batch
+  { echo "#local branches"; git for-each-ref --format='%(refname:short)' refs/heads/; } | awk '
+    FNR == NR { if (FNR > 1) lb[$0] = 1; next }
+    FNR == 1 { flush(); file = FILENAME; batch = 0; br = ""; ids = ""; done = 0; todo = 0 }
+    /^- Lot Fortify/ { batch = 1 }
+    /^- Branche/ && br == "" { br = $0; sub(/^- Branche *: */, "", br) }
+    /^- \[x\]/ { done++ }
+    /^- \[ \]/ { todo++ }
+    /^- \[[ x]\] [0-9]+\. V[0-9]+ / && match($0, /Fortify [^ ]+/) { ids = ids (ids == "" ? "" : ", ") substr($0, RSTART + 8, RLENGTH - 8) }
+    END { flush(); if (line != "") print "Fortify batches in progress (their branch is here): " line }
+    function flush(   k) {
+      if (file == "" || !batch || !(br in lb)) return
+      k = file; sub(/^.*\//, "", k); sub(/\.md$/, "", k)
+      line = line (line == "" ? "" : " ; ") k " (" br ", " done "/" (done + todo) " done: Fortify " (ids == "" ? "?" : ids) ")"
+    }' - "$sheets"/*.md 2>/dev/null
+fi
 if [ -d "$sheets" ]; then
   # One line per sheet, most recent first
   set --

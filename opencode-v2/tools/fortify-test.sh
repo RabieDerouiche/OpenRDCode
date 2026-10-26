@@ -555,7 +555,7 @@ public class PathServiceSecurityTests
 EOF
   "$SH" "$scripts/test-guardian.sh" red "$T" FullyQualifiedName~Security_PathManipulation_V1 || return 1
   "$SH" "$scripts/test-guardian.sh" tests-only || return 1
-  "$SH" "$scripts/test-guardian.sh" seal V1 tests/App.Tests/PathServiceContextTests.cs tests/App.Tests/PathServiceSecurityTests.cs
+  "$SH" "$scripts/test-guardian.sh" seal V1 --problem src/App/PathService.cs:Read tests/App.Tests/PathServiceContextTests.cs tests/App.Tests/PathServiceSecurityTests.cs
 }
 guardian_v2() {
   "$SH" "$scripts/test-guardian.sh" coverage V2-before "$T" src/App/DownloadController.cs || return 1
@@ -733,6 +733,15 @@ etat "$B1" V1 "- correctif : src/App/PathService.cs - coder ses_c1"
 # what the tests of develop and the proof run after the fix (the net of V1 adds Preview)
 cover "src/App/PathService.cs c=App.PathService m=.ctor 3:1 5:1 m=Read 8:1 9:1 10:1:2/2 11:1 12:1 14:1 15:1 m=Preview 18:0 19:0 20:0:0/2 21:0" \
   "src/App/FileStore.cs c=App.FileStore m=ReadAll 5:0" "src/App/RedirectController.cs c=App.RedirectController m=Go 5:1"
+# 4c by script first: the pilot's verify, the checks of the phase « après » on what the seal kept
+run test-guardian.sh verify V1 "FullyQualifiedName~Security_PathManipulation_V1|FullyQualifiedName~PathServiceContextTests"
+check "4c verify: OK, no test-guardian turn" 0 '^VERIFY: OK \(the sealed tests as sealed, green twice, no test failing that passed before, no file lost coverage, the net at its minimum, every line of the method of the problem run\)' '^STOP:'
+check "4c verify: the proof and its net green twice" 0 '^GREEN: 4 tests pass, twice$'
+check "4c verify: the test that already failed on develop is not the fix's" 0 '^TESTS: [0-9]+ passed, 1 failed$'
+check "4c verify: no file lost coverage" 0 '^COVERAGE: no file lost coverage$'
+check "4c verify: the net of the seal (V1-net: Read and Preview), at its minimum" 0 '^SAFETY NET: OK \(11/11 lines of these 2 methods run by the tests, 100%; minimum 80%\)$'
+check "4c verify: every line of the method of the problem runs" 0 '^PROBLEM: src/App/PathService.cs:Read lines 7/7 \(100%\)'
+# the same checks, one by one, as the test-guardian makes them when verify hands the phase over
 run test-guardian.sh sealed V1
 check "4c: the tests as sealed" 0 '^SEAL: OK, 2 test files as sealed$'
 run test-guardian.sh green "$T" "FullyQualifiedName~Security_PathManipulation_V1|FullyQualifiedName~PathServiceContextTests"
@@ -785,6 +794,10 @@ public class RedirectSecurityTests
 EOF
 run test-guardian.sh green "$T" FullyQualifiedName~Security_OpenRedirect_V3
 check "the coder's own green passes (it changed the test)" 0 '^GREEN: 1 tests pass'
+run test-guardian.sh verify V3 FullyQualifiedName~Security_OpenRedirect_V3
+check "4c verify: the changed seal goes to the test-guardian (it alone restores), never a STOP" 1 '^VERIFY: TEST-GUARDIAN \(the sealed tests changed since the seal: only the test-guardian puts them back\)' '^(STOP:|GREEN:)'
+check "4c verify: …the file named" 1 '^FAILED: the test files of the proof V3 changed since they were sealed: tests/App.Tests/RedirectSecurityTests.cs'
+truth "4c verify: the changed test left as it is for the test-guardian" 'grep -q "evil.example\", new RedirectController" tests/App.Tests/RedirectSecurityTests.cs'
 run test-guardian.sh sealed V3
 check "4c: the seal catches it" 1 '^STOP: the test files of the proof V3 changed since they were sealed'
 run test-guardian.sh restore V3
@@ -814,6 +827,9 @@ EOF
 run test-guardian.sh green "$T" FullyQualifiedName~Security_OpenRedirect_V3
 check "after the coder's round: GREEN" 0 '^GREEN: 1 tests pass, twice$'
 cover "src/App/RedirectController.cs c=App.RedirectController m=Go 5:1:2/2 m=GoOrFallback 8:0 9:0:0/2 10:0 11:0 12:0 13:0:0/2 14:0 m=IsLocalUrl 16:1:2/2"
+run test-guardian.sh verify V3 FullyQualifiedName~Security_OpenRedirect_V3
+check "4c verify: a lost coverage goes to the test-guardian" 1 '^VERIFY: TEST-GUARDIAN \(a file lost coverage\)' '^STOP:'
+check "4c verify: …the file named" 1 '^FAILED: coverage lost after the change in src/App/RedirectController.cs$'
 run test-guardian.sh coverage V3-after "$T" src/App/RedirectController.cs
 run test-guardian.sh compare V3-before V3-after
 check "4c: a file lost coverage: STOP" 1 '^STOP: coverage lost after the change in src/App/RedirectController.cs$'
@@ -834,6 +850,8 @@ run test-guardian.sh compare V3-before V3-after
 check "4c: then no loss" 0 '^COVERAGE: no file lost coverage$'
 run test-guardian.sh net V3-after src/App/RedirectController.cs:Go
 check "4c: the net of Go kept" 0 '^SAFETY NET: OK \(1/1 lines of this method run by the tests, 100%; minimum 80%\)$'
+run test-guardian.sh verify V3 FullyQualifiedName~Security_OpenRedirect_V3
+check "4c verify, after the coder's round: OK (a seal without --problem: no check of the method)" 0 '^VERIFY: OK \(the sealed tests as sealed, green twice, no test failing that passed before, no file lost coverage, the net at its minimum\): commit it$'
 chain "test-guardian.sh sealed V3" "ship.sh --no-push 'fix(security): open redirect in RedirectController.cs (V3, LOCAL-1)' '- Fortify 1003'" "ticket-sheet.sh tick 3 '/fortify V3 - corrigée - tests 0+1 - couverture sans perte'"
 check "4d: committed" 0 '^COMMIT: .*open redirect in RedirectController.cs \(V3, LOCAL-1\)'
 truth "4d: the sealed test, as sealed, in the commit" 'git show HEAD:tests/App.Tests/RedirectSecurityTests.cs | grep -q "Assert.Equal(\"/\""'

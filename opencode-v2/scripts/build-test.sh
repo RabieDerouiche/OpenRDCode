@@ -37,6 +37,52 @@
 DOTNET_CLI_UI_LANGUAGE=en
 export DOTNET_CLI_UI_LANGUAGE
 HANG=${TEST_GUARDIAN_HANG:-5m}
+# The time of this command, the wait for the lock of the folder included: the pack's plugin stops a command of these
+# scripts after 45 minutes, and its output would be lost; the script stops its own build or test run before that, says
+# what ran and why ("BUILD: TIMEOUT", "TESTS: TIMEOUT"). A whole test run gets 25 minutes at most (TEST_SUITE_LIMIT). The
+# start is the one of the script that called this one (test-guardian.sh changes), when there is one.
+OPENCODE_COMMAND_START=${OPENCODE_COMMAND_START:-$(date +%s)}
+export OPENCODE_COMMAND_START
+DEADLINE=${BUILD_TEST_DEADLINE:-2520}
+seconds() {
+  case "$1" in
+    *h) echo $((${1%h} * 3600)) ;;
+    *m) echo $((${1%m} * 60)) ;;
+    *s) echo "${1%s}" ;;
+    *) echo "$1" ;;
+  esac
+}
+SUITE_S=$(seconds "${TEST_SUITE_LIMIT:-25m}")
+# the seconds left before the deadline of this command; for a test run, never more than the limit of a whole run
+left() {
+  l=$((OPENCODE_COMMAND_START + DEADLINE - $(date +%s)))
+  [ "$1" = tests ] && [ "$l" -gt "$SUITE_S" ] && l=$SUITE_S
+  [ "$l" -gt 0 ] || l=1
+  echo "$l"
+}
+# minutes, rounded, for the lines the agents read
+minutes() { echo $((($1 + 30) / 60)); }
+# A process and its descendants (dotnet starts MSBuild nodes and test hosts)
+kill_tree() {
+  for child in $(pgrep -P "$1" 2>/dev/null); do
+    kill_tree "$child"
+  done
+  kill "$1" 2>/dev/null
+}
+# bounded <seconds> <command>…: the command, stopped with everything it started after <seconds>: its status, or 124
+bounded() {
+  limit=$1
+  shift
+  "$@" &
+  pid=$!
+  # the watchdog writes nowhere: a sleeping process must not keep the output of the caller open
+  ( sleep "$limit"; kill_tree "$pid" ) </dev/null >/dev/null 2>&1 &
+  watchdog=$!
+  wait "$pid"
+  rc=$?
+  if kill -0 "$watchdog" 2>/dev/null; then kill_tree "$watchdog"; else rc=124; fi
+  return "$rc"
+}
 
 # The lock of test-guardian.sh (same folder, same rules); not taken again under a script that holds it
 gitdir=$(git rev-parse --absolute-git-dir 2>/dev/null)
@@ -52,8 +98,8 @@ take_lock() {
       continue
     fi
     [ "$waited" -eq 0 ] && echo "WAIT: another build or test run of this folder is in progress: this one starts after it"
-    if [ "$waited" -ge "${TEST_GUARDIAN_LOCK_WAIT:-900}" ]; then
-      echo "BUILD: NOT RUN (another build or test run of this folder has been running for more than ${TEST_GUARDIAN_LOCK_WAIT:-900} s)"
+    if [ "$waited" -ge "${TEST_GUARDIAN_LOCK_WAIT:-1200}" ]; then
+      echo "BUILD: NOT RUN (another build or test run of this folder has been running for more than ${TEST_GUARDIAN_LOCK_WAIT:-1200} s)"
       exit 1
     fi
     sleep 2
@@ -153,10 +199,15 @@ if [ "$no_build" -eq 1 ]; then
   : > "$out"
   status=0
 else
-  dotnet build ${target:+"$target"} -nologo -v q -clp:ErrorsOnly > "$out" 2>&1
+  bounded "$(left)" dotnet build ${target:+"$target"} -nologo -v q -clp:ErrorsOnly > "$out" 2>&1
   status=$?
 fi
 tail -n 60 "$out"
+if [ "$status" -eq 124 ]; then
+  echo "BUILD: TIMEOUT (stopped after $(minutes $(($(date +%s) - OPENCODE_COMMAND_START))) min, the wait for another build of this folder included) - tests not run"
+  echo "NOTE: the build of this target does not end in the time of a command of the pack on this machine: a smaller target (a project instead of the solution, AGENTS.md « Build & test »), or the machine is overloaded (several builds at once). Never raise a limit."
+  exit 124
+fi
 if [ "$status" -ne 0 ]; then
   # Distinct errors: MSBuild may print the same error once per project that builds the file
   errors=$(grep -E ': error [A-Z]+[0-9]+' "$out" | sed -E 's/ \[[^]]*\]$//' | sort -u | wc -l | tr -d ' ')
@@ -218,11 +269,15 @@ vstest_run() {
   run_target=$1
   shift
   if [ -n "$blame" ]; then
-    dotnet test ${run_target:+"$run_target"} --no-build -nologo --blame-hang-timeout "$HANG" --blame-hang-dump-type none \
+    bounded "$(left tests)" dotnet test ${run_target:+"$run_target"} --no-build -nologo --blame-hang-timeout "$HANG" --blame-hang-dump-type none \
       ${results:+--results-directory "$results"} "$@"
   else
-    dotnet test ${run_target:+"$run_target"} --no-build -nologo "$@"
+    bounded "$(left tests)" dotnet test ${run_target:+"$run_target"} --no-build -nologo "$@"
   fi
+}
+# a test application of Microsoft.Testing.Platform, within the time left (its own --timeout)
+mtp_run() {
+  TEST_SUITE_LIMIT="$(left tests)s" sh "$platform" run "$@"
 }
 # The test projects of the target and how each one runs (test-platform.sh): VSTest or Microsoft.Testing.Platform
 platform="$(dirname "$0")/test-platform.sh"
@@ -238,11 +293,17 @@ per_project() {
   if [ -n "$vst" ]; then
     while IFS= read -r p; do
       [ -n "$p" ] || continue
-      if vstest_run "$p" "$@" > "$one" 2>&1; then
+      [ "$timed_out" -eq 1 ] && break
+      vstest_run "$p" "$@" > "$one" 2>&1
+      rc=$?
+      if [ "$rc" -eq 0 ]; then
         cat "$one" >> "$out"
+      elif [ "$rc" -eq 124 ]; then
+        cat "$one" >> "$out"
+        timed_out=1 status=1
       elif grep -q "$MTP_REFUSAL" "$one"; then
         echo "NOTE: $p runs on Microsoft.Testing.Platform, refused by dotnet test in its default mode on this SDK: run as its test application (test-platform.sh)" >> "$out"
-        sh "$platform" run "$p" "$@" >> "$out" 2>&1 || status=1
+        mtp_run "$p" "$@" >> "$out" 2>&1 || status=1
       else
         cat "$one" >> "$out"
         status=1
@@ -253,13 +314,16 @@ LIST
   fi
   while IFS= read -r p; do
     [ -n "$p" ] || continue
-    sh "$platform" run "$p" "$@" >> "$out" 2>&1 || status=1
+    [ "$timed_out" -eq 1 ] && break
+    mtp_run "$p" "$@" >> "$out" 2>&1 || status=1
+    grep -q '^TIMEOUT: ' "$out" && timed_out=1
   done <<LIST
 $mtp
 LIST
 }
 mixed=0
 tests_ok=0
+timed_out=0
 why=""
 # why no test ran: no test project, a filter that matches nothing, or test projects whose tests did not run (none
 # written yet, or a solution that does not build them)
@@ -275,6 +339,7 @@ none_run() {
 if [ -z "$mtp" ]; then
   vstest_run "$target" "$@" > "$out" 2>&1
   status=$?
+  [ "$status" -eq 124 ] && timed_out=1
   # dotnet test of the .NET 10 SDK refuses a Microsoft.Testing.Platform v2 project in its default mode: those run as
   # applications, the others as before
   if grep -q "$MTP_REFUSAL" "$out"; then
@@ -315,6 +380,14 @@ if [ "$total" -gt 80 ]; then
   fi
 fi
 tail -n 80 "$out"
+if [ "$timed_out" -eq 1 ]; then
+  failed=$(sed -n -e 's/^[[:space:]]*Failed[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}\[[^]]*\][[:space:]]*$/\1/p' \
+    -e 's/^[[:space:]]*failed[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]\{1,\}([0-9][^)]*)[[:space:]]*$/\1/p' "$out" | sort -u)
+  [ -n "$failed" ] && echo "FAILED TESTS ($(printf '%s\n' "$failed" | grep -c .)) before the stop: $(printf '%s\n' "$failed" | head -n 25 | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
+  echo "TESTS: TIMEOUT (the tests ran until the time of this command ran out, $(minutes $(($(date +%s) - OPENCODE_COMMAND_START))) min with the build and the wait for another build of this folder, and were stopped: no result for the whole run)"
+  echo "NOTE: a test run this long cannot prove a change on this machine: AGENTS.md « Build & test », « Tests locaux », gives a filter that leaves its slow tests to the CI (integration, end-to-end, those that need Docker, a database or the network; /outil setup proposes it). Never raise a limit, never run the tests another way."
+  exit 124
+fi
 if [ "$status" -ne 0 ]; then
   # The names of the failed tests, from the whole output (VSTest: "Failed <name> [12 ms]"; Microsoft.Testing.Platform:
   # "failed <name> (12ms)"): /go compares them with the tests that already failed on develop before the ticket

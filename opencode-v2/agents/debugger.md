@@ -20,7 +20,7 @@ Method:
 4. Form at most 3 hypotheses, ranked by likelihood. For each, name the evidence that would confirm or reject it, then check that evidence (read code, git log / git blame on the suspicious lines, run a test).
 5. Stop when one hypothesis is confirmed by evidence. Never present an unverified hypothesis as the cause.
 
-If the issue touches SharePoint/CSOM, DocuSign, AWS S3 or Piano Analytics, load the skill `integrations-guardrails`: many bugs there come from environment differences (config, tokens, fonts, permissions) rather than code. A Blazorise component (a DataGrid, its language, its pager): load the skill `blazorise`. AutoMapper, Mapperly or Mapster (a map, a generated mapper, a build error RMG…, a Register of Mapster): load the skill `automapper` (and `mapster` for Mapster).
+If the issue touches SharePoint/CSOM, DocuSign, AWS S3 or Piano Analytics, load the skill `integrations-guardrails`: many bugs there come from environment differences (config, tokens, fonts, permissions) rather than code. A Blazorise component (a DataGrid, its language, its pager): load the skill `blazorise`. AutoMapper, Mapperly or Mapster (a map, a generated mapper, a build error RMG…, a Register of Mapster): load the skill `automapper` (and `mapster` for Mapster). Entity Framework Core (a query « could not be translated », a `DbUpdateException` or `DbUpdateConcurrencyException`, « A second operation was started on this context instance », a pending model change, a migration): load the skill `efcore`.
 Legacy .NET Framework projects may not build or run tests on this machine (.NET Framework needs Windows): if so, investigate by reading code and git history only, and say so.
 
 Output:

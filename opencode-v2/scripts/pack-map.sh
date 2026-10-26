@@ -85,6 +85,7 @@ best-practices	Les bonnes pratiques par type de projet : erreurs et Result, feat
 blazorise	Blazorise : son remplacement par du Razor 100 % natif, sans paquet, page par page sous un filet de tests bUnit (inventaire, composants de l'application et vérification par un script) ; tant qu'il est là, la langue de son DataGrid et l'API de sa version.
 build-fix	Réparer un build cassé par le plus petit changement, quelle que soit la version de .NET.
 dotnet-cqrs-conventions	Les conventions des API CQRS (commands, queries, handlers, validators).
+efcore	Entity Framework Core : des requêtes qui restent rapides, des écritures et des transactions sûres, des migrations qui ne perdent aucune donnée, les tests du code qui utilise un DbContext.
 explain-code	Expliquer un fichier, un endpoint ou une page de bout en bout, pour un nouvel arrivant.
 fortify-remediation	Corriger une faille Fortify ou Sonar selon sa catégorie, avec sa preuve.
 integrations-guardrails	Les pièges des intégrations : SharePoint, DocuSign, AWS S3, Piano Analytics.
@@ -122,6 +123,7 @@ cat > "$tmp/plugin.fr" <<'EOF'
 28	Envoie au modèle les réglages de chaque agent (température, effort de réflexion), que la v2 lisait sans les envoyer.
 29	Chronomètre chaque run (le modèle, les sous-agents, les outils, tes réponses) pour /outil vitesse, jamais le texte des demandes.
 30	Allège chaque requête des agents du pack : les règles qui ne servent qu'à la conversation ne leur partent plus.
+31	Ne donne au pilote que les outils des serveurs MCP de sa commande (/go : Jira et GitLab) : des requêtes plus courtes, un choix d'outil plus sûr.
 EOF
 
 # ---------- what the files of the pack say ----------
