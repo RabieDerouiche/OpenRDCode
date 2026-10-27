@@ -261,13 +261,15 @@ push_once() {
   [ "$limit" -ge 10 ] || limit=10
   git push -u origin "refs/heads/$branch:refs/heads/$branch" </dev/null >"$log" 2>&1 &
   pid=$!
-  ( sleep "$limit"; kill_tree "$pid" ) </dev/null >/dev/null 2>&1 &
+  # the watchdog says itself that it stopped the push (its status 124): one that has just ended, not reaped by the shell
+  # yet, still answers kill -0
+  ( sleep "$limit" && kill_tree "$pid" && exit 124 ) </dev/null >/dev/null 2>&1 &
   watchdog=$!
   wait "$pid" 2>/dev/null
   status=$?
-  if kill -0 "$watchdog" 2>/dev/null; then
-    kill_tree "$watchdog"
-  else
+  kill -0 "$watchdog" 2>/dev/null && kill_tree "$watchdog"
+  wait "$watchdog" 2>/dev/null
+  if [ $? -eq 124 ]; then
     status=124
     echo "no answer from the remote within $limit s" >> "$log"
   fi

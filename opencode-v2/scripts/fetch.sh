@@ -50,14 +50,15 @@ while :; do
   [ "$limit" -ge 5 ] || limit=5
   git fetch "$@" </dev/null >/dev/null 2>"$errors" &
   pid=$!
-  # The watchdog writes nowhere: a sleeping process must not keep the output of the caller open
-  ( sleep "$limit"; kill_tree "$pid" ) </dev/null >/dev/null 2>&1 &
+  # The watchdog writes nowhere: a sleeping process must not keep the output of the caller open. It says itself that it
+  # stopped the fetch (its status 124): one that has just ended, not reaped by the shell yet, still answers kill -0
+  ( sleep "$limit" && kill_tree "$pid" && exit 124 ) </dev/null >/dev/null 2>&1 &
   watchdog=$!
   wait "$pid" 2>/dev/null
   status=$?
-  if kill -0 "$watchdog" 2>/dev/null; then
-    kill_tree "$watchdog"
-  else
+  kill -0 "$watchdog" 2>/dev/null && kill_tree "$watchdog"
+  wait "$watchdog" 2>/dev/null
+  if [ $? -eq 124 ]; then
     status=124
     [ "$errors" != /dev/null ] && echo "no answer from the remote within $limit s" >> "$errors"
   fi

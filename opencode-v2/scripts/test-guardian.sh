@@ -135,11 +135,15 @@ bounded() {
   shift
   "$@" &
   pid=$!
-  ( sleep "$limit"; kill_tree "$pid" ) </dev/null >/dev/null 2>&1 &
+  # the watchdog says itself that it stopped the command (its status 124): one that has just ended, not reaped by the
+  # shell yet, still answers kill -0, and its stop was taken for a failure of the tests (exit 143)
+  ( sleep "$limit" && kill_tree "$pid" && exit 124 ) </dev/null >/dev/null 2>&1 &
   watchdog=$!
   wait "$pid"
   rc=$?
-  if kill -0 "$watchdog" 2>/dev/null; then kill_tree "$watchdog"; else rc=124; fi
+  kill -0 "$watchdog" 2>/dev/null && kill_tree "$watchdog"
+  wait "$watchdog" 2>/dev/null
+  [ $? -eq 124 ] && rc=124
   return "$rc"
 }
 # again <log> <dotnet arguments>…: dotnet into the log, bounded by the time of this command, and run again after a

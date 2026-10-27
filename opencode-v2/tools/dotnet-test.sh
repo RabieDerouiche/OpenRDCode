@@ -112,7 +112,7 @@ run test-platform.sh scope App.sln
 check "scope: the test project of the solution only" 0 "^vstest	tests/App.Tests/App.Tests.csproj$" 'src/App'
 
 run build-test.sh
-check "VSTest: whole solution" 0 '^TESTS: OK$' 'NOTE|exec'
+check "VSTest: whole solution" 0 '^TESTS: OK$' 'NOTE|exec|Terminated'
 check "VSTest: fingerprint after the whole solution" 0 '^Code fingerprint of this run: '
 called "VSTest: one dotnet test with the blame, no exec, no run" '^dotnet test --no-build -nologo --blame-hang-timeout 5m' '^dotnet (exec|run)'
 truth "VSTest: one dotnet test call" '[ "$(printf "%s\n" "$calls" | grep -c "^dotnet test")" -eq 1 ]'
@@ -338,7 +338,7 @@ truth "timeout: no test host left running" '! pgrep -f "fake-dotnet|dotnet test"
 # the wait for the lock counts: a command that already used its time gets what is left, not a whole run
 out=$(FAKE_DOTNET_SLOW_TEST=5 OPENCODE_COMMAND_START=$(($(date +%s) - 2518)) "$SHELL_UNDER_TEST" "$scripts/build-test.sh" 2>&1)
 status=$?
-check "timeout: the time already spent (the wait for the lock) counts" 124 '^TESTS: TIMEOUT \(the tests ran until the time of this command ran out, 42 min with the build and the wait'
+check "timeout: the time already spent (the wait for the lock) counts" 124 '^TESTS: TIMEOUT \(the tests ran until the time of this command ran out, 42 min with the build and the wait' 'TESTS: FAILED'
 out=$(FAKE_DOTNET_SLOW_TEST=5 TEST_SUITE_LIMIT=1s "$SHELL_UNDER_TEST" "$scripts/test-guardian.sh" green tests/App.Tests/App.Tests.csproj FullyQualifiedName~InvoiceTests.Total 2>&1)
 status=$?
 check "timeout: the test-guardian's proof, final like an environment problem, never a STOP" 124 '^TESTS: TIMEOUT \(the tests of tests/App.Tests/App.Tests.csproj ran until the time' '^STOP:'
