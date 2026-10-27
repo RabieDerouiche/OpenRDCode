@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-10-27 06:45 — La présentation des flux en PowerPoint
+- **Ajouté** : `docs/presentation-flux.pptx`, les flux qu'on présente aux tech leads et aux chapter leads en 12 diapositives PowerPoint, des schémas faits de blocs, de losanges et de flèches PowerPoint, modifiables un à un : une journée avec le pack, `/go` en un coup d'œil puis en trois temps (préparer, une étape du plan, vérifier et livrer), le filet de test et la preuve, `/fix`, `/fortify`, `/tests` (avec `api` et `env`), ce qui est relancé tout seul, borné dans le temps ou jamais relancé, ce qu'il faut retenir. Quelques mots par bloc, le détail dans les notes de l'orateur ; la couleur d'un bloc dit ce qu'il est (un agent, toi, livré, un arrêt, relancé tout seul avec ses pauses, borné dans le temps), avec sa légende sur chaque schéma.
+- **Changé** : `tools/carte-render.mjs` ne dessine et ne vérifie plus que la carte, comme avant la présentation en HTML (les couleurs des classes, la disposition en arbre des mindmaps et les identifiants tirés de l'empreinte de la source restent ; aucun schéma de la carte n'est redessiné). Le lien de la carte, README, COMMANDES, FICHIERS et le commentaire du workflow pointent vers le fichier PowerPoint ; un changement d'un des flux qu'il montre se reporte dans PowerPoint, avec la date de sa couverture.
+- **Retiré** : `docs/presentation-flux.html` (22 diapositives HTML de mindmaps et de schémas Mermaid dessinés par script).
+- **But** : une présentation qu'on montre et qu'on reprend dans PowerPoint, limitée aux flux qui comptent pour une équipe, avec ce qui repart tout seul et ce qui est borné dans le temps, plutôt qu'une page de schémas générés que personne ne peut retoucher.
+
 ## 2026-10-27 06:40 — Une source de paquets en HTTP, dite comme un problème de la machine
 - **Ajouté** : `dotnet-problem.sh` reconnaît NU1302 (une source NuGet en HTTP, que le NuGet du SDK .NET 10 refuse avant toute connexion) : un `ENVIRONMENT PROBLEM` qui dit quoi faire (la source en HTTPS, ou `allowInsecureConnections`), jamais un nouvel essai, jamais `nuget.config` touché par un agent. Tests : son message dans `dotnet-test.sh` (459 contrôles) ; dans la CI, avec le vrai SDK, la même source en HTTP.
 - **Changé** : le test réel du flux de paquets muet passe par une source en HTTPS (le vrai SDK 10.0.403 refusait la source en HTTP avant d'essayer de la joindre, NU1302 au lieu de NU1301 : c'est ce run de la CI qui l'a montré). README, MIGRATION, FICHIERS, la carte et la présentation (459).

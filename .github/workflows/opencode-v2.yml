@@ -8,8 +8,8 @@
 # 8); the environments for real (Keycloak, a squid proxy with credentials, an internal certificate authority, SQL
 # Server, HashiCorp Vault and an ASP.NET Core API deployed behind the proxy, in Docker: /tests api, /tests env and
 # /outil http with the real SDKs); and the front-end with the real tools (Jest, Vitest, Angular with Vitest and with
-# Karma in ChromeHeadless, from the npm registry). The suites also check that the diagrams of the flow map and of the deck of
-# the flows are drawn from their sources, and that each commit of the pack has its entry in RELEASE-NOTES.md. A failed check becomes an
+# Karma in ChromeHeadless, from the npm registry). The suites also check that the diagrams of the flow map are drawn
+# from their sources, and that each commit of the pack has its entry in RELEASE-NOTES.md. A failed check becomes an
 # annotation of the run; the logs are kept as an artifact of the run.
 name: opencode-v2
 
