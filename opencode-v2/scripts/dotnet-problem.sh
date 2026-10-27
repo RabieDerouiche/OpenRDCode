@@ -10,7 +10,7 @@
 #   - a workload is missing (NETSDK1147), a Windows project on this machine (NETSDK1100), a .NET Framework project
 #     without its reference assemblies (MSB3644);
 #   - tests that need Docker (Testcontainers) or SQL Server LocalDB, which this machine does not run;
-#   - the package feed refuses access or cannot be reached (NU1301, 401, 403);
+#   - the package feed refuses access or cannot be reached (NU1301, 401, 403), or is in HTTP (NU1302);
 #   - a file of the build held by another process, the workers of MSBuild that stop (MSB4166), still after the retries.
 # Usage: dotnet-problem.sh <file with the output of dotnet>
 
@@ -100,6 +100,12 @@ if grep -q -E 'used by another process|is locked by' "$log"; then
 fi
 if grep -q 'MSB4166' "$log"; then
   echo "ENVIRONMENT PROBLEM: the worker processes of MSBuild stopped during the build (MSB4166), again after the retries: the machine lacks memory, or a build server is stuck. Stop and tell the user in one line: dotnet build-server shutdown, outside OpenCode, then run again."
+  exit 0
+fi
+
+# A package source in HTTP: the NuGet of the .NET 9.0.300 and 10 SDKs refuses it before any connection
+if grep -q 'NU1302' "$log"; then
+  echo "ENVIRONMENT PROBLEM: a package source of this repository or machine is in HTTP (NU1302): the NuGet of this .NET SDK requires HTTPS. Stop and tell the user in one line: the team moves the source to HTTPS, or sets allowInsecureConnections=\"true\" on it in its nuget.config. Never read or change nuget.config yourself."
   exit 0
 fi
 

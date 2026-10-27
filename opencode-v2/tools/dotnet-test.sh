@@ -719,13 +719,14 @@ printf '/src/Api/Api.csproj : error NETSDK1045: The current .NET SDK does not su
 printf 'error NETSDK1147: To build this project, the following workloads must be installed: wasm-tools\n' > "$work/logs/1147"
 printf '/x/src/Desktop/Desktop.csproj : error NETSDK1100: To build a project targeting Windows on this operating system, set the EnableWindowsTargeting property to true. [/x/src/Desktop/Desktop.csproj]\n' > "$work/logs/1100"
 printf '  /x/src/Api/Api.csproj : error NU1301: Unable to load the service index for source https://artifactory.example.com/api/nuget/v3/nuget.\n' > "$work/logs/1301"
+printf '/x/src/Api/Api.csproj : error NU1302: You are running the '"'"'restore'"'"' operation with an '"'"'HTTP'"'"' source: http://artifactory.example.com/api/nuget/v3/nuget. NuGet requires HTTPS sources.\n' > "$work/logs/1302"
 printf 'src/Api/Program.cs(12,5): error CS0103: The name '"'"'Foo'"'"' does not exist in the current context\n' > "$work/logs/cs"
 printf '/x/src/Legacy/Legacy.csproj : error MSB3644: The reference assemblies for .NETFramework,Version=v4.8 were not found. To resolve this, install the Developer Pack.\n' > "$work/logs/3644"
 printf '  Failed Api.Tests.OrderRepositoryTests.Save [1 ms]\n  Error Message:\n   DotNet.Testcontainers.Builders.DockerUnavailableException : Docker is either not running or misconfigured. Please ensure that Docker is running and that the endpoint is properly configured.\n' > "$work/logs/docker"
 printf '  Error Message:\n   System.PlatformNotSupportedException : LocalDB is not supported on this platform.\n' > "$work/logs/localdb"
 for c in "1045:a project targets \.NET 11\.0 newer than the \.NET SDK of this machine \(10\.0\.100\).*Never lower the target framework" \
   "1147:needs the \.NET workload wasm-tools" "1100:targets Windows .*solution filter \(\.slnf\)" \
-  "1301:the package feed \(Artifactory\) refused access or cannot be reached" "3644:a \.NET Framework project \(\.NETFramework,Version=v4\.8\) needs the reference assemblies" \
+  "1301:the package feed \(Artifactory\) refused access or cannot be reached" "1302:a package source of this repository or machine is in HTTP \(NU1302\).*Never read or change nuget.config" "3644:a \.NET Framework project \(\.NETFramework,Version=v4\.8\) needs the reference assemblies" \
   "docker:some tests need Docker \(Testcontainers\).*Never change or skip these tests" "localdb:some tests need SQL Server LocalDB"; do
   out=$(cd "$work/logs" && "$SHELL_UNDER_TEST" "$scripts/dotnet-problem.sh" "$work/logs/${c%%:*}" 2>&1)
   status=$?
