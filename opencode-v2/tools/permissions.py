@@ -26,6 +26,7 @@ How OpenCode 1.19 decides (verified in its source):
 Duplicate keys are forbidden: OpenCode's YAML parser (gray-matter) rejects them.
 """
 import json
+import os
 import re
 import sys
 
@@ -253,6 +254,8 @@ NO_TASK = [("task", "deny")]
 # The procedures of /outil (the skills pack-*) are the conversation's (build): the agents of the pack never load them,
 # and a skill they may not use leaves the list of skills of their requests
 NO_TOOLS_SKILLS = [("skill", [("pack-*", "deny")])]
+# The skills of the pack (the folders of skills/), the only ones allowed with the team's pattern skills
+PACK_SKILLS = sorted(d for d in os.listdir("skills") if os.path.isfile(os.path.join("skills", d, "SKILL.md")))
 SHEET = [("edit", only([TICKET_SHEETS, TICKET_SHEETS_OUTSIDE]))]
 NO_EDIT = [("edit", "deny")]
 
@@ -430,8 +433,13 @@ SNIPPET = as_dict([
     # creation of its merge request, build its Confluence pages with approval, with their own rules, which come after).
     ("permission", [
         ("question", "allow"),
-        # the built-in skill "report" of OpenCode v2 collects the configuration and publishes a GitHub issue with gh
-        ("skill", [("*", "allow"), ("report", "deny")]),
+        # Only the skills of the pack and the team's pattern skills (/outil pattern): OpenCode v2 also offers every skill
+        # it finds in ~/.claude/skills, ~/.agents/skills and the .claude, .agents and .opencode folders of the project
+        # and of each folder above it, and a skill is instructions the agents follow (the pack plugin also drops the
+        # skills found outside its skills folder). A skill the team reviewed joins the pack. Denied skills leave the
+        # list of each request. The built-in skill "report" (collects the configuration and publishes a GitHub issue
+        # with gh) stays refused.
+        ("skill", [("*", "deny")] + allow(PACK_SKILLS + ["pattern-*"])),
         ("doom_loop", "deny"),
         # OpenCode v2 tools: a worktree or a moved session is the developer's choice, in the web interface (the pack
         # plugin refuses them too), by their names and by their names in code mode

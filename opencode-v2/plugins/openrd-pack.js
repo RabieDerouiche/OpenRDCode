@@ -92,7 +92,14 @@
 // 13. When "compaction.prune" is true in opencode.json, the outputs of old tool calls are cleared from what the model
 //    receives, as 1.19 did (v2 ignores that setting): only the tool outputs before the last two messages I typed, and
 //    beyond the 40 000 most recent tokens of them, and only when that frees more than 20 000 tokens. The skills are
-//    never cleared. The conversation shown and the session history keep everything.
+//    never cleared. Within a run (a /go, a subagent: no message I type between its requests), a request that grows past
+//    60 % of what the model takes before OpenCode summarizes the session (limit.context - limit.output of its model in
+//    opencode.json) is brought back to 35 % by clearing the oldest outputs of the local tools (a file read, a build, a
+//    search), never the 3 most recent outputs, a skill, the report of a subagent, an answer to a question or the answer
+//    of an MCP server (called again, it takes time), and only when that frees 10 000 tokens or more: the model reads the file again if it needs it, and the summary, which takes minutes and keeps less,
+//    comes later or never. What is cleared stays cleared in the next requests of the session, so that between two
+//    clearings each request starts as the previous one did (the prefix cache of the server). The conversation shown and
+//    the session history keep everything.
 // 14. Waits for the MCP servers that are still connecting, as 1.19 did: v2 sends a request to the model with the tools
 //    of the servers connected at that moment, and a /go whose first step has no Jira tool stops. During the first 5
 //    minutes of an instance (OpenCode started, or its configuration changed), a prompt waits for them, 30 s at most.
@@ -193,16 +200,26 @@
 //    /tests and /sync none (the permission rules never give it Confluence, which only the analyst reads). The tool
 //    descriptions of every server went into each of its requests, up to 100 a run: a longer prompt, a context that
 //    fills sooner, and a tool choice that degrades past a few dozen tools. Its subagents keep their own servers (their
-//    permission rules); a server whose name says neither Jira, Confluence, GitLab, Sonar, Fortify nor Kibana stays.
-//    The list changes only from one command to the next: within a run, every request starts the same way (the
-//    prefix cache of the model server).
+//    permission rules), except where their task in the command uses fewer: the analysts of /fortify, who write the
+//    card of a vulnerability from the code and the Fortify details of their prompt, get no MCP tool at all (three of
+//    them at once, each request lighter by the Jira, Confluence and GitLab tools). A server whose name says neither
+//    Jira, Confluence, GitLab, Sonar, Fortify nor Kibana stays. The list changes only from one command to the next:
+//    within a run, every request starts the same way (the prefix cache of the model server).
+// 32. Offers the agents only the skills reviewed with the pack: those of the skills folder of the OpenCode configuration
+//    (the pack's skills, and the pattern skills of /outil pattern) and of the system folder an administrator manages.
+//    OpenCode v2 also loads every skill it finds in ~/.claude/skills and ~/.agents/skills (installed for another tool,
+//    from anywhere), in the .claude, .agents and .opencode folders of the project and of every folder above it (a
+//    repository cloned with its skills), and at the URLs of the configuration: a skill is instructions the agents follow,
+//    and none of these was reviewed. They are taken out of the list of skills and of the skill tool; the permission
+//    rules of opencode.json allow only the names of the pack's skills too (tools/permissions.py).
 // Every refusal of 6, 7, 9, 12, 16, 23, 24 and 25 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
 // the summaries of a run (17), its automatic resumes (19), the loops cut (21), the resumes I ask for (22), the end of a
 // run at its « Suite » question (4), the MCP servers bounded (27), the options sent for each agent (28), the time of
-// each run (29) and the MCP servers taken out of the requests of the pilot (31, once per command). Any error leaves the
-// prompt or the call as it is.
+// each run (29), the MCP servers taken out of the requests of the pilot and of the analysts of /fortify (31, once per
+// command), the first clearing of old tool outputs in a session (13) and the skills taken out (32, once each). Any error
+// leaves the prompt or the call as it is.
 import { execFile, execFileSync, spawn } from "node:child_process"
 import { Plugin } from "@opencode/plugin"
 import {
@@ -1166,10 +1183,15 @@ const PILOT_MCP = {
   tests: [],
   sync: [],
 }
+// 31. the subagents whose task in a command uses fewer MCP servers than their permission rules give them: the
+// analysts of /fortify write the card of a vulnerability from the code and the Fortify details of their prompt, never
+// from a Jira ticket, a Confluence page or GitLab (commands/fortify.md, step 4)
+const SUBAGENT_MCP = { analyst: { fortify: [] } }
 // The tools of the request of a pilot running <command>, without those of the MCP servers its procedure never calls:
-// the names of the servers taken out ([] when nothing changed; a command the table does not know: nothing changes)
-export function narrowPilotTools(tools, command) {
-  const keep = PILOT_MCP[command]
+// the names of the servers taken out ([] when nothing changed; a command the table does not know: nothing changes).
+// With an agent: the same for that subagent of the command (SUBAGENT_MCP)
+export function narrowPilotTools(tools, command, agent = "pilot") {
+  const keep = agent === "pilot" ? PILOT_MCP[command] : SUBAGENT_MCP[agent] && SUBAGENT_MCP[agent][command]
   if (!keep || !tools || typeof tools !== "object") return []
   const out = new Set()
   for (const name of Object.keys(tools)) {
@@ -1213,6 +1235,20 @@ const PRUNE_PROTECT = 40000
 const PRUNE_MINIMUM = 20000
 const PRUNE_PROTECTED_TOOLS = new Set(["skill"])
 const PRUNED = "[Old tool result content cleared]"
+// 13. within a run: a request past 60 % of what the model takes before OpenCode summarizes the session (limit.context
+// - limit.output of the model) is brought back to 35 % by clearing the oldest tool outputs; a clearing frees 10 000
+// tokens at least (it changes the start of the request, which the server then reads again: rarely, and for much); the
+// 3 most recent outputs are never cleared, and only the outputs of the local tools are (read again in an instant): never
+// a skill, the report of a subagent, an answer to a question, nor a call of an MCP server (Jira, GitLab, Fortify: a
+// call again takes time, and the server may limit them)
+const CLEAR_TRIGGER = 0.6
+const CLEAR_TARGET = 0.35
+const CLEAR_MINIMUM = 10000
+const CLEAR_KEEP_LAST = 3
+const CLEARABLE_TOOLS = new Set(["shell", "bash", "read", "grep", "glob", "list"])
+// without a limit for the model in opencode.json: 131072 - 32768, the values README.md gives for Qwen
+const CLEAR_USABLE = 98304
+const CLEARED = "[Old tool result content cleared to keep the context small: call the tool again if you need it]"
 // the end of a turn in v2 (durable execution events), and the status events of older shapes
 const TURN_END = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
 // 17. the first text of the message that replaces a summarized conversation (OpenCode v2.1.3)
@@ -1247,14 +1283,21 @@ function parseJsonc(text) {
 // The OpenCode configuration as the plugin reads it: in the configuration folder of OpenCode v2 (OPENCODE_CONFIG_DIR,
 // as MIGRATION.md starts it next to 1.19; otherwise the XDG one), opencode.json then opencode.jsonc, the second one
 // winning as in OpenCode
+const configFolder = () => process.env.OPENCODE_CONFIG_DIR || join(process.env.XDG_CONFIG_HOME || join(HOME, ".config"), "opencode")
 function configuration() {
-  const dir = process.env.OPENCODE_CONFIG_DIR || join(process.env.XDG_CONFIG_HOME || join(HOME, ".config"), "opencode")
-  const out = { references: {}, prune: false }
+  const dir = configFolder()
+  // limits: "<provider>/<model>" -> the limit of the model ({ context, output }), as its provider section declares it
+  const out = { references: {}, prune: false, limits: {} }
   for (const name of ["opencode.json", "opencode.jsonc"]) {
     try {
       const data = parseJsonc(readFileSync(join(dir, name), "utf8")) || {}
       Object.assign(out.references, data.references || data.reference || {})
       if (data.compaction && typeof data.compaction.prune === "boolean") out.prune = data.compaction.prune
+      for (const [provider, section] of Object.entries(plainObject(data.provider) ? data.provider : {})) {
+        for (const [model, info] of Object.entries(section && plainObject(section.models) ? section.models : {})) {
+          if (info && plainObject(info.limit)) out.limits[provider + "/" + model] = info.limit
+        }
+      }
     } catch {
       // no file, or a file OpenCode rejects as well
     }
@@ -1301,6 +1344,99 @@ export function prune(messages) {
   if (freed <= PRUNE_MINIMUM) return 0
   for (const part of parts) part.result = { type: "text", value: PRUNED }
   return parts.length
+}
+
+// 32. Whether a skill (the path of its SKILL.md) comes from a folder the pack trusts: the skills folder of the OpenCode
+// configuration (the pack's skills, the pattern skills of /outil pattern) or the system folder an administrator manages.
+// OpenCode v2 also loads ~/.claude/skills, ~/.agents/skills, the .claude, .agents and .opencode folders of the project
+// and of every folder above it, and the skills of URLs in the configuration: none of them was reviewed with the pack.
+const MANAGED_CONFIG_FOLDERS = ["/etc/opencode", "/Library/Application Support/opencode", process.env.ProgramData ? join(process.env.ProgramData, "opencode") : ""].filter(Boolean)
+export function reviewedSkill(file, config = configFolder()) {
+  if (typeof file !== "string" || !file) return false
+  const real = (path) => {
+    try {
+      return realpathSync(path)
+    } catch {
+      return resolve(path)
+    }
+  }
+  const target = real(file)
+  return [config, ...MANAGED_CONFIG_FOLDERS].flatMap((dir) => [join(dir, "skills"), join(dir, "skill")]).some((root) => {
+    const base = real(root)
+    return target.startsWith(base + sep)
+  })
+}
+
+// 13. The tokens of a request, estimated from its text (4 characters a token, as 1.19's pruning counted)
+function partChars(part) {
+  if (!part || typeof part !== "object") return 0
+  if (typeof part.text === "string") return part.text.length
+  if (part.type === "tool-result") return resultText(part.result).length
+  if (part.type === "tool-call") {
+    try {
+      return (JSON.stringify(part.input) || "").length
+    } catch {
+      return 0
+    }
+  }
+  return 0
+}
+export function requestTokens(messages, system) {
+  let chars = 0
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const content = message && message.content
+    if (typeof content === "string") chars += content.length
+    else if (Array.isArray(content)) for (const part of content) chars += partChars(part)
+  }
+  for (const part of Array.isArray(system) ? system : []) chars += typeof part === "string" ? part.length : partChars(part)
+  return Math.round(chars / 4)
+}
+// The tokens a model takes before OpenCode summarizes its session: limit.context - limit.output of the model (its output
+// limit: 32768 at most, as OpenCode caps it), from the limits of opencode.json ("<provider>/<model>")
+export function usableTokens(limits, model) {
+  const limit = model && limits ? limits[model.providerID + "/" + model.id] : undefined
+  const context = limit && Number(limit.context) > 0 ? Number(limit.context) : 0
+  if (!context) return CLEAR_USABLE
+  const output = Math.min(Number(limit.output) > 0 ? Number(limit.output) : 32768, 32768)
+  return Math.max(context - output, Math.round(context / 2))
+}
+const callID = (part) => part.id || part.toolCallId || part.callID || ""
+// 13. Within a run: clears the oldest tool outputs of a request that grew past CLEAR_TRIGGER of `usable`, down to
+// CLEAR_TARGET. `cleared` holds the outputs cleared by the earlier requests of the session: they are cleared again
+// first, so that two clearings apart every request starts as the previous one did. Returns the tokens freed now.
+export function clearOldOutputs(messages, system, usable, cleared) {
+  if (!Array.isArray(messages) || !(cleared instanceof Set)) return 0
+  const parts = []
+  for (const message of messages) {
+    if (!message || message.role !== "tool" || !Array.isArray(message.content)) continue
+    for (const part of message.content) if (part && part.type === "tool-result") parts.push(part)
+  }
+  for (const part of parts) {
+    const id = callID(part)
+    if (id && cleared.has(id) && resultText(part.result) !== PRUNED) part.result = { type: "text", value: CLEARED }
+  }
+  const total = requestTokens(messages, system)
+  if (total <= usable * CLEAR_TRIGGER) return 0
+  const goal = total - usable * CLEAR_TARGET
+  const chosen = []
+  let freed = 0
+  for (const part of parts.slice(0, Math.max(0, parts.length - CLEAR_KEEP_LAST))) {
+    if (freed >= goal) break
+    if (!CLEARABLE_TOOLS.has(part.name) || !callID(part)) continue
+    const text = resultText(part.result)
+    if (text === CLEARED || text === PRUNED) continue
+    const tokens = Math.round(text.length / 4)
+    // a short output weighs less than the sentence that would replace it
+    if (tokens < 100) continue
+    chosen.push(part)
+    freed += tokens
+  }
+  if (freed < CLEAR_MINIMUM) return 0
+  for (const part of chosen) {
+    part.result = { type: "text", value: CLEARED }
+    cleared.add(callID(part))
+  }
+  return freed
 }
 
 // 20. The JSON body of a chat completions request with "" instead of null as the content of an assistant message that
@@ -2158,7 +2294,10 @@ export default Plugin.define({
         session: { get: async ({ path }) => ({ data: await sessionInfo(path.id) }) },
       },
     })
-    const pruning = configuration().prune
+    const { prune: pruning, limits } = configuration()
+    // 13. the tool outputs cleared within each session, kept for its next requests (the most recent sessions)
+    const clearedOutputs = new Map()
+    const clearedLogged = new Set()
 
     // 14. 1.19 waited for the MCP servers before the first request to the model; v2 sends it with the tools of the
     // servers connected at that moment, and Jira or GitLab missing from the first step of a /go stops it. A prompt of
@@ -3148,6 +3287,29 @@ export default Plugin.define({
       }
     }
 
+    // 32. only the skills of the skills folder of OpenCode (the pack's, the team's patterns) and of the system folder
+    if (ctx.skill && typeof ctx.skill.transform === "function") {
+      try {
+        // the transform runs again when a skills folder or the configuration changes: each skill is logged once
+        const dropped = new Set()
+        await ctx.skill.transform((editor) => {
+          const fresh = []
+          for (const skill of [...editor.list()]) {
+            if (!skill || reviewedSkill(skill.path)) continue
+            editor.remove(skill.id)
+            const where = String(skill.path || "")
+            if (!dropped.has(where)) {
+              dropped.add(where)
+              fresh.push(String(skill.name || skill.id) + " (" + where + ")")
+            }
+          }
+          if (fresh.length) log("skills found outside the skills folder of OpenCode taken out", { skills: fresh })
+        })
+      } catch (error) {
+        log("skills left as they are", { error: String((error && error.message) || error) })
+      }
+    }
+
     await ctx.tool.hook("execute.before", async (event) => {
       if (!event) return
       if (event.sessionID) mine.add(event.sessionID)
@@ -3207,11 +3369,12 @@ export default Plugin.define({
       guards.env(invocation.env)
     })
 
-    // 18. the sessions of a run of a command of the pack: the session of the command, and those of its subagents
-    const inPackRun = async (sessionID) => {
+    // 18. the sessions of a run of a command of the pack: the session of the command, and those of its subagents (the
+    // run of the command, or undefined)
+    const runOf = async (sessionID) => {
       let id = sessionID
       for (let depth = 0; depth < 4 && id; depth++) {
-        if (commandRuns.has(id)) return true
+        if (commandRuns.has(id)) return commandRuns.get(id)
         let parent = parents.get(id)
         if (parent === undefined && subagentSessions.has(id)) {
           const info = await sessionInfo(id)
@@ -3220,8 +3383,9 @@ export default Plugin.define({
         }
         id = parent
       }
-      return false
+      return undefined
     }
+    const inPackRun = async (sessionID) => !!(await runOf(sessionID))
 
     // 28. the options of each agent, as OpenCode v2 reads them from the configuration (its request.body): read at the
     // first request, then again every minute (a configuration that changed) without making a request wait
@@ -3260,12 +3424,14 @@ export default Plugin.define({
           if (event.tools) {
             for (const name of V2_HIDDEN) delete event.tools[name]
             if (event.tools.question && (await isSubagent(event.sessionID))) delete event.tools.question
-            // 31. the pilot gets the tools of the MCP servers of the command under way only
-            const run = String(event.agent || "") === "pilot" ? commandRuns.get(event.sessionID) : undefined
-            const narrowed = run ? narrowPilotTools(event.tools, run.command) : []
-            if (narrowed.length && !narrowedLogged.has(run.command)) {
-              narrowedLogged.add(run.command)
-              log("the MCP servers the command does not use taken out of the requests of the pilot", { command: "/" + run.command, servers: narrowed })
+            // 31. the pilot gets the tools of the MCP servers of the command under way only, and so do the subagents
+            // whose task in that command uses fewer of them (the analysts of /fortify)
+            const agent = String(event.agent || "")
+            const run = agent === "pilot" ? commandRuns.get(event.sessionID) : SUBAGENT_MCP[agent] && (await isSubagent(event.sessionID)) ? await runOf(event.sessionID) : undefined
+            const narrowed = run ? narrowPilotTools(event.tools, run.command, agent) : []
+            if (narrowed.length && !narrowedLogged.has(agent + " " + run.command)) {
+              narrowedLogged.add(agent + " " + run.command)
+              log("the MCP servers the command does not use taken out of the requests of the " + agent, { command: "/" + run.command, servers: narrowed })
             }
           }
           // 30. the instructions of the free conversation stay out of the requests of the agents of the pack
@@ -3276,7 +3442,21 @@ export default Plugin.define({
               log("conversation-only instructions taken out of the requests of the agent", { agent: event.agent, chars: removed })
             }
           }
-          if (pruning) prune(event.messages)
+          if (pruning) {
+            prune(event.messages)
+            // 13. within the run: the oldest tool outputs, once the request grows past 60 % of what the model takes
+            let cleared = clearedOutputs.get(event.sessionID)
+            if (!cleared) {
+              cleared = new Set()
+              clearedOutputs.set(event.sessionID, cleared)
+              if (clearedOutputs.size > REMEMBERED_SESSIONS) clearedOutputs.delete(clearedOutputs.keys().next().value)
+            }
+            const freed = clearOldOutputs(event.messages, event.system, usableTokens(limits, event.model), cleared)
+            if (freed && !clearedLogged.has(event.sessionID)) {
+              clearedLogged.add(event.sessionID)
+              log("old tool outputs cleared from the requests of a session", { agent: String(event.agent || ""), tokens: freed })
+            }
+          }
           // 21. the loops of the conversation are kept once (an answer cut in a loop is taken out, with the note that
           // followed it), and after a cut the next answers are sampled with a presence penalty that breaks the loop
           const cleaned = sanitizeLoops(event.messages)

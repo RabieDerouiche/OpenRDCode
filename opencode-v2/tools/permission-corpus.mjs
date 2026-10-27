@@ -604,6 +604,12 @@ for (const a of ["pilot", "analyst", "coder", "test-guardian", "checker", "debug
 }
 cases.push({ agent: "build", perm: "skill", pattern: "pack-http", expect: "allow" })
 cases.push({ agent: "build", perm: "skill", pattern: "pack-carte", expect: "allow" })
+// only the skills of the pack and the team's pattern skills: a skill installed for another tool (~/.claude/skills), or
+// brought by a repository (.claude/skills, .agents/skills), is instructions nobody reviewed (the plugin drops them too, 32)
+for (const a of ["build", "general", "explore", "plan", "pilot", "analyst", "coder", "test-guardian", "checker", "debugger", "doc-writer"]) {
+  for (const s of ["frontend-design", "webapp-testing", "skill-creator", "superpowers-brainstorming", "code-review", "x"]) cases.push({ agent: a, perm: "skill", pattern: s, expect: "deny" })
+  for (const s of ["testability", "test-quality", "efcore", "pattern-s3-archive-back"]) cases.push({ agent: a, perm: "skill", pattern: s, expect: "allow" })
+}
 // Blazorise replaced by native Razor: the inventory and the check of what is left only read; the native components
 // are production code, written by the coder (and the conversation), never by an agent that reads or by the test-guardian
 P(["analyst"], [S + "blazor-native.sh inventory"])

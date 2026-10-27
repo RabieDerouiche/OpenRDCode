@@ -35,7 +35,8 @@ mkdirSync(join(stub, "node_modules", "@opencode", "plugin"), { recursive: true }
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "package.json"), '{"name":"@opencode/plugin","type":"module","main":"index.js"}')
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "index.js"), "export const Plugin = { define: (definition) => definition }\n")
 writeFileSync(join(stub, "openrd-pack.js"), readFileSync(join(pack, "plugins", "openrd-pack.js"), "utf8"))
-const { Guards, prune, fillNullContent, withAgentOptions, withoutConversationOnly, stripConversationOnly, narrowPilotTools, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
+const { Guards, prune, fillNullContent, withAgentOptions, withoutConversationOnly, stripConversationOnly, narrowPilotTools,
+  clearOldOutputs, requestTokens, usableTokens, reviewedSkill, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
 
 // ---------- fake OpenCode client ----------
 const sessions = new Map()
@@ -372,7 +373,10 @@ await check("[worktree coder] its own files", () => toolWt("wt-coder", "write", 
 // ---------- OpenCode v2: a fake v2 context ----------
 const ensure = (dir) => (mkdirSync(dir, { recursive: true }), dir)
 const configDir = ensure(join(home, ".config", "opencode"))
-writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ compaction: { prune: true }, references: { legacy: { path: "~/repos/legacy" } } }))
+// a model whose context is far larger than the conversations of these tests: the clearing within a run (13) has its
+// own tests, with a smaller model
+writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ compaction: { prune: true }, references: { legacy: { path: "~/repos/legacy" } },
+  provider: { fake: { models: { qwen: { limit: { context: 1000000, output: 32768 } } } } } }))
 writeFileSync(join(home, ".config", "opencode", "scripts", "hello.sh"), 'echo "hello from $(basename "$PWD")"\n')
 function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcpWaitMs: 600, resumeFailureMs: [600000], resumeUnfinishedMs: 600000 }, agents } = {}) {
   const fake = { runCommands: false, runPrompts: false }
@@ -488,6 +492,52 @@ await check("[v2 27] a server that sets its own limit keeps it, and its other li
 await check("[v2 27] the servers bounded are logged once", () => {
   const lines = readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8").split("\n").filter((l) => l.includes("calls of the MCP servers bounded"))
   assert.ok(lines.length >= 1 && lines[0].includes('"gitlab","jira"') && !lines[0].includes("fortify"), lines[0])
+})
+
+// ---------- 32. only the skills reviewed with the pack ----------
+const skillAt = (dir) => {
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, "SKILL.md"), "---\nname: x\ndescription: x\n---\nx\n")
+  return join(dir, "SKILL.md")
+}
+const skills32 = [
+  { id: "efcore", name: "efcore", path: skillAt(join(configDir, "skills", "efcore")) },
+  { id: "pattern-orders", name: "pattern-orders", path: skillAt(join(configDir, "skills", "pattern-orders")) },
+  { id: "clever", name: "clever", path: skillAt(join(home, ".claude", "skills", "clever")) },
+  { id: "agentic", name: "agentic", path: skillAt(join(home, ".agents", "skills", "agentic")) },
+  { id: "cloned", name: "cloned", path: skillAt(join(repo, ".opencode", "skills", "cloned")) },
+  { id: "above", name: "above", path: skillAt(join(home, "repos", ".claude", "skills", "above")) },
+  { id: "efcore-twin", name: "efcore", path: skillAt(join(repo, ".claude", "skills", "efcore")) },
+]
+const s32 = fakeV2(repo)
+s32.ctx.skill = {
+  transform: async (fn) => fn({
+    list: () => skills32.slice(),
+    remove: (id) => {
+      const at = skills32.findIndex((s) => s.id === id)
+      if (at >= 0) skills32.splice(at, 1)
+    },
+  }),
+}
+await v2Plugin.setup(s32.ctx)
+await check("[v2 32] the skills of the skills folder of OpenCode stay: the pack's and the team's patterns", () =>
+  assert.deepEqual(skills32.map((s) => s.id), ["efcore", "pattern-orders"]))
+await check("[v2 32] a skill of ~/.claude, ~/.agents, the project or a folder above it is taken out, a namesake of the pack's too, logged", () => {
+  const lines = readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8").split("\n").filter((l) => l.includes("skills found outside the skills folder"))
+  assert.equal(lines.length, 1)
+  for (const name of ["clever", "agentic", "cloned", "above", "efcore ("]) assert.ok(lines[0].includes(name), name + ": " + lines[0])
+})
+await check("[v2 32] a folder that only starts like the skills folder is not it; the system folder is", () => {
+  assert.equal(reviewedSkill(skillAt(join(configDir, "skills-extra", "x"))), false)
+  assert.equal(reviewedSkill(join(configDir, "skills", "efcore", "SKILL.md")), true)
+  assert.equal(reviewedSkill("/etc/opencode/skills/team/SKILL.md"), true)
+  assert.equal(reviewedSkill(""), false)
+  assert.equal(reviewedSkill(undefined), false)
+})
+await check("[v2 32] without the skill domain (an older v2): the setup goes on", async () => {
+  const bare = fakeV2(repo)
+  await v2Plugin.setup(bare.ctx)
+  assert.ok(bare.hooks["session.context"])
 })
 
 // ---------- 20. an assistant message made only of tool calls: "" instead of null ----------
@@ -712,6 +762,33 @@ await mcp31.hooks["session.prompt"]({ sessionID: "m31-go", messageID: "m3", prom
 await check("[v2 31] /tests: no server of the pack at all", async () =>
   assert.ok(!(await pilotContext("m31-go")).some((t) => /jira|gitlab|sonar|fortify|confluence|kibana/i.test(t))))
 await endRun("m31-go")
+// the analysts of /fortify write a vulnerability card from the code and the Fortify details of their prompt
+mcp31.sessions.set("m31-fortify", { id: "m31-fortify", title: "/fortify" })
+mcp31.sessions.set("m31-an1", { id: "m31-an1", parentID: "m31-fortify", title: "Analyse V1" })
+await mcp31.hooks["session.prompt"]({ sessionID: "m31-fortify", messageID: "m", prompt: { text: "[[command fortify]]\nRequest: « »" }, delivery: "steer" })
+await check("[v2 31] an analyst of /fortify: no tool of Jira, Confluence, GitLab or any server of the pack", async () => {
+  const tools = await pilotContext("m31-an1", "analyst")
+  assert.ok(tools.includes("read") && tools.includes("shell") && tools.includes("artifactory_get_package"), tools.join(","))
+  assert.ok(!tools.some((t) => /jira|confluence|gitlab|sonar|fortify|kibana/i.test(t)), tools.join(","))
+})
+await check("[v2 31] the same tools from one request of the analyst to the next", async () =>
+  assert.deepEqual(await pilotContext("m31-an1", "analyst"), await pilotContext("m31-an1", "analyst")))
+// (a subagent never gets the question tool: 12)
+const withoutQuestion = MCP_TOOLS.filter((t) => t !== "question")
+await check("[v2 31] another subagent of /fortify keeps its own rules", async () =>
+  assert.deepEqual(await pilotContext("m31-an1", "checker"), withoutQuestion))
+await check("[v2 31] the analysts of /fortify logged once", () => {
+  const lines = readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8").split("\n").filter((l) => l.includes("taken out of the requests of the analyst"))
+  assert.equal(lines.length, 1)
+  assert.ok(lines[0].includes('"/fortify"') && lines[0].includes("jira") && lines[0].includes("gitlab"), lines[0])
+})
+await endRun("m31-fortify")
+mcp31.sessions.set("m31-go2", { id: "m31-go2", title: "/go ABC-32" })
+mcp31.sessions.set("m31-an2", { id: "m31-an2", parentID: "m31-go2", title: "Analyse du ticket" })
+await mcp31.hooks["session.prompt"]({ sessionID: "m31-go2", messageID: "m", prompt: { text: "[[command go ABC-32]]\nRequest: « ABC-32 »" }, delivery: "steer" })
+await check("[v2 31] the analyst of a /go keeps Jira, Confluence and GitLab (its permission rules decide)", async () =>
+  assert.deepEqual(await pilotContext("m31-an2", "analyst"), withoutQuestion))
+await endRun("m31-go2")
 
 // ---------- 12. what v2 opens that the pack closes ----------
 top("t-1", "Conversation")
@@ -1241,6 +1318,69 @@ await check("[v2 28] the options of an agent never touch the conversation: the s
   const { body: first } = await sentBy("pilot", body)
   const { body: second } = await sentBy("pilot", { ...body, messages: [...body.messages, { role: "user", content: "y" }] })
   assert.deepEqual(second.messages.slice(0, first.messages.length), first.messages)
+})
+// ---------- 13. within a run: the oldest tool outputs, once a request passes 60 % of what the model takes ----------
+const CLEARED_TEXT = "[Old tool result content cleared to keep the context small: call the tool again if you need it]"
+const output13 = (n, chars, name = "shell") => ({ type: "tool-result", id: "q" + n, name, result: { type: "text", value: "x".repeat(chars) } })
+const step13 = (n, chars, name = "shell") => [{ role: "assistant", content: [{ type: "tool-call", id: "q" + n, name, input: {} }] }, { role: "tool", content: [output13(n, chars, name)] }]
+// a run: the command, then <count> tool outputs of <chars> characters (32 000: 8 000 tokens)
+const run13 = (count, chars, names = {}) => [{ role: "user", content: [{ type: "text", text: "/go ABC-13" }] },
+  ...Array.from({ length: count }, (_, i) => step13(i + 1, chars, names[i + 1])).flat()]
+const ids13 = (messages, value = CLEARED_TEXT) => messages.flatMap((m) => (m.role === "tool" ? m.content : [])).filter((p) => p.result.value === value).map((p) => p.id)
+await check("[v2 13 run] past 60 % of 98 304 tokens: the oldest outputs cleared down to 35 %", () => {
+  const messages = run13(10, 32000)
+  const freed = clearOldOutputs(messages, [], 98304, new Set())
+  assert.deepEqual(ids13(messages), ["q1", "q2", "q3", "q4", "q5", "q6"])
+  assert.equal(freed, 48000)
+  assert.ok(requestTokens(messages, []) <= 98304 * 0.35, String(requestTokens(messages, [])))
+})
+await check("[v2 13 run] never a skill, the report of a subagent, an answer, an MCP call, nor the 3 most recent outputs", () => {
+  const messages = run13(12, 32000, { 1: "skill", 2: "subagent", 3: "question", 4: "jira_get_issue", 5: "gitlab_get_job_log", 6: "read", 7: "grep" })
+  clearOldOutputs(messages, [], 98304, new Set())
+  assert.deepEqual(ids13(messages), ["q6", "q7", "q8", "q9"])
+})
+await check("[v2 13 run] below 60 %: nothing cleared", () => {
+  const messages = run13(6, 32000)
+  assert.equal(clearOldOutputs(messages, [], 98304, new Set()), 0)
+  assert.deepEqual(ids13(messages), [])
+})
+await check("[v2 13 run] less than 10 000 tokens to free: nothing cleared (the start of the request stays as it was)", () => {
+  const messages = run13(5, 400, { 1: "skill", 2: "shell" })
+  messages[2].content[0].result.value = "x".repeat(240000)
+  messages[4].content[0].result.value = "x".repeat(8000)
+  assert.equal(clearOldOutputs(messages, [], 98304, new Set()), 0)
+  assert.deepEqual(ids13(messages), [])
+})
+await check("[v2 13 run] what is cleared stays cleared: the next requests start as the previous one did", () => {
+  const cleared = new Set()
+  const first = run13(10, 32000)
+  clearOldOutputs(first, [], 98304, cleared)
+  const sent = JSON.stringify(first)
+  const next = [...run13(10, 32000), ...step13(11, 400)]
+  assert.equal(clearOldOutputs(next, [], 98304, cleared), 0)
+  assert.deepEqual(next.slice(0, first.length), JSON.parse(sent))
+})
+await check("[v2 13 run] what the model takes: limit.context - limit.output of its model in opencode.json", () => {
+  const model = { providerID: "fake", id: "qwen" }
+  assert.equal(usableTokens({ "fake/qwen": { context: 65536, output: 16384 } }, model), 49152)
+  assert.equal(usableTokens({ "fake/qwen": { context: 200000 } }, model), 167232)
+  assert.equal(usableTokens({ "fake/qwen": { context: 40000, output: 32768 } }, model), 20000)
+  assert.equal(usableTokens({}, model), 98304)
+  assert.equal(usableTokens(undefined, undefined), 98304)
+})
+await check("[v2 13 run] the hook clears within a run, from the limit of the model, and logs it once", async () => {
+  writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ compaction: { prune: true }, provider: { fake: { models: { qwen: { limit: { context: 40000, output: 32768 } } } } } }))
+  const small = fakeV2(repo)
+  await v2Plugin.setup(small.ctx)
+  small.sessions.set("t13", { id: "t13", title: "/go ABC-13" })
+  for (let i = 0; i < 2; i++) {
+    const event = { sessionID: "t13", agent: "pilot", model: { id: "qwen", providerID: "fake" }, system: [], messages: run13(6, 32000), tools: {} }
+    await small.hooks["session.context"](event)
+    assert.deepEqual(ids13(event.messages), ["q1", "q2", "q3"])
+  }
+  const lines = readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8").split("\n").filter((l) => l.includes("old tool outputs cleared"))
+  assert.equal(lines.length, 1)
+  assert.ok(lines[0].includes('"agent":"pilot"') && lines[0].includes('"tokens":24000'), lines[0])
 })
 await check("[v2 13] and left whole otherwise", async () => {
   writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ compaction: { prune: false } }))

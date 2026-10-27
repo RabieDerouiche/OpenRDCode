@@ -86,7 +86,7 @@ grep -n '"ask"' ~/.config/opencode/opencode.json
 
 Quand j'annonce une nouvelle version, avec la liste des fichiers modifiés :
 1. Recrée `~/oc2/CHECKSUMS-config.txt` et `~/oc2/CHECKSUMS-scripts.txt` depuis GitHub (vue Raw).
-2. Ce qui a changé dans la configuration, puis dans les scripts : chaque ligne `FAILED` est un fichier à recoller depuis `opencode-v2/` ; tu as fini quand la commande affiche son `OK`. Un skill nouveau (`skills/<nom>/SKILL.md: FAILED open or read`) a besoin de son dossier d'abord : `mkdir -p ~/oc2/config/opencode/skills/<nom>` (dans cette version : `pack-vitesse`).
+2. Ce qui a changé dans la configuration, puis dans les scripts : chaque ligne `FAILED` est un fichier à recoller depuis `opencode-v2/` ; tu as fini quand la commande affiche son `OK`. Un skill nouveau (`skills/<nom>/SKILL.md: FAILED open or read`) a besoin de son dossier d'abord : `mkdir -p ~/oc2/config/opencode/skills/<nom>` (dans cette version : `testability` et `test-quality`).
 ```sh
 cd ~/oc2/config/opencode && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-config.txt 2>/dev/null && echo "OK : la configuration est identique à GitHub"
 ```
@@ -799,7 +799,7 @@ Les autres outils (audit, licences, release notes, cqrs, AGENTS.md du dépôt, a
 
 Un QCM qui propose des commandes (`/daily` : « Sur quoi tu bosses ? » ; et le « Suite » qui finit chaque commande : `/fix` après `/go`, `/push` après `/tests`…) : l'option choisie démarre toute seule dans la même session, dès que l'agent a fini sa réponse. Tu peux aussi taper ta propre réponse, par exemple `/go ABC-12 avec un feature flag`. Pendant qu'un « Suite » attend, le run est fini : le dossier est libre pour une autre commande, et le titre garde son issue. Dans la conversation, toute action proposée est un QCM de même : ton choix est le feu vert, l'agent la fait sans redemander.
 
-Ajouter un skill ou une référence à ton message : tape `@`, la liste s'affiche (les skills du pack, tes `pattern-…`, les références d'`opencode.json`). Par exemple :
+Ajouter un skill ou une référence à ton message : tape `@`, la liste s'affiche (les skills du pack, tes `pattern-…`, les références d'`opencode.json`). Seulement ceux-là : un skill installé pour un autre outil (`~/.claude/skills`, `~/.agents/skills`, un `npx skills add`) ou apporté par un dépôt (ses dossiers `.claude`, `.agents`, `.opencode`) n'est jamais chargé, ni dans la liste ni par un agent, et le journal du plugin le dit (« skills found outside the skills folder of OpenCode taken out »). Un skill utile, même officiel, entre par le dépôt du pack : relu, réécrit pour ses agents et ses règles, avec sa provenance, comme `testability` et `test-quality`. Par exemple :
 ```text
 @build-fix pourquoi ce build casse ?
 ```
