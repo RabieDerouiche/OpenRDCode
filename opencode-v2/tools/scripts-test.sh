@@ -80,6 +80,46 @@ run branch.sh ABC-1 feature "Ajout de l'export CSV"
 check "go: new branch from develop" 0 '^BRANCH: feature/ABC-1-ajout-export-csv \(created from origin/develop'
 run base.sh
 check "go: base stays develop" 0 '^develop$'
+# the check of the sheet the analyst wrote: every file a step still to do names exists, or the step creates it
+sheets="$(git rev-parse --git-common-dir)/opencode-tickets"
+mkdir -p "$sheets" src/App/Export
+: > src/App/Program.cs
+: > src/App/Export/Writer.cs
+cat > "$sheets/ABC-1.md" <<'EOF'
+# ABC-1 - Ajout de l'export CSV
+## Résumé
+L'export.
+## Critères d'acceptation
+1. C1 : le fichier
+2. C2 : son en-tête
+## Questions bloquantes
+Aucune
+## Zones de code concernées
+src/App
+## Tests attendus
+| # | Critère | Niveau | Test | Scénario | Statut |
+|---|---|---|---|---|---|
+| 1 | C1 | unitaire | ExportTests.Writes | 2 lignes → 3 lignes | à écrire |
+## Plan
+- [x] 1. déjà fait — fichiers : src/Gone.cs — tests : aucun
+- [ ] 2. l'export — fichiers : `src/App/Export/CsvWriter.cs` (nouveau), src/App/Export/Ghost.cs:12 (calcul HT/TTC) — tests : ExportTests.Writes
+- [ ] 3. la page — fichiers : Writer.cs et src/App/Program.cs (nouveau), le module Export/Csv — tests : aucun (configuration)
+## Décisions
+## Suivi
+EOF
+run ticket-sheet.sh check
+check "sheet check of 1.19 (no --files): the files of the plan not looked for" 0 '^Sheet check of ABC-1: 1 problem\(s\)$' 'Ghost|nouveau'
+run ticket-sheet.sh check --files
+check "sheet check: a file the plan names that does not exist" 0 '^- step 2 names src/App/Export/Ghost\.cs, which does not exist \(a file the step creates ends with « \(nouveau\) »\)$' 'Gone\.cs|HT/TTC|CsvWriter|Writer\.cs, which|Export/Csv'
+check "sheet check: its problems counted with the others" 0 '^Sheet check of ABC-1: 2 problem\(s\)$'
+check "sheet check: a criterion no expected test covers" 0 '^- criterion C2 is covered by no row of "## Tests attendus"$'
+check "sheet check: a new file that already exists, a warning" 0 '^- warning: step 3 marks src/App/Program\.cs « \(nouveau\) », but it exists: the step changes it$'
+sed -e 's/, src\/App\/Export\/Ghost.cs:12 (calcul HT\/TTC)//' -e 's/ et src\/App\/Program.cs (nouveau)//' "$sheets/ABC-1.md" > "$sheets/ABC-1.tmp" && mv "$sheets/ABC-1.tmp" "$sheets/ABC-1.md"
+printf '| 2 | C2 | unitaire | ExportTests.Header | 1 ligne → en-tête Id;Total | à écrire |\n' > "$work/row"
+awk -v row="$(cat "$work/row")" '{ print } /^\| 1 \| C1/ { print row }' "$sheets/ABC-1.md" > "$sheets/ABC-1.tmp" && mv "$sheets/ABC-1.tmp" "$sheets/ABC-1.md"
+run ticket-sheet.sh check --files
+check "sheet check: the sheet corrected, OK" 0 '^Sheet check of ABC-1: OK \(3 steps, 2 criteria, 2 expected tests\)$' 'warning|problem'
+rm -rf "$sheets/ABC-1.md" src/App "$work/row"
 git switch -q develop
 
 # ---------- /go … depuis <branch> ----------

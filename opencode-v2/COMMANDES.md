@@ -520,7 +520,7 @@ La fiche du ticket est un fichier Markdown dans le `.git` du dépôt principal. 
 ```sh
 cat "$(git rev-parse --git-common-dir)/opencode-tickets/ABC-123.md"
 ```
-Pour cocher une étape à la main, ouvre ce fichier dans un éditeur et remplace `- [ ]` par `- [x]` sur sa ligne de « ## Plan ». `/go` vérifie la fiche lui-même après l'analyse.
+Pour cocher une étape à la main, ouvre ce fichier dans un éditeur et remplace `- [ ]` par `- [x]` sur sa ligne de « ## Plan ». `/go` vérifie la fiche lui-même après l'analyse : un script (sections, étapes, critères couverts, et chaque fichier du plan présent dans le dépôt, sauf ceux qu'une étape crée, marqués « (nouveau) »), puis le checker, à contexte neuf, relit le plan avant la première ligne de code. Les points qu'il soulève et que l'analyste ne retient pas sont dans « ## Décisions » (« Relecture : … non retenu — <preuve> ») et dans la MR ; la ligne « /go - relecture du plan » de « ## Suivi » dit combien de points ont été corrigés.
 
 Ce que `/go` et `/fix` ont fait sur les tickets du dépôt, dans OpenCode :
 ```text
@@ -675,7 +675,7 @@ Sans clé : un QCM avec tes tickets ouverts du sprint et « Sans ticket » (puis
 ```
 Une branche de ticket qui porte déjà du travail (commencé sur ton Mac, ou repris d'un collègue) : l'analyste le lit et le plan ne garde que ce qui reste. Un test qui échoue dans la suite complète mais passe à la seconde suite est dit « instable » dans la MR, jamais « corrigé » par le coder.
 
-Un gros ticket : l'analyse et le plan seulement, pour les relire avant le code (le `/go` suivant code) ; ou un arrêt après chaque étape :
+Un gros ticket : l'analyse et le plan seulement (déjà relus par le checker à contexte neuf), pour les relire toi aussi avant le code (le `/go` suivant code) ; ou un arrêt après chaque étape :
 ```text
 /go ABC-123 analyse seule
 ```

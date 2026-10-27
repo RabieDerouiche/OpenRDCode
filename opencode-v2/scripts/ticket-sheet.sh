@@ -15,8 +15,11 @@
 #   ticket-sheet.sh plan                         print the steps of "## Plan"
 #   ticket-sheet.sh delete                       delete the sheet (/outil abandon), also from a worktree, where the
 #                                                sheet is outside the folder of the session
-#   ticket-sheet.sh check                        check the structure /go relies on (sections, numbered steps with
-#                                                their files and tests, each criterion covered by an expected test)
+#   ticket-sheet.sh check [--files]              check the structure /go relies on (sections, numbered steps with
+#                                                their files and tests, each criterion covered by an expected test);
+#                                                --files: also the files of the steps to do, there or « (nouveau) »
+#                                                (the /go of v2; the /go of 1.19, which shares this folder, does not
+#                                                ask its analyst for the mark)
 # Every write ends by printing the steps of "## Plan", so that the agent sees what is checked.
 
 LC_ALL=C
@@ -48,7 +51,7 @@ fi
 
 now=$(date '+%Y-%m-%d %H:%M')
 tmp="$sheet.tmp.$$"
-trap 'rm -f "$tmp" "$tmp.status"' EXIT
+trap 'rm -f "$tmp" "$tmp.status" "$tmp.files"' EXIT
 trap 'exit 1' INT TERM
 
 print_plan() {
@@ -178,8 +181,42 @@ case "$action" in
     ;;
   check)
     # The structure /go relies on, checked once the analyst has written the sheet: the sections, a plan of numbered
-    # steps with their files and tests, every acceptance criterion covered by an expected test
-    KEY=$key awk '
+    # steps with their files and tests, every acceptance criterion covered by an expected test, and every file a step
+    # still to do names (--files): it exists, or the step creates it (« (nouveau) »). A path the model made up would
+    # send the coder after a file that is not there. A word is a path when it has a "/" or the extension of a source file
+    : > "$tmp"
+    [ "$1" = --files ] && awk '
+      /^## / { inplan = ($0 ~ /^## Plan[[:space:]]*$/); next }
+      inplan && /^[[:space:]]*- \[ \] [0-9]+[.)]/ && /fichiers *:/ {
+        num = $0; sub(/^[[:space:]]*- \[ \] /, "", num); sub(/[.)].*$/, "", num)
+        files = $0; sub(/^.*fichiers *: */, "", files); sub(/ +(—|–|-) +tests *:.*$/, "", files)
+        n = split(files, part, /, *|; *| et /)
+        for (i = 1; i <= n; i++) {
+          new = (part[i] ~ /\((nouveau|nouvelle|nouveaux|nouvelles|à créer|créée?s?)\)/)
+          t = part[i]; gsub(/\([^)]*\)/, " ", t)
+          w = split(t, word, /[[:space:]]+/)
+          for (j = 1; j <= w; j++) {
+            p = word[j]; gsub(/[`"«»]/, "", p); sub(/[,;.]+$/, "", p); sub(/:[0-9]+(-[0-9]+)?$/, "", p)
+            if (p == "" || p ~ /[*<>{}()$]|:\/\/|^~/) continue
+            if (p !~ /\/$/ && tolower(p) !~ /[^.\/][^\/]*\.(cs|csproj|sln|slnx|razor|cshtml|json|xml|config|props|targets|ts|tsx|js|jsx|mjs|html|scss|css|sql|resx|yml|yaml|sh|ps1|http|md)$/ && p !~ /\/[^\/]*[^.\/]\.[A-Za-z0-9]+$/) continue
+            sub(/^\.\//, "", p)
+            print num "\t" new "\t" p
+          }
+        }
+      }
+    ' "$sheet" > "$tmp"
+    if [ -s "$tmp" ]; then
+      (cd "$root" && git ls-files --cached --others --exclude-standard) > "$tmp.status" 2>/dev/null
+      while IFS='	' read -r num new p; do
+        if [ -e "$root/$p" ] || { case $p in /*) [ -e "$p" ] ;; *) false ;; esac; } \
+          || awk -v s="/$p" 'length($0) >= length(s) && substr($0, length($0) - length(s) + 1) == s { f = 1; exit } END { exit !f }' "$tmp.status"; then
+          [ "$new" = 1 ] && printf 'W\tstep %s marks %s « (nouveau) », but it exists: the step changes it\n' "$num" "$p"
+        elif [ "$new" = 0 ]; then
+          printf 'P\tstep %s names %s, which does not exist (a file the step creates ends with « (nouveau) »)\n' "$num" "$p"
+        fi
+      done < "$tmp" > "$tmp.files"
+    fi
+    FILES=$(cat "$tmp.files" 2>/dev/null) KEY=$key awk '
       function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
       NR == 1 { title = $0 }
       /^## / { section = trim(substr($0, 4)); seen[section] = 1; next }
@@ -218,6 +255,11 @@ case "$action" in
         else if (steps > 7) warnings[++nw] = steps " steps: more than 7, each step should be bigger"
         if (nc == 0) problems[++np] = "no acceptance criterion (C1, C2...) in \"## Critères d'\''acceptation\""
         for (i = 1; i <= nc; i++) if (!(order[i] in covered)) problems[++np] = "criterion " order[i] " is covered by no row of \"## Tests attendus\""
+        nf = split(ENVIRON["FILES"], file, "\n")
+        for (i = 1; i <= nf; i++) {
+          if (file[i] ~ /^P\t/) problems[++np] = substr(file[i], 3)
+          else if (file[i] ~ /^W\t/) warnings[++nw] = substr(file[i], 3)
+        }
         if (np == 0) print "Sheet check of " ENVIRON["KEY"] ": OK (" steps " steps, " nc " criteria, " rows + 0 " expected tests)"
         else {
           print "Sheet check of " ENVIRON["KEY"] ": " np " problem(s)"
@@ -228,7 +270,7 @@ case "$action" in
     ' "$sheet"
     ;;
   *)
-    echo "Usage: ticket-sheet.sh tick <N> [\"<suivi line>\"] | fixed <N>[,<N>...] [\"<suivi line>\"] | decision \"<decision>\" | suivi \"<line>\" | plan | check"
+    echo "Usage: ticket-sheet.sh tick <N> [\"<suivi line>\"] | fixed <N>[,<N>...] [\"<suivi line>\"] | decision \"<decision>\" | suivi \"<line>\" | plan | check [--files]"
     ;;
 esac
 exit 0

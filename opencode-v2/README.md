@@ -25,7 +25,7 @@ La v2 inverse le contrat :
 | Moment | Toi | L'agent |
 |---|---|---|
 | Matin | `/daily` | Sprint, MR, reviews qui t'attendent, plan du jour. Le ticket que tu choisis lance `/go`. |
-| Un ticket | `/go ABC-123` | Analyse (et mesure de develop en parallèle), plan, code et tests étape par étape (avant de toucher à du code existant, son filet de non-régression : les tests des méthodes touchées, écrits d'abord par le test-guardian s'il en manque ; un bug : son test écrit d'abord, rouge puis vert), build complet avec la couverture des lignes modifiées, tests des lignes qu'aucun test n'exécute, auto-review, corrections, contrôle avant push, commit, push, MR en Draft avec son rapport. |
+| Un ticket | `/go ABC-123` | Analyse (et mesure de develop en parallèle), plan relu par un relecteur qui n'a pas vu l'analyse, code et tests étape par étape (avant de toucher à du code existant, son filet de non-régression : les tests des méthodes touchées, écrits d'abord par le test-guardian s'il en manque ; un bug : son test écrit d'abord, rouge puis vert), build complet avec la couverture des lignes modifiées, tests des lignes qu'aucun test n'exécute, auto-review, corrections, contrôle avant push, commit, push, MR en Draft avec son rapport. |
 | Un changement sans ticket Jira | `/go sans ticket : <ce qu'il faut faire>` (ou `/go` seul : un QCM avec tes tickets du sprint et « Sans ticket », puis ta description) | Le même déroulé ; la description remplace le ticket. Clé locale `LOCAL-<n>` pour la branche et la fiche, jamais dans les commits ni le titre de la MR, qui dit « Sans ticket Jira ». |
 | Un ticket qui part d'une autre branche que develop | `/go ABC-123 depuis feature/ABC-100-socle` | La branche du ticket part de `origin/feature/ABC-100-socle`, qui devient sa base : la mesure de départ, la review, le contrôle avant push, la fusion de la base et la MR la visent au lieu de develop. Un nom qui n'existe pas sur origin : arrêt avec les noms proches. |
 | Un POC, un essai, une doc, un petit correctif, sans ticket | une demande dans une session (« fais un POC de… », « corrige… », « ajoute la doc de… ») | Il travaille dans la conversation, avec les mêmes règles (lire avant d'écrire, plus petit changement, build et tests par `build-test.sh` avant de dire que ça marche), sans branche ni fiche ; il peut lancer un projet du dépôt (`dotnet run --project src/Api`, borné dans le temps). Pour le garder : `/push`. |
@@ -73,9 +73,10 @@ Tu peux donner tes consignes dès le départ : `/go ABC-123 avec un Result, sans
 flowchart LR
   A["/go ABC-123"] --> B[Analyse du ticket<br>et plan]
   A --> M[Build + tests<br>de develop]
-  B -->|ticket ambigu| Q{{Tes réponses<br>en une fois}}
+  B --> P[Relecture du plan<br>à contexte neuf]
+  P -->|ticket ambigu| Q{{Tes réponses<br>en une fois}}
   Q --> C
-  B --> C[Étape N :<br>code + tests + build]
+  P --> C[Étape N :<br>code + tests + build]
   M --> C
   C -->|étape suivante| C
   C --> D[Suite complète<br>et auto-review]
@@ -293,7 +294,7 @@ La carte des flux du pack, tenue à jour avec chaque changement : `docs/carte-de
 | Décisions | chaque choix avec sa raison et son origine (analyse, étape N, ta réponse, /fix) |
 | Suivi | le journal horodaté : base de develop, étapes, arrêts, livraison, /fix |
 
-Un script vérifie la fiche juste après l'analyse (sections présentes, étapes numérotées avec fichiers et tests, chaque critère couvert) ; un défaut est renvoyé une fois à l'analyste. Chaque étape est confiée à un sous-agent coder au contexte neuf ; réussie, elle devient un commit local et une case cochée.
+Un script vérifie la fiche juste après l'analyse (sections présentes, étapes numérotées avec fichiers et tests, chaque critère couvert, chaque fichier du plan présent dans le dépôt ou marqué « (nouveau) »). Puis, avant la première ligne de code, le checker relit le plan à contexte neuf : il n'a lu que la fiche, le ticket et le code, jamais l'analyse, et cherche ce qui ferait échouer le coder (une exigence du ticket sans critère, un fichier ou un membre qui n'existe pas, une étape qui s'appuie sur une suivante, une migration ou un « filet d'abord » oublié). L'analyste, dans sa session, corrige chaque point ou le rejette avec une preuve (fichier:ligne, phrase du ticket, décision) : un point rejeté devient une décision de la MR. Un seul tour : le coder, les tests et l'auto-review viennent après. Chaque étape est confiée à un sous-agent coder au contexte neuf ; réussie, elle devient un commit local et une case cochée.
 
 ### Un problème au milieu : on ne reprend jamais du début
 
@@ -445,7 +446,7 @@ En langage courant aussi : « pourquoi ça plante », « explique ce flux », «
 | `pilot` | Mène `/go`, `/fix`, `/fortify`, `/tests`, `/push`, `/sync` et `/daily` : fiche ticket, enchaînement des étapes, commit et push par script, MR en Draft. | la fiche ticket ; la MR (création seulement) |
 | `analyst` | Analyse le ticket (Jira, Confluence, code, patterns de l'équipe, dépôt de référence) et écrit la fiche : critères, plan, tests attendus, questions bloquantes. | la fiche ticket |
 | `coder` | Code UNE étape ou un lot de corrections, avec ses tests, puis build et tests. Ne pose jamais de question : il décide et le dit. | le code et les tests |
-| `checker` | Auto-review de toute la branche avant le push, et `/review` d'une MR de collègue. | rien |
+| `checker` | Relecture du plan avant le code (à contexte neuf : la fiche, le ticket et le code), auto-review de toute la branche avant le push, et `/review` d'une MR de collègue. | rien |
 | `debugger` | Diagnostic d'un échec qui résiste, et `/compare`. | rien |
 | `test-guardian` | Le filet de non-régression avant un correctif (les tests du comportement actuel des méthodes touchées, quand ils manquent ; d'une page Blazor, les tests bUnit de ce que voient ses utilisateurs), puis les tests d'une faille, d'un bug, des lignes modifiées ou d'un code que tu nommes (`/tests`), et les tests d'API des scénarios que tu as cochés (`/tests api`), écrits avant le correctif quand il y en a un, et prouvés par script (rouge, vert, deux fois, filet intact, couverture sans perte). | les projets de tests seulement |
 | `doc-writer` | Écrit `docs/` pour `/outil doc`, sans jamais ouvrir un fichier de configuration. | `docs/`, `README.md` |
