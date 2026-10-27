@@ -67,12 +67,12 @@ if [ "$check" -eq 1 ]; then
 fi
 
 if [ "$worktree" = yes ]; then
-  git switch -q --detach "refs/remotes/origin/$base" 2>/dev/null || stop "git could not leave $branch: nothing deleted"
+  sh "$here/transient.sh" git switch -q --detach "refs/remotes/origin/$base" >/dev/null || stop "git could not leave $branch: nothing deleted"
   echo "SWITCHED: this worktree to a detached HEAD at origin/$base"
 else
-  git switch -q "$base" 2>/dev/null || git switch -q -c "$base" "refs/remotes/origin/$base" 2>/dev/null ||
+  sh "$here/transient.sh" git switch -q "$base" >/dev/null || sh "$here/transient.sh" git switch -q -c "$base" "refs/remotes/origin/$base" >/dev/null ||
     stop "git could not switch to $base (is it checked out in another worktree?): nothing deleted"
-  if git merge -q --ff-only "refs/remotes/origin/$base" 2>/dev/null; then
+  if sh "$here/transient.sh" git merge -q --ff-only "refs/remotes/origin/$base" >/dev/null; then
     echo "SWITCHED: to $base, at origin/$base"
   else
     echo "SWITCHED: to $base (it has commits of its own: not moved to origin/$base)"

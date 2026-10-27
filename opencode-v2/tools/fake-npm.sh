@@ -8,6 +8,8 @@
 # Markers, files next to package.json:
 #   fake-build-error       its build fails (a TypeScript error)
 #   fake-install-401       the registry refuses the install (Artifactory, 401)
+#   fake-install-flaky     the first install fails on the network (ECONNRESET), the next ones pass
+#   fake-install-down      every install fails on the network (ECONNRESET)
 #   fake-install-crash     npm fails inside itself (Cannot read properties of null)
 #   fake-install-script-error  the install script of a package fails
 #   fake-lock-out-of-sync  the lockfile does not match package.json
@@ -29,6 +31,13 @@ has() { for w in $args; do [ "$w" = "$1" ] && return 0; done; return 1; }
 
 # ---------- the package managers ----------
 install() {
+  if [ -f "$pkg/fake-install-down" ] || { [ -f "$pkg/fake-install-flaky" ] && [ ! -f "$pkg/fake-install-flaky.done" ]; }; then
+    [ -f "$pkg/fake-install-flaky" ] && : > "$pkg/fake-install-flaky.done"
+    echo "npm error code ECONNRESET"
+    echo "npm error network aborted"
+    echo "npm error network This is a problem related to network connectivity."
+    exit 1
+  fi
   if [ -f "$pkg/fake-install-401" ]; then
     echo "npm error code E401"
     echo "npm error Unable to authenticate, need: Basic realm=\"Artifactory Realm\""

@@ -109,9 +109,10 @@
 //    keep the state of the run (ticket, sheet, batch folder, current step and phase, sessionIDs of the subagents,
 //    commits), then every request that follows gets back, as instructions, the procedure of the command (the pilot,
 //    who first reads the ticket sheet again) or the task the pilot gave (a subagent).
-// 18. Gives the model server more time on a run of /go, /fix, /fortify or /tests and its subagents: OpenCode retries a failed
-//    request 10 times within about 1.5 minutes, then the run fails; the same 10 retries are spread over about 8
-//    minutes (a gateway that restarts, a 504 storm). A conversation keeps OpenCode's own timing.
+// 18. Gives the model server more time on a run of a command of the pack (/go, /fix, /fortify, /tests, /push, /sync,
+//    /daily…) and its subagents: OpenCode retries a failed request 10 times within about 1.5 minutes, then the run
+//    fails; the same 10 retries are spread over about 8 minutes (a gateway that restarts, a 504 storm). A conversation
+//    keeps OpenCode's own timing.
 // 19. Resumes a run of /go, /fix, /fortify or /tests that ended before its final answer, without me: after a failure of the
 //    model server (once its retries are spent: 2 minutes later, then 5), or when the pilot ended its turn without its
 //    final report (its step limit, or a model that stops halfway). The pilot gets, in the same session, a message that
@@ -3206,12 +3207,11 @@ export default Plugin.define({
       guards.env(invocation.env)
     })
 
-    // 18. the sessions of a run of /go, /fix, /fortify or /tests: the pilot's, and those of its subagents
-    const inPilotRun = async (sessionID) => {
+    // 18. the sessions of a run of a command of the pack: the session of the command, and those of its subagents
+    const inPackRun = async (sessionID) => {
       let id = sessionID
       for (let depth = 0; depth < 4 && id; depth++) {
-        const run = commandRuns.get(id)
-        if (run && run.pilot) return true
+        if (commandRuns.has(id)) return true
         let parent = parents.get(id)
         if (parent === undefined && subagentSessions.has(id)) {
           const info = await sessionInfo(id)
@@ -3325,7 +3325,7 @@ export default Plugin.define({
       // 18. more time for the model server during a run of the pack: the same retries, spread over about 8 minutes
       await api.hook("retry", async (event) => {
         try {
-          if (!event || !event.decision || event.decision.retry !== true || !(await inPilotRun(event.sessionID))) return
+          if (!event || !event.decision || event.decision.retry !== true || !(await inPackRun(event.sessionID))) return
           const least = patienceMs[Math.min(Math.max(Number(event.attempt) || 0, 0), patienceMs.length - 1)] || 0
           if (least > (Number(event.decision.delay) || 0)) event.decision.delay = least
         } catch {

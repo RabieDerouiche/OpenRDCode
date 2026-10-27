@@ -22,7 +22,9 @@
 # (state-fingerprint.sh): /check does not run the build and tests again while the code keeps this fingerprint.
 # An environment problem (dotnet missing from the PATH, the SDK of global.json or the runtime of the tests not installed,
 # a workload missing, the package feed refusing access: dotnet-problem.sh) ends with an "ENVIRONMENT PROBLEM" line: the
-# agent stops and tells the user instead of investigating.
+# agent stops and tells the user instead of investigating. A build that failed only on what passes by itself (the
+# package feed that did not answer, a file of the build another process held: transient.sh) is run again first, after
+# a pause, while the time of the command allows it ("RETRY:" lines); never a build with an error of the code.
 # A test that runs more than 5 minutes is stopped and named ("HANG:"), with VSTest, the default runner of dotnet test;
 # its run files go to the git folder, never to the repository.
 # Microsoft.Testing.Platform (MSTest.Sdk, the MSTest, NUnit or xUnit v3 runners, TUnit, or global.json): on the .NET 10
@@ -199,8 +201,14 @@ if [ "$no_build" -eq 1 ]; then
   : > "$out"
   status=0
 else
-  bounded "$(left)" dotnet build ${target:+"$target"} -nologo -v q -clp:ErrorsOnly > "$out" 2>&1
-  status=$?
+  tries=1
+  while :; do
+    bounded "$(left)" dotnet build ${target:+"$target"} -nologo -v q -clp:ErrorsOnly > "$out" 2>&1
+    status=$?
+    # the package feed that did not answer a moment, a file another process held (transient.sh): the same build again
+    [ "$status" -ne 0 ] && [ "$status" -ne 124 ] && sh "$(dirname "$0")/transient.sh" retry dotnet "$out" "$tries" "$(left)" || break
+    tries=$((tries + 1))
+  done
 fi
 tail -n 60 "$out"
 if [ "$status" -eq 124 ]; then

@@ -142,6 +142,21 @@ bounded() {
   if kill -0 "$watchdog" 2>/dev/null; then kill_tree "$watchdog"; else rc=124; fi
   return "$rc"
 }
+# again <log> <dotnet arguments>…: dotnet into the log, bounded by the time of this command, and run again after a
+# failure that passes by itself (transient.sh: the package feed that did not answer a moment, a file of the build that
+# another process held): its status; its "RETRY:" lines go to the output of this script
+again() {
+  again_log=$1
+  shift
+  again_tries=1
+  while :; do
+    bounded "$(left)" dotnet "$@" > "$again_log" 2>&1
+    again_rc=$?
+    [ "$again_rc" -ne 0 ] && [ "$again_rc" -ne 124 ] &&
+      sh "$scripts/transient.sh" retry dotnet "$again_log" "$again_tries" "$(left)" || return "$again_rc"
+    again_tries=$((again_tries + 1))
+  done
+}
 # a test run that did not end in the time of this command (its status, or the TIMEOUT line of build-test.sh): final,
 # like an environment problem (the agent reports it, the run stops)
 timed_out() {
@@ -438,8 +453,8 @@ run_tests() {
     timed_out $? "$3" "$1"
     return
   fi
-  bounded "$(left)" dotnet test "$1" --filter "$2" --nologo -v q --logger "console;verbosity=normal" ${4:+"$4"} \
-    --results-directory "$folder/results-run" --blame-hang-timeout "$HANG" --blame-hang-dump-type none > "$3" 2>&1
+  again "$3" test "$1" --filter "$2" --nologo -v q --logger "console;verbosity=normal" ${4:+"$4"} \
+    --results-directory "$folder/results-run" --blame-hang-timeout "$HANG" --blame-hang-dump-type none
   timed_out $? "$3" "$1"
 }
 
@@ -551,8 +566,8 @@ case "$1" in
     if is_mtp "$project"; then
       sh "$scripts/build-test.sh" "$project" --collect:"XPlat Code Coverage" --results-directory "$results" > "$folder/test-$label.log" 2>&1
     else
-      bounded "$(left)" dotnet test "$project" --collect:"XPlat Code Coverage" --results-directory "$results" --nologo -v q \
-        --logger "console;verbosity=normal" --blame-hang-timeout "$HANG" --blame-hang-dump-type none > "$folder/test-$label.log" 2>&1
+      again "$folder/test-$label.log" test "$project" --collect:"XPlat Code Coverage" --results-directory "$results" --nologo -v q \
+        --logger "console;verbosity=normal" --blame-hang-timeout "$HANG" --blame-hang-dump-type none
     fi
     timed_out $? "$folder/test-$label.log" "$project"
     environment "$folder/test-$label.log"
@@ -1138,7 +1153,7 @@ METHODS
         else
           add_package_ref "$done_already" Microsoft.EntityFrameworkCore.Sqlite "$efv"
         fi
-        if ! dotnet build "$done_already" -nologo -v q > "$log" 2>&1; then
+        if ! again "$log" build "$done_already" -nologo -v q; then
           git checkout -q -- . 2>/dev/null
           environment "$log"
           grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5
@@ -1204,7 +1219,7 @@ METHODS
           git checkout -q -- . 2>/dev/null
           stop "dotnet add reference failed: $(grep -v '^[[:space:]]*$' "$log" | tail -n 2 | tr '\n' ' ')"
         fi
-        if ! dotnet build "$target" -nologo -v q > "$log" 2>&1; then
+        if ! again "$log" build "$target" -nologo -v q; then
           git checkout -q -- . 2>/dev/null
           environment "$log"
           grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5
@@ -1251,7 +1266,7 @@ EOF
       [ -n "$added" ] || { echo "SETUP: nothing to do, every test project has its coverage collector"; exit 0; }
       while IFS= read -r t; do
         [ -n "$t" ] || continue
-        if ! dotnet build "$t" -nologo -v q > "$log" 2>&1; then
+        if ! again "$log" build "$t" -nologo -v q; then
           undo
           environment "$log"
           grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5
@@ -1379,7 +1394,7 @@ EOF
 $webs
 EOF
     fi
-    if ! dotnet build "$csproj" -nologo -v q > "$log" 2>&1; then
+    if ! again "$log" build "$csproj" -nologo -v q; then
       undo
       environment "$log"
       grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5

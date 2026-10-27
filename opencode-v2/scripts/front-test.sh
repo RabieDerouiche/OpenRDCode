@@ -5,7 +5,9 @@
 # package cannot be run as it is. build-test.sh calls it for a front-end target: a folder with a package.json and no
 # .NET project, or a repository without .NET project.
 #   - the dependencies are installed when node_modules or the test runner is missing, from the lockfile only (npm ci,
-#     yarn --frozen-lockfile or --immutable, pnpm --frozen-lockfile): never a package added or upgraded;
+#     yarn --frozen-lockfile or --immutable, pnpm --frozen-lockfile): never a package added or upgraded; an install that
+#     failed on a moment of the registry (a reset connection, no answer, 429 or 5xx) or on a folder held a moment is
+#     run again after 15 s, then 45 s, while the time of the command allows it (transient.sh, "RETRY:" lines);
 #   - the build is the "build" script of package.json (not with a filter: the tests compile what they import);
 #   - the tests are the "test" script, with what makes it run once: --watch=false (Angular CLI, Karma in ChromeHeadless),
 #     --watchAll=false (Create React App), --run (Vitest); a test script that watches by itself is run without its watch
@@ -34,13 +36,39 @@ if [ "$1" = --filter ]; then
   filter=$2
   shift 2
 fi
-# a command that may not end (a browser that never starts): stopped after 15 minutes, with every process it started
-# (timeout of GNU coreutils, gtimeout on a Mac with Homebrew's coreutils; without either, OpenCode stops the command)
+# a command that may not end (a browser that never starts, a registry that holds the install): stopped after 15
+# minutes, with every process it started (timeout of GNU coreutils, gtimeout on a Mac with Homebrew's coreutils;
+# without either, a watchdog of this script: TERM to the tree, then KILL 5 s later)
 limit=${FRONT_TEST_TIMEOUT:-900}
 if [ "$limit" -ge 120 ] 2>/dev/null; then limit_text="$((limit / 60)) min"; else limit_text="$limit s"; fi
+kill_tree() {
+  for child in $(pgrep -P "$1" 2>/dev/null); do
+    kill_tree "$child" "${2:-TERM}"
+  done
+  kill -s "${2:-TERM}" "$1" 2>/dev/null
+}
 if command -v timeout >/dev/null 2>&1; then bounded() { timeout -k 20 "$limit" "$@"; }
 elif command -v gtimeout >/dev/null 2>&1; then bounded() { gtimeout -k 20 "$limit" "$@"; }
-else bounded() { "$@"; }; fi
+else
+  bounded() {
+    mark="${TMPDIR:-/tmp}/front-test.$$.timeout"
+    rm -f "$mark"
+    "$@" &
+    pid=$!
+    # the watchdog writes nowhere but its mark: a sleeping process must not keep the output of the caller open
+    ( sleep "$limit"; : > "$mark"; kill_tree "$pid"; sleep 5; kill_tree "$pid" KILL ) </dev/null >/dev/null 2>&1 &
+    watchdog=$!
+    wait "$pid"
+    rc=$?
+    kill -0 "$watchdog" 2>/dev/null && kill_tree "$watchdog"
+    [ -f "$mark" ] && rc=124
+    rm -f "$mark"
+    return "$rc"
+  }
+fi
+# The time of this command (build-test.sh may have started it): the retries of an install start only when they fit
+OPENCODE_COMMAND_START=${OPENCODE_COMMAND_START:-$(date +%s)}
+left() { echo $((OPENCODE_COMMAND_START + ${BUILD_TEST_DEADLINE:-2520} - $(date +%s))); }
 
 # Plain output: the tools color it when they believe a CI runs them (picocolors, chalk); what is left is removed below
 NO_COLOR=1
@@ -195,8 +223,24 @@ if [ -z "$modules" ] || { [ -n "$tool" ] && [ ! -e "$modules/.bin/$tool" ]; }; t
     *) if [ "$f_lock" = none ]; then install="npm install --no-package-lock --no-save"; else install="npm ci"; fi ;;
   esac
   echo "INSTALL: $install (node_modules${tool:+ or $tool} missing)"
-  # shellcheck disable=SC2086 # the words of the command
-  if ! $install > "$out" 2>&1; then
+  tries=1
+  while :; do
+    # shellcheck disable=SC2086 # the words of the command
+    bounded $install > "$out" 2>&1
+    istatus=$?
+    # a moment of the registry, a folder held a moment (transient.sh): the same install again after a pause
+    [ "$istatus" -ne 0 ] && [ "$istatus" -ne 124 ] && [ "$istatus" -ne 137 ] &&
+      sh "$here/transient.sh" retry npm "$out" "$tries" "$(left)" || break
+    tries=$((tries + 1))
+  done
+  if [ "$istatus" -eq 124 ] || [ "$istatus" -eq 137 ]; then
+    plain "$out"
+    tail -n 15 "$out"
+    echo "BUILD: NOT RUN (the install did not end within $limit_text and was stopped)"
+    echo "ENVIRONMENT PROBLEM: the install of the dependencies did not end within $limit_text: the package registry is very slow or holds the connection. Stop and tell the user in one line."
+    exit 1
+  fi
+  if [ "$istatus" -ne 0 ]; then
     plain "$out"
     tail -n 25 "$out"
     echo "BUILD: NOT RUN (the install failed)"

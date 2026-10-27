@@ -25,6 +25,9 @@ export TMPDIR MSBUILDDISABLENODEREUSE DOTNET_CLI_TELEMETRY_OPTOUT DOTNET_NOLOGO 
 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$work/gitconfig"
 GIT_AUTHOR_NAME=dev GIT_AUTHOR_EMAIL=dev@example.com GIT_COMMITTER_NAME=dev GIT_COMMITTER_EMAIL=dev@example.com
 export GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+# the pauses of the retries of the scripts (transient.sh): none, a check of a failure that passes by itself does not wait
+RETRY_PAUSES="0 0"
+export RETRY_PAUSES
 printf '[init]\n\tdefaultBranch = develop\n' > "$GIT_CONFIG_GLOBAL"
 echo "real-dotnet-test: SDKs $(dotnet --list-sdks | awk '{ printf "%s%s", sep, $1; sep = ", " }'); runtimes $(dotnet --list-runtimes | awk '{ printf "%s%s %s", sep, $1, $2; sep = ", " }')"
 
@@ -108,6 +111,18 @@ printf 'public class Next { }\n' > src/Next/Next.cs
 commit
 run build-test.sh --build-only src/Next/Next.csproj
 check "a target framework newer than the SDK (NETSDK1045): an environment problem" 1 'ENVIRONMENT PROBLEM: a project targets \.NET 99\.0 newer than the \.NET SDK of this machine'
+
+# ---------- the package feed that does not answer (a port where nothing listens): asked three times, then said ----------
+repo feed
+mkdir -p src/Feed
+printf '<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n  </PropertyGroup>\n  <ItemGroup>\n    <PackageReference Include="Acme.Pack.NotInAnyCache" Version="1.0.0" />\n  </ItemGroup>\n</Project>\n' > src/Feed/Feed.csproj
+printf 'public class Feed { }\n' > src/Feed/Feed.cs
+printf '<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n  <packageSources>\n    <clear />\n    <add key="down" value="http://127.0.0.1:9/v3/index.json" />\n  </packageSources>\n</configuration>\n' > nuget.config
+commit
+run build-test.sh --build-only src/Feed/Feed.csproj
+check "the real NU1301 of a feed that does not answer: the same build again (transient.sh)" 1 '^RETRY: the package feed did not answer \(NU1301\): again in 0 s \(attempt 2 of 3\)$'
+check "…three attempts, then none left" 1 '^RETRY: none left: the package feed did not answer \(NU1301\), at each of the 3 attempts$'
+check "…then the environment problem, as before" 1 'ENVIRONMENT PROBLEM: the package feed \(Artifactory\) refused access or cannot be reached'
 
 # ---------- tests whose runtime is not installed ----------
 missing=""

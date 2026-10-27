@@ -13,6 +13,9 @@ export HOME
 GIT_CONFIG_NOSYSTEM=1
 GIT_AUTHOR_NAME=dev GIT_AUTHOR_EMAIL=dev@example.com GIT_COMMITTER_NAME=dev GIT_COMMITTER_EMAIL=dev@example.com
 export GIT_CONFIG_NOSYSTEM GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+# the pauses of the retries of the scripts (transient.sh): none, a check of a failure that passes by itself does not wait
+RETRY_PAUSES="0 0"
+export RETRY_PAUSES
 git config --global init.defaultBranch develop
 git config --global advice.detachedHead false
 
@@ -480,6 +483,136 @@ mkdir -p "$HOME/oc2/data/opencode/log"
 cp "$work/vlog/openrd-pack-runs.tsv" "$HOME/oc2/data/opencode/log/"
 run vitesse.sh
 check "vitesse: OpenCode v2 next to 1.19, its data folder in ~/oc2" 0 '^⏱ Vitesse des 2 derniers runs'
+
+# ---------- what passes by itself (transient.sh): a moment of the network, the index held by another git ----------
+# tcase <kind> <output of the command> [<attempt> [<seconds left> [<who>]]]: the answer of transient.sh
+tcase() {
+  printf '%b\n' "$2" > "$work/t.log"
+  out=$("$SHELL_UNDER_TEST" "$scripts/transient.sh" retry "$1" "$work/t.log" "${3:-1}" ${4:+"$4"} ${5:+"$5"} 2>&1)
+  status=$?
+}
+tcase dotnet '/x/Api.csproj : error NU1301: Unable to load the service index for source https://a.example.com/index.json. [/x/App.sln]'
+check "transient: the package feed that does not answer" 0 '^RETRY: the package feed did not answer \(NU1301\): again in 0 s \(attempt 2 of 3\)$'
+tcase dotnet '/x/Api.csproj : error NU1301: Unable to load the service index for source https://a.example.com/index.json.\n/x/Api.csproj : error NU1301:   Response status code does not indicate success: 401 (Unauthorized).'
+check "transient: never credentials refused" 1 '^$'
+tcase dotnet '/x/Api.csproj : error NU1301: Unable to load the service index for source https://a.example.com/index.json.\n/x/Api.csproj : error NU1101: Unable to find package Acme.Core.'
+check "transient: the packages a failed feed could not resolve go with it" 0 '^RETRY: the package feed'
+tcase dotnet 'src/Api/Program.cs(3,5): error CS0103: The name x does not exist in the current context\n/x/Api.csproj : error NU1301: Unable to load the service index'
+check "transient: never with an error of the code" 1 '^$'
+tcase dotnet "CSC : error CS2012: Cannot open '/x/obj/Debug/net10.0/Api.dll' for writing -- 'The process cannot access the file because it is being used by another process.' [/x/Api.csproj]"
+check "transient: a file of the build held a moment" 0 '^RETRY: a file of the build was held by another process \(CS2012\)'
+tcase dotnet 'error MSB4166: Child node "2" exited prematurely. Shutting down.'
+check "transient: a worker of MSBuild that stopped" 0 '^RETRY: a worker process of MSBuild stopped \(MSB4166\)'
+tcase dotnet '  Failed Api.Tests.OrderTests.Total [3 ms]\n  Error Message:\n   Assert.Equal() Failure'
+check "transient: never a test that fails" 1 '^$'
+tcase dotnet 'error NU1301: Unable to load the service index' 3
+check "transient: three attempts at most" 1 '^RETRY: none left: the package feed did not answer \(NU1301\), at each of the 3 attempts$'
+tcase dotnet 'error NU1301: Unable to load the service index' 1 40
+check "transient: never past the time of the command" 1 '^RETRY: no time left for another attempt \(40 s\): the package feed'
+tcase npm 'npm error code ECONNRESET\nnpm error network aborted'
+check "transient: the registry that resets the connection" 0 '^RETRY: the package registry did not answer \(ECONNRESET\)'
+tcase npm 'npm warn old lockfile\nnpm error code ETIMEDOUT'
+check "transient: a warning about the lockfile is not a lockfile error" 0 '^RETRY: the package registry did not answer \(ETIMEDOUT\)'
+tcase npm 'npm error code E401\nnpm error Unable to authenticate'
+check "transient: never a registry that refuses" 1 '^$'
+tcase npm 'npm error `npm ci` can only install packages when your package.json and package-lock.json are in sync.'
+check "transient: never a lockfile out of sync" 1 '^$'
+tcase network "fatal: unable to access 'https://gitlab.example.com/app.git/': Could not resolve host: gitlab.example.com" 1 60 GitLab
+check "transient: GitLab not reached a moment" 0 '^RETRY: GitLab did not answer \(Could not resolve host\): again in 0 s \(attempt 2 of 3\)$'
+tcase network ' ! [rejected]        feature/x -> feature/x (fetch first)' 1 60 GitLab
+check "transient: never a rejected push" 1 '^$'
+tcase network "remote: HTTP Basic: Access denied\nfatal: Authentication failed for 'https://gitlab.example.com/app.git/'" 1 60 GitLab
+check "transient: never credentials refused by GitLab" 1 '^$'
+tcase network 'no answer from the remote within 30 s' 1 20 GitLab
+check "transient: no answer at all: again only when a whole attempt fits" 1 '^RETRY: no time left for another attempt \(20 s\): GitLab did not answer \(no answer from the remote within 30 s\)$'
+
+git init -q --bare "$work/retry-origin.git"
+git clone -q "$work/retry-origin.git" "$work/retry" 2>/dev/null
+cd "$work/retry" || exit 1
+printf 'x\n' > x.txt && git add -A && git commit -q -m init && git push -q origin develop 2>/dev/null
+git switch -q -c feature/ABC-30-retries
+# the index held a moment by another git (Rider refreshing its status): the commit waits, then passes
+printf 'y\n' > y.txt
+: > .git/index.lock
+( sleep 1; rm -f .git/index.lock ) &
+run ship.sh --no-push "feat: y (ABC-30)"
+wait
+check "index.lock held a moment: the commit waits for it" 0 '^COMMIT: .*feat: y \(ABC-30\)'
+printf 'z\n' > z.txt
+: > .git/index.lock
+run ship.sh --no-push "feat: z (ABC-30)"
+check "index.lock that stays: named, the developer deletes it" 1 '^STOP: git add failed: .*NOTE: another git process has held .*index\.lock for more than 6 s'
+truth "index.lock that stays: never deleted by the script" '[ -f .git/index.lock ]'
+rm -f .git/index.lock
+# a git whose fetch or push fails as a network that drops a moment: FLAKY=fetch|push, its first FLAKY_FAILS calls
+# (FLAKY_ERROR: the message); FLAKY=race: a teammate pushes on the branch just before the first push
+real_git=$(command -v git)
+mkdir -p "$work/flaky"
+cat > "$work/flaky/git" <<EOF
+#!/bin/sh
+if [ "\$1" = "\${FLAKY:-}" ] || { [ "\${FLAKY:-}" = race ] && [ "\$1" = push ]; }; then
+  n=\$(cat "$work/flaky.count" 2>/dev/null || echo 0)
+  if [ "\$n" -lt "\${FLAKY_FAILS:-1}" ]; then
+    echo \$((n + 1)) > "$work/flaky.count"
+    if [ "\$FLAKY" = race ]; then
+      (cd "$work/retry-mate" && "$real_git" pull -q && echo mate >> mate.txt && "$real_git" add -A && "$real_git" commit -q -m mate && "$real_git" push -q) >/dev/null 2>&1
+    else
+      printf '%b\n' "\${FLAKY_ERROR:-fatal: unable to access 'https://gitlab.example.com/app.git/': Could not resolve host: gitlab.example.com}" >&2
+      exit 128
+    fi
+  fi
+fi
+exec "$real_git" "\$@"
+EOF
+chmod +x "$work/flaky/git"
+plain_path=$PATH
+PATH="$work/flaky:$PATH"
+export PATH
+FLAKY=push FLAKY_FAILS=1
+export FLAKY FLAKY_FAILS
+rm -f "$work/flaky.count"
+run ship.sh "feat: deliver (ABC-30)"
+check "push: GitLab not reached a moment, pushed again" 0 '^RETRY: GitLab did not answer \(Could not resolve host\): again in 0 s \(attempt 2 of 3\)$'
+check "push: …then pushed" 0 '^PUSH: OK'
+printf 'w\n' > w.txt
+FLAKY_FAILS=9
+rm -f "$work/flaky.count"
+run ship.sh "feat: w (ABC-30)"
+check "push: GitLab never reached: three attempts, then the stop" 1 '^RETRY: none left: GitLab did not answer \(Could not resolve host\), at each of the 3 attempts$'
+check "push: …what failed, said" 1 "^STOP: git push failed: fatal: unable to access 'https://gitlab\.example\.com/app\.git/': Could not resolve host"
+FLAKY_FAILS=1 FLAKY_ERROR="remote: HTTP Basic: Access denied
+fatal: Authentication failed for https://gitlab.example.com/app.git/"
+export FLAKY_ERROR
+rm -f "$work/flaky.count"
+run ship.sh "feat: w (ABC-30)"
+check "push: credentials refused are never retried" 1 '^STOP: AUTH FAILED' 'RETRY'
+unset FLAKY_ERROR
+FLAKY=fetch
+rm -f "$work/flaky.count"
+run fetch.sh -q --no-tags origin
+check "fetch: GitLab not reached a moment, fetched again" 0 '^RETRY: GitLab did not answer \(Could not resolve host\)'
+FLAKY_FAILS=9
+rm -f "$work/flaky.count"
+run workflow-state.sh
+check "workflow-state: GitLab never reached, the command goes on with the last fetch" 0 '^Fetch: FAILED'
+truth "…three attempts of the fetch" '[ "$(cat "$work/flaky.count")" -eq 3 ]'
+# the branch moved on GitLab between the fetch and the push: its commits merged, then pushed again
+FLAKY=push FLAKY_FAILS=0
+rm -f "$work/flaky.count"
+run ship.sh "feat: w (ABC-30)"
+check "push: w delivered" 0 '^PUSH: OK'
+git clone -q -b feature/ABC-30-retries "$work/retry-origin.git" "$work/retry-mate" 2>/dev/null
+printf 'v\n' > v.txt
+FLAKY=race FLAKY_FAILS=1
+rm -f "$work/flaky.count"
+run ship.sh "feat: v (ABC-30)"
+check "push refused: the branch moved during the push" 0 '^PUSH: refused, origin/feature/ABC-30-retries moved since the fetch: its new commits first$'
+check "…its commits merged" 0 '^REMOTE: the 1 commits of origin/feature/ABC-30-retries merged \(pushed while this push ran\)$'
+check "…then pushed" 0 '^PUSH: OK'
+truth "…the teammate's file is here" '[ -f mate.txt ]'
+PATH=$plain_path
+export PATH
+unset FLAKY FLAKY_FAILS
 
 echo "$pass checks passed, $fail failed ($SHELL_UNDER_TEST)"
 [ "$fail" -eq 0 ]

@@ -1485,6 +1485,13 @@ await check("[v2 18] a longer wait the provider asks for stays, and a retry Open
   await sum.hooks["session.retry"](refused)
   assert.deepEqual(refused.decision, { retry: false })
 })
+sum.sessions.set("sum-3", { id: "sum-3", title: "Daily" })
+await sumPrompt("sum-3", "[[command daily]]\nThe day of the developer.")
+await check("[v2 18] every command of the pack gets that time (/daily, /push, /sync), not only the pilot's", async () => {
+  const event = { sessionID: "sum-3", agent: "build", attempt: 2, error: { type: "provider.transport", message: "x" }, decision: { retry: true, delay: 2100 } }
+  await sum.hooks["session.retry"](event)
+  assert.equal(event.decision.delay, 10000)
+})
 sum.sessions.set("sum-2", { id: "sum-2", title: "Question" })
 await sumPrompt("sum-2", "explique-moi ce service")
 await check("[v2 17 and 18] a conversation: nothing added, OpenCode's own retry timing", async () => {

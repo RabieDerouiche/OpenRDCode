@@ -34,6 +34,9 @@ unset HTTPS_PROXY https_proxy HTTP_PROXY http_proxy ALL_PROXY all_proxy NO_PROXY
 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$work/gitconfig"
 GIT_AUTHOR_NAME=dev GIT_AUTHOR_EMAIL=dev@example.com GIT_COMMITTER_NAME=dev GIT_COMMITTER_EMAIL=dev@example.com
 export GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+# the pauses of the retries of the scripts (transient.sh): none, a check of a failure that passes by itself does not wait
+RETRY_PAUSES="0 0"
+export RETRY_PAUSES
 printf '[init]\n\tdefaultBranch = develop\n' > "$GIT_CONFIG_GLOBAL"
 
 pass=0
@@ -341,6 +344,10 @@ cat > "$work/more-envs" <<EOF
   - proxy : $P
   - proxy-identifiants : \`RECETTE_PROXY_CREDENTIALS\`
   - santé : /down
+- \`waking\` : http://api.lab.test
+  - proxy : $P
+  - proxy-identifiants : \`RECETTE_PROXY_CREDENTIALS\`
+  - santé : /waking
 EOF
 add_envs "$work/more-envs"
 truth "the environments of these tests are in the section" '[ "$(sh "$scripts/environments.sh" | grep -c -v "^WARNING:")" -ge 20 ]'
@@ -384,6 +391,10 @@ run env-tests.sh --check nocafile
 check "env-tests --check: a certificate file that is not there" 1 '^ENVIRONMENT PROBLEM: the certificate file of nocafile \(~/nope/ca\.pem\) is not on this machine'
 run env-tests.sh --check down
 check "env-tests --check: an environment down behind its gateway" 1 '^ENVIRONMENT PROBLEM: down \(http://api\.lab\.test\) answers 503 on /down'
+check "env-tests --check: …asked three times before (transient.sh)" 1 '^RETRY: none left: down did not answer \(http status: 503\), at each of the 3 attempts$'
+run env-tests.sh --check waking
+check "env-tests --check: an environment that restarts: its 503 is asked again" 0 '^RETRY: waking did not answer \(http status: 503\): again in 0 s \(attempt 2 of 3\)$'
+check "env-tests --check: …then it answers" 0 '^CHECK: API http://api\.lab\.test/waking answers 200'
 run env-tests.sh --check prod
 check "env-tests --check: never production" 1 '^STOP: prod is a production environment'
 

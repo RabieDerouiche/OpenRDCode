@@ -251,22 +251,31 @@ need_curl() {
   exit 1
 }
 # req <output file> <curl configuration lines...>: the HTTP status and the status of the proxy's CONNECT, then the
-# exit code of curl, in $code $connect $cexit; its errors in $tmp/curl.err
+# exit code of curl, in $code $connect $cexit; its errors in $tmp/curl.err. A request that failed on a moment of the
+# network or of the environment (a reset or refused connection, no answer in time, 429, 502, 503, 504: transient.sh)
+# is sent again after 3 s, then 10 s ("RETRY:" lines); never after a certificate, a proxy or a token refused
 req() {
   rout=$1
   shift
-  : > "$rout"
-  # the configuration (with a secret, sometimes) goes to curl by a pipe: never on its command line, never on the disk
-  w=$( {
-    printf '%s\n' "$@"
-    printf 'silent\nshow-error\nconnect-timeout = 15\nmax-time = 45\nwrite-out = "%%{http_code} %%{http_connect}"\noutput = "%s"\n' "$(cesc "$rout")"
-    [ -n "$cacert" ] && printf 'cacert = "%s"\n' "$(cesc "$cacert")"
-    [ "$proxy" = none ] && printf 'noproxy = "*"\n'
-  } | curl -K - 2> "$tmp/curl.err")
-  cexit=$?
-  code=${w%% *} connect=${w#* }
-  [ -n "$code" ] || code=000
-  [ -n "$connect" ] || connect=000
+  rtry=1
+  while :; do
+    : > "$rout"
+    # the configuration (with a secret, sometimes) goes to curl by a pipe: never on its command line, never on the disk
+    w=$( {
+      printf '%s\n' "$@"
+      printf 'silent\nshow-error\nconnect-timeout = 15\nmax-time = 45\nwrite-out = "%%{http_code} %%{http_connect}"\noutput = "%s"\n' "$(cesc "$rout")"
+      [ -n "$cacert" ] && printf 'cacert = "%s"\n' "$(cesc "$cacert")"
+      [ "$proxy" = none ] && printf 'noproxy = "*"\n'
+    } | curl -K - 2> "$tmp/curl.err")
+    cexit=$?
+    code=${w%% *} connect=${w#* }
+    [ -n "$code" ] || code=000
+    [ -n "$connect" ] || connect=000
+    # what transient.sh reads: the errors of curl, the status of the answer and of the proxy
+    { cat "$tmp/curl.err"; echo "http status: $code"; echo "http status: $connect"; } > "$tmp/curl.try"
+    { [ "$cexit" -ne 0 ] || [ "$code" -ge 429 ]; } && sh "$here/transient.sh" retry network "$tmp/curl.try" "$rtry" "" "$name" || break
+    rtry=$((rtry + 1))
+  done
 }
 # Why a request to <what> (<where>) did not answer, as an ENVIRONMENT PROBLEM line, or nothing when it did
 unreachable() {

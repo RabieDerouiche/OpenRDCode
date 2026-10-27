@@ -367,6 +367,30 @@ grep -E 'summarized|summary of a run failed' ~/oc2/data/opencode/log/openrd-pack
 
 **Les marques du titre** : `⏳` en cours, `❓` une question ou une autorisation t'attend, `✅` livré ou rien à faire, `⏸` le run t'attend (une réponse du PO : relance avec la réponse, `/go ABC-123 <réponse>`), `↻` il va reprendre tout seul, `⛔` arrêté.
 
+## Ce qui est relancé tout seul (`RETRY:`)
+
+Une ligne `RETRY:` dans la sortie d'un script, c'est le script qui refait la même chose après une courte pause, parce que l'échec venait d'un instant et pas du code ni de la machine :
+```text
+RETRY: the package feed did not answer (NU1301): again in 20 s (attempt 2 of 3)
+RETRY: GitLab did not answer (Could not resolve host): again in 3 s (attempt 2 of 3)
+RETRY: none left: the package registry did not answer (ECONNRESET), at each of the 3 attempts
+```
+Rien à faire : les dernières lignes donnent le résultat. Ce qui est relancé, et combien de fois (`scripts/transient.sh`) :
+
+| Quoi | Quand | Pauses |
+|---|---|---|
+| `git fetch` (toutes les commandes) | pas de réponse, connexion coupée ou refusée, nom non résolu, HTTP 429 ou 5xx | 3 puis 10 s, 75 s en tout ; une absence totale de réponse une fois seulement, et jamais au début d'une commande (`workflow-state.sh` continue sans) |
+| `git push` (`ship.sh`) | les mêmes ; et la branche qui a bougé sur GitLab pendant le push : ses commits ramenés par merge, le contrôle avant push refait, un nouveau push | 3 puis 10 s, dans les 5 minutes de `ship.sh` |
+| `git add`, `commit`, `merge`, `switch` | un autre git tient l'index (`index.lock` : Rider, VS Code) | 1, 2 puis 3 s ; un verrou qui reste est nommé, tu le supprimes toi-même |
+| un build .NET, une mesure de couverture | toutes ses erreurs sont le flux de paquets qui ne répond pas (NU1301), ou un fichier tenu par un autre processus (CS2012, MSB3027), ou MSBuild qui perd un nœud (MSB4166) | 20 puis 60 s (10 puis 30 pour un fichier tenu) |
+| `npm ci`, `yarn`, `pnpm install` | le registre coupe ou ne répond pas (ECONNRESET, ETIMEDOUT, 5xx), un dossier tenu (EBUSY) | 15 puis 45 s ; l'installation est bornée à 15 minutes |
+| `/tests env` (curl) | le fournisseur ou l'environnement coupe, ne répond pas, répond 429, 502, 503 ou 504 | 3 puis 10 s |
+| un appel MCP (règle des agents) | pas de réponse, 429, 5xx, connexion coupée | un seul rappel, après 20 s (`pause.sh`) ; une écriture seulement après avoir vérifié qu'elle n'a pas eu lieu |
+| un sous-agent arrêté par le serveur du modèle | « Subagent failed » au lieu d'un rapport | repris une fois dans sa session, avant le diagnostic |
+| le serveur du modèle (plugin, 18 et 19) | 5xx, délai, connexion | 10 essais étalés sur 8 minutes pour toute commande du pack ; puis le run reprend tout seul 2 puis 5 minutes plus tard (`/go`, `/fix`, `/fortify`, `/tests`) |
+
+Jamais relancé : un test qui échoue (un test qui change de résultat est `FLAKY`, un défaut à corriger), une erreur de compilation, des identifiants refusés (401, 403, `AUTH FAILED`), un paquet ou une référence qui n'existent pas, un conflit, un push refusé par un hook ou une branche protégée, un `TIMEOUT` de suite. Après les essais, la ligne habituelle suit (`ENVIRONMENT PROBLEM`, `STOP`) : c'est un vrai problème, à régler hors d'OpenCode.
+
 ## Plusieurs tickets d'un même dépôt (espaces de travail)
 
 Un espace de travail est un deuxième dossier du même dépôt (un worktree git), avec sa propre branche et ses propres sessions. La v2 les crée dans son interface, sans aucun script ; aucun agent n'a le droit d'en créer, d'en supprimer ou de déplacer une session. Organisation conseillée : le dépôt principal reste sur develop pour `/daily`, `/review`, `/compare` et tes questions ; chaque ticket a son dossier.

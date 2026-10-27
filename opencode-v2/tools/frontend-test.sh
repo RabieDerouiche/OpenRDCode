@@ -39,6 +39,9 @@ export TMPDIR
 GIT_CONFIG_NOSYSTEM=1
 GIT_AUTHOR_NAME=dev GIT_AUTHOR_EMAIL=dev@example.com GIT_COMMITTER_NAME=dev GIT_COMMITTER_EMAIL=dev@example.com
 export GIT_CONFIG_NOSYSTEM GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+# the pauses of the retries of the scripts (transient.sh): none, a check of a failure that passes by itself does not wait
+RETRY_PAUSES="0 0"
+export RETRY_PAUSES
 [ "$real" -eq 0 ] && git config --global init.defaultBranch develop
 
 pass=0
@@ -322,6 +325,17 @@ run build-test.sh ClientApp
 check "the registry refuses the install: an environment problem" 1 'ENVIRONMENT PROBLEM: the package registry \(Artifactory\) refused access'
 check "and nothing is built" 1 'BUILD: NOT RUN \(the install failed\)'
 rm ClientApp/fake-install-401
+# the registry that drops the connection a moment: the same install again (transient.sh)
+touch ClientApp/fake-install-flaky
+run build-test.sh ClientApp
+check "the registry drops the install a moment: installed again" 0 '^RETRY: the package registry did not answer \(ECONNRESET\): again in 0 s \(attempt 2 of 3\)$'
+check "…then installed, built and tested" 0 '^INSTALL: OK$'
+rm -rf ClientApp/fake-install-flaky ClientApp/fake-install-flaky.done ClientApp/node_modules
+touch ClientApp/fake-install-down
+run build-test.sh ClientApp
+check "the registry never answers: three attempts" 1 '^RETRY: none left: the package registry did not answer \(ECONNRESET\), at each of the 3 attempts$'
+check "…then the environment problem, as before" 1 '^ENVIRONMENT PROBLEM: the package registry cannot be reached from this machine'
+rm ClientApp/fake-install-down
 touch ClientApp/fake-lock-out-of-sync
 run build-test.sh ClientApp
 check "a lockfile out of sync stops the run" 1 'STOP: the lockfile \(ClientApp/package-lock.json\) is not in sync with package.json'

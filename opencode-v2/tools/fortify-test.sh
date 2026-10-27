@@ -59,6 +59,9 @@ export PATH FAKE_DOTNET_LOG FAKE_DOTNET_STATE FAKE_DOTNET_COVER TMPDIR
 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$work/gitconfig"
 GIT_AUTHOR_NAME=dev GIT_AUTHOR_EMAIL=dev@example.com GIT_COMMITTER_NAME=dev GIT_COMMITTER_EMAIL=dev@example.com
 export GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+# the pauses of the retries of the scripts (transient.sh): none, a check of a failure that passes by itself does not wait
+RETRY_PAUSES="0 0"
+export RETRY_PAUSES
 printf '[init]\n\tdefaultBranch = develop\n[advice]\n\tdetachedHead = false\n' > "$GIT_CONFIG_GLOBAL"
 # a repository standing for GitLab, and its clone on develop
 gitlab() {

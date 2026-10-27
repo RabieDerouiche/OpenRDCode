@@ -70,7 +70,8 @@ find_base() {
 find_base
 
 # The fetch never asks for credentials and gives up after 30 s (fetch.sh): the remote-tracking branches are then those
-# of the last fetch, and the line below says so
+# of the last fetch, and the line below says so. A moment of the network is retried within 45 s, never a fetch that got
+# no answer at all: this command goes on without it, and every command of the pack starts with it
 fetch_failed() {
   case "$1" in
     124)
@@ -82,7 +83,7 @@ fetch_failed() {
   esac
 }
 if [ "$fetch" = all ] || { [ "$fetch" = branch ] && [ -z "$base" ]; }; then
-  sh "$here/fetch.sh" -q --no-tags origin 2>/dev/null || fetch_failed $?
+  FETCH_BUDGET=45 sh "$here/fetch.sh" -q --no-tags origin 2>/dev/null || fetch_failed $?
   find_base
 elif [ "$fetch" = branch ]; then
   # The base branch, and the remote copy of the current branch if it exists: a pattern that matches nothing is not
@@ -91,7 +92,7 @@ elif [ "$fetch" = branch ]; then
   case "$upstream" in origin/*) remote_name=${upstream#origin/} ;; esac
   set -- "+refs/heads/${base#origin/}:refs/remotes/$base"
   [ -n "$remote_name" ] && set -- "$@" "+refs/heads/$remote_name*:refs/remotes/origin/$remote_name*"
-  sh "$here/fetch.sh" -q --no-tags origin "$@" 2>/dev/null || fetch_failed $?
+  FETCH_BUDGET=45 sh "$here/fetch.sh" -q --no-tags origin "$@" 2>/dev/null || fetch_failed $?
 fi
 
 key=$(printf '%s' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -1)

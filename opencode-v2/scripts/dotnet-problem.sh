@@ -10,7 +10,8 @@
 #   - a workload is missing (NETSDK1147), a Windows project on this machine (NETSDK1100), a .NET Framework project
 #     without its reference assemblies (MSB3644);
 #   - tests that need Docker (Testcontainers) or SQL Server LocalDB, which this machine does not run;
-#   - the package feed refuses access or cannot be reached (NU1301, 401, 403).
+#   - the package feed refuses access or cannot be reached (NU1301, 401, 403);
+#   - a file of the build held by another process, the workers of MSBuild that stop (MSB4166), still after the retries.
 # Usage: dotnet-problem.sh <file with the output of dotnet>
 
 log=$1
@@ -87,6 +88,18 @@ if grep -q -E 'Docker is either not running or misconfigured|DockerUnavailableEx
 fi
 if grep -q -E 'LocalDB is not supported on this platform' "$log"; then
   echo "ENVIRONMENT PROBLEM: some tests need SQL Server LocalDB, which exists on Windows only: they fail for that reason, not because of the code. Stop and tell the user in one line, or run the other tests with the filter of AGENTS.md « Build & test ». Never change or skip these tests."
+  exit 0
+fi
+
+# A file of the build that another process holds (the scripts retried it first: transient.sh): the application started
+# from a terminal or by Rider, a build of Rider at the same moment; or the workers of MSBuild that stop
+if grep -q -E 'used by another process|is locked by' "$log"; then
+  who=$(grep -o -E 'locked by: "[^"]*"' "$log" | head -n 1 | sed 's/^locked by: //')
+  echo "ENVIRONMENT PROBLEM: a file of the build is held by another process${who:+ ($who)}, again after the retries: the application started from a terminal or by Rider, or a build of Rider at the same moment. Stop and tell the user in one line: stop it, then run again. Never change a project or its output folder to get around it."
+  exit 0
+fi
+if grep -q 'MSB4166' "$log"; then
+  echo "ENVIRONMENT PROBLEM: the worker processes of MSBuild stopped during the build (MSB4166), again after the retries: the machine lacks memory, or a build server is stuck. Stop and tell the user in one line: dotnet build-server shutdown, outside OpenCode, then run again."
   exit 0
 fi
 

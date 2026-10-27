@@ -32,7 +32,7 @@ export LC_ALL
 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.quotePath GIT_CONFIG_VALUE_0=false
 export GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 
-here=$(dirname "$0")
+here=$(cd "$(dirname "$0")" && pwd)
 stop() {
   echo "STOP: $*"
   exit 1
@@ -172,7 +172,7 @@ if [ "$mode" = here ]; then
     [ -n "$default" ] && git rev-parse -q --verify "refs/remotes/origin/$default" >/dev/null &&
       extra=$(git rev-list --count "refs/remotes/origin/$default..HEAD")
   fi
-  git switch -q -c "$name" 2>/dev/null || stop "git could not create $name"
+  sh "$here/transient.sh" git switch -q -c "$name" >/dev/null || stop "git could not create $name"
   echo "BRANCH: $name (created from ${current:-the detached HEAD $detached}, at $(git log -1 --format='%h, %cs'))${renamed:+ (the name given, made valid: $renamed)}"
   [ -n "$dirty" ] && echo "CARRIED: the uncommitted changes came along: $dirty"
   if [ "$extra" -gt 0 ]; then
@@ -282,12 +282,12 @@ if [ -n "$local_branch" ] || [ -n "$remote_branch" ]; then
     if [ -n "$elsewhere" ]; then
       stop "the branch $local_branch is open in another worktree ($elsewhere): continue the ticket there (one ticket per worktree)"
     fi
-    git switch -q "$local_branch" 2>/dev/null || stop "git could not switch to $local_branch"
+    sh "$here/transient.sh" git switch -q "$local_branch" >/dev/null || stop "git could not switch to $local_branch"
     echo "BRANCH: $local_branch (switched, existing local branch)"
     record_base "$local_branch"
   else
     name=${remote_branch#origin/}
-    git switch -q -c "$name" --track "$remote_branch" 2>/dev/null || stop "git could not create $name from $remote_branch"
+    sh "$here/transient.sh" git switch -q -c "$name" --track "$remote_branch" >/dev/null || stop "git could not create $name from $remote_branch"
     echo "BRANCH: $name (switched, from $remote_branch pushed from another computer)"
     record_base "$name"
   fi
@@ -310,9 +310,9 @@ words=$(slug "$summary")
 name="$type/$key"
 [ -n "$words" ] && name="$name-$words"
 
-if git switch -q --no-track -c "$name" "origin/$start" 2>/dev/null; then
+if sh "$here/transient.sh" git switch -q --no-track -c "$name" "origin/$start" >/dev/null; then
   echo "BRANCH: $name (created from origin/$start, $(git log -1 --format='%h, %cs' "origin/$start"))"
-elif [ -n "$dirty" ] && git switch -q -c "$name" 2>/dev/null; then
+elif [ -n "$dirty" ] && sh "$here/transient.sh" git switch -q -c "$name" >/dev/null; then
   # the changes touch files that origin/<start> changed since the current commit: the branch starts here, with them
   echo "BRANCH: $name (created at the current commit $(git log -1 --format='%h, %cs'), with the uncommitted changes: origin/$start changed the same files since; ship.sh --base merges it before the push)"
 else

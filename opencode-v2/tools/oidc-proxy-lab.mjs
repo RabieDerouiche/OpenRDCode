@@ -16,7 +16,8 @@
 //   Clients (realm "test", audience "acme-api"): tests-recette / s3cr3t-recette (service account, roles orders.read),
 //   tests-admin / s3cr3t-admin (roles orders.read, admin), no-sa / s3cr3t-nosa (no service account), tests-other /
 //   s3cr3t-other (its tokens are for the audience other-api: the API refuses them), legacy / s3cr3t-legacy (a wrong
-//   secret answered unauthorized_client, as older Keycloak versions did). GET /down answers 503. Scopes known:
+//   secret answered unauthorized_client, as older Keycloak versions did). GET /down answers 503; GET /waking answers 503
+//   once, then 200 (an environment that restarts: the retry of env-tests.sh). Scopes known:
 //   openid, profile, email, api://acme-api/.default. Access tokens live 300 s (Keycloak's default).
 import { createServer as http } from "node:http"
 import { createServer as https } from "node:https"
@@ -122,11 +123,17 @@ const provider = (base) => async (req, res) => {
   }
   json(res, 404, { error: "not found" })
 }
+let waking = 0
 const api = async (req, res) => {
   const url = new URL(req.url, "http://api")
   if (url.pathname === "/health") return json(res, 200, { status: "Healthy" })
   // an environment down behind its gateway
   if (url.pathname === "/down") return json(res, 503, { error: "Service Unavailable" })
+  // an environment that restarts: its first answer is a 503
+  if (url.pathname === "/waking") {
+    waking += 1
+    return waking === 1 ? json(res, 503, { error: "Service Unavailable" }) : json(res, 200, { status: "Healthy" })
+  }
   if (url.pathname === "/api/orders" || url.pathname === "/api/admin") {
     const check = checkToken(req.headers.authorization)
     if (check.error) {

@@ -23,6 +23,9 @@ export PATH FAKE_DOTNET_LOG FAKE_DOTNET_STATE TMPDIR
 GIT_CONFIG_NOSYSTEM=1
 GIT_AUTHOR_NAME=dev GIT_AUTHOR_EMAIL=dev@example.com GIT_COMMITTER_NAME=dev GIT_COMMITTER_EMAIL=dev@example.com
 export GIT_CONFIG_NOSYSTEM GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+# the pauses of the retries of the scripts (transient.sh): none, a check of a failure that passes by itself does not wait
+RETRY_PAUSES="0 0"
+export RETRY_PAUSES
 git config --global init.defaultBranch develop
 
 pass=0
@@ -195,6 +198,14 @@ run test-guardian.sh coverage before tests/App.Tests/App.Tests.csproj src/App/In
 check "VSTest coverage of a file" 0 '^src/App/Invoice.cs lines 2/3 \(66%\) branches 0/0 uncovered 4$'
 check "VSTest coverage: the counts" 0 '^TESTS: 3 passed, 0 failed$'
 called "VSTest coverage: each test named in its log" '^dotnet test tests/App.Tests/App.Tests.csproj --collect:XPlat Code Coverage .*--logger console;verbosity=normal'
+# the package feed that fails a moment: the measure builds again after its pause (transient.sh), then measures
+rm -f "$FAKE_DOTNET_STATE"/moment-*
+FAKE_DOTNET_FEED_FAILS=1
+export FAKE_DOTNET_FEED_FAILS
+run test-guardian.sh coverage feed tests/App.Tests/App.Tests.csproj src/App/Invoice.cs
+unset FAKE_DOTNET_FEED_FAILS
+check "coverage: the package feed fails a moment, the measure runs again" 0 '^RETRY: the package feed did not answer \(NU1301\): again in 0 s \(attempt 2 of 3\)$'
+check "…and measures" 0 '^src/App/Invoice.cs lines 2/3 \(66%\) branches 0/0 uncovered 4$'
 sed -i 's/InvoiceTests.Tax pass/InvoiceTests.Tax fail Assert.Equal() Failure: Expected 2, Actual 3/' tests/App.Tests/App.Tests.csproj
 run test-guardian.sh coverage with-failure tests/App.Tests/App.Tests.csproj src/App/Invoice.cs
 check "VSTest coverage: a test that fails, named" 0 '^FAILED TESTS \(1\): App.Tests.InvoiceTests.Tax$'
@@ -302,6 +313,8 @@ sed -i 's#</Project>#  <!-- fake-build-error -->\n</Project>#' src/App/App.cspro
 run build-test.sh
 check "VSTest: a build error stops before the tests" 1 '^BUILD: FAILED \(exit 1, 1 distinct errors\) - tests not run$'
 called "VSTest: no test run after a failed build" '^dotnet build' '^dotnet test'
+check "a compilation error is never run again" 1 '^BUILD: FAILED' 'RETRY'
+truth "…one build" '[ "$(printf "%s\n" "$calls" | grep -c "^dotnet build")" -eq 1 ]'
 git checkout -q -- .
 
 # a lock held by a live process: the wait gives up, and leaves no file behind
@@ -670,6 +683,33 @@ Microsoft.NETCore.App 10.0.0"
 export FAKE_DOTNET_RUNTIMES
 run build-test.sh
 check ".NET 8 with its SDK and runtimes: build and tests" 0 '^TESTS: OK$' 'ENVIRONMENT PROBLEM'
+# what passes by itself (transient.sh): the package feed or a file of the build that fails a moment, built again
+rm -f "$FAKE_DOTNET_STATE"/moment-*
+FAKE_DOTNET_FEED_FAILS=1
+export FAKE_DOTNET_FEED_FAILS
+run build-test.sh
+check "the package feed fails a moment: the same build again" 0 '^RETRY: the package feed did not answer \(NU1301\): again in 0 s \(attempt 2 of 3\)$' 'ENVIRONMENT PROBLEM'
+check "…then builds and tests" 0 '^TESTS: OK$'
+truth "…two builds" '[ "$(printf "%s\n" "$calls" | grep -c "^dotnet build")" -eq 2 ]'
+rm -f "$FAKE_DOTNET_STATE"/moment-*
+FAKE_DOTNET_FEED_FAILS=9
+run build-test.sh
+check "the package feed never answers: three attempts, then the environment problem" 1 '^RETRY: none left: the package feed did not answer \(NU1301\), at each of the 3 attempts$'
+check "…said as before" 1 '^ENVIRONMENT PROBLEM: the package feed \(Artifactory\) refused access or cannot be reached'
+truth "…three builds, no test" '[ "$(printf "%s\n" "$calls" | grep -c "^dotnet build")" -eq 3 ] && ! printf "%s\n" "$calls" | grep -q "^dotnet test"'
+unset FAKE_DOTNET_FEED_FAILS
+rm -f "$FAKE_DOTNET_STATE"/moment-*
+FAKE_DOTNET_LOCK_FAILS=1
+export FAKE_DOTNET_LOCK_FAILS
+run build-test.sh
+check "a file of the build held a moment (Rider building): the same build again" 0 '^RETRY: a file of the build was held by another process \(MSB3027\): again in 0 s \(attempt 2 of 3\)$'
+check "…then builds and tests" 0 '^TESTS: OK$'
+rm -f "$FAKE_DOTNET_STATE"/moment-*
+FAKE_DOTNET_LOCK_FAILS=9
+run build-test.sh
+check "a file held for good (the application started): an environment problem that names the process" 1 '^ENVIRONMENT PROBLEM: a file of the build is held by another process \("Api \(4242\)"\), again after the retries'
+unset FAKE_DOTNET_LOCK_FAILS
+rm -f "$FAKE_DOTNET_STATE"/moment-*
 run dotnet-targets.sh
 check "dotnet-targets: the runtimes of the tests, installed" 0 '^Test runtimes: installed \(net8\.0: Microsoft\.AspNetCore\.App, Microsoft\.NETCore\.App\)'
 unset FAKE_DOTNET_SDKS FAKE_DOTNET_RUNTIMES

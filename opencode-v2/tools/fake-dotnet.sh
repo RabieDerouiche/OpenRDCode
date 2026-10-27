@@ -29,7 +29,10 @@
 # $FAKE_DOTNET_STATE: a folder for the state of the flaky tests; FAKE_DOTNET_SLOW: builds take 3 s; FAKE_DOTNET_SLOW_TEST=<s>:
 # a test run takes <s> seconds (test-guardians of a wave that meet on the lock); FAKE_TEMPLATE=mtp: `dotnet new mstest` makes an
 # MSTest.Sdk project (the template of a recent SDK); FAKE_DOTNET_COVER: a file of fake-cover lines that replaces those
-# of the projects (the coverage a run measures, changed by a test without touching the repository)
+# of the projects (the coverage a run measures, changed by a test without touching the repository);
+# FAKE_DOTNET_FEED_FAILS=<n>, FAKE_DOTNET_LOCK_FAILS=<n>: the first n builds (dotnet build, dotnet test without
+# --no-build) fail on the package feed (NU1301) or on a file another process holds (MSB3027), as a restore or a copy
+# fails a moment; counted in $FAKE_DOTNET_STATE
 # Every call is logged, one line, to $FAKE_DOTNET_LOG.
 [ -n "$FAKE_DOTNET_LOG" ] && printf '%s\n' "dotnet $*" >> "$FAKE_DOTNET_LOG"
 
@@ -334,6 +337,25 @@ cobertura() {
   } > "$2"
 }
 
+# A build that fails a moment (FAKE_DOTNET_FEED_FAILS, FAKE_DOTNET_LOCK_FAILS): its error, once per failure counted
+moment_failure() {
+  for kind in feed lock; do
+    case "$kind" in feed) n=${FAKE_DOTNET_FEED_FAILS:-0} ;; *) n=${FAKE_DOTNET_LOCK_FAILS:-0} ;; esac
+    [ "$n" -gt 0 ] || continue
+    f="${FAKE_DOTNET_STATE:-${TMPDIR:-/tmp}}/moment-$kind"
+    seen=$(cat "$f" 2>/dev/null || echo 0)
+    [ "$seen" -lt "$n" ] || continue
+    echo $((seen + 1)) > "$f"
+    p=$(abs "$(projects_of "$1" | head -n 1)")
+    case "$kind" in
+      feed) echo "$p : error NU1301: Unable to load the service index for source https://artifactory.example.com/api/nuget/v3/nuget/index.json. [$p]" ;;
+      *) echo "/usr/share/dotnet/sdk/10.0.100/Microsoft.Common.CurrentVersion.targets(4807,5): error MSB3027: Could not copy \"obj/Debug/net10.0/$(name_of "$p").dll\" to \"bin/Debug/net10.0/$(name_of "$p").dll\". Exceeded retry count of 10. Failed. The file is locked by: \"$(name_of "$p") (4242)\" [$p]" ;;
+    esac
+    return 0
+  done
+  return 1
+}
+
 case "$1" in
   --version) echo "${fit:-$(for s in $sdks; do echo "$s"; done | tail -n 1)}"; exit 0 ;;
   build)
@@ -342,6 +364,7 @@ case "$1" in
     [ -n "${FAKE_DOTNET_SLOW:-}" ] && sleep 3
     t=""
     case "$1" in ""|-*) ;; *) t=$1 ;; esac
+    moment_failure "$t" && exit 1
     status=0
     for p in $(projects_of "$t"); do
       broken=$(broken_of "$p")
@@ -375,6 +398,7 @@ case "$1" in
         *) shift ;;
       esac
     done
+    [ "$nobuild" -eq 0 ] && moment_failure "$t" && exit 1
     status=0 any=0
     for p in $(projects_of "$t"); do
       if ! sources_of "$p" | while IFS= read -r src; do cat "$src" 2>/dev/null; done | grep -q 'fake-test:'; then
