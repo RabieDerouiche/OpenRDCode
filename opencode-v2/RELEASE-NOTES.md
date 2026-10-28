@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-10-28 23:30 — Un « trop de requêtes » (429) attend ce que demande le serveur, pas une panne
+- **Ajouté** : plugin, fonction 18 : un 429 (erreur `provider.rate-limit`) a son propre rythme. Avec un en-tête `Retry-After` (ou `retry-after-ms`), le prochain essai vient après l'attente que demande le serveur, qu'OpenCode suit déjà (lu dans le code de la v2.1.4 : `model-retry.ts`, au moins le délai du serveur, 15 minutes au plus), sans rien de plus. Sans lui : 3 s, 5 s, 10 s, 15 s, 20 s, puis 30 s, plus longues de 0 à 25 % au hasard, pour que les sous-agents refusés ensemble (les analyses de `/fortify`, une vague de `/fix`) ne redemandent pas au même instant ; 3 min 30 à 4 min en tout au lieu d'environ 8. Le titre dit « nouvel essai <n> dans <délai> (serveur du modèle : trop de requêtes) ». 4 contrôles de plus dans `tools/plugin-test.mjs` (871).
+- **Changé** : rien pour une panne du serveur (5xx, délai, connexion) : toujours 10 s, 20 s, 30 s, 45 s, puis 1 min, environ 8 minutes. README, COMMANDES (« Le serveur du modèle », le tableau des nouveaux essais), MIGRATION, FICHIERS, la carte des flux (« Un échec »), la présentation (« Quand ça coince »), les empreintes.
+- **Retiré** : l'attente de 10 s à 1 min que le plugin imposait aussi à un 429, même quand le serveur demandait 1 s.
+- **But** : un run qui reprend dès que la passerelle le permet, au lieu d'attendre jusqu'à une minute ce qu'elle accordait en quelques secondes ; et des sous-agents qui ne se font plus refuser ensemble à chaque essai.
+
 ## 2026-10-27 11:55 — Une suite arrêtée faute de temps n'est plus prise pour des tests en échec
 - **Ajouté** : `tools/dotnet-test.sh` vérifie qu'un run normal n'écrit jamais « Terminated » et qu'une suite arrêtée faute de temps ne dit jamais « TESTS: FAILED ».
 - **Changé** : le chien de garde de `build-test.sh`, `test-guardian.sh`, `fetch.sh` et `ship.sh` dit lui-même qu'il a arrêté la commande (son code 124), au lieu que le script le devine par `kill -0` : un chien de garde qui vient de finir, pas encore récupéré par le shell, répond encore à `kill -0`, et l'arrêt passait pour un échec ordinaire (« TESTS: FAILED (exit 143) » au lieu de « TESTS: TIMEOUT »). Vu une fois dans la CI (bash), reproduit ici : 1 arrêt mal classé sur 30 sous bash avec la machine chargée, aucun avec la correction.

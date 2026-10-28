@@ -1529,6 +1529,12 @@ par.push("session.retry.scheduled", { sessionID: "par-1-a2", assistantMessageID:
 await wait()
 await check("[v2 5 and 18] the one that waits for a retry, and when it comes", () =>
   assert.match(parTitle(), /^⏳ \d+:\d\d outils \(3\) · Analyse V1, Analyse V2, Analyse V3 · nouvel essai 4 dans 4\d s \(serveur du modèle\) — \/fortify 3$/))
+par.push("session.retry.scheduled", { sessionID: "par-1-a2", assistantMessageID: "c", attempt: 5, at: Date.now() + 12000, error: { type: "provider.rate-limit", message: "Too Many Requests", status: 429 } })
+await wait()
+await check("[v2 5 and 18] a rate limit is said as such, not as a failure of the server", () =>
+  assert.match(parTitle(), /^⏳ \d+:\d\d outils \(3\) · Analyse V1, Analyse V2, Analyse V3 · nouvel essai 5 dans 1\d s \(serveur du modèle : trop de requêtes\) — \/fortify 3$/))
+par.push("session.retry.scheduled", { sessionID: "par-1-a2", assistantMessageID: "c", attempt: 4, at: Date.now() + 45000, error: { type: "provider.internal", message: "Gateway Time-out", status: 504 } })
+await wait()
 par.push("permission.asked", { sessionID: "par-1-a3", id: "per", action: "external_directory" })
 await wait()
 await check("[v2 5] the one that waits for me first", () => assert.match(parTitle(), /^❓ \d+:\d\d Analyse V3 · autorisation attendue — \/fortify 3$/))
@@ -1553,7 +1559,7 @@ await wait(150)
 await check("[v2 10] /fortify delivered: ✅", () => assert.equal(parTitle(), "✅ /fortify 3"))
 
 // ---------- 17. a run that goes on after a summary of its conversation ----------
-const sum = fakeV2(repo, { options: quick })
+const sum = fakeV2(repo, { options: { ...quick, random: () => 0.4 } })
 await v2Plugin.setup(sum.ctx)
 const sumPrompt = async (sessionID, text) => {
   const event = { sessionID, messageID: "m", prompt: { text }, delivery: "steer" }
@@ -1616,6 +1622,42 @@ await check("[v2 18] and so do its subagents", async () => {
   const event = { sessionID: "sum-sub", agent: "coder", attempt: 3, error: { type: "provider.internal", message: "504" }, decision: { retry: true, delay: 4000 } }
   await sum.hooks["session.retry"](event)
   assert.equal(event.decision.delay, 20000)
+})
+await check("[v2 18] a rate limit with the wait of the server (Retry-After): that wait, which OpenCode already takes, nothing more", async () => {
+  const event = { sessionID: "sum-1", agent: "pilot", attempt: 7, error: { type: "provider.rate-limit", message: "x", status: 429, retryAfterMs: 1500 }, decision: { retry: true, delay: 9800 } }
+  await sum.hooks["session.retry"](event)
+  assert.equal(event.decision.delay, 9800)
+  const zero = { ...event, attempt: 2, error: { ...event.error, retryAfterMs: 0 }, decision: { retry: true, delay: 2100 } }
+  await sum.hooks["session.retry"](zero)
+  assert.equal(zero.decision.delay, 2100)
+})
+await check("[v2 18] a rate limit without it: short waits, longer by 0 to 25 % at random (the subagents that run together never ask again at the same moment)", async () => {
+  const first = { sessionID: "sum-1", agent: "pilot", attempt: 2, error: { type: "provider.rate-limit", message: "x", status: 429 }, decision: { retry: true, delay: 2100 } }
+  await sum.hooks["session.retry"](first)
+  assert.equal(first.decision.delay, 3300)
+  const later = { ...first, attempt: 7, decision: { retry: true, delay: 9800 } }
+  await sum.hooks["session.retry"](later)
+  assert.equal(later.decision.delay, 33000)
+  const sub = { ...first, sessionID: "sum-sub", agent: "coder", attempt: 11, decision: { retry: true, delay: 10200 } }
+  await sum.hooks["session.retry"](sub)
+  assert.equal(sub.decision.delay, 33000)
+  const failure = { ...later, error: { type: "provider.internal", message: "504", status: 504 }, decision: { retry: true, delay: 9800 } }
+  await sum.hooks["session.retry"](failure)
+  assert.equal(failure.decision.delay, 60000)
+})
+await check("[v2 18] the 10 retries of a rate limit: under 4 minutes of waits in all before the run fails (about 8 for a failure of the server)", async () => {
+  // OpenCode's own waits for the attempts 2 to 11 (2, 4, 8, then 10 s), through the hook
+  const total = async (error) => {
+    let waited = 0
+    for (const [i, delay] of [2000, 4000, 8000, 10000, 10000, 10000, 10000, 10000, 10000, 10000].entries()) {
+      const event = { sessionID: "sum-1", agent: "pilot", attempt: i + 2, error, decision: { retry: true, delay } }
+      await sum.hooks["session.retry"](event)
+      waited += event.decision.delay
+    }
+    return waited
+  }
+  assert.equal(await total({ type: "provider.rate-limit", message: "x", status: 429 }), 223300)
+  assert.equal(await total({ type: "provider.internal", message: "504", status: 504 }), 465000)
 })
 await check("[v2 18] a longer wait the provider asks for stays, and a retry OpenCode refuses stays refused", async () => {
   const asked = { sessionID: "sum-1", agent: "pilot", attempt: 2, error: { type: "provider.rate-limit", message: "x" }, decision: { retry: true, delay: 600000 } }

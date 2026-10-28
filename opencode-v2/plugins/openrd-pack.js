@@ -118,8 +118,11 @@
 //    who first reads the ticket sheet again) or the task the pilot gave (a subagent).
 // 18. Gives the model server more time on a run of a command of the pack (/go, /fix, /fortify, /tests, /push, /sync,
 //    /daily…) and its subagents: OpenCode retries a failed request 10 times within about 1.5 minutes, then the run
-//    fails; the same 10 retries are spread over about 8 minutes (a gateway that restarts, a 504 storm). A conversation
-//    keeps OpenCode's own timing.
+//    fails; the same 10 retries are spread over about 8 minutes (a gateway that restarts, a 504 storm). A rate limit
+//    of the server (429) is not a failure of the server: the wait it asks for (Retry-After, which OpenCode follows)
+//    and nothing more; without one, short waits (3 s, 5 s, 10 s… 30 s at most, 3.5 to 4 minutes in all), never the
+//    same for the subagents that run together, which would ask again at the same moment and be refused again. A
+//    conversation keeps OpenCode's own timing.
 // 19. Resumes a run of /go, /fix, /fortify or /tests that ended before its final answer, without me: after a failure of the
 //    model server (once its retries are spent: 2 minutes later, then 5), or when the pilot ended its turn without its
 //    final report (its step limit, or a model that stops halfway). The pilot gets, in the same session, a message that
@@ -732,6 +735,8 @@ const retryIn = (item, now) => {
   const at = Number(item && item.at)
   return at && at - now >= 2000 ? " dans " + since(at - now) : ""
 }
+// why it is retried: a rate limit of the server is not a failure of the server
+const retryWhy = (item) => (item && item.limited ? "serveur du modèle : trop de requêtes" : "serveur du modèle")
 
 // The descriptions of the tools that run at once, in one short text: "Analyse V1, Analyse V2, Analyse V3"
 function toolList(texts) {
@@ -760,7 +765,7 @@ function progressLabel(state, now, subagents = new Map()) {
     const asking = children.find((entry) => entry.child.phase === "question" || entry.child.phase === "permission")
     if (asking) return "❓ " + elapsed + " " + asking.text + " · " + (asking.child.phase === "question" ? "réponse attendue" : "autorisation attendue")
     const retrying = children.find((entry) => entry.child.phase === "retry")
-    if (retrying) return base + " · nouvel essai " + retrying.child.attempt + retryIn(retrying.child, now) + " (serveur du modèle)"
+    if (retrying) return base + " · nouvel essai " + retrying.child.attempt + retryIn(retrying.child, now) + " (" + retryWhy(retrying.child) + ")"
     if (children.some((entry) => entry.child.phase === "compaction")) return base + " · résumé du contexte"
     // silence: only when every subagent that runs has sent nothing for 30 s
     if (children.length && children.every((entry) => entry.child.phase !== "tool")) {
@@ -769,7 +774,7 @@ function progressLabel(state, now, subagents = new Map()) {
     }
     return base
   }
-  if (state.phase === "retry") return "⏳ " + elapsed + " nouvel essai " + state.attempt + retryIn(state, now) + " (serveur du modèle)"
+  if (state.phase === "retry") return "⏳ " + elapsed + " nouvel essai " + state.attempt + retryIn(state, now) + " (" + retryWhy(state) + ")"
   const quiet = now - state.last
   if (quiet > SILENCE_MS) return "⏳ " + elapsed + " rien reçu depuis " + Math.round(quiet / 1000) + " s"
   if (state.phase === "reasoning") return "⏳ " + elapsed + " réflexion " + tokens(state.chars) + " tokens"
@@ -1261,6 +1266,10 @@ const REMEMBERED_SESSIONS = 200
 // minutes in all, against about 1.5 by default. Longer would only delay the resume of 19 when the server is down for
 // good, or when a gateway answers 503 to a request too long for the model (a wrong limit.context)
 const PATIENCE_MS = [0, 0, 10000, 20000, 30000, 45000, 60000, 60000, 60000, 60000, 60000, 60000]
+// 18. a rate limit (error type provider.rate-limit) without the wait of the server: OpenCode's own waits are 2, 4, 8,
+// then 10 s; these, 3.5 to 4 minutes in all, outlast a limit per minute. Each one is longer by 0 to 25 % at random
+const RATE_LIMIT_PATIENCE_MS = [0, 0, 3000, 5000, 10000, 15000, 20000, 30000, 30000, 30000, 30000, 30000]
+const RATE_LIMIT_SPREAD = 0.25
 // 19. automatic resumes: how many in a row, and the wait before each one after a failure of the model server
 const RESUMES_MAX = 2
 const RESUME_AFTER_FAILURE_MS = [2 * 60000, 5 * 60000]
@@ -2240,6 +2249,8 @@ export default Plugin.define({
     const resumeFailureMs = Array.isArray(options.resumeFailureMs) ? options.resumeFailureMs.map(Number) : RESUME_AFTER_FAILURE_MS
     const resumeUnfinishedMs = Number(options.resumeUnfinishedMs) >= 0 ? Number(options.resumeUnfinishedMs) : RESUME_AFTER_UNFINISHED_MS
     const patienceMs = Array.isArray(options.patienceMs) ? options.patienceMs.map(Number) : PATIENCE_MS
+    const rateLimitMs = Array.isArray(options.rateLimitMs) ? options.rateLimitMs.map(Number) : RATE_LIMIT_PATIENCE_MS
+    const random = typeof options.random === "function" ? () => Number(options.random()) : Math.random
     // 29. the clock of the measures (a test gives its own)
     const clockNow = typeof options.now === "function" ? () => Number(options.now()) : () => Date.now()
     const directory = String((ctx && ctx.location && ctx.location.directory) || process.cwd())
@@ -2787,6 +2798,7 @@ export default Plugin.define({
           child.phase = "retry"
           child.attempt = data.attempt || child.attempt + 1
           child.at = data.at
+          child.limited = !!(data.error && data.error.type === "provider.rate-limit")
           child.last = now
           nudge(parents.get(sessionID), runs.get(parents.get(sessionID)))
           return
@@ -2926,6 +2938,7 @@ export default Plugin.define({
           state.phase = "retry"
           state.attempt = data.attempt || state.attempt + 1
           state.at = data.at
+          state.limited = !!(data.error && data.error.type === "provider.rate-limit")
           state.last = now
           nudge(sessionID, state)
           return
@@ -3502,12 +3515,22 @@ export default Plugin.define({
         }
       })
 
-      // 18. more time for the model server during a run of the pack: the same retries, spread over about 8 minutes
+      // 18. more time for the model server during a run of the pack: the same retries, spread over about 8 minutes; a
+      // rate limit: the wait of the server, or short waits that differ from one subagent to the other
       await api.hook("retry", async (event) => {
         try {
           if (!event || !event.decision || event.decision.retry !== true || !(await inPackRun(event.sessionID))) return
-          const least = patienceMs[Math.min(Math.max(Number(event.attempt) || 0, 0), patienceMs.length - 1)] || 0
-          if (least > (Number(event.decision.delay) || 0)) event.decision.delay = least
+          const attempt = Math.max(Number(event.attempt) || 0, 0)
+          const delay = Number(event.decision.delay) || 0
+          if (event.error && event.error.type === "provider.rate-limit") {
+            // the server said when: OpenCode already waits that long (and never less than its own wait)
+            if (typeof event.error.retryAfterMs === "number") return
+            const least = rateLimitMs[Math.min(attempt, rateLimitMs.length - 1)] || 0
+            if (least > delay) event.decision.delay = Math.round(least * (1 + RATE_LIMIT_SPREAD * Math.min(Math.max(random(), 0), 1)))
+            return
+          }
+          const least = patienceMs[Math.min(attempt, patienceMs.length - 1)] || 0
+          if (least > delay) event.decision.delay = least
         } catch {
           // OpenCode's own timing
         }
