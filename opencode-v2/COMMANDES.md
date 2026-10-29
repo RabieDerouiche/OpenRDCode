@@ -109,7 +109,11 @@ Arrête la v2 (Ctrl+C dans son terminal) et rouvre l'adresse de ta 1.19 : `MIGRA
 
 ## Vérifier le nom de l'outil qui crée les MR
 
-`/go` crée la MR en Draft avec l'outil `…create_merge_request` du MCP GitLab ; c'est le seul outil d'écriture GitLab permis, à l'agent `pilot` seulement. Si un `/go` s'arrête en disant que la création de la MR a été refusée, l'outil porte un autre nom chez toi : envoie-moi le nom qu'il cite.
+`/go` crée la MR en Draft avec l'outil `…create_merge_request` du MCP GitLab ; c'est le seul outil d'écriture GitLab permis, à l'agent `pilot` seulement. Le lien pour créer la MR à la main n'est qu'un dernier recours : la réponse dit alors pourquoi, l'erreur de l'outil mot pour mot (« Création de la MR impossible : … »). Le journal du plugin garde la preuve, pour chaque run : l'outil qu'avait le pilote (ou son absence), puis la réponse de chaque appel (créée, ou l'erreur) :
+```sh
+grep 'merge request' ~/oc2/data/opencode/log/openrd-pack.log | tail -10
+```
+« has no tool that creates merge requests » : le serveur MCP GitLab n'était pas là pour ce run (pas connecté, ou désactivé), ou son outil porte un autre nom chez toi : envoie-moi la ligne. « Permission denied » : l'outil porte un autre nom, que les règles du pack ne permettent pas : envoie-moi le nom qu'il cite. Une autre erreur (403, 404, 409, 422) : c'est GitLab qui refuse (droits du jeton, projet, MR déjà ouverte) : envoie-moi la ligne.
 
 ## Redémarrer OpenCode
 

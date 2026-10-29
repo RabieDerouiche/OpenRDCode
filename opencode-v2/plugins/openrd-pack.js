@@ -215,6 +215,11 @@
 //    repository cloned with its skills), and at the URLs of the configuration: a skill is instructions the agents follow,
 //    and none of these was reviewed. They are taken out of the list of skills and of the skill tool; the permission
 //    rules of opencode.json allow only the names of the pack's skills too (tools/permissions.py).
+// 33. Says in its log what became of the merge request of a run (/go, /fix, /fortify, /push): whether the pilot has a
+//    tool that creates merge requests (its name ends with create_merge_request) once per run, and the answer of each
+//    call of it: created, or the error of the tool or of the permission rules (its type, its HTTP status and the
+//    first 160 characters of its message). A run that gives the link to create the merge request by hand instead says
+//    why in its answer too (agents/pilot.md); the log is the proof, without a word of the conversation.
 // Every refusal of 6, 7, 9, 12, 16, 23, 24 and 25 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
@@ -1192,6 +1197,12 @@ const PILOT_MCP = {
 // analysts of /fortify write the card of a vulnerability from the code and the Fortify details of their prompt, never
 // from a Jira ticket, a Confluence page or GitLab (commands/fortify.md, step 4)
 const SUBAGENT_MCP = { analyst: { fortify: [] } }
+// 33. the commands of the pilot that create a merge request, and the tool that does it (its name on this machine)
+const MR_COMMANDS = new Set(["go", "fix", "fortify", "push"])
+const MR_TOOL = /create_merge_request$/i
+// an answer of the tool that is an error, not a merge request (MCP servers often answer an error as text)
+const MR_ERROR_TEXT = /\b(?:error|denied|forbidden|unauthori[sz]ed|not found|invalid|already exists|unprocessable|conflict)\b|\b(?:400|401|403|404|409|422)\b/i
+const MR_CREATED_TEXT = /web_url|merge_requests\/\d+|"iid"/i
 // The tools of the request of a pilot running <command>, without those of the MCP servers its procedure never calls:
 // the names of the servers taken out ([] when nothing changed; a command the table does not know: nothing changes).
 // With an agent: the same for that subagent of the command (SUBAGENT_MCP)
@@ -2788,6 +2799,19 @@ export default Plugin.define({
       })().catch(() => {})
     }
 
+    // 33. The answer of the tool that creates merge requests, in the log: created, or its error (never the conversation)
+    function mergeRequestOutcome(tool, type, data) {
+      const short = (text) => String(text || "").replace(/\s+/g, " ").trim().slice(0, 160)
+      if (type === "session.tool.failed") {
+        const error = (data && data.error) || {}
+        log("the merge request was not created: the tool failed", { tool, error: error.type || "", status: error.status || "", message: short(error.message) })
+        return
+      }
+      const text = ((data && data.content) || []).map((part) => (part && typeof part.text === "string" ? part.text : "")).join(" ")
+      if (MR_ERROR_TEXT.test(text) && !MR_CREATED_TEXT.test(text)) log("the merge request was not created: the tool answered an error", { tool, message: short(text) })
+      else log("the merge request was created", { tool })
+    }
+
     // What a subagent does while its task runs, shown in the title of its parent
     function childEvent(sessionID, type, data) {
       const child = subagents.get(sessionID)
@@ -2920,7 +2944,10 @@ export default Plugin.define({
         }
         case "session.tool.success":
         case "session.tool.failed": {
+          const name = toolNames.get(data.id) || ""
           toolNames.delete(data.id)
+          // 33. what became of the creation of a merge request
+          if (MR_TOOL.test(name)) mergeRequestOutcome(name, type, data)
           if (!state) return
           const entry = state.running.get(data.id)
           if (entry && entry.child) subagents.delete(entry.child)
@@ -3430,6 +3457,7 @@ export default Plugin.define({
     // 12, 13, 17, 19 and 30. what each request to the model carries
     const strippedLogged = new Set()
     const narrowedLogged = new Set()
+    const mrToolLogged = new WeakSet()
     if (typeof api.hook === "function") {
       await api.hook("context", async (event) => {
         try {
@@ -3445,6 +3473,14 @@ export default Plugin.define({
             if (narrowed.length && !narrowedLogged.has(agent + " " + run.command)) {
               narrowedLogged.add(agent + " " + run.command)
               log("the MCP servers the command does not use taken out of the requests of the " + agent, { command: "/" + run.command, servers: narrowed })
+            }
+            // 33. the tool that creates the merge request of the run, or its absence, once per run
+            if (agent === "pilot" && run && MR_COMMANDS.has(run.command) && !mrToolLogged.has(run)) {
+              mrToolLogged.add(run)
+              const names = Object.keys(event.tools)
+              const tool = names.find((name) => MR_TOOL.test(name))
+              if (tool) log("the pilot has the tool that creates merge requests", { command: "/" + run.command, tool })
+              else log("the pilot has no tool that creates merge requests: it can only give the link", { command: "/" + run.command, gitlab_tools: names.filter((name) => /gitlab/i.test(name)).length })
             }
           }
           // 30. the instructions of the free conversation stay out of the requests of the agents of the pack

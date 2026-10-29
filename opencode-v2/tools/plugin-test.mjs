@@ -749,9 +749,37 @@ await check("[v2 31] logged once per command, with the servers taken out", () =>
   assert.equal(lines.filter((l) => l.includes('"/go"')).length, 1)
   assert.ok(lines[0].includes('"servers":["sonar","fortify","confluence","kibana"]') || lines[0].includes("sonar"), lines[0])
 })
+const mrLines = () => readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8").split("\n").filter((l) => l.includes("merge request"))
+await check("[v2 33] the tool that creates the merge request of the run, in the log once per run", () => {
+  const lines = mrLines().filter((l) => l.includes("the pilot has the tool that creates merge requests"))
+  assert.equal(lines.length, 1)
+  assert.ok(lines[0].includes('"command":"/go"') && lines[0].includes('"tool":"gitlab_create_merge_request"'), lines[0])
+})
+const mrCall = async (id, type, data) => {
+  mcp31.push("session.tool.input.started", { sessionID: "m31-go", assistantMessageID: "a", id, name: "gitlab_create_merge_request" })
+  mcp31.push(type, { sessionID: "m31-go", assistantMessageID: "a", id, executed: true, ...data })
+  await wait(100)
+}
+await mrCall("mr1", "session.tool.failed", { error: { type: "permission.rejected", message: "Permission denied: gitlab_create_merge_request" }, executed: false })
+await mrCall("mr2", "session.tool.success", { content: [{ type: "text", text: "Error: 409 Conflict: Another open merge request already exists for this source branch: !12" }] })
+await mrCall("mr3", "session.tool.success", { content: [{ type: "text", text: '{"iid": 13, "web_url": "https://gitlab/x/-/merge_requests/13", "title": "Draft: ABC-31 - Export"}' }] })
+await check("[v2 33] each call of it: refused, an error answered as text, created; never the title or the description", () => {
+  const lines = mrLines()
+  assert.ok(lines.some((l) => l.includes("the merge request was not created: the tool failed") && l.includes('"error":"permission.rejected"') && l.includes("Permission denied: gitlab_create_merge_request")), lines.join("\n"))
+  assert.ok(lines.some((l) => l.includes("the merge request was not created: the tool answered an error") && l.includes("Another open merge request already exists")), lines.join("\n"))
+  assert.ok(lines.some((l) => l.includes("the merge request was created") && l.includes('"tool":"gitlab_create_merge_request"')), lines.join("\n"))
+  assert.ok(!lines.some((l) => l.includes("Draft: ABC-31")), lines.join("\n"))
+})
 await endRun("m31-go")
 await check("[v2 31] the run over: nothing narrowed any more", async () => assert.equal((await pilotContext("m31-go")).length, MCP_TOOLS.length))
 await mcp31.hooks["session.prompt"]({ sessionID: "m31-go", messageID: "m2", prompt: { text: "[[command fix]]\nDirectives: « »" }, delivery: "steer" })
+await check("[v2 33] a pilot without a tool that creates merge requests: said in the log, with its GitLab tools counted", async () => {
+  const event = { sessionID: "m31-go", agent: "pilot", model: { id: "qwen", providerID: "fake" }, system: [], messages: [], options: {}, tools: Object.fromEntries(MCP_TOOLS.filter((t) => !/create_merge_request/.test(t)).map((t) => [t, {}])) }
+  await mcp31.hooks["session.context"](event)
+  const lines = mrLines().filter((l) => l.includes("the pilot has no tool that creates merge requests"))
+  assert.equal(lines.length, 1)
+  assert.ok(lines[0].includes('"command":"/fix"') && lines[0].includes('"gitlab_tools":1'), lines[0])
+})
 await check("[v2 31] /fix chosen next in the same session: Sonar and Fortify back, Confluence and Kibana still out", async () => {
   const tools = await pilotContext("m31-go")
   assert.ok(tools.includes("sonar_search_issues") && tools.includes("fortify_list_issues") && tools.includes("jira_search"))

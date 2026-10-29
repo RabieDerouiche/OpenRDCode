@@ -86,7 +86,7 @@ For each unchecked step of « ## Plan », in order:
 5. `sh ~/.config/opencode/scripts/ticket-sheet.sh suivi "/go - livré - MR <link> - build ok - tests <passed>/<total> - auto-review <verdict>"`.
 
 ## Answer, in French
-- Header line, then « 🚀 MR en Draft : <link> » (or « 🚀 MR à créer : <link> »).
+- Header line, then « 🚀 MR en Draft : <link> » (or, only when your rules say so, « 🚀 MR à créer : <link> » followed by « Création de la MR impossible : <the error of the tool, word for word> »).
 - « Étapes » table: | # | Étape | Fichiers | Tests | ✅ |.
 - « Décisions prises (à valider en review) »: one line each, with its reason; the developer's answers first.
 - « Vérifications »: base develop (tests already failing before the ticket, if any), the review of the plan (its points: corrected, not retained), build, tests passed/total, the coverage of the changed lines (before and after the tests of the test-guardian; Sonar asks 80 % on new code), the tests written first for a bug (red before, green after, twice each), the safety nets (per step: before → with its tests, its minimum; INSUFFISANT with its lines and why, also in « Points d'attention »), auto-review verdict and what was fixed, security pre-scan, the check before the push.
