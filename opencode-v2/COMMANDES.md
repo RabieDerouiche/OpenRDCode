@@ -691,12 +691,15 @@ Un changement sans ticket Jira. La branche garde un nom à elle : celle où tu e
 ```text
 /go sans ticket : l'export CSV perd le séparateur décimal quand la culture est fr-FR
 ```
-Sur une branche à toi que tu nommes (ici ou sur GitLab), sous son nom, avec ou sans ticket (la clé est enregistrée pour elle, la branche n'est jamais renommée) ; à ne pas confondre avec « depuis », qui crée une nouvelle branche à partir d'elle :
+Sur une branche que tu nommes, sous son nom, avec ou sans ticket : elle existe (ici ou sur GitLab), le travail va dessus ; elle n'existe pas encore, elle est créée sous ce nom depuis develop. Un nom à deux lettres d'une branche existante arrête `/go` en citant les deux (une faute de frappe mettrait ton travail à côté de ta branche) : « nouvelle branche <nom> » crée toujours, et s'arrête si le nom est pris. La clé est enregistrée pour la branche, qui n'est jamais renommée. À ne pas confondre avec « depuis », qui crée une nouvelle branche, nommée par `/go`, à partir d'elle :
 ```text
 /go sans ticket sur feature/mon-travail : finir l'export CSV
 ```
 ```text
 /go ABC-123 sur feature/mon-travail
+```
+```text
+/go sans ticket nouvelle branche feature/paiement-3x : le paiement en trois fois
 ```
 Un ticket qui part d'une autre branche que develop (la branche d'un collègue, une branche de release) : la branche du ticket part de `origin/<branche>`, qui devient sa base pour tout le run (mesure de départ, review, contrôle avant push, fusion de la base, cible de la MR). La branche doit être sur GitLab ; un nom inconnu arrête `/go` avec les noms proches. Une branche de ticket qui existe déjà garde ses commits et prend cette base :
 ```text

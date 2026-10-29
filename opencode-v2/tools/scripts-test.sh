@@ -147,7 +147,23 @@ rm -f "$sheets/LOCAL-2.md"
 run branch.sh LOCAL feature "x" --on develop
 check "sur develop: refused" 1 '^STOP: develop is not a branch for this work'
 run branch.sh LOCAL feature "x" --on feature/mon-travial
-check "sur an unknown branch: stopped, with the close names" 1 '^STOP: no branch feature/mon-travial here nor on origin \(close names: feature/mon-travail'
+check "sur a name 2 letters from an existing branch (a typo): stopped, with that name" 1 '^STOP: no branch feature/mon-travial here nor on origin, and feature/mon-travail has almost the same name: run again with that name to work on it, or with « nouvelle branche feature/mon-travial » to create feature/mon-travial$'
+truth "…nothing created" '! git rev-parse -q --verify refs/heads/feature/mon-travial >/dev/null'
+# « /go sans ticket sur <a new name> »: a new branch of that name, from the base, its key recorded
+run branch.sh LOCAL feature "Le paiement en trois fois" --on feature/paiement-3x
+check "sur a new name: that branch, created from the base" 0 '^BRANCH: feature/paiement-3x \(created from origin/develop'
+check "sur a new name: its key" 0 '^KEY: LOCAL-3$'
+truth "sur a new name: the key recorded for it" '[ "$(git config --get branch.feature/paiement-3x.opencode-key)" = LOCAL-3 ]'
+git switch -q develop
+run branch.sh LOCAL feature "x" --new feature/paiement-3x
+check "nouvelle branche <a name taken>: stopped" 1 '^STOP: the branch feature/paiement-3x exists already \(here or on origin\): « sur feature/paiement-3x » to work on it'
+run branch.sh LOCAL feature "Le paiement en quatre fois" --new feature/paiement-4x
+check "nouvelle branche <a name 1 letter from another>: created all the same, as asked" 0 '^BRANCH: feature/paiement-4x \(created from origin/develop'
+git switch -q develop
+run branch.sh ABC-8 feature "Export" --on feature/export-pdf
+check "a ticket sur a new name: that branch, its Jira key recorded" 0 '^BRANCH: feature/export-pdf \(created from origin/develop'
+truth "…the key ABC-8 recorded" '[ "$(git config --get branch.feature/export-pdf.opencode-key)" = ABC-8 ]'
+git switch -q feature/mon-travail && git branch -q -D feature/paiement-3x feature/paiement-4x feature/export-pdf
 # « /go ABC-7 sur <branch> »: a Jira key on a branch named without it
 run branch.sh ABC-7 feature "Export" --on feature/mon-travail
 check "a ticket sur <branch>: kept" 0 '^BRANCH: feature/mon-travail \(already checked out\)$'
