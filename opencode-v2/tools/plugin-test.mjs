@@ -2654,6 +2654,8 @@ await check("[26] a schedule due now starts once, in a new session of its reposi
     assert.equal(field("tools"), "build-test.sh:1:60")
     assert.equal(field("tool_max"), "build-test.sh:60")
   })
+  await check("[v2 29] the requests of each agent, those that called tools, and their tool calls (the coder known from its subagent call)", () =>
+    assert.equal(field("batch"), "pilot:2:1:1,coder:2:1:1"))
   await check("[v2 29] the tokens the server counted, and the characters streamed", () => {
     assert.equal(field("tokens_in"), String(5000 + 15000 + 1000 + 21000 + 2000 + 30000 + 500 + 33000))
     assert.equal(field("tokens_cached"), String(15000 + 21000 + 30000 + 33000))

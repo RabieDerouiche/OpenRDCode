@@ -116,6 +116,13 @@ fi
       if (tok == 0 && v[r, "chars"] + 0 > 0) { tok = v[r, "chars"] / 3.5; EST = 1 }
       TOK += tok
       addList(v[r, "agents"], an, ann, ans, asize)
+      # the requests of each agent, those that called tools, and their tool calls (agent:requests:with tools:calls)
+      nb = split(v[r, "batch"], bl, ",")
+      for (i = 1; i <= nb; i++) {
+        if (split(bl[i], bp, ":") != 4) continue
+        if (!(bp[1] in BS)) { BN++; BA[BN] = bp[1] }
+        BS[bp[1]] += bp[2]; BT[bp[1]] += bp[3]; BC[bp[1]] += bp[4]
+      }
       addList(v[r, "tools"], tn, tnn, tns, tsize)
       if (split(v[r, "tool_max"], tm, ":") == 2 && tm[2] + 0 > XMAX) { XMAX = tm[2] + 0; XNAME = tm[1] }
     }
@@ -131,6 +138,18 @@ fi
     print model "."
     if (asize[0] > 0) print "Sous-agents : " top(an, ann, ans, asize[0], 6) "."
     if (tsize[0] > 0) print "Outils les plus longs : " top(tn, tnn, tns, tsize[0], 5) "."
+    # the tool calls each request carries, by agent: the agents with the most requests first
+    if (BN > 0) {
+      out = ""
+      for (j = 1; j <= BN && j <= 6; j++) {
+        best = ""; bestS = -1
+        for (i = 1; i <= BN; i++) if (!(BA[i] in usedB) && BS[BA[i]] > bestS) { best = BA[i]; bestS = BS[BA[i]] }
+        if (best == "") break
+        usedB[best] = 1
+        out = out (out == "" ? "" : ", ") best " " BS[best] " requêtes" (BT[best] > 0 ? " (" decimal(BC[best] / BT[best]) " appel" (BC[best] / BT[best] >= 2 ? "s" : "") " d'"'"'outil par requête)" : "")
+      }
+      print "Requêtes au modèle, par agent : " out "."
+    }
     print ""
     print "Points à regarder :"
     points = 0
@@ -146,6 +165,15 @@ fi
     if (XMAX >= 120 && XNAME !~ /\.sh/) { points++; print "- L'"'"'appel le plus long : " XNAME " (" duration(XMAX) ") : un serveur MCP ou un outil lent (le plugin coupe un appel MCP après 5 min)." }
     if (L > 0) { points++; print "- " L " réponse" (L > 1 ? "s" : "") " coupée" (L > 1 ? "s" : "") " en boucle : le plugin les relance avec une pénalité de répétition." }
     if (Q > 0) { points++; print "- Tes réponses aux questions : " duration(Q) " d'"'"'attente (le run attendait, pas le modèle). Pour un run sans toi : « sans question » après /go, /fix ou /fortify (les réponses recommandées, notées pour la review)." }
+    # the agents that send one tool call per request where several independent ones could go together
+    single = ""; ALLN = 0; ALLLOW = 0
+    for (i = 1; i <= BN; i++) {
+      a = BA[i]
+      if (BT[a] < 20) continue
+      ALLN++
+      if (BC[a] / BT[a] < 1.3) { ALLLOW++; single = single (single == "" ? "" : ", ") a " " decimal(BC[a] / BT[a]) }
+    }
+    if (single != "") { points++; print "- Un seul appel d'"'"'outil par requête, ou presque (" single ") : des lectures ou des modifications indépendantes qui pourraient partir ensemble. Chaque requête renvoie tout le contexte au serveur et compte dans sa limite de débit." (ALLN >= 2 && ALLLOW == ALLN ? " Tous les agents sont dans ce cas : le serveur ne renvoie peut-être qu'"'"'un appel par réponse (le parser des appels d'"'"'outils du modèle dans vLLM, ou la passerelle) : à vérifier avec l'"'"'équipe qui l'"'"'héberge." : "") }
     if (points == 0) print "- Rien d'"'"'anormal dans ces runs : le temps est celui du modèle et de la machine."
   }
 '

@@ -13,7 +13,7 @@ Shell usage:
 
 Before investigating: Determine the project type and the build/test commands: a "Project type" section in the repository AGENTS.md wins; otherwise use the "Project detection" block injected in the prompt; if there is none, run `sh ~/.config/opencode/scripts/detect-project-type.sh`. A repository can have several types (e.g. `api frontend`): apply to each changed file the rules of its own type.
 
-Method:
+Method (the reads and searches that do not need each other's result go together in one turn: each answer of yours is a request to the model server):
 1. Restate the symptom in one sentence (what happens vs what is expected).
 2. Locate the code involved: start from the stack trace top frame inside our code, or from the failing test. Read the recent history of the branch (`git log --oneline -15`): a recent commit is often the cause.
 3. Reproduce when possible: run the failing test only (.NET: `sh ~/.config/opencode/scripts/build-test.sh <test project> --filter FullyQualifiedName~<TestName>`, which builds quietly first and ends with explicit BUILD and TESTS lines; front-end: `sh ~/.config/opencode/scripts/build-test.sh <folder of its package.json> --filter <spec file or test name>`, its tests once, never a watch mode). An "ENVIRONMENT PROBLEM" line (an SDK or a runtime missing, Docker not running for Testcontainers, the registry refusing access) is the cause when it is there: say so, never investigate the code for it.

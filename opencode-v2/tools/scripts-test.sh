@@ -551,8 +551,8 @@ vline() {
   printf '%s\trun\tat=%s\tcommand=%s\tkey=%s\toutcome=%s\ttotal=%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$7"
 }
 {
-  vline 2026-10-25T08:00:00.000Z "2026-10-25 09:00" go ABC-1 "✅" 1800 "prep=60${T}top_model=300${T}top_tools=240${T}top_subagents=1140${T}questions=0${T}steps=120${T}wait=600${T}think=1500${T}write=300${T}ttft_avg=5${T}ttft_cold=12${T}cold_n=10${T}ttft_warm=4.4${T}warm_n=110${T}ttft_max=40${T}stall_max=12${T}stalls=0${T}buffered=0${T}retries=0${T}retry_wait=0${T}compactions=0${T}compaction=0${T}loops=0${T}tokens_in=900000${T}tokens_cached=700000${T}tokens_out=20000${T}tokens_reasoning=52000${T}chars=0${T}agents=coder:4:700,test-guardian:3:300,analyst:1:140${T}tools=build-test.sh:5:200,ship.sh:4:20${T}tool_max=build-test.sh:90"
-  vline 2026-10-25T10:00:00.000Z "2026-10-25 11:00" fix "" "⛔" 900 "prep=30${T}top_model=200${T}top_tools=100${T}top_subagents=500${T}questions=70${T}steps=60${T}wait=900${T}think=500${T}write=100${T}ttft_avg=15${T}ttft_cold=20${T}cold_n=5${T}ttft_warm=18${T}warm_n=55${T}ttft_max=200${T}stall_max=130${T}stalls=2${T}buffered=3${T}retries=4${T}retry_wait=150${T}compactions=1${T}compaction=240${T}loops=1${T}tokens_in=0${T}tokens_cached=0${T}tokens_out=0${T}tokens_reasoning=0${T}chars=21000${T}agents=coder:2:400${T}tools=build-test.sh:2:80${T}tool_max=gitlab_get_job_log:420"
+  vline 2026-10-25T08:00:00.000Z "2026-10-25 09:00" go ABC-1 "✅" 1800 "prep=60${T}top_model=300${T}top_tools=240${T}top_subagents=1140${T}questions=0${T}steps=120${T}wait=600${T}think=1500${T}write=300${T}ttft_avg=5${T}ttft_cold=12${T}cold_n=10${T}ttft_warm=4.4${T}warm_n=110${T}ttft_max=40${T}stall_max=12${T}stalls=0${T}buffered=0${T}retries=0${T}retry_wait=0${T}compactions=0${T}compaction=0${T}loops=0${T}tokens_in=900000${T}tokens_cached=700000${T}tokens_out=20000${T}tokens_reasoning=52000${T}chars=0${T}agents=coder:4:700,test-guardian:3:300,analyst:1:140${T}tools=build-test.sh:5:200,ship.sh:4:20${T}tool_max=build-test.sh:90${T}batch=pilot:40:35:52,coder:60:58:62,test-guardian:20:18:40"
+  vline 2026-10-25T10:00:00.000Z "2026-10-25 11:00" fix "" "⛔" 900 "prep=30${T}top_model=200${T}top_tools=100${T}top_subagents=500${T}questions=70${T}steps=60${T}wait=900${T}think=500${T}write=100${T}ttft_avg=15${T}ttft_cold=20${T}cold_n=5${T}ttft_warm=18${T}warm_n=55${T}ttft_max=200${T}stall_max=130${T}stalls=2${T}buffered=3${T}retries=4${T}retry_wait=150${T}compactions=1${T}compaction=240${T}loops=1${T}tokens_in=0${T}tokens_cached=0${T}tokens_out=0${T}tokens_reasoning=0${T}chars=21000${T}agents=coder:2:400${T}tools=build-test.sh:2:80${T}tool_max=gitlab_get_job_log:420${T}batch=pilot:30:28:30,coder:20:20:22"
 } > "$work/vlog/openrd-pack-runs.tsv"
 run vitesse.sh
 check "vitesse: the runs, the most recent last, with their local time" 0 '^\| 25/10 11:00 \| /fix \| 15 min 00 s \| 3 min 20 s \| 8 min 20 s \| 2 min 10 s \| 1 min 10 s \| 15 s / 3 min 20 s \| 4 \(2 min 30 s\) \| ⛔ \|$'
@@ -561,6 +561,8 @@ check "vitesse: where the time goes, on the path of the runs" 0 '^Où passe le t
 check "vitesse: the model, the first token of a session and of the next requests" 0 '^Le modèle, toutes sessions : 180 requêtes ; 1er token après 8,3 s en moyenne \(14,7 s pour la première requête d.une session, 8,9 s pour les suivantes\) ; réflexion 83 %, rédaction 17 % ; ≈ 33 tokens/s \(estimé en partie sur les caractères\)\.$'
 check "vitesse: the subagents by time" 0 '^Sous-agents : coder 6 \(18 min 20 s\), test-guardian 3 \(5 min 00 s\), analyst 1 \(2 min 20 s\)\.$'
 check "vitesse: the longest tools" 0 '^Outils les plus longs : build-test\.sh 7 \(4 min 40 s\), ship\.sh 4 \(20 s\)\.$'
+check "vitesse: the requests of each agent, and the tool calls each one carried" 0 "^Requêtes au modèle, par agent : coder 80 requêtes \\(1,1 appel d'outil par requête\\), pilot 70 requêtes \\(1,3 appel d'outil par requête\\), test-guardian 20 requêtes \\(2,2 appels d'outil par requête\\)\\.$"
+check "vitesse: an agent that sends one tool call per request, said" 0 "^- Un seul appel d'outil par requête, ou presque \\(coder 1,1\\) : des lectures ou des modifications indépendantes" 'Tous les agents'
 check "vitesse: the retries of the model server" 0 '^- Le serveur du modèle a échoué 4 fois .*2 min 30 s d.attente'
 check "vitesse: the answers a gateway held back" 0 "^- 3 réponses arrivées d'un seul bloc .*proxy_buffering off"
 check "vitesse: a stream that stopped in the middle of an answer" 0 "^- Le flux du modèle s'est arrêté jusqu'à 2 min 10 s .*\\(2 fois plus d'une minute\\).*chunkTimeout"
@@ -573,12 +575,13 @@ run vitesse.sh 1 go
 check "vitesse: one command, its last run" 0 '^⏱ Vitesse du dernier run de /go \(sur 1 mesuré, depuis le 25/10 09:00\)' '/fix'
 check "vitesse: the speed from the tokens the server counted" 0 '≈ 40 tokens/s\.$'
 # a server that keeps nothing between two requests of a session: the next ones wait as long as the first one
-vline 2026-10-25T12:00:00.000Z "2026-10-25 13:00" tests "" "✅" 600 "prep=0${T}top_model=500${T}top_tools=0${T}top_subagents=0${T}questions=0${T}steps=40${T}wait=500${T}think=50${T}write=50${T}ttft_avg=12.5${T}ttft_cold=13${T}cold_n=2${T}ttft_warm=12.5${T}warm_n=38${T}ttft_max=20${T}stall_max=3${T}stalls=0${T}buffered=0${T}retries=0${T}retry_wait=0${T}compactions=0${T}compaction=0${T}loops=0${T}tokens_in=0${T}tokens_cached=0${T}tokens_out=500${T}tokens_reasoning=0${T}chars=0${T}agents=${T}tools=${T}tool_max=" > "$work/vlog/openrd-pack-runs.tsv.1"
+vline 2026-10-25T12:00:00.000Z "2026-10-25 13:00" tests "" "✅" 600 "prep=0${T}top_model=500${T}top_tools=0${T}top_subagents=0${T}questions=0${T}steps=40${T}wait=500${T}think=50${T}write=50${T}ttft_avg=12.5${T}ttft_cold=13${T}cold_n=2${T}ttft_warm=12.5${T}warm_n=38${T}ttft_max=20${T}stall_max=3${T}stalls=0${T}buffered=0${T}retries=0${T}retry_wait=0${T}compactions=0${T}compaction=0${T}loops=0${T}tokens_in=0${T}tokens_cached=0${T}tokens_out=500${T}tokens_reasoning=0${T}chars=0${T}agents=${T}tools=${T}tool_max=${T}batch=pilot:30:25:25,coder:40:30:31" > "$work/vlog/openrd-pack-runs.tsv.1"
 mv "$work/vlog/openrd-pack-runs.tsv" "$work/vlog/keep.tsv"
 mv "$work/vlog/openrd-pack-runs.tsv.1" "$work/vlog/openrd-pack-runs.tsv"
 run vitesse.sh tests
 check "vitesse: the prefix of the conversation not kept by the server" 0 '^- Les requêtes suivantes d.une session attendent 12,5 s .* la première 13 s .*prefix caching'
 check "vitesse: a slow generation" 0 '^- Génération lente : ≈ 5 tokens/s'
+check "vitesse: every agent at one call per request: the server, perhaps" 0 "^- Un seul appel d'outil par requête, ou presque \\(pilot 1, coder 1\\).*Tous les agents sont dans ce cas : le serveur ne renvoie peut-être qu'un appel par réponse"
 mv "$work/vlog/openrd-pack-runs.tsv" "$work/vlog/openrd-pack-runs.tsv.1"
 mv "$work/vlog/keep.tsv" "$work/vlog/openrd-pack-runs.tsv"
 run vitesse.sh 50

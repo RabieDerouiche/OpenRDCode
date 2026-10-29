@@ -193,7 +193,9 @@
 //    <log folder>/openrd-pack-runs.tsv, read by /outil vitesse: the whole run; the model (its wait before the first
 //    token, its thinking, its writing, per request and in all), the tools, the subagents (by agent) and the questions
 //    on the path of the run; the retries, the summaries of the context, the silences of the model server, the answers
-//    a gateway held back and gave all at once; the tokens the server counted. Never a prompt, a command or a text of the
+//    a gateway held back and gave all at once; the tokens the server counted; for each agent, its requests and the tool
+//    calls each of them carried (independent calls sent together make one request: each request sends the whole
+//    context again and counts in the rate limit of the server). Never a prompt, a command or a text of the
 //    conversation: names, durations and counts.
 // 30. Takes out of the requests of the agents of the pack (pilot, analyst, coder, checker, debugger, doc-writer,
 //    test-guardian) the parts of the global AGENTS.md written for the free conversation only, between
@@ -3068,9 +3070,9 @@ export default Plugin.define({
       const clock = { command: run.command, key, start: now, prep: 0, steps: 0, model: { wait: 0, think: 0, write: 0 },
         top: { model: 0, tools: 0, subagents: 0, questions: 0 }, ttft: [], warm: [], ttftMax: 0, stallMax: 0, stalls: 0,
         cold: [], buffered: 0, tokens: { in: 0, cached: 0, out: 0, reasoning: 0 }, chars: 0, retries: 0, retryWait: 0,
-        compactions: 0, compaction: 0, questions: 0, loops: 0, agents: new Map(), tools: new Map(), toolMax: ["", 0] }
+        compactions: 0, compaction: 0, questions: 0, loops: 0, agents: new Map(), tools: new Map(), toolMax: ["", 0], batch: new Map() }
       runClocks.set(sessionID, clock)
-      clocks.set(sessionID, { run: clock, top: true, steps: 0, tools: new Map() })
+      clocks.set(sessionID, { run: clock, top: true, agent: run && run.pilot ? "pilot" : "agent", steps: 0, tools: new Map() })
     }
     // the clock of a session: its own, or a new one for a subagent of a run
     function clockOf(sessionID) {
@@ -3079,9 +3081,16 @@ export default Plugin.define({
       const parent = parents.get(sessionID)
       const run = parent && runClocks.get(parent)
       if (!run) return undefined
-      const clock = { run, top: false, steps: 0, tools: new Map() }
+      const clock = { run, top: false, agent: childAgents.get(sessionID) || "subagent", steps: 0, tools: new Map() }
       clocks.set(sessionID, clock)
       return clock
+    }
+    // 29. the agent of each subagent session (its subagent call), and the requests and tool calls of each agent of a run
+    const childAgents = new Map()
+    const batchOf = (clock) => {
+      const entry = clock.run.batch.get(clock.agent) || { steps: 0, toolSteps: 0, calls: 0 }
+      clock.run.batch.set(clock.agent, entry)
+      return entry
     }
     const addTo = (map, label, ms) => {
       const entry = map.get(label) || { n: 0, ms: 0 }
@@ -3158,8 +3167,19 @@ export default Plugin.define({
           const started = Number(data.started)
           clock.steps++
           run.steps++
+          batchOf(clock).steps++
           clock.step = { start: started > 0 && started <= now && now - started < 600000 ? started : now, first: 0, last: 0,
-            gap: 0, streamed: 0, think: 0, write: 0, lastKind: "", chars: 0, subagents: false, asked: false }
+            gap: 0, streamed: 0, think: 0, write: 0, lastKind: "", chars: 0, subagents: false, asked: false, calls: 0 }
+          return
+        }
+        case "session.tool.progress": {
+          // the session of a subagent: its agent, for its measures
+          const child = data.metadata && data.metadata.sessionID
+          const tool = clock.tools.get(data.id)
+          if (child && child !== sessionID && tool && tool.agent && !childAgents.has(child)) {
+            if (childAgents.size > 2000) childAgents.clear()
+            childAgents.set(child, tool.agent.replace(/[,:\s]+/g, "_"))
+          }
           return
         }
         case "session.reasoning.started":
@@ -3200,6 +3220,12 @@ export default Plugin.define({
             agent: name === "subagent" && data.input && data.input.agent ? String(data.input.agent) : "" })
           if (clock.step && name === "subagent") clock.step.subagents = true
           if (clock.step && name === "question") clock.step.asked = true
+          // 29. the tool calls of each request: several independent calls of one answer make one request, not several
+          if (name !== "question") {
+            const entry = batchOf(clock)
+            entry.calls++
+            if (clock.step && ++clock.step.calls === 1) entry.toolSteps++
+          }
           return
         }
         case "session.tool.success":
@@ -3266,6 +3292,8 @@ export default Plugin.define({
         compaction: s(run.compaction), loops: run.loops, tokens_in: run.tokens.in, tokens_cached: run.tokens.cached,
         tokens_out: run.tokens.out, tokens_reasoning: run.tokens.reasoning, chars: run.chars,
         agents: list(run.agents, 12), tools: list(run.tools, 8), tool_max: run.toolMax[0] ? run.toolMax[0] + ":" + s(run.toolMax[1]) : "",
+        // the requests of each agent, those that called tools, and their tool calls: « coder:42:38:51 »
+        batch: [...run.batch].sort((a, b) => b[1].steps - a[1].steps).slice(0, 8).map(([agent, e]) => agent + ":" + e.steps + ":" + e.toolSteps + ":" + e.calls).join(","),
       }
       writeRunLine(fields)
       log("time of the run", { command: "/" + run.command, total: fields.total, model: fields.top_model, tools: fields.top_tools,
