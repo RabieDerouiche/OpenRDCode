@@ -181,6 +181,8 @@ root=$(pwd -P)
 common=$(git rev-parse --git-common-dir) && common=$(cd "$common" && pwd)
 branch=$(git branch --show-current 2>/dev/null)
 key=$(printf '%s\n' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -n 1)
+# a branch named without its key (a change without a ticket, a branch given to /go): the key branch.sh recorded for it
+[ -n "$key" ] || [ -z "$branch" ] || key=$(git config --get "branch.$branch.opencode-key" 2>/dev/null)
 # a branch without a key has a folder of its own: the labels of two branches without a ticket (F1, T1…) never meet
 [ -n "$key" ] || key=$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-')
 folder="$common/opencode-tickets/${key:-NOKEY}.tests"

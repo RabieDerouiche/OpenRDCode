@@ -166,6 +166,7 @@ case "$action" in
     if [ -n "$branch" ]; then
       unpushed=$(git rev-list --count "refs/heads/$branch" --not --remotes 2>/dev/null)
       key=$(printf '%s' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -n 1)
+      [ -n "$key" ] || key=$(git config --get "branch.$branch.opencode-key" 2>/dev/null)
       echo "REMOVED: $path (the branch $branch stays, with its ticket sheet)"
       if [ "${unpushed:-0}" -gt 0 ]; then
         echo "WARNING: $unpushed commits of $branch are not pushed yet: they are safe in the branch${key:+; /go $key in a session of the main checkout (or of a new worktree) delivers them}"

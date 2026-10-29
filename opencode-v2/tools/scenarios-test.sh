@@ -608,6 +608,9 @@ wait
 k1=$(sed -n 's/^KEY: //p' "$work/l1")
 k2=$(sed -n 's/^KEY: //p' "$work/l2")
 truth "two /go without a ticket at the same moment: two keys ($k1, $k2)" '[ -n "$k1" ] && [ -n "$k2" ] && [ "$k1" != "$k2" ]'
+b1=$(sed -n 's/^BRANCH: \([^ ]*\) .*/\1/p' "$work/l1")
+b2=$(sed -n 's/^BRANCH: \([^ ]*\) .*/\1/p' "$work/l2")
+truth "…and two branches named after the change, never the key ($b1, $b2)" '[ -n "$b1" ] && [ -n "$b2" ] && [ "$b1" != "$b2" ] && ! printf "%s %s" "$b1" "$b2" | grep -q LOCAL'
 # two POCs pushed at the same moment from two detached worktrees
 ( cd "$work/wt1" && git switch -q --detach origin/develop && printf 'x\n' > poc1.txt && printf 'namespace App;\npublic class Poc1\n{\n}\n' > src/App/Poc1.cs )
 ( cd "$work/wt2" && git switch -q --detach origin/develop && printf 'namespace App;\npublic class Poc2\n{\n}\n' > src/App/Poc2.cs )

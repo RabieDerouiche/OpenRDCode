@@ -96,6 +96,12 @@ elif [ "$fetch" = branch ]; then
 fi
 
 key=$(printf '%s' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -1)
+# a branch named without its key (a change without a ticket, a branch given to /go): the key branch.sh recorded for it
+recorded_key=""
+if [ -z "$key" ] && [ -n "$branch" ]; then
+  key=$(git config --get "branch.$branch.opencode-key" 2>/dev/null)
+  [ -n "$key" ] && recorded_key=" (recorded for this branch by /go: its name does not hold it)"
+fi
 # The ticket sheets live in the git folder that every worktree of the repository shares (.git/opencode-tickets in
 # the main checkout): a worktree sees the sheets of the others, and a sheet is never committed
 common=$(git rev-parse --git-common-dir 2>/dev/null) && common=$(cd "$common" && pwd)
@@ -127,7 +133,7 @@ else
 fi
 echo "Remote URL (credentials masked): ${remote_url:-none}"
 echo "Current branch: ${branch:-(detached HEAD)}"
-echo "Jira key from branch: ${key:-none}"
+echo "Jira key from branch: ${key:-none}$recorded_key"
 case "$base_why" in
   recorded) base_note=" (the base recorded for this branch when it started from it: its diff, its review, the check before the push and its merge request target it)" ;;
   recorded*) base_note=" (the base recorded for this branch, origin/$(printf '%s' "$base_why" | sed 's/^recorded //; s/ gone.*//'), is no longer on origin)" ;;

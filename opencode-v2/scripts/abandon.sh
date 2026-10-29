@@ -48,6 +48,8 @@ ahead=$(git rev-list --count "refs/remotes/origin/$base..HEAD")
 common=$(git rev-parse --git-common-dir) && common=$(cd "$common" && pwd)
 gitdir=$(git rev-parse --absolute-git-dir)
 key=$(printf '%s\n' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -n 1)
+# a branch named without its key (a change without a ticket, a branch given to /go): the key branch.sh recorded for it
+[ -n "$key" ] || [ -z "$branch" ] || key=$(git config --get "branch.$branch.opencode-key" 2>/dev/null)
 sheet=""
 [ -n "$key" ] && [ -f "$common/opencode-tickets/$key.md" ] && sheet="$common/opencode-tickets/$key.md"
 worktree=no

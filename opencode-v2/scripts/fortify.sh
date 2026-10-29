@@ -36,6 +36,8 @@ cd "$root" || exit 1
 common=$(git rev-parse --git-common-dir) && common=$(cd "$common" && pwd)
 branch=$(git branch --show-current 2>/dev/null)
 key=$(printf '%s\n' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -n 1)
+# a branch named without its key (a change without a ticket, a branch given to /go): the key branch.sh recorded for it
+[ -n "$key" ] || [ -z "$branch" ] || key=$(git config --get "branch.$branch.opencode-key" 2>/dev/null)
 batch="$common/opencode-tickets/${key:-NOKEY}.fortify"
 
 # The unit test projects: .csproj files that reference a test SDK or the MSTest package, say they are test projects,

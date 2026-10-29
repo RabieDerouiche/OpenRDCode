@@ -687,9 +687,16 @@ Un gros ticket : l'analyse et le plan seulement (déjà relus par le checker à 
 ```text
 /go ABC-123 pas à pas
 ```
-Un changement sans ticket Jira (clé locale `LOCAL-<n>` pour la branche et la fiche ; ni dans les commits ni dans le titre de la MR) :
+Un changement sans ticket Jira. La branche garde un nom à elle : celle où tu es si c'est la tienne (ni develop, ni main, ni master), sinon une nouvelle branche au nom du changement (`feature/export-csv-separateur-decimal`) ; une clé locale `LOCAL-<n>` ne nomme que la fiche du ticket, jamais la branche, les commits ni le titre de la MR :
 ```text
 /go sans ticket : l'export CSV perd le séparateur décimal quand la culture est fr-FR
+```
+Sur une branche à toi que tu nommes (ici ou sur GitLab), sous son nom, avec ou sans ticket (la clé est enregistrée pour elle, la branche n'est jamais renommée) ; à ne pas confondre avec « depuis », qui crée une nouvelle branche à partir d'elle :
+```text
+/go sans ticket sur feature/mon-travail : finir l'export CSV
+```
+```text
+/go ABC-123 sur feature/mon-travail
 ```
 Un ticket qui part d'une autre branche que develop (la branche d'un collègue, une branche de release) : la branche du ticket part de `origin/<branche>`, qui devient sa base pour tout le run (mesure de départ, review, contrôle avant push, fusion de la base, cible de la MR). La branche doit être sur GitLab ; un nom inconnu arrête `/go` avec les noms proches. Une branche de ticket qui existe déjà garde ses commits et prend cette base :
 ```text

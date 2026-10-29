@@ -122,6 +122,41 @@ check "sheet check: the sheet corrected, OK" 0 '^Sheet check of ABC-1: OK \(3 st
 rm -rf "$sheets/ABC-1.md" src/App "$work/row"
 git switch -q develop
 
+# ---------- /go sans ticket: the branch keeps a name of its own, the key is recorded for it ----------
+run branch.sh LOCAL feature "Corriger le séparateur décimal de l'export"
+check "sans ticket: a branch named after the change, never its key" 0 '^BRANCH: feature/corriger-separateur-decimal-export \(created from origin/develop'
+check "sans ticket: its local key" 0 '^KEY: LOCAL-1$'
+truth "sans ticket: the key recorded for the branch" '[ "$(git config --get branch.feature/corriger-separateur-decimal-export.opencode-key)" = LOCAL-1 ]'
+run workflow-state.sh --no-fetch --sheet
+check "sans ticket: the state gives its key" 0 '^Jira key from branch: LOCAL-1 \(recorded for this branch by /go: its name does not hold it\)$'
+check "sans ticket: and its sheet" 0 '^Current ticket sheet: none for LOCAL-1 \(to be written at .*/opencode-tickets/LOCAL-1\.md\)$'
+git switch -q develop
+# « /go sans ticket … sur <branch> »: a branch of my own, pushed, then gone from this computer
+git switch -q -c feature/mon-travail && printf 'w\n' > work.txt && git add work.txt && git commit -q -m "my work" && git push -q origin feature/mon-travail
+git switch -q develop && git branch -q -D feature/mon-travail
+run branch.sh LOCAL feature "Finir mon travail" --on feature/mon-travail
+check "sur <branch>: the branch given, as it is named" 0 '^BRANCH: feature/mon-travail \(switched, from origin/feature/mon-travail\)$'
+check "sur <branch>: a key for its sheet only" 0 '^KEY: LOCAL-2$'
+run branch.sh LOCAL feature "Finir mon travail" --on feature/mon-travail
+check "sur <branch> again: the same key, so the same sheet" 0 '^KEY: LOCAL-2$'
+check "sur <branch> again: kept" 0 '^BRANCH: feature/mon-travail \(already checked out\)$'
+mkdir -p "$sheets" && printf '# LOCAL-2 - Finir\n## Plan\n- [ ] 1. x\n' > "$sheets/LOCAL-2.md"
+run ticket-sheet.sh plan
+check "sur <branch>: the sheet found from the key recorded" 0 '^Plan of LOCAL-2:$'
+rm -f "$sheets/LOCAL-2.md"
+run branch.sh LOCAL feature "x" --on develop
+check "sur develop: refused" 1 '^STOP: develop is not a branch for this work'
+run branch.sh LOCAL feature "x" --on feature/mon-travial
+check "sur an unknown branch: stopped, with the close names" 1 '^STOP: no branch feature/mon-travial here nor on origin \(close names: feature/mon-travail'
+# « /go ABC-7 sur <branch> »: a Jira key on a branch named without it
+run branch.sh ABC-7 feature "Export" --on feature/mon-travail
+check "a ticket sur <branch>: kept" 0 '^BRANCH: feature/mon-travail \(already checked out\)$'
+truth "a ticket sur <branch>: its key recorded" '[ "$(git config --get branch.feature/mon-travail.opencode-key)" = ABC-7 ]'
+git switch -q develop
+run branch.sh ABC-7 feature "Export"
+check "the ticket again, from develop: back on the branch recorded for it" 0 '^BRANCH: feature/mon-travail \(switched, existing local branch\)$'
+git switch -q develop && git branch -q -D feature/mon-travail feature/corriger-separateur-decimal-export
+
 # ---------- /go … depuis <branch> ----------
 run branch.sh ABC-2 feature "Suite du travail" --from feature/TEAM-9-nope
 check "from: unknown branch stops, with close names" 1 'STOP: no branch feature/TEAM-9-nope on origin \(close names: feature/TEAM-9-teammate'

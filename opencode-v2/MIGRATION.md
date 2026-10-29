@@ -290,11 +290,11 @@ ls ~/oc2/config/opencode/agents ~/oc2/config/opencode/commands
 ```
 Tu dois voir, pour les agents : `analyst.md checker.md coder.md debugger.md doc-writer.md pilot.md test-guardian.md` ; pour les commandes : `compare.md daily.md fix.md fortify.md go.md outil.md push.md review.md sync.md tests.md`. Un autre nom est soit un fichier à toi (garde-le), soit un reste d'un ancien pack : envoie-moi son nom. Dans `skills`, tes skills `pattern-…` sont à toi : ils restent.
 
-**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `abandon.sh`, `api-surface.sh`, `base.sh`, `dotnet-problem.sh`, `dotnet-targets.sh`, `fortify.sh`, `front-info.sh`, `front-test.sh`, `related-repos.sh`, `related-setup.sh`, `test-guardian.sh`, `test-lint.sh`, `test-platform.sh`, `tests.sh`, `api-preflight.sh`, `environments.sh`, `env-setup.sh`, `env-tests.sh`, `http-files.sh`, `schedule.sh`, `pack-map.sh`, `vitesse.sh`, `pause.sh`, `blazor-native.sh`, `secrets.sh`, `automapper.sh` et `transient.sh` ; treize d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `detect-project-type.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-licenses.sh`, `package-refs.sh`, `review-target.sh`, `ship.sh`, `ticket-sheet.sh`, `todo.sh`, `workflow-state.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public, `git fetch` de deux espaces de travail qui se croisent relancé tout seul, un dossier front-end buildé et testé une fois par `build-test.sh <dossier>`, un problème de la machine dit en une ligne, un `node_modules` jamais poussé, l'alternative gratuite de Blazorise dans `/outil licences`).
+**5.4 Les scripts du pack.** Ils restent dans `~/.config/opencode/scripts`, où les commandes et les agents les appellent : ce dossier sert aux deux versions. Ceux de la v2 sont ceux de la 1.19, plus `abandon.sh`, `api-surface.sh`, `base.sh`, `dotnet-problem.sh`, `dotnet-targets.sh`, `fortify.sh`, `front-info.sh`, `front-test.sh`, `related-repos.sh`, `related-setup.sh`, `test-guardian.sh`, `test-lint.sh`, `test-platform.sh`, `tests.sh`, `api-preflight.sh`, `environments.sh`, `env-setup.sh`, `env-tests.sh`, `http-files.sh`, `schedule.sh`, `pack-map.sh`, `vitesse.sh`, `pause.sh`, `blazor-native.sh`, `secrets.sh`, `automapper.sh` et `transient.sh` ; quatorze d'entre eux sont dans une version plus récente (`branch.sh`, `build-test.sh`, `detect-project-type.sh`, `diff-guard.sh`, `fetch.sh`, `outil.sh`, `package-licenses.sh`, `package-refs.sh`, `review-target.sh`, `ship.sh`, `ticket-sheet.sh`, `todo.sh`, `workflow-state.sh`, `workspace.sh`), que les commandes de la 1.19 appellent de la même façon : ta 1.19 marche avec, et en profite (tests Microsoft.Testing.Platform, base d'une branche, documentation d'un package public, `git fetch` de deux espaces de travail qui se croisent relancé tout seul, un dossier front-end buildé et testé une fois par `build-test.sh <dossier>`, un problème de la machine dit en une ligne, un `node_modules` jamais poussé, l'alternative gratuite de Blazorise dans `/outil licences`).
 ```sh
 cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
 ```
-Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 40 lignes :
+Même lecture qu'en 5.3, avec les fichiers de `opencode-v2/scripts/`. Avec un pack 1.19 à jour, il y a ces 41 lignes :
 ```text
 abandon.sh: FAILED open or read
 api-preflight.sh: FAILED open or read
@@ -336,6 +336,7 @@ todo.sh: FAILED
 transient.sh: FAILED open or read
 vitesse.sh: FAILED open or read
 workflow-state.sh: FAILED
+workspace.sh: FAILED
 ```
 `FAILED open or read` : crée le fichier dans `~/.config/opencode/scripts/` avec le contenu du même fichier de `opencode-v2/scripts/` ; `FAILED` : remplace tout son contenu. D'autres lignes veulent dire que tes scripts 1.19 ne sont pas les derniers : colle-les aussi depuis `opencode-v2/scripts/`. `diff-guard.sh` contient des tabulations : s'il reste en `FAILED`, c'est que ton éditeur les a remplacées par des espaces.
 

@@ -35,6 +35,8 @@ fi
 root=$(git rev-parse --show-toplevel)
 branch=$(git symbolic-ref --short -q HEAD)
 key=$(printf '%s' "$branch" | grep -oE '[A-Z][A-Z0-9_]+-[0-9]+' | head -1)
+# a branch named without its key (a change without a ticket, a branch given to /go): the key branch.sh recorded for it
+[ -n "$key" ] || [ -z "$branch" ] || key=$(git config --get "branch.$branch.opencode-key" 2>/dev/null)
 if [ -z "$key" ]; then
   echo "Ticket sheet: none (branch ${branch:-detached HEAD} has no Jira key)"
   exit 0

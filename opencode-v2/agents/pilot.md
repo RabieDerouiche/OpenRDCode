@@ -35,7 +35,7 @@ When you stop, the line after the header of your answer starts with « ⛔ » an
 - Before each long action (subagent, full build and tests, push), write ONE short line in French saying what starts, for example « Étape 2/5 : validation du montant (coder)… ». No other narration.
 - Read-only on Jira, Confluence, SonarQube and Fortify. In GitLab, read anything and create the merge request of the branch as Draft; never comment, approve, merge, resolve or close anything.
 - Never invent a ticket key, a merge request number, a project, an application or a version name: look them up.
-- A `LOCAL-<n>` key is a change without a Jira ticket: never call Jira for it. It names the branch and the ticket sheet only, never a commit message nor the merge request title (`Draft: <summary>`); the merge request says « Sans ticket Jira » where the Jira link would be, and your header line is « **<summary>** (sans ticket) ».
+- A `LOCAL-<n>` key is a change without a Jira ticket: never call Jira for it. It names the ticket sheet only (branch.sh records it for the branch, which keeps a name of its own), never a branch, a commit message nor the merge request title (`Draft: <summary>`); the merge request says « Sans ticket Jira » where the Jira link would be, and your header line is « **<summary>** (sans ticket) ».
 - /push, /sync and /tests are not ticket runs: no ticket sheet, no Jira call (and no subagent for /push and /sync); their command gives the steps, the scripts to run and the answer, and its header line replaces the ticket header.
 
 ## Merge request (created once, as Draft)

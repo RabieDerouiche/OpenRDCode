@@ -462,7 +462,7 @@ check "develop, clean: the batch can start" 0 '^Current branch: develop$'
 # ======================================================================================================================
 step "C. lot 1 : branche, fiche, mesure"
 chain "branch.sh LOCAL bugfix 'Fortify Path Manipulation lot 2026-10-24'" "workflow-state.sh --no-fetch --sheet" "fortify.sh batch"
-check "the batch branch, from origin/develop" 0 '^BRANCH: bugfix/LOCAL-1-fortify-path-manipulation.* \(created from origin/develop'
+check "the batch branch, from origin/develop, named after the batch (never its local key)" 0 '^BRANCH: bugfix/fortify-path-manipulation-lot-2026 \(created from origin/develop'
 check "a local key" 0 '^KEY: LOCAL-1$'
 check "the sheet to write" 0 '^Current ticket sheet: none for LOCAL-1 \(to be written at .*/opencode-tickets/LOCAL-1.md\)$'
 check "the batch folder" 0 '^BATCH: .*/opencode-tickets/LOCAL-1.fortify$'
@@ -954,7 +954,7 @@ check "the coverage of the changes" 1 '^COVERAGE OF THE CHANGES: [0-9]+/[0-9]+ c
 check "the changed lines of the fixes" 1 '^CHANGED: src/App/PathService.cs '
 chain "ship.sh --sync-only --base" "ship.sh --base 'fix(security): Fortify batch app-api / develop (LOCAL-1)'"
 check "the check before the push: a fake token of a test fixture is a warning" 0 '^WARNING: .*tests/App.Tests/LogSecurityTests.cs'
-check "pushed" 0 '^PUSH: OK, origin/bugfix/LOCAL-1-fortify-path-manipulation'
+check "pushed" 0 '^PUSH: OK, origin/bugfix/fortify-path-manipulation-lot-2026'
 truth "the branch is on GitLab" 'on_origin "$work/api.git" "$(git branch --show-current)"'
 truth "the measures and cards never committed" '! git ls-files | grep -q "opencode-tickets"'
 truth "five commits, one per vulnerability" '[ "$(git rev-list --count origin/develop..HEAD)" = 5 ]'

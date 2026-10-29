@@ -1,7 +1,10 @@
 #!/bin/sh
 # For /go and /push: puts the repository on the right branch, without asking anything.
-# Ticket mode (/go): branch.sh <JIRA-KEY | LOCAL> <feature|bugfix|hotfix> "<ticket summary>" [--from <branch>]
-# - The current branch already contains the key: kept.
+# Ticket mode (/go): branch.sh <JIRA-KEY | LOCAL> <feature|bugfix|hotfix> "<ticket summary>" [--from <branch>] [--on <branch>]
+# - The current branch already contains the key, or the key is recorded for it (below): kept.
+# - --on <branch> (/go … sur <branch>): the work goes on that branch, as it is named (local first, then on origin); the
+#   key is recorded for it in git (branch.<name>.opencode-key), where the scripts that look for the ticket sheet of a
+#   branch find it when its name does not hold it. Never develop, main, master, the base branch nor a workspace branch.
 # - Otherwise a branch of the key (local first, then on origin) is checked out.
 # - Otherwise a new branch <type>/<KEY>-<words of the summary> starts from the up-to-date base branch
 #   (origin/develop, otherwise origin/main or origin/master), without tracking it (the first push sets the upstream).
@@ -9,8 +12,10 @@
 #   its base (base.sh): its diff, its review, the check before the push, the merges of ship.sh --base and the target of
 #   its merge request. The branch must be on origin (a merge request targets a branch of origin).
 # - A change without a Jira ticket: the key LOCAL becomes the next free local key, LOCAL-<n> (branches here and on
-#   origin, ticket sheets), printed on a "KEY:" line; the key is reserved at once in the git folder that the worktrees
-#   share, so that two /go of two worktrees started at the same moment never get the same key.
+#   origin, ticket sheets, keys recorded), printed on a "KEY:" line; the key is reserved at once in the git folder that
+#   the worktrees share, so that two /go of two worktrees started at the same moment never get the same key. It names the
+#   ticket sheet only: a new branch is <type>/<words of the summary> (-2, -3… when taken), with the key recorded for it;
+#   with --on, the branch given keeps its name (a key already recorded for it is kept: the same sheet).
 # Here mode (/push and /tests, work done outside a ticket):
 #   branch.sh --here <feature|bugfix|hotfix|test|docs|refactor|chore|poc|wip> "<summary>"   or   branch.sh --here --name <branch>
 # - On develop, master, main, a detached HEAD (an OpenCode workspace starts detached) or an OpenCode workspace branch:
@@ -53,12 +58,16 @@ else
   fi
   if [ $# -ge 2 ]; then shift 2; else shift $#; fi
 fi
-from=""
+from="" on="" localkey=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --from)
       [ $# -ge 2 ] && [ -n "$2" ] || stop "--from needs the name of the branch to start from"
       from=${2#origin/}
+      shift 2 ;;
+    --on)
+      [ $# -ge 2 ] && [ -n "$2" ] || stop "--on needs the name of the branch to work on"
+      on=${2#origin/}
       shift 2 ;;
     *) shift ;;
   esac
@@ -93,6 +102,9 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || stop "not a git repositor
 cd "$(git rev-parse --show-toplevel)" || exit 0
 if [ -n "$from" ]; then
   git check-ref-format --branch "$from" >/dev/null 2>&1 || stop "\"$from\" is not a branch name"
+fi
+if [ -n "$on" ]; then
+  git check-ref-format --branch "$on" >/dev/null 2>&1 || stop "\"$on\" is not a branch name"
 fi
 
 current=$(git branch --show-current)
@@ -209,7 +221,12 @@ record_base() {
 }
 
 regex="(^|[^A-Za-z0-9])$key([^0-9]|$)"
-if [ "$key" != LOCAL ] && printf '%s' "$current" | grep -qE "$regex"; then
+# the key recorded for a branch that /go worked on under its own name (--on, or a change without a ticket)
+recorded_key() { [ -n "$1" ] && git config --get "branch.$1.opencode-key" 2>/dev/null; }
+record_key() {
+  git config "branch.$1.opencode-key" "$2" 2>/dev/null || echo "WARNING: the key $2 could not be recorded for $1: its ticket sheet is not found from it"
+}
+if [ "$key" != LOCAL ] && [ -z "$on" ] && { printf '%s' "$current" | grep -qE "$regex" || [ "$(recorded_key "$current")" = "$key" ]; }; then
   echo "BRANCH: $current (already checked out)"
   if [ -n "$from" ]; then
     git rev-parse -q --verify "refs/remotes/origin/$from" >/dev/null || sh "$here/fetch.sh" -q --no-tags origin "+refs/heads/$from:refs/remotes/origin/$from" 2>/dev/null
@@ -250,12 +267,13 @@ if [ -n "$from" ]; then
   fi
 fi
 
-# A change without a ticket: the next free local key
-if [ "$key" = LOCAL ]; then
+# A change without a ticket: the next free local key (branches, ticket sheets, reservations and keys recorded)
+next_local_key() {
   common=$(git rev-parse --git-common-dir 2>/dev/null) && common=$(cd "$common" && pwd)
   keys="${common:-.git}/opencode-tickets/.local-keys"
   mkdir -p "$keys" 2>/dev/null
-  last=$( { git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin; ls "${common:-.git}/opencode-tickets" "$keys" 2>/dev/null; } |
+  last=$( { git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin; ls "${common:-.git}/opencode-tickets" "$keys" 2>/dev/null
+    git config --get-regexp '^branch\..*\.opencode-key$' 2>/dev/null; } |
     grep -oE '(^|[^A-Za-z0-9])LOCAL-[0-9]+' | grep -oE '[0-9]+$' | sort -n | tail -n 1)
   n=$(( ${last:-0} + 1 ))
   # the reservation: mkdir succeeds for one run only (a /go of another worktree at the same moment takes the next)
@@ -265,12 +283,58 @@ if [ "$key" = LOCAL ]; then
     tries=$((tries + 1))
     [ "$tries" -lt 50 ] || stop "no free local key (LOCAL-$n reserved): check $keys"
   done
-  key="LOCAL-$n"
+  echo "LOCAL-$n"
+}
+
+# --on <branch>: the work goes on that branch, as it is named
+if [ -n "$on" ]; then
+  case "$on" in
+    develop|master|main|"$default"|opencode/*) stop "$on is not a branch for this work: name a branch of its own, or let /go create the branch of the ticket" ;;
+  esac
+  if [ "$current" = "$on" ]; then
+    how="already checked out"
+  elif git rev-parse -q --verify "refs/heads/$on" >/dev/null; then
+    [ -z "$dirty" ] || stop "uncommitted changes on ${current:-the detached HEAD $detached} ($dirty): commit them (/push) or put them aside before switching to $on"
+    elsewhere=$(git worktree list --porcelain 2>/dev/null | awk -v b="branch refs/heads/$on" '/^worktree / { w = substr($0, 10) } $0 == b { print w }' | head -n 1)
+    [ -z "$elsewhere" ] || stop "the branch $on is open in another worktree ($elsewhere): continue there (one ticket per worktree)"
+    sh "$here/transient.sh" git switch -q "$on" >/dev/null || stop "git could not switch to $on"
+    how="switched, existing local branch"
+  elif git rev-parse -q --verify "refs/remotes/origin/$on" >/dev/null; then
+    [ -z "$dirty" ] || stop "uncommitted changes on ${current:-the detached HEAD $detached} ($dirty): commit them (/push) or put them aside before switching to $on"
+    sh "$here/transient.sh" git switch -q -c "$on" --track "origin/$on" >/dev/null || stop "git could not create $on from origin/$on"
+    how="switched, from origin/$on"
+  else
+    hint=$(printf '%s' "$on" | sed 's#.*/##; s#[-_.].*##')
+    near=""
+    [ -n "$hint" ] && near=$( { git for-each-ref --format='%(refname:short)' refs/heads; git for-each-ref --format='%(refname:short)' refs/remotes/origin | sed 's#^origin/##'; } |
+      grep -v '^HEAD$' | sort -u | grep -iF -- "$hint" | head -n 5 | awk 'NR > 1 { printf ", " } { printf "%s", $0 } END { if (NR) print "" }')
+    stop "no branch $on here nor on origin${near:+ (close names: $near)}: check its name, then run again"
+  fi
+  if [ "$key" = LOCAL ]; then
+    key=$(recorded_key "$on")
+    [ -n "$key" ] || key=$(next_local_key) || { echo "$key"; exit 1; }
+  fi
+  # the key recorded for the branch, unless its name holds it
+  printf '%s' "$on" | grep -qE "(^|[^A-Za-z0-9])$key([^0-9]|$)" || record_key "$on" "$key"
+  echo "BRANCH: $on ($how)"
+  echo "KEY: $key"
+  record_base "$on"
+  cleanup_workspace_branch
+  exit 0
+fi
+
+if [ "$key" = LOCAL ]; then
+  key=$(next_local_key) || { echo "$key"; exit 1; }
   regex="(^|[^A-Za-z0-9])$key([^0-9]|$)"
   echo "KEY: $key"
+  localkey=1
 fi
 
 local_branch=$(git for-each-ref --format='%(refname:short)' refs/heads | grep -E "$regex" | head -n 1)
+# a branch named without its key that /go recorded it for (--on)
+[ -n "$local_branch" ] || local_branch=$(git config --get-regexp '^branch\..*\.opencode-key$' 2>/dev/null |
+  awk -v k="$key" '$2 == k { sub(/^branch\./, "", $1); sub(/\.opencode-key$/, "", $1); print $1 }' |
+  while read -r b; do git rev-parse -q --verify "refs/heads/$b" >/dev/null && echo "$b"; done | head -n 1)
 remote_branch=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin | grep -v '/HEAD$' | grep -E "$regex" | head -n 1)
 
 if [ -n "$local_branch" ] || [ -n "$remote_branch" ]; then
@@ -309,16 +373,36 @@ fi
 words=$(slug "$summary")
 name="$type/$key"
 [ -n "$words" ] && name="$name-$words"
-
-if sh "$here/transient.sh" git switch -q --no-track -c "$name" "origin/$start" >/dev/null; then
-  echo "BRANCH: $name (created from origin/$start, $(git log -1 --format='%h, %cs' "origin/$start"))"
-elif [ -n "$dirty" ] && sh "$here/transient.sh" git switch -q -c "$name" >/dev/null; then
-  # the changes touch files that origin/<start> changed since the current commit: the branch starts here, with them
-  echo "BRANCH: $name (created at the current commit $(git log -1 --format='%h, %cs'), with the uncommitted changes: origin/$start changed the same files since; ship.sh --base merges it before the push)"
-else
-  stop "git could not create $name from origin/$start"
+if [ -n "$localkey" ]; then
+  # a change without a ticket: a branch named after the change, its key recorded for it (the sheet is found from it)
+  [ -n "$words" ] || words=$(date '+%Y%m%d-%H%M')
+  name="$type/$words"
+  n=1
+  while git rev-parse -q --verify "refs/heads/$name" >/dev/null || git rev-parse -q --verify "refs/remotes/origin/$name" >/dev/null; do
+    n=$((n + 1))
+    [ "$n" -le 9 ] || stop "the branches $type/$words to $type/$words-9 exist already: describe the change in other words"
+    name="$type/$words-$n"
+  done
 fi
+
+while :; do
+  if sh "$here/transient.sh" git switch -q --no-track -c "$name" "origin/$start" >/dev/null; then
+    echo "BRANCH: $name (created from origin/$start, $(git log -1 --format='%h, %cs' "origin/$start"))"
+  elif [ -n "$dirty" ] && sh "$here/transient.sh" git switch -q -c "$name" >/dev/null; then
+    # the changes touch files that origin/<start> changed since the current commit: the branch starts here, with them
+    echo "BRANCH: $name (created at the current commit $(git log -1 --format='%h, %cs'), with the uncommitted changes: origin/$start changed the same files since; ship.sh --base merges it before the push)"
+  elif [ -n "$localkey" ] && [ "$n" -lt 9 ] && git rev-parse -q --verify "refs/heads/$name" >/dev/null; then
+    # a /go of another worktree took the same name at the same moment: the next one
+    n=$((n + 1))
+    name="$type/$words-$n"
+    continue
+  else
+    stop "git could not create $name from origin/$start"
+  fi
+  break
+done
 record_base "$name"
+[ -z "$localkey" ] || record_key "$name" "$key"
 [ -n "$dirty" ] && echo "CARRIED: the uncommitted changes made on ${current:-the detached HEAD $detached} came along: $dirty"
 cleanup_workspace_branch
 exit 0
