@@ -114,6 +114,7 @@ for b in "$on" "$new"; do
   [ -z "$b" ] || git check-ref-format --branch "$b" >/dev/null 2>&1 || stop "\"$b\" is not a branch name"
 done
 [ -z "$on" ] || [ -z "$new" ] || stop "--on and --new name two branches: one only"
+[ -z "$from" ] || [ "$from" != "$on$new" ] || stop "$from cannot start from itself: « sur $from » alone works on it, « depuis $from » alone starts a new branch from it"
 
 current=$(git branch --show-current)
 detached=""
@@ -215,6 +216,7 @@ fi
 default=$(sh "$here/base.sh" --default)
 record_base() {
   [ -n "$from" ] || return 0
+  [ "$from" != "$1" ] || stop "$1 cannot start from itself: « depuis $1 » starts a new branch from it"
   if [ "$from" = "$default" ]; then
     git config --unset "branch.$1.opencode-base" 2>/dev/null
     return 0

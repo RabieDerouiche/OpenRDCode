@@ -701,6 +701,13 @@ Sur une branche que tu nommes, sous son nom, avec ou sans ticket : elle existe (
 ```text
 /go sans ticket nouvelle branche feature/paiement-3x : le paiement en trois fois
 ```
+Les deux ensemble : la branche de ce nom part de l'autre branche, qui devient sa base (le diff, la review, le contrôle avant push et la cible de la MR) :
+```text
+/go sans ticket nouvelle branche feature/correctif-2-3 depuis release/2.3 : le total arrondi deux fois
+```
+```text
+/go ABC-123 sur feature/export-pdf depuis feature/ABC-100-socle
+```
 Un ticket qui part d'une autre branche que develop (la branche d'un collègue, une branche de release) : la branche du ticket part de `origin/<branche>`, qui devient sa base pour tout le run (mesure de départ, review, contrôle avant push, fusion de la base, cible de la MR). La branche doit être sur GitLab ; un nom inconnu arrête `/go` avec les noms proches. Une branche de ticket qui existe déjà garde ses commits et prend cette base :
 ```text
 /go ABC-123 depuis feature/ABC-100-socle

@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-10-29 12:45 — Un nom de branche et « depuis » ensemble
+- **Ajouté** : 7 contrôles dans `tools/scripts-test.sh` (212) des deux ensemble : « nouvelle branche <nom> depuis <branche> » et « sur <nouveau nom> depuis <branche> » créent la branche de ce nom à partir de l'autre, qui devient sa base (`base.sh` la donne) ; sans nom, la branche au nom du changement part de l'autre branche. `branch.sh` arrête une branche qui partirait d'elle-même (« sur X depuis X »), avant tout changement de branche, et `record_base` ne l'enregistre jamais.
+- **Changé** : `commands/go.md` : sans ticket sur une branche à moi, le travail reste dessus sauf avec « depuis <branche> », qui demande une nouvelle branche ; la combinaison d'un nom et de « depuis » dite en clair. COMMANDES (deux exemples), FICHIERS, les empreintes.
+- **Retiré** : rien.
+- **But** : partir d'une release ou de la branche d'un collègue sous le nom que je choisis, sans surprise.
+
 ## 2026-10-29 12:15 — Le nom d'une nouvelle branche donné à /go : elle est créée sous ce nom
 - **Ajouté** : `branch.sh --on <branche>` crée la branche sous ce nom quand elle n'existe ni ici ni sur origin (depuis la base, ou `--from`), la clé enregistrée pour elle ; sauf si une branche existante a presque le même nom (deux lettres d'écart au plus, majuscules comprises : une faute de frappe mettrait le travail à côté de la branche voulue), qui arrête en citant les deux noms et la façon de créer quand même. `--new <branche>` (« nouvelle branche <nom> », « crée la branche <nom> ») crée toujours, s'arrête sur un nom pris. 8 contrôles de plus dans `tools/scripts-test.sh` (205).
 - **Changé** : `commands/go.md` : « sur <branche> » (aussi « branche <branche> ») prend la branche existante ou la crée ; « nouvelle branche <nom> ». COMMANDES (deux exemples), README, FICHIERS, la carte des flux, les empreintes.

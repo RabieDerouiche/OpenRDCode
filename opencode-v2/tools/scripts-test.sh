@@ -172,6 +172,24 @@ git switch -q develop
 run branch.sh ABC-7 feature "Export"
 check "the ticket again, from develop: back on the branch recorded for it" 0 '^BRANCH: feature/mon-travail \(switched, existing local branch\)$'
 git switch -q develop && git branch -q -D feature/mon-travail feature/corriger-separateur-decimal-export
+# « depuis <branch> » with a name: the new branch starts from it, and it is its base
+run branch.sh LOCAL feature "Suite du travail de l'équipe" --new feature/suite-equipe --from feature/TEAM-9-teammate
+check "nouvelle branche … depuis <branch>: created from that branch" 0 '^BRANCH: feature/suite-equipe \(created from origin/feature/TEAM-9-teammate'
+check "…which is its base" 0 '^BASE: origin/feature/TEAM-9-teammate instead of origin/develop'
+truth "…the work of that branch in it" '[ -f team.txt ]'
+run base.sh
+check "…base.sh gives it" 0 '^feature/TEAM-9-teammate$'
+git switch -q develop
+run branch.sh LOCAL feature "Une autre suite" --on feature/autre-suite --from feature/TEAM-9-teammate
+check "sur <a new name> depuis <branch>: created from that branch" 0 '^BRANCH: feature/autre-suite \(created from origin/feature/TEAM-9-teammate'
+git switch -q develop
+run branch.sh LOCAL feature "Le correctif de la release" --from feature/TEAM-9-teammate
+check "sans ticket depuis <branch>, no name: named after the change, from that branch" 0 '^BRANCH: feature/correctif-release \(created from origin/feature/TEAM-9-teammate'
+git switch -q develop
+run branch.sh LOCAL feature "x" --on feature/TEAM-9-teammate --from feature/TEAM-9-teammate
+check "sur X depuis X: stopped (a branch never starts from itself)" 1 '^STOP: feature/TEAM-9-teammate cannot start from itself'
+git switch -q develop
+git branch -q -D feature/suite-equipe feature/autre-suite feature/correctif-release
 
 # ---------- /go … depuis <branch> ----------
 run branch.sh ABC-2 feature "Suite du travail" --from feature/TEAM-9-nope
