@@ -25,7 +25,10 @@
 //    /fortify, /tests, /push or /sync ends with its « Suite » question (header "Suite", after its final answer): the run
 //    is over while it waits for me, so the folder is free at once (9), the title keeps the outcome of the final answer
 //    (10) and the run is never resumed (19), whatever ends the turn after it (the question closed, the model server down
-//    once I answered: the command I chose still starts, unless I stopped the turn).
+//    once I answered: the command I chose still starts, unless I stopped the turn). A text I type there instead of
+//    choosing (« le test X échoue », « reprends la tâche C1 »): the pilot names the option whose command does that work
+//    (« Je lance /fix avec ta demande : … », agents/pilot.md), and that command starts with my text after its
+//    arguments, as its directives; only a command of an option of that question, never one the answer names alone.
 // 5. Shows the progress of the agent in the session title while it works, for example
 //    "⏳ 1:42 réflexion 2,3k tokens — <title>", and while a subagent works, what it waits for ("⏳ 31:02 outil ·
 //    Auto-review · nouvel essai 3 dans 45 s (serveur du modèle)", "… · rien reçu depuis 4 min", "❓ … · autorisation
@@ -582,6 +585,39 @@ function chosenCommand(answers) {
     }
   }
   return undefined
+}
+
+// 4. The options of a « Suite » question that are commands of the pack, as [{ command, arguments }], and their labels
+function suiteCommands(questions) {
+  const labels = []
+  const commands = []
+  for (const q of Array.isArray(questions) ? questions : []) {
+    if (!q || !/^suite$/i.test(String(q.header || "").trim())) continue
+    for (const option of Array.isArray(q.options) ? q.options : []) {
+      const label = String((option && option.label) || "").trim()
+      if (!label) continue
+      labels.push(label)
+      const next = chosenCommand([[label]])
+      if (next) commands.push(next)
+    }
+  }
+  return { labels, commands }
+}
+// 4. A text I typed at the « Suite » question instead of choosing: the command of the option the pilot named in the
+// answer that followed (« Je lance /fix avec ta demande : … »), my text after its arguments (never a backtick nor a $:
+// OpenCode would run what they hold), or undefined
+export function typedCommand(typed, commands, texts) {
+  const text = String(typed || "").replace(/`/g, "'").replace(/\$/g, "").replace(/\s+/g, " ").trim()
+  if (!text || !Array.isArray(commands)) return undefined
+  const said = (Array.isArray(texts) ? texts : []).join("\n")
+  const named = /Je lance \/([a-z][a-z0-9-]*)/i.exec(said)
+  if (!named) return undefined
+  // several options of that command (« /go ABC-1 pas à pas », « /go ABC-1 »): the one the answer writes in full
+  const line = (c) => ("/" + c.command + (c.arguments ? " " + c.arguments : "")).toLowerCase()
+  const options = commands.filter((c) => c.command === named[1].toLowerCase())
+  const option = options.filter((c) => said.toLowerCase().includes(line(c))).sort((x, y) => line(y).length - line(x).length)[0] || options[0]
+  if (!option) return undefined
+  return { command: option.command, arguments: ((option.arguments ? option.arguments + " " : "") + text).trim() }
 }
 
 // Splits the arguments like a shell does for simple quoting ('...' and "..."), without any expansion: the
@@ -2408,6 +2444,9 @@ export default Plugin.define({
     // its « Suite » question); session id -> that mark, once the « Suite » question of the run is asked
     const lastMarks = new Map()
     const suites = new Map()
+    // 4. the options of the « Suite » question of a run, and what I typed there instead of choosing
+    const suiteOffers = new Map()
+    const typedAnswers = new Map()
     let ticker
 
     // ---------- 9. the lock of the folder, in this process and in the git folder for the other ones ----------
@@ -2673,6 +2712,7 @@ export default Plugin.define({
       if (run.pilot && !mark) return
       if (commandRuns.get(event.sessionID) !== run || suites.has(event.sessionID)) return
       suites.set(event.sessionID, mark)
+      suiteOffers.set(event.sessionID, suiteCommands(questions))
       const state = runs.get(event.sessionID)
       if (state && mark) {
         state.mark = mark
@@ -2754,8 +2794,18 @@ export default Plugin.define({
       const run = commandRuns.get(sessionID)
       commandRuns.delete(sessionID)
       release(sessionID)
-      const next = chosen.get(sessionID)
+      let next = chosen.get(sessionID)
       chosen.delete(sessionID)
+      // 4. what I typed at the « Suite » question: the command the pilot named among its options, with my text
+      const typed = typedAnswers.get(sessionID)
+      typedAnswers.delete(sessionID)
+      const offers = suiteOffers.get(sessionID)
+      suiteOffers.delete(sessionID)
+      if (!next && typed && offers) {
+        next = typedCommand(typed, offers.commands, (answers.get(sessionID) || {}).texts)
+        if (next) log("what I typed at the « Suite » question starts the command the pilot chose among its options", { command: "/" + next.command })
+        else log("what I typed at the « Suite » question starts nothing: the pilot named no command of its options")
+      }
       const suite = suites.get(sessionID)
       suites.delete(sessionID)
       lastMarks.delete(sessionID)
@@ -3399,6 +3449,12 @@ export default Plugin.define({
         const answered = (result.output && result.output.answers) || (result.metadata && result.metadata.answers)
         const next = chosenCommand(answered)
         if (next) chosen.set(event.sessionID, next)
+        else {
+          // 4. a text I typed at the « Suite » question instead of choosing one of its options
+          const offers = suiteOffers.get(event.sessionID)
+          const typed = offers && Array.isArray(answered) ? answered.flat().map((a) => String(a).trim()).filter((a) => a && !offers.labels.includes(a)) : []
+          if (typed.length) typedAnswers.set(event.sessionID, typed.join(" "))
+        }
       } catch {
         // no command to start
       }

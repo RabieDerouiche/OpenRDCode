@@ -36,7 +36,7 @@ writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "package.json"),
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "index.js"), "export const Plugin = { define: (definition) => definition }\n")
 writeFileSync(join(stub, "openrd-pack.js"), readFileSync(join(pack, "plugins", "openrd-pack.js"), "utf8"))
 const { Guards, prune, fillNullContent, withAgentOptions, withoutConversationOnly, stripConversationOnly, narrowPilotTools,
-  clearOldOutputs, requestTokens, usableTokens, reviewedSkill, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
+  clearOldOutputs, requestTokens, usableTokens, reviewedSkill, typedCommand, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
 
 // ---------- fake OpenCode client ----------
 const sessions = new Map()
@@ -2245,6 +2245,49 @@ await check("[v2 4] the command chosen in the « Suite » question starts, even 
   assert.equal(ct.sessions.get("ct-22").title, "✅ /go ABC-90")
   assert.deepEqual(ct.calls.command.at(-1), { sessionID: "ct-22", name: "fix", text: "" })
   assert.doesNotMatch(pluginLog().slice(logged), /run resumed in/)
+})
+await check("[v2 4] a text typed at the « Suite » question: the command of the option the pilot names, with the text as its directives", () => {
+  const offers = [{ command: "go", arguments: "ABC-1 pas à pas" }, { command: "go", arguments: "ABC-1" }, { command: "fix", arguments: "" }]
+  assert.deepEqual(typedCommand("le test X échoue", offers, ["Je lance /fix avec ta demande : « le test X échoue »."]), { command: "fix", arguments: "le test X échoue" })
+  assert.deepEqual(typedCommand("reprends la tâche C1", offers, ["Je lance /go ABC-1 avec ta demande : « reprends la tâche C1 »."]), { command: "go", arguments: "ABC-1 reprends la tâche C1" })
+  assert.deepEqual(typedCommand("reprends C1", offers, ["Je lance /go ABC-1 pas à pas avec ta demande : « reprends C1 »."]), { command: "go", arguments: "ABC-1 pas à pas reprends C1" })
+  // never something OpenCode would run, never a command that no option offers, nothing when the pilot says « D'accord. »
+  assert.deepEqual(typedCommand("le test `rm -rf x` $HOME échoue", offers, ["Je lance /fix avec ta demande."]), { command: "fix", arguments: "le test 'rm -rf x' HOME échoue" })
+  assert.equal(typedCommand("pousse tout", offers, ["Je lance /push avec ta demande."]), undefined)
+  assert.equal(typedCommand("merci, c'est bon", offers, ["D'accord."]), undefined)
+  assert.equal(typedCommand("", offers, ["Je lance /fix."]), undefined)
+})
+await check("[v2 4] a text typed at the « Suite » question starts the command the pilot named, after its turn; « D'accord. » starts nothing", async () => {
+  const logged = pluginLog().length
+  ct.sessions.set("ct-26", { id: "ct-26", title: "/go ABC-93", agent: "pilot" })
+  await ctPrompt("ct-26", goText("ABC-93"))
+  ct.push("session.execution.started", { sessionID: "ct-26" })
+  ct.push("session.step.started", { sessionID: "ct-26", assistantMessageID: "k1" })
+  ct.push("session.text.ended", { sessionID: "ct-26", assistantMessageID: "k1", ordinal: 0, text: "**[ABC-93](x) - Export**\n🚀 MR en Draft : x" })
+  await suiteQuestion("ct-26", ["/fix (recommandé)", "Rien pour l'instant"])
+  await suiteAnswer("ct-26", ["le test InvoiceTests.Total échoue sur ma machine"])
+  ct.push("session.step.started", { sessionID: "ct-26", assistantMessageID: "k2" })
+  ct.push("session.text.ended", { sessionID: "ct-26", assistantMessageID: "k2", ordinal: 0, text: "Je lance /fix avec ta demande : « le test InvoiceTests.Total échoue sur ma machine »." })
+  ct.push("session.execution.succeeded", { sessionID: "ct-26" })
+  await wait(200)
+  assert.deepEqual(ct.calls.command.at(-1), { sessionID: "ct-26", name: "fix", text: "le test InvoiceTests.Total échoue sur ma machine" })
+  assert.match(pluginLog().slice(logged), /what I typed at the « Suite » question starts the command the pilot chose among its options \{"command":"\/fix"\}/)
+  assert.doesNotMatch(pluginLog().slice(logged), /InvoiceTests/)
+  // the same with « D'accord. »: nothing starts
+  ct.sessions.set("ct-27", { id: "ct-27", title: "/go ABC-94", agent: "pilot" })
+  await ctPrompt("ct-27", goText("ABC-94"))
+  ct.push("session.execution.started", { sessionID: "ct-27" })
+  ct.push("session.step.started", { sessionID: "ct-27", assistantMessageID: "l1" })
+  ct.push("session.text.ended", { sessionID: "ct-27", assistantMessageID: "l1", ordinal: 0, text: "**[ABC-94](x) - Export**\n🚀 MR en Draft : x" })
+  await suiteQuestion("ct-27", ["/fix (recommandé)", "Rien pour l'instant"])
+  await suiteAnswer("ct-27", ["merci, c'est tout pour aujourd'hui"])
+  ct.push("session.step.started", { sessionID: "ct-27", assistantMessageID: "l2" })
+  ct.push("session.text.ended", { sessionID: "ct-27", assistantMessageID: "l2", ordinal: 0, text: "D'accord." })
+  const commands = ct.calls.command.length
+  ct.push("session.execution.succeeded", { sessionID: "ct-27" })
+  await wait(200)
+  assert.equal(ct.calls.command.length, commands)
+  assert.equal(ct.sessions.get("ct-27").title, "✅ /go ABC-94")
 })
 await check("[v2 4] a question of the run before its final answer keeps the folder; after the « Suite », a stop I asked for starts nothing", async () => {
   ct.sessions.set("ct-23", { id: "ct-23", title: "/go ABC-91", agent: "pilot" })
