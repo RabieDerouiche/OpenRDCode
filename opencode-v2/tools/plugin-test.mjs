@@ -36,7 +36,7 @@ writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "package.json"),
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "index.js"), "export const Plugin = { define: (definition) => definition }\n")
 writeFileSync(join(stub, "openrd-pack.js"), readFileSync(join(pack, "plugins", "openrd-pack.js"), "utf8"))
 const { Guards, prune, fillNullContent, withAgentOptions, withoutConversationOnly, stripConversationOnly, narrowPilotTools,
-  clearOldOutputs, requestTokens, usableTokens, reviewedSkill, typedCommand, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
+  clearOldOutputs, requestTokens, usableTokens, reviewedSkill, typedCommand, mergeRequestToolGap, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
 
 // ---------- fake OpenCode client ----------
 const sessions = new Map()
@@ -404,11 +404,14 @@ function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcp
   ]
   const agentCalls = { list: 0 }
   const mcpState = { status: "connected" }
+  const registry = [{ id: "read", name: "read" }, { id: "gitlab_get_merge_request", name: "get_merge_request", options: { namespace: "gitlab" } },
+    { id: "gitlab_create_merge_request", name: "create_merge_request", options: { namespace: "gitlab" } }, { id: "jira_get_issue", name: "get_issue", options: { namespace: "jira" } }]
   const domain = (name) => ({ hook: async (hook, fn) => { hooks[name + "." + hook] = fn } })
   const ctx = {
     location: { directory },
     options,
-    tool: domain("tool"),
+    // and every tool OpenCode registered, before the permission rules of an agent (the MCP tools with their server)
+    tool: { ...domain("tool"), list: async () => registry },
     shell: domain("shell"),
     session: {
       hook: async (hook, fn) => { hooks["session." + hook] = fn },
@@ -455,7 +458,7 @@ function fakeV2(directory, { sessionsAt = new Map(), options = { tickMs: 25, mcp
       },
     },
   }
-  return Object.assign(fake, { ctx, hooks, push, sessions: sessionsAt, calls, servers, mcpState, agentList, agentCalls })
+  return Object.assign(fake, { ctx, hooks, push, sessions: sessionsAt, calls, servers, mcpState, registry, agentList, agentCalls })
 }
 const wait = (ms = 60) => new Promise((r) => setTimeout(r, ms))
 const v2 = fakeV2(repo)
@@ -773,12 +776,55 @@ await check("[v2 33] each call of it: refused, an error answered as text, create
 await endRun("m31-go")
 await check("[v2 31] the run over: nothing narrowed any more", async () => assert.equal((await pilotContext("m31-go")).length, MCP_TOOLS.length))
 await mcp31.hooks["session.prompt"]({ sessionID: "m31-go", messageID: "m2", prompt: { text: "[[command fix]]\nDirectives: « »" }, delivery: "steer" })
-await check("[v2 33] a pilot without a tool that creates merge requests: said in the log, with its GitLab tools counted", async () => {
-  const event = { sessionID: "m31-go", agent: "pilot", model: { id: "qwen", providerID: "fake" }, system: [], messages: [], options: {}, tools: Object.fromEntries(MCP_TOOLS.filter((t) => !/create_merge_request/.test(t)).map((t) => [t, {}])) }
+const withoutMrTool = async (tools = MCP_TOOLS.filter((t) => !/create_merge_request/.test(t))) => {
+  const event = { sessionID: "m31-go", agent: "pilot", model: { id: "qwen", providerID: "fake" }, system: [], messages: [], options: {}, tools: Object.fromEntries(tools.map((t) => [t, {}])) }
   await mcp31.hooks["session.context"](event)
-  const lines = mrLines().filter((l) => l.includes("the pilot has no tool that creates merge requests"))
+  return { lines: mrLines().filter((l) => l.includes("the pilot has no tool that creates merge requests")), notes: event.system.map((part) => part.text) }
+}
+await check("[v2 33] a pilot without a tool that creates merge requests: why, in the log with its GitLab tools counted, and told to the pilot", async () => {
+  // its tool is registered, but not in the request of the pilot: the permission rules took it out
+  const { lines, notes } = await withoutMrTool()
   assert.equal(lines.length, 1)
-  assert.ok(lines[0].includes('"command":"/fix"') && lines[0].includes('"gitlab_tools":1'), lines[0])
+  assert.ok(lines[0].includes('"command":"/fix"') && lines[0].includes('"gitlab_tools":1') && lines[0].includes('"tool":"gitlab_create_merge_request"'), lines[0])
+  assert.ok(lines[0].includes("creates merge requests, but the permission rules do not give it to the pilot"), lines[0])
+  assert.equal(notes.length, 1)
+  assert.ok(notes[0].includes("« Création de la MR impossible : aucun outil de création de MR dans mes outils (l'outil gitlab_create_merge_request crée les MR, mais les règles de permission ne le donnent pas au pilote) »"), notes[0])
+})
+await check("[v2 33] the same cause: told to the pilot again, not logged again; another cause: logged", async () => {
+  assert.equal((await withoutMrTool()).lines.length, 1)
+  assert.equal((await withoutMrTool()).notes.length, 1)
+  mcp31.registry.splice(2, 1)
+  const { lines, notes } = await withoutMrTool()
+  assert.equal(lines.length, 2)
+  assert.ok(lines[1].includes("offers no tool that creates merge requests (1 tools: read-only?)") && lines[1].includes('"tools":["gitlab_get_merge_request"]'), lines[1])
+  assert.ok(notes[0].includes("ne propose aucun outil qui crée une MR (1 outils : lecture seule ?)"), notes[0])
+})
+await check("[v2 33] the tool under the name of glab mcp serve: the pilot has it, nothing told", async () => {
+  const { lines, notes } = await withoutMrTool([...MCP_TOOLS.filter((t) => !/create_merge_request/.test(t)), "gitlab_glab_mr_create"])
+  assert.equal(lines.length, 2)
+  assert.deepEqual(notes, [])
+  assert.ok(mrLines().some((l) => l.includes("the pilot has the tool that creates merge requests") && l.includes('"command":"/fix"') && l.includes('"tool":"gitlab_glab_mr_create"')))
+  mcp31.registry.splice(2, 0, { id: "gitlab_create_merge_request", name: "create_merge_request", options: { namespace: "gitlab" } })
+})
+await check("[v2 33] why no tool creates merge requests: no GitLab server, not connected, refused, none on the server", () => {
+  const tool = (namespace, name) => ({ id: namespace + "_" + name, name, options: { namespace } })
+  assert.equal(mergeRequestToolGap([], []).fr, "aucun serveur MCP GitLab dans opencode.json")
+  assert.equal(mergeRequestToolGap([], [{ name: "jira", status: { status: "connected" } }]).fr, "aucun serveur MCP GitLab dans opencode.json")
+  const failed = mergeRequestToolGap([], [{ name: "gitlab", status: { status: "failed", error: "connect ECONNREFUSED 10.0.0.5:443\n  at x" } }])
+  assert.equal(failed.fr, "le serveur MCP GitLab « gitlab » n'est pas connecté (failed : connect ECONNREFUSED 10.0.0.5:443 at x)")
+  assert.ok(mergeRequestToolGap(undefined, [{ name: "gitlab", status: { status: "connected" } }]).fr.includes("ne dit pas ses outils"))
+  // glab mcp serve, its server named "GitLab Prod" in opencode.json
+  const glab = mergeRequestToolGap([tool("GitLab_Prod", "glab_mr_list"), tool("GitLab_Prod", "glab_mr_create"), tool("jira", "create_issue")], [{ name: "GitLab Prod", status: { status: "connected" } }])
+  assert.equal(glab.tool, "GitLab_Prod_glab_mr_create")
+  for (const name of ["create_merge_request", "merge_request_create", "createMergeRequest", "create-mr"]) {
+    assert.equal(mergeRequestToolGap([tool("gitlab", name)], [{ name: "gitlab", status: { status: "connected" } }]).tool, "gitlab_" + name, name)
+  }
+  // read-only: a note or a discussion of a merge request is not one
+  const none = mergeRequestToolGap([tool("gitlab", "get_merge_request"), tool("gitlab", "create_merge_request_note"), tool("gitlab", "create_mr_discussion"), tool("jira", "get_issue")],
+    [{ name: "gitlab", status: { status: "connected" } }, { name: "jira", status: { status: "connected" } }])
+  assert.equal(none.tool, undefined)
+  assert.deepEqual(none.tools, ["gitlab_get_merge_request", "gitlab_create_merge_request_note", "gitlab_create_mr_discussion"])
+  assert.ok(none.fr.includes("ne propose aucun outil qui crée une MR (3 outils"), none.fr)
 })
 await check("[v2 31] /fix chosen next in the same session: Sonar and Fortify back, Confluence and Kibana still out", async () => {
   const tools = await pilotContext("m31-go")
@@ -1619,7 +1665,8 @@ const sumPrompt = async (sessionID, text) => {
   return event
 }
 const sumHook = async (hook, sessionID, messages, agent = "pilot") => {
-  const event = { sessionID, agent, model: { id: "qwen", providerID: "fake" }, system: [{ type: "text", text: "agent prompt" }], messages, options: {}, tools: {} }
+  // the tool that creates merge requests there: no note of 33 among those of 17
+  const event = { sessionID, agent, model: { id: "qwen", providerID: "fake" }, system: [{ type: "text", text: "agent prompt" }], messages, options: {}, tools: { gitlab_create_merge_request: {} } }
   await sum.hooks["session." + hook](event)
   return event
 }
@@ -1752,7 +1799,7 @@ await check("[v2 17] a run this instance did not see start (resumed by the servi
   await v2Plugin.setup(svc.ctx)
   svc.sessions.set("ses-adopted", { id: "ses-adopted", title: "/go ABC-31", agent: "pilot" })
   try {
-    const event = { sessionID: "ses-adopted", agent: "pilot", system: [], messages: checkpoint, tools: {} }
+    const event = { sessionID: "ses-adopted", agent: "pilot", system: [], messages: checkpoint, tools: { gitlab_create_merge_request: {} } }
     await svc.hooks["session.context"](event)
     assert.match(event.system[0].text, /<instructions of \/go>\nRequest: « ABC-31 sans nouvelle lib »\n\(output of workflow-state\.sh --fetch-all --sheet: printed when the run started\)\nTake the ticket/)
   } finally {

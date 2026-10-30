@@ -678,6 +678,8 @@
     "*transition_issue*": "deny",
     "*do_transition*": "deny",
     "*merge_merge_request*": "deny",
+    "*mr_merge*": "deny",
+    "*merge_mr*": "deny",
     "*change_status*": "deny",
     "*set_*": "deny",
     "*change_*": "deny",

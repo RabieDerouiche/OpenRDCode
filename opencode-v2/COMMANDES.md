@@ -109,11 +109,19 @@ Arrête la v2 (Ctrl+C dans son terminal) et rouvre l'adresse de ta 1.19 : `MIGRA
 
 ## Vérifier le nom de l'outil qui crée les MR
 
-`/go` crée la MR en Draft avec l'outil `…create_merge_request` du MCP GitLab ; c'est le seul outil d'écriture GitLab permis, à l'agent `pilot` seulement. Le lien pour créer la MR à la main n'est qu'un dernier recours : la réponse dit alors pourquoi, l'erreur de l'outil mot pour mot (« Création de la MR impossible : … »). Le journal du plugin garde la preuve, pour chaque run : l'outil qu'avait le pilote (ou son absence), puis la réponse de chaque appel (créée, ou l'erreur) :
+`/go` crée la MR en Draft avec l'outil du MCP GitLab qui crée les MR : son nom finit par `create_merge_request` (le serveur MCP de GitLab, `@zereight/mcp-gitlab`), `mr_create` (`glab mcp serve`), `merge_request_create`, `create_mr` ou `createMergeRequest`. C'est le seul outil d'écriture GitLab permis, à l'agent `pilot` seulement. Le lien pour créer la MR à la main n'est qu'un dernier recours : la réponse dit alors pourquoi (« Création de la MR impossible : … »), l'erreur de l'outil mot pour mot, ou, quand le pilote n'a pas l'outil, la cause que le plugin a trouvée en comparant les outils de tes serveurs MCP à ceux du pilote. Le journal du plugin garde la preuve, pour chaque run : l'outil qu'avait le pilote (ou pourquoi il ne l'avait pas), puis la réponse de chaque appel (créée, ou l'erreur) :
 ```sh
 grep 'merge request' ~/oc2/data/opencode/log/openrd-pack.log | tail -10
 ```
-« has no tool that creates merge requests » : le serveur MCP GitLab n'était pas là pour ce run (pas connecté, ou désactivé), ou son outil porte un autre nom chez toi : envoie-moi la ligne. « Permission denied » : l'outil porte un autre nom, que les règles du pack ne permettent pas : envoie-moi le nom qu'il cite. Une autre erreur (403, 404, 409, 422) : c'est GitLab qui refuse (droits du jeton, projet, MR déjà ouverte) : envoie-moi la ligne.
+« has no tool that creates merge requests », suivie de sa cause (`cause`) :
+- « no GitLab MCP server in opencode.json » : aucun serveur dont le nom contient `gitlab` ou `glab` dans la section `mcp` de `~/oc2/config/opencode/opencode.json` ;
+- « … is not connected (failed : …) » ou « (needs_auth …) » : le serveur ne démarre pas, ou son jeton est refusé ou expiré. `opencode mcp list` le confirme ; redémarre OpenCode après avoir corrigé sa section `mcp` ;
+- « the tool … creates merge requests, but the permission rules do not give it to the pilot » : l'outil existe sous un nom que les règles du pack ne permettent pas (`tool` le donne) : envoie-moi ce nom ;
+- « … offers no tool that creates merge requests (… tools: read-only?) » : le serveur ne propose que des outils de lecture (`tools` les liste). Un serveur MCP GitLab en lecture seule le fait : dans sa section `mcp`, une variable comme `GITLAB_READ_ONLY_MODE` à `true`, ou une liste d'outils (`toolsets`) qui laisse de côté les MR. Voir sans afficher de valeur secrète :
+```sh
+grep -n -iE 'read_only|readonly|toolset|"command"|"url"' ~/oc2/config/opencode/opencode.json
+```
+« Permission denied » sur un appel : l'outil porte un nom que les règles du pack ne permettent pas : envoie-moi le nom qu'il cite. Une autre erreur (403, 404, 409, 422) : c'est GitLab qui refuse (droits du jeton, projet, MR déjà ouverte) : envoie-moi la ligne.
 
 ## Redémarrer OpenCode
 

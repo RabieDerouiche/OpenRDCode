@@ -553,13 +553,17 @@ P(["build"], [
 const tool = (agent, name, expect) => cases.push({ agent, tool: name, expect })
 for (const t of ["gitlab_create_merge_request", "jira_get_issue", "jira_search", "gitlab_get_merge_request",
   "gitlab_list_merge_request_discussions", "gitlab_get_pipeline", "sonar_search_issues", "fortify_list_issues"]) tool("pilot", t, "allow")
+// the tool that creates a merge request under the other names GitLab MCP servers give it (glab mcp serve: glab_mr_create),
+// never a note, a discussion or an update of a merge request
+for (const t of ["gitlab_merge_request_create", "gitlab_glab_mr_create", "glab_mr_create", "gitlab_create_mr", "gitlab_createMergeRequest"]) tool("pilot", t, "allow")
+for (const t of ["gitlab_glab_mr_create_note", "gitlab_create_mr_discussion", "gitlab_mr_update", "glab_mr_merge", "glab_mr_approve"]) tool("pilot", t, "deny")
 // Confluence is the analyst's: no procedure of the pilot reads it, and its tools would weigh on every request of a run
 for (const t of ["confluence_get_page", "confluence_search", "Confluence_get_page_children"]) tool("pilot", t, "deny")
 for (const t of ["gitlab_create_merge_request_note", "gitlab_create_issue", "gitlab_update_merge_request", "gitlab_merge_merge_request",
   "gitlab_approve_merge_request", "jira_add_comment", "jira_transition_issue", "jira_create_issue", "jira_update_issue",
   "confluence_create_page", "sonar_change_issue_status", "fortify_set_issue_suppressed", "kibana_search"]) tool("pilot", t, "deny")
 for (const t of ["jira_get_issue", "confluence_get_page", "gitlab_get_file"]) tool("analyst", t, "allow")
-for (const t of ["gitlab_create_merge_request", "sonar_search_issues", "jira_add_comment"]) tool("analyst", t, "deny")
+for (const t of ["gitlab_create_merge_request", "glab_mr_create", "gitlab_merge_request_create", "sonar_search_issues", "jira_add_comment"]) tool("analyst", t, "deny")
 for (const t of ["jira_get_issue", "gitlab_get_merge_request", "sonar_search_issues"]) tool("coder", t, "deny")
 tool("checker", "jira_get_issue", "allow")
 tool("checker", "gitlab_get_merge_request", "deny")
@@ -575,7 +579,7 @@ for (const a of [...ALL, "plan", "test-guardian"]) {
   cases.push({ agent: a, perm: "skill", pattern: "report", expect: "deny" })
   cases.push({ agent: a, perm: "skill", pattern: "best-practices", expect: "allow" })
 }
-for (const t of ["jira_create_issue", "jira_add_comment", "gitlab_create_merge_request", "jira_update_issue"]) tool("build", t, "deny")
+for (const t of ["jira_create_issue", "jira_add_comment", "gitlab_create_merge_request", "glab_mr_create", "glab_mr_merge", "gitlab_merge_mr", "jira_update_issue"]) tool("build", t, "deny")
 tool("build", "jira_get_issue", "allow")
 
 // ---------- the secrets of the HTTP clients that /outil http prepares, and the clients of secret stores ----------

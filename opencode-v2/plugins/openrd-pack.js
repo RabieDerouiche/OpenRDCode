@@ -221,10 +221,13 @@
 //    and none of these was reviewed. They are taken out of the list of skills and of the skill tool; the permission
 //    rules of opencode.json allow only the names of the pack's skills too (tools/permissions.py).
 // 33. Says in its log what became of the merge request of a run (/go, /fix, /fortify, /push): whether the pilot has a
-//    tool that creates merge requests (its name ends with create_merge_request) once per run, and the answer of each
-//    call of it: created, or the error of the tool or of the permission rules (its type, its HTTP status and the
-//    first 160 characters of its message). A run that gives the link to create the merge request by hand instead says
-//    why in its answer too (agents/pilot.md); the log is the proof, without a word of the conversation.
+//    tool that creates merge requests (its name ends with create_merge_request, merge_request_create, mr_create,
+//    create_mr or createMergeRequest) once per run, or why it has none, from every tool OpenCode registered and its
+//    MCP servers: no GitLab server, a server not connected, its tool refused by the permission rules (another name), or
+//    no such tool on the server (its tools listed, by name); and the answer of each call of it: created, or the error
+//    of the tool or of the permission rules (its type, its HTTP status and the first 160 characters of its message). The
+//    pilot is told that cause in each of its requests while it lasts, and a run that gives the link to create the merge
+//    request by hand says it in its answer (agents/pilot.md); the log is the proof, without a word of the conversation.
 // Every refusal of 6, 7, 9, 12, 16, 23, 24 and 25 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
@@ -1237,10 +1240,51 @@ const PILOT_MCP = {
 const SUBAGENT_MCP = { analyst: { fortify: [] } }
 // 33. the commands of the pilot that create a merge request, and the tool that does it (its name on this machine)
 const MR_COMMANDS = new Set(["go", "fix", "fortify", "push"])
-const MR_TOOL = /create_merge_request$/i
+// its names on the GitLab MCP servers: create_merge_request (the server of GitLab, @zereight/mcp-gitlab), mr_create
+// (glab mcp serve), the other orders; the permission rules of the pilot allow the same (tools/permissions.py, MR_CREATE)
+const MR_TOOL = /(?:create_merge_request|merge_request_create|mr_create|create_mr|createMergeRequest)$/
+// a GitLab MCP server, by its name in opencode.json; a tool that creates a merge request, by its name without separators
+const GITLAB_SERVER = /gitlab|glab/i
+const MR_CREATE_WORDS = /(?:createmergerequest|mergerequestcreate|mrcreate|createmr)$/
 // an answer of the tool that is an error, not a merge request (MCP servers often answer an error as text)
 const MR_ERROR_TEXT = /\b(?:error|denied|forbidden|unauthori[sz]ed|not found|invalid|already exists|unprocessable|conflict)\b|\b(?:400|401|403|404|409|422)\b/i
 const MR_CREATED_TEXT = /web_url|merge_requests\/\d+|"iid"/i
+// 33. Why the pilot has no tool that creates merge requests, from every tool OpenCode registered (before the permission
+// rules of the agent: ctx.tool.list()) and its MCP servers (ctx.mcp.list()): no GitLab server, a GitLab server not
+// connected, its tool that creates merge requests refused to the pilot, or no such tool on the server. Returns
+// { fr, en } and the name of that tool (tool) or the names of the tools of the server (tools); never a value of the
+// configuration (an error of the server: 120 characters).
+export function mergeRequestToolGap(registered, servers) {
+  const gitlab = (Array.isArray(servers) ? servers : []).filter((server) => server && GITLAB_SERVER.test(String(server.name || "")))
+  if (!gitlab.length) return { fr: "aucun serveur MCP GitLab dans opencode.json", en: "no GitLab MCP server in opencode.json" }
+  const connected = gitlab.filter((server) => server.status && server.status.status === "connected")
+  if (!connected.length) {
+    const server = gitlab[0]
+    const state = (server.status && server.status.status) || "unknown"
+    const error = server.status && server.status.error ? " : " + String(server.status.error).replace(/\s+/g, " ").trim().slice(0, 120) : ""
+    return { fr: "le serveur MCP GitLab « " + server.name + " » n'est pas connecté (" + state + error + ")",
+      en: 'the GitLab MCP server "' + server.name + '" is not connected (' + state + error + ")" }
+  }
+  if (!Array.isArray(registered)) {
+    return { fr: "le serveur MCP GitLab « " + connected[0].name + " » est connecté, mais OpenCode ne dit pas ses outils au plugin",
+      en: 'the GitLab MCP server "' + connected[0].name + '" is connected, but OpenCode does not tell the plugin its tools' }
+  }
+  const spaces = new Set(connected.map((server) => String(server.name).replace(/[^a-zA-Z0-9_-]/g, "_")))
+  const id = (tool) => String(tool.id || (tool.options && tool.options.namespace ? tool.options.namespace + "_" : "") + tool.name)
+  const own = registered.filter((tool) => tool && tool.options && spaces.has(String(tool.options.namespace)))
+  const creating = own.find((tool) => MR_CREATE_WORDS.test(String(tool.name || "").toLowerCase().replace(/[^a-z]/g, "")))
+  if (creating) {
+    return { fr: "l'outil " + id(creating) + " crée les MR, mais les règles de permission ne le donnent pas au pilote",
+      en: "the tool " + id(creating) + " creates merge requests, but the permission rules do not give it to the pilot", tool: id(creating) }
+  }
+  return { fr: "le serveur MCP GitLab « " + connected[0].name + " » ne propose aucun outil qui crée une MR (" + own.length + " outils : lecture seule ?)",
+    en: 'the GitLab MCP server "' + connected[0].name + '" offers no tool that creates merge requests (' + own.length + " tools: read-only?)",
+    tools: own.map(id).slice(0, 80) }
+}
+// 33. what the pilot is told when it has no such tool: the cause, for the line that gives the link instead
+const mrGapNote = (gap) => "Note of the pack: no tool that creates merge requests is in your tools for this run, because " +
+  gap.en + ". If the branch has no open merge request, give the MR LINK as agents/pilot.md says, and the line after the " +
+  "header is « Création de la MR impossible : aucun outil de création de MR dans mes outils (" + gap.fr + ") »."
 // The tools of the request of a pilot running <command>, without those of the MCP servers its procedure never calls:
 // the names of the servers taken out ([] when nothing changed; a command the table does not know: nothing changes).
 // With an agent: the same for that subagent of the command (SUBAGENT_MCP)
@@ -3550,7 +3594,18 @@ export default Plugin.define({
     // 12, 13, 17, 19 and 30. what each request to the model carries
     const strippedLogged = new Set()
     const narrowedLogged = new Set()
-    const mrToolLogged = new WeakSet()
+    // 33. for each run of a command that creates a merge request: the tool the pilot has, or why it has none
+    const mrTools = new WeakMap()
+    const mergeRequestGap = async () => {
+      try {
+        const registered = ctx.tool && typeof ctx.tool.list === "function" ? await ctx.tool.list() : undefined
+        const result = ctx.mcp && typeof ctx.mcp.list === "function" ? await ctx.mcp.list() : []
+        return mergeRequestToolGap(registered, Array.isArray(result) ? result : result && result.data)
+      } catch (error) {
+        const what = String((error && error.message) || error).replace(/\s+/g, " ").slice(0, 120)
+        return { fr: "cause inconnue (" + what + ")", en: "cause unknown (" + what + ")" }
+      }
+    }
     if (typeof api.hook === "function") {
       await api.hook("context", async (event) => {
         try {
@@ -3567,13 +3622,27 @@ export default Plugin.define({
               narrowedLogged.add(agent + " " + run.command)
               log("the MCP servers the command does not use taken out of the requests of the " + agent, { command: "/" + run.command, servers: narrowed })
             }
-            // 33. the tool that creates the merge request of the run, or its absence, once per run
-            if (agent === "pilot" && run && MR_COMMANDS.has(run.command) && !mrToolLogged.has(run)) {
-              mrToolLogged.add(run)
+            // 33. the tool that creates the merge request of the run, in the log once per run; or why it is missing,
+            // in the log each time the cause changes (a server still connecting at the first request), and told to the
+            // pilot in each of its requests while it lasts
+            if (agent === "pilot" && run && MR_COMMANDS.has(run.command)) {
               const names = Object.keys(event.tools)
               const tool = names.find((name) => MR_TOOL.test(name))
-              if (tool) log("the pilot has the tool that creates merge requests", { command: "/" + run.command, tool })
-              else log("the pilot has no tool that creates merge requests: it can only give the link", { command: "/" + run.command, gitlab_tools: names.filter((name) => /gitlab/i.test(name)).length })
+              const state = mrTools.get(run) || {}
+              mrTools.set(run, state)
+              if (tool) {
+                if (!state.tool) log("the pilot has the tool that creates merge requests", { command: "/" + run.command, tool })
+                state.tool = tool
+                state.gap = undefined
+              } else {
+                const gap = await mergeRequestGap()
+                if (gap.en !== (state.gap && state.gap.en)) {
+                  log("the pilot has no tool that creates merge requests: it can only give the link", { command: "/" + run.command, cause: gap.en,
+                    gitlab_tools: names.filter((name) => GITLAB_SERVER.test(name)).length, ...(gap.tool ? { tool: gap.tool } : {}), ...(gap.tools ? { tools: gap.tools } : {}) })
+                }
+                state.gap = gap
+                if (Array.isArray(event.system)) event.system.push({ type: "text", text: mrGapNote(gap) })
+              }
             }
           }
           // 30. the instructions of the free conversation stay out of the requests of the agents of the pack

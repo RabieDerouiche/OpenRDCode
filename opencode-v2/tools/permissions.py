@@ -185,12 +185,16 @@ SSC_NAME = "git grep -h ^APPSEC_PROJECT_NAME= -- '*appsec-ci.env'"
 
 MCP_WRITE_DENY = [(p, "deny") for p in ["*create*", "*update*", "*delete*", "*remove*", "*upload*", "*add_*",
                                          "*approve*", "*assign*", "*accept*", "*transition_issue*", "*do_transition*",
-                                         "*merge_merge_request*", "*change_status*", "*set_*",
+                                         "*merge_merge_request*", "*mr_merge*", "*merge_mr*", "*change_status*", "*set_*",
                                          # status changes of Sonar and Fortify issues, comments, discussions and the
                                          # pipelines of GitLab (a retried or cancelled job is a write too)
                                          "*change_*", "*suppress*", "*resolve*", "*post_*", "*publish*", "*edit_*",
                                          "*close_*", "*reopen*", "*retry*", "*cancel*", "*trigger*", "*play_*",
                                          "*rebase*", "*mark_*"]]
+# The tool that creates a merge request, by the names the GitLab MCP servers give it: create_merge_request (the MCP
+# server of GitLab, @zereight/mcp-gitlab, the reference server), mr_create (glab mcp serve: glab_mr_create), and the
+# other orders. The pilot only, after MCP_WRITE_DENY; never a note, a discussion or an update (their names go on).
+MR_CREATE = ["*create_merge_request", "*merge_request_create", "*mr_create", "*create_mr", "*createMergeRequest"]
 CONFLUENCE_WRITE = [(p, "ask") for p in ["*confluence*create*", "*confluence*update*", "*confluence*upload*",
                                          "*Confluence*create*", "*Confluence*update*", "*Confluence*upload*"]]
 # MCP servers, matched by tool name (OpenCode names MCP tools "<server>_<tool>"). Hiding a server from an agent
@@ -346,7 +350,7 @@ AGENTS = {
     # of the branch. Never Confluence: no procedure of the pilot reads it (the analyst does), and each tool of a server
     # weighs on every request of a run. The pack plugin narrows these servers to those of the command under way
     "pilot": SHEET + BASE + NO_TOOLS_SKILLS + [("task", only(["analyst", "coder", "checker", "debugger", "test-guardian"]))]
-    + [("bash", pilot_bash())] + MCP_WRITE_DENY + [("*create_merge_request", "allow")]
+    + [("bash", pilot_bash())] + MCP_WRITE_DENY + [(p, "allow") for p in MR_CREATE]
     + mcp_only(["jira", "gitlab", "sonar", "fortify"]),
     "analyst": SHEET + SILENT + NO_TASK + NO_TOOLS_SKILLS + [("bash", read_only_bash() + deny(SEAL_SCRIPTS + PILOT_SCRIPTS))] + MCP_WRITE_DENY
     + mcp_only(["jira", "confluence", "gitlab"]),
