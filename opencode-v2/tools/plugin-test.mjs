@@ -1388,11 +1388,20 @@ await check("[v2 13 run] what is cleared stays cleared: the next requests start 
   assert.equal(clearOldOutputs(next, [], 98304, cleared), 0)
   assert.deepEqual(next.slice(0, first.length), JSON.parse(sent))
 })
-await check("[v2 13 run] what the model takes: limit.context - limit.output of its model in opencode.json", () => {
+await check("[v2 13 run] what the model takes: its window less 15 % or 16 000 tokens, as OpenCode v2.1.3 and v2.1.4 compute it", () => {
   const model = { providerID: "fake", id: "qwen" }
-  assert.equal(usableTokens({ "fake/qwen": { context: 65536, output: 16384 } }, model), 49152)
-  assert.equal(usableTokens({ "fake/qwen": { context: 200000 } }, model), 167232)
-  assert.equal(usableTokens({ "fake/qwen": { context: 40000, output: 32768 } }, model), 20000)
+  assert.equal(usableTokens({ "fake/qwen": { context: 131072, output: 32768 } }, model), 111412)
+  assert.equal(usableTokens({ "fake/qwen": { context: 65536, output: 16384 } }, model), 49536)
+  assert.equal(usableTokens({ "fake/qwen": { context: 200000 } }, model), 170000)
+  assert.equal(usableTokens({ "fake/qwen": { context: 40000, output: 32768 } }, model), 24000)
+  assert.equal(usableTokens({ "fake/qwen": { context: 24000 } }, model), 20400)
+  // limit.output only bounds an answer: 4096 or 32000, the same summary threshold
+  assert.equal(usableTokens({ "fake/qwen": { context: 131072, output: 4096 } }, model), usableTokens({ "fake/qwen": { context: 131072, output: 32000 } }, model))
+  // limit.input, when declared, is the window
+  assert.equal(usableTokens({ "fake/qwen": { context: 200000, input: 100000, output: 32000 } }, model), 84000)
+  // compaction.buffer, when smaller than the window
+  assert.equal(usableTokens({ "fake/qwen": { context: 131072 } }, model, 30000), 101072)
+  assert.equal(usableTokens({ "fake/qwen": { context: 131072 } }, model, 200000), 111412)
   assert.equal(usableTokens({}, model), 98304)
   assert.equal(usableTokens(undefined, undefined), 98304)
 })
@@ -1409,6 +1418,21 @@ await check("[v2 13 run] the hook clears within a run, from the limit of the mod
   const lines = readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8").split("\n").filter((l) => l.includes("old tool outputs cleared"))
   assert.equal(lines.length, 1)
   assert.ok(lines[0].includes('"agent":"pilot"') && lines[0].includes('"tokens":24000'), lines[0])
+})
+await check("[v2 13 run] compaction.buffer of opencode.json moves the threshold, as it moves the summary of OpenCode", async () => {
+  const cut = async (compaction, sessionID) => {
+    writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ compaction, provider: { fake: { models: { qwen: { limit: { context: 131072, output: 32000 } } } } } }))
+    const v2 = fakeV2(repo)
+    await v2Plugin.setup(v2.ctx)
+    v2.sessions.set(sessionID, { id: sessionID, title: "/go ABC-13" })
+    const event = { sessionID, agent: "pilot", model: { id: "qwen", providerID: "fake" }, system: [], messages: run13(8, 32000), tools: {} }
+    await v2.hooks["session.context"](event)
+    return ids13(event.messages)
+  }
+  // 64 000 tokens: under 60 % of 111 412, past 60 % of 131 072 - 30 000
+  assert.deepEqual(await cut({ prune: true }, "t13b"), [])
+  assert.deepEqual(await cut({ prune: true, buffer: 30000 }, "t13c"), ["q1", "q2", "q3", "q4"])
+  assert.deepEqual(await cut({ prune: true, reserved: 30000 }, "t13d"), ["q1", "q2", "q3", "q4"])
 })
 await check("[v2 13] and left whole otherwise", async () => {
   writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ compaction: { prune: false } }))

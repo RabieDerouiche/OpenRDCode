@@ -196,6 +196,12 @@ curl -s https://adresse-du-serveur/v1/models | grep -oE '"max_model_len": ?[0-9]
 ```
 Rien ne s'affiche : la réponse ne vient pas directement de vLLM (passerelle) ; demande la valeur à l'équipe qui héberge le modèle.
 
+Les limites déclarées pour ton modèle (`context`, et `output`, la longueur maximale d'une réponse, réflexion comprise) :
+```sh
+grep -n -A2 '"limit"' ~/oc2/config/opencode/opencode.json
+```
+`output` à 4096 ou moins : passe-le à 32768, `context` restant la valeur du serveur (README.md, « Réglages du modèle ») ; rien ne s'affiche : OpenCode prend 32000 pour `output`, mais ne résume jamais la session.
+
 Ce que `/outil pattern` et le coder savent des packages d'un dépôt : internes ou nuget.org, versions, framework de chaque projet, frameworks livrés et documentation XML des packages internes. Dans OpenCode, dans une session ouverte sur ce dépôt :
 ```text
 lance `sh ~/.config/opencode/scripts/package-refs.sh`

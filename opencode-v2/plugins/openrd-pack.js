@@ -96,9 +96,9 @@
 //    receives, as 1.19 did (v2 ignores that setting): only the tool outputs before the last two messages I typed, and
 //    beyond the 40 000 most recent tokens of them, and only when that frees more than 20 000 tokens. The skills are
 //    never cleared. Within a run (a /go, a subagent: no message I type between its requests), a request that grows past
-//    60 % of what the model takes before OpenCode summarizes the session (limit.context - limit.output of its model in
-//    opencode.json) is brought back to 35 % by clearing the oldest outputs of the local tools (a file read, a build, a
-//    search), never the 3 most recent outputs, a skill, the report of a subagent, an answer to a question or the answer
+//    60 % of what the model takes before OpenCode summarizes the session (its window in opencode.json less 15 % or
+//    16 000 tokens, as OpenCode computes it) is brought back to 35 % by clearing the oldest outputs of the local tools
+//    (a file read, a build, a search), never the 3 most recent outputs, a skill, the report of a subagent, an answer to a question or the answer
 //    of an MCP server (called again, it takes time), and only when that frees 10 000 tokens or more: the model reads the file again if it needs it, and the summary, which takes minutes and keeps less,
 //    comes later or never. What is cleared stays cleared in the next requests of the session, so that between two
 //    clearings each request starts as the previous one did (the prefix cache of the server). The conversation shown and
@@ -1289,10 +1289,10 @@ const PRUNE_PROTECT = 40000
 const PRUNE_MINIMUM = 20000
 const PRUNE_PROTECTED_TOOLS = new Set(["skill"])
 const PRUNED = "[Old tool result content cleared]"
-// 13. within a run: a request past 60 % of what the model takes before OpenCode summarizes the session (limit.context
-// - limit.output of the model) is brought back to 35 % by clearing the oldest tool outputs; a clearing frees 10 000
-// tokens at least (it changes the start of the request, which the server then reads again: rarely, and for much); the
-// 3 most recent outputs are never cleared, and only the outputs of the local tools are (read again in an instant): never
+// 13. within a run: a request past 60 % of what the model takes before OpenCode summarizes the session (usableTokens)
+// is brought back to 35 % by clearing the oldest tool outputs; a clearing frees 10 000 tokens at least (it changes the
+// start of the request, which the server then reads again: rarely, and for much); the 3 most recent outputs are never
+// cleared, and only the outputs of the local tools are (read again in an instant): never
 // a skill, the report of a subagent, an answer to a question, nor a call of an MCP server (Jira, GitLab, Fortify: a
 // call again takes time, and the server may limit them)
 const CLEAR_TRIGGER = 0.6
@@ -1300,8 +1300,12 @@ const CLEAR_TARGET = 0.35
 const CLEAR_MINIMUM = 10000
 const CLEAR_KEEP_LAST = 3
 const CLEARABLE_TOOLS = new Set(["shell", "bash", "read", "grep", "glob", "list"])
-// without a limit for the model in opencode.json: 131072 - 32768, the values README.md gives for Qwen
+// without a limit for the model in opencode.json (OpenCode then never summarizes the session): three quarters of
+// 131072, the largest context README.md advises
 const CLEAR_USABLE = 98304
+// what OpenCode v2.1.3 and v2.1.4 keep free in the window of the model before they summarize the session (compaction.ts)
+const RESERVE_MIN = 16000
+const RESERVE_SHARE = 0.15
 const CLEARED = "[Old tool result content cleared to keep the context small: call the tool again if you need it]"
 // the end of a turn in v2 (durable execution events), and the status events of older shapes
 const TURN_END = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
@@ -1344,13 +1348,16 @@ function parseJsonc(text) {
 const configFolder = () => process.env.OPENCODE_CONFIG_DIR || join(process.env.XDG_CONFIG_HOME || join(HOME, ".config"), "opencode")
 function configuration() {
   const dir = configFolder()
-  // limits: "<provider>/<model>" -> the limit of the model ({ context, output }), as its provider section declares it
-  const out = { references: {}, prune: false, limits: {} }
+  // limits: "<provider>/<model>" -> the limit of the model ({ context, input, output }), as its provider section declares
+  // it; buffer: "compaction.buffer" (or "reserved", its older name, the newer one winning, as in OpenCode)
+  const out = { references: {}, prune: false, limits: {}, buffer: undefined }
   for (const name of ["opencode.json", "opencode.jsonc"]) {
     try {
       const data = parseJsonc(readFileSync(join(dir, name), "utf8")) || {}
       Object.assign(out.references, data.references || data.reference || {})
       if (data.compaction && typeof data.compaction.prune === "boolean") out.prune = data.compaction.prune
+      const buffer = data.compaction ? (data.compaction.buffer ?? data.compaction.reserved) : undefined
+      if (Number.isInteger(buffer) && buffer >= 0) out.buffer = buffer
       for (const [provider, section] of Object.entries(plainObject(data.provider) ? data.provider : {})) {
         for (const [model, info] of Object.entries(section && plainObject(section.models) ? section.models : {})) {
           if (info && plainObject(info.limit)) out.limits[provider + "/" + model] = info.limit
@@ -1449,14 +1456,16 @@ export function requestTokens(messages, system) {
   for (const part of Array.isArray(system) ? system : []) chars += typeof part === "string" ? part.length : partChars(part)
   return Math.round(chars / 4)
 }
-// The tokens a model takes before OpenCode summarizes its session: limit.context - limit.output of the model (its output
-// limit: 32768 at most, as OpenCode caps it), from the limits of opencode.json ("<provider>/<model>")
-export function usableTokens(limits, model) {
+// The tokens a model takes before OpenCode summarizes its session, as OpenCode v2.1.3 and v2.1.4 compute it: the window
+// of the model (limit.input, otherwise limit.context, from the limits of opencode.json, "<provider>/<model>") less
+// "compaction.buffer" of opencode.json when it is smaller, otherwise less 15 % of it or 16 000 tokens, the larger (only
+// 15 % below 32 000). limit.output plays no part: it only bounds the length of an answer.
+export function usableTokens(limits, model, buffer) {
   const limit = model && limits ? limits[model.providerID + "/" + model.id] : undefined
-  const context = limit && Number(limit.context) > 0 ? Number(limit.context) : 0
-  if (!context) return CLEAR_USABLE
-  const output = Math.min(Number(limit.output) > 0 ? Number(limit.output) : 32768, 32768)
-  return Math.max(context - output, Math.round(context / 2))
+  const window = !limit ? 0 : Number(limit.input) > 0 ? Number(limit.input) : Number(limit.context) > 0 ? Number(limit.context) : 0
+  if (!window) return CLEAR_USABLE
+  if (Number.isInteger(buffer) && buffer >= 0 && buffer < window) return window - buffer
+  return window - Math.max(Math.floor(window * RESERVE_SHARE), window >= 2 * RESERVE_MIN ? RESERVE_MIN : 0)
 }
 const callID = (part) => part.id || part.toolCallId || part.callID || ""
 // 13. Within a run: clears the oldest tool outputs of a request that grew past CLEAR_TRIGGER of `usable`, down to
@@ -2354,7 +2363,7 @@ export default Plugin.define({
         session: { get: async ({ path }) => ({ data: await sessionInfo(path.id) }) },
       },
     })
-    const { prune: pruning, limits } = configuration()
+    const { prune: pruning, limits, buffer: compactionBuffer } = configuration()
     // 13. the tool outputs cleared within each session, kept for its next requests (the most recent sessions)
     const clearedOutputs = new Map()
     const clearedLogged = new Set()
@@ -3584,7 +3593,7 @@ export default Plugin.define({
               clearedOutputs.set(event.sessionID, cleared)
               if (clearedOutputs.size > REMEMBERED_SESSIONS) clearedOutputs.delete(clearedOutputs.keys().next().value)
             }
-            const freed = clearOldOutputs(event.messages, event.system, usableTokens(limits, event.model), cleared)
+            const freed = clearOldOutputs(event.messages, event.system, usableTokens(limits, event.model, compactionBuffer), cleared)
             if (freed && !clearedLogged.has(event.sessionID)) {
               clearedLogged.add(event.sessionID)
               log("old tool outputs cleared from the requests of a session", { agent: String(event.agent || ""), tokens: freed })
