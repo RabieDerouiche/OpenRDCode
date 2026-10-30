@@ -1247,41 +1247,61 @@ const MR_COMMANDS = new Set(["go", "fix", "fortify", "push"])
 const MR_TOOL = /(?:create_merge_request|merge_request_create|mr_create|create_mr|createMergeRequest)$/
 // a GitLab MCP server, by its name in opencode.json; a tool that creates a merge request, by its name without separators
 const GITLAB_SERVER = /gitlab|glab/i
-const MR_CREATE_WORDS = /(?:createmergerequest|mergerequestcreate|mrcreate|createmr)$/
+const MR_CREATE_WORDS = /(?:create|new|submit)(?:mergerequests?|mrs?)$|(?:mergerequests?|mrs?)(?:create|new|submit)$/
+// a tool about merge requests, by its name: what makes a server of any name the GitLab one
+const MR_WORDS = /merge[_-]?requests?|(?:^|[_-])mrs?(?:[_-]|$)/i
 // an answer of the tool that is an error, not a merge request (MCP servers often answer an error as text)
 const MR_ERROR_TEXT = /\b(?:error|denied|forbidden|unauthori[sz]ed|not found|invalid|already exists|unprocessable|conflict)\b|\b(?:400|401|403|404|409|422)\b/i
 const MR_CREATED_TEXT = /web_url|merge_requests\/\d+|"iid"/i
 // 33. Why the pilot has no tool that creates merge requests, from every tool OpenCode registered (before the permission
-// rules of the agent: ctx.tool.list()) and its MCP servers (ctx.mcp.list()): no GitLab server, a GitLab server not
-// connected, its tool that creates merge requests refused to the pilot, or no such tool on the server. Returns
-// { fr, en } and the name of that tool (tool) or the names of the tools of the server (tools); never a value of the
-// configuration (an error of the server: 120 characters).
+// rules of the agent: ctx.tool.list()) and its MCP servers (ctx.mcp.list()): such a tool refused to the pilot (any
+// server), no server with merge request tools (a GitLab server is known by its name or by such tools, whatever its
+// name in opencode.json), a GitLab server not connected, or no such tool on it. Returns { fr, en, servers } and the
+// name of that tool (tool) or the names of the tools of the server (tools); never a value of the configuration (the
+// names and states of the MCP servers; an error of a server: 120 characters).
 export function mergeRequestToolGap(registered, servers) {
-  const gitlab = (Array.isArray(servers) ? servers : []).filter((server) => server && GITLAB_SERVER.test(String(server.name || "")))
-  if (!gitlab.length) return { fr: "aucun serveur MCP GitLab dans opencode.json", en: "no GitLab MCP server in opencode.json" }
+  const list = (Array.isArray(servers) ? servers : []).filter((server) => server && server.name)
+  const tools = Array.isArray(registered) ? registered.filter((tool) => tool && tool.name) : undefined
+  const space = (name) => String(name).replace(/[^a-zA-Z0-9_-]/g, "_")
+  const id = (tool) => String(tool.id || (tool.options && tool.options.namespace ? tool.options.namespace + "_" : "") + tool.name)
+  const named = list.map((server) => server.name + " (" + ((server.status && server.status.status) || "?") + ")")
+  const said = (gap) => ({ ...gap, servers: named })
+  // a tool that creates merge requests, whatever its server, that the pilot does not have
+  const creating = tools && tools.find((tool) => MR_CREATE_WORDS.test(String(tool.name).toLowerCase().replace(/[^a-z]/g, "")))
+  if (creating) {
+    return said({ fr: "l'outil " + id(creating) + " crée les MR, mais les règles de permission ne le donnent pas au pilote",
+      en: "the tool " + id(creating) + " creates merge requests, but the permission rules do not give it to the pilot", tool: id(creating) })
+  }
+  // the GitLab servers: by their name in opencode.json, or by their tools about merge requests (any name)
+  const aboutMr = (tool) => MR_WORDS.test(String(tool.name))
+  const gitlab = list.filter((server) => GITLAB_SERVER.test(String(server.name)) ||
+    (tools && tools.some((tool) => tool.options && tool.options.namespace === space(server.name) && aboutMr(tool))))
+  if (!gitlab.length) {
+    const elsewhere = tools ? tools.filter((tool) => !(tool.options && tool.options.namespace) && aboutMr(tool)).map(id) : []
+    if (elsewhere.length) {
+      return said({ fr: "les outils de MR ne viennent pas d'un serveur MCP (" + elsewhere.slice(0, 5).join(", ") + ") et aucun ne crée de MR",
+        en: "the merge request tools do not come from an MCP server (" + elsewhere.slice(0, 5).join(", ") + ") and none creates one", tools: elsewhere.slice(0, 80) })
+    }
+    return said({ fr: "aucun serveur MCP n'a d'outil de MR (serveurs MCP : " + (named.join(", ") || "aucun") + ")",
+      en: "no MCP server has a merge request tool (MCP servers: " + (named.join(", ") || "none") + ")" })
+  }
   const connected = gitlab.filter((server) => server.status && server.status.status === "connected")
   if (!connected.length) {
     const server = gitlab[0]
     const state = (server.status && server.status.status) || "unknown"
     const error = server.status && server.status.error ? " : " + String(server.status.error).replace(/\s+/g, " ").trim().slice(0, 120) : ""
-    return { fr: "le serveur MCP GitLab « " + server.name + " » n'est pas connecté (" + state + error + ")",
-      en: 'the GitLab MCP server "' + server.name + '" is not connected (' + state + error + ")" }
+    return said({ fr: "le serveur MCP GitLab « " + server.name + " » n'est pas connecté (" + state + error + ")",
+      en: 'the GitLab MCP server "' + server.name + '" is not connected (' + state + error + ")" })
   }
-  if (!Array.isArray(registered)) {
-    return { fr: "le serveur MCP GitLab « " + connected[0].name + " » est connecté, mais OpenCode ne dit pas ses outils au plugin",
-      en: 'the GitLab MCP server "' + connected[0].name + '" is connected, but OpenCode does not tell the plugin its tools' }
+  if (!tools) {
+    return said({ fr: "le serveur MCP GitLab « " + connected[0].name + " » est connecté, mais OpenCode ne dit pas ses outils au plugin",
+      en: 'the GitLab MCP server "' + connected[0].name + '" is connected, but OpenCode does not tell the plugin its tools' })
   }
-  const spaces = new Set(connected.map((server) => String(server.name).replace(/[^a-zA-Z0-9_-]/g, "_")))
-  const id = (tool) => String(tool.id || (tool.options && tool.options.namespace ? tool.options.namespace + "_" : "") + tool.name)
-  const own = registered.filter((tool) => tool && tool.options && spaces.has(String(tool.options.namespace)))
-  const creating = own.find((tool) => MR_CREATE_WORDS.test(String(tool.name || "").toLowerCase().replace(/[^a-z]/g, "")))
-  if (creating) {
-    return { fr: "l'outil " + id(creating) + " crée les MR, mais les règles de permission ne le donnent pas au pilote",
-      en: "the tool " + id(creating) + " creates merge requests, but the permission rules do not give it to the pilot", tool: id(creating) }
-  }
-  return { fr: "le serveur MCP GitLab « " + connected[0].name + " » ne propose aucun outil qui crée une MR (" + own.length + " outils : lecture seule ?)",
+  const spaces = new Set(connected.map((server) => space(server.name)))
+  const own = tools.filter((tool) => tool.options && spaces.has(String(tool.options.namespace)))
+  return said({ fr: "le serveur MCP GitLab « " + connected[0].name + " » ne propose aucun outil qui crée une MR (" + own.length + " outils : lecture seule ?)",
     en: 'the GitLab MCP server "' + connected[0].name + '" offers no tool that creates merge requests (' + own.length + " tools: read-only?)",
-    tools: own.map(id).slice(0, 80) }
+    tools: own.map(id).slice(0, 80) })
 }
 // 33. the commands whose merge request the pilot always creates (/push only when it was chosen)
 const MR_ALWAYS = new Set(["go", "fix", "fortify"])
@@ -3680,7 +3700,8 @@ export default Plugin.define({
                 const gap = await mergeRequestGap()
                 if (gap.en !== (state.gap && state.gap.en)) {
                   log("the pilot has no tool that creates merge requests: it can only give the link", { command: "/" + run.command, cause: gap.en,
-                    gitlab_tools: names.filter((name) => GITLAB_SERVER.test(name)).length, ...(gap.tool ? { tool: gap.tool } : {}), ...(gap.tools ? { tools: gap.tools } : {}) })
+                    gitlab_tools: names.filter((name) => GITLAB_SERVER.test(name) || MR_WORDS.test(name)).length, ...(gap.tool ? { tool: gap.tool } : {}),
+                    ...(gap.tools ? { tools: gap.tools } : {}), ...(gap.servers ? { servers: gap.servers } : {}) })
                 }
                 state.gap = gap
                 if (Array.isArray(event.system)) event.system.push({ type: "text", text: mrGapNote(gap) })

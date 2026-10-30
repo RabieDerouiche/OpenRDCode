@@ -116,9 +116,9 @@ grep 'merge request' ~/oc2/data/opencode/log/openrd-pack.log | tail -10
 « the push printed the link to create the merge request: the pilot is told to create it » : après le push, GitLab a dit que la branche n'avait pas de MR ouverte ; le plugin rappelle alors au pilote, à chaque requête, de la créer avec son outil, jusqu'à ce qu'il l'appelle. Une ligne « the merge request was … » doit suivre ; sinon, envoie-moi les deux lignes.
 
 « has no tool that creates merge requests », suivie de sa cause (`cause`) :
-- « no GitLab MCP server in opencode.json » : aucun serveur dont le nom contient `gitlab` ou `glab` dans la section `mcp` de `~/oc2/config/opencode/opencode.json` ;
+- « no MCP server has a merge request tool (MCP servers: …) » : aucun des serveurs MCP qu'OpenCode a chargés (la liste les nomme, avec leur état) n'a d'outil de MR. Un serveur GitLab est reconnu à son nom (`gitlab`, `glab`) ou à ses outils de MR, quel que soit son nom : s'il manque à la liste, OpenCode ne l'a pas chargé (sa section `mcp` n'est pas dans le fichier que lit la v2) ;
 - « … is not connected (failed : …) » ou « (needs_auth …) » : le serveur ne démarre pas, ou son jeton est refusé ou expiré. `opencode mcp list` le confirme ; redémarre OpenCode après avoir corrigé sa section `mcp` ;
-- « the tool … creates merge requests, but the permission rules do not give it to the pilot » : l'outil existe sous un nom que les règles du pack ne permettent pas (`tool` le donne) : envoie-moi ce nom ;
+- « the tool … creates merge requests, but the permission rules do not give it to the pilot » : l'outil existe, sur n'importe quel serveur, sous un nom que les règles du pack ne permettent pas (`tool` le donne) : envoie-moi ce nom ;
 - « … offers no tool that creates merge requests (… tools: read-only?) » : le serveur ne propose que des outils de lecture (`tools` les liste). Un serveur MCP GitLab en lecture seule le fait : dans sa section `mcp`, une variable comme `GITLAB_READ_ONLY_MODE` à `true`, ou une liste d'outils (`toolsets`) qui laisse de côté les MR. Voir sans afficher de valeur secrète :
 ```sh
 grep -n -iE 'read_only|readonly|toolset|"command"|"url"' ~/oc2/config/opencode/opencode.json

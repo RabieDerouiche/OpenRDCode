@@ -825,8 +825,19 @@ await check("[v2 33] the link to create a merge request that the push printed, u
 })
 await check("[v2 33] why no tool creates merge requests: no GitLab server, not connected, refused, none on the server", () => {
   const tool = (namespace, name) => ({ id: namespace + "_" + name, name, options: { namespace } })
-  assert.equal(mergeRequestToolGap([], []).fr, "aucun serveur MCP GitLab dans opencode.json")
-  assert.equal(mergeRequestToolGap([], [{ name: "jira", status: { status: "connected" } }]).fr, "aucun serveur MCP GitLab dans opencode.json")
+  assert.equal(mergeRequestToolGap([], []).fr, "aucun serveur MCP n'a d'outil de MR (serveurs MCP : aucun)")
+  const jiraOnly = mergeRequestToolGap([tool("jira", "get_issue")], [{ name: "jira", status: { status: "connected" } }])
+  assert.equal(jiraOnly.fr, "aucun serveur MCP n'a d'outil de MR (serveurs MCP : jira (connected))")
+  assert.deepEqual(jiraOnly.servers, ["jira (connected)"])
+  // a GitLab server of any name: known by its tools about merge requests
+  const forge = mergeRequestToolGap([tool("forge", "get_merge_request"), tool("forge", "list_mrs"), tool("forge", "list_open_merge_requests"), tool("jira", "get_issue")],
+    [{ name: "jira", status: { status: "connected" } }, { name: "forge", status: { status: "connected" } }])
+  assert.equal(forge.fr, "le serveur MCP GitLab « forge » ne propose aucun outil qui crée une MR (3 outils : lecture seule ?)")
+  assert.deepEqual(forge.tools, ["forge_get_merge_request", "forge_list_mrs", "forge_list_open_merge_requests"])
+  assert.equal(mergeRequestToolGap([tool("forge", "get_merge_request"), tool("forge", "submit_merge_request")], [{ name: "forge", status: { status: "connected" } }]).tool, "forge_submit_merge_request")
+  assert.ok(mergeRequestToolGap([tool("forge", "get_merge_request")], [{ name: "forge", status: { status: "failed", error: "401" } }]).fr.includes("« forge » n'est pas connecté (failed : 401)"))
+  // merge request tools that are not an MCP server's
+  assert.ok(mergeRequestToolGap([{ id: "gitlab_mrs", name: "gitlab_mrs" }], []).fr.startsWith("les outils de MR ne viennent pas d'un serveur MCP (gitlab_mrs)"))
   const failed = mergeRequestToolGap([], [{ name: "gitlab", status: { status: "failed", error: "connect ECONNREFUSED 10.0.0.5:443\n  at x" } }])
   assert.equal(failed.fr, "le serveur MCP GitLab « gitlab » n'est pas connecté (failed : connect ECONNREFUSED 10.0.0.5:443 at x)")
   assert.ok(mergeRequestToolGap(undefined, [{ name: "gitlab", status: { status: "connected" } }]).fr.includes("ne dit pas ses outils"))

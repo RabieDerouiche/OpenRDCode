@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-10-30 19:10 — Le serveur GitLab reconnu à ses outils, quel que soit son nom
+- **Ajouté** : plugin, fonction 33 : la cause donnée quand le pilote n'a pas d'outil qui crée les MR nomme les serveurs MCP qu'OpenCode a chargés, avec leur état (`servers` dans le journal).
+- **Changé** : un serveur GitLab est reconnu à son nom (`gitlab`, `glab`) ou à ses outils de MR (`merge_request`, `mr`), quel que soit son nom dans `opencode.json` : un `/go` disait « aucun serveur MCP GitLab dans opencode.json » alors que son pilote venait de lire les MR du projet avec un serveur nommé autrement. L'outil qui crée les MR est cherché sur tous les serveurs, sous plus de noms (`create`, `new` ou `submit` avec `merge_request` ou `mr`, dans un ordre ou l'autre ; jamais une liste comme `list_open_merge_requests`). La cause « aucun serveur MCP GitLab » devient « aucun serveur MCP n'a d'outil de MR (serveurs MCP : …) ». COMMANDES.md, FICHIERS.
+- **Retiré** : rien.
+- **But** : une cause juste au premier coup ; celle d'avant était fausse dès que le serveur GitLab ne s'appelait pas `gitlab`.
+
 ## 2026-10-30 18:20 — Pas de MR ouverte pour la branche : la raison de la créer, jamais de donner le lien
 - **Ajouté** : plugin, fonction 33 : dès que le push d'un `/go`, `/fix` ou `/fortify` a affiché « MR LINK: …/merge_requests/new… » (GitLab dit que la branche n'a pas de MR ouverte), chaque requête du pilote lui rappelle de la créer maintenant, en Draft, avec son outil, nommé, jusqu'à ce qu'il l'appelle ; le lien n'est donné qu'après deux refus de l'outil. Jamais pour une branche `poc/…` ou `wip/…` ni pour `/push` (la MR y est un choix). Une ligne dans le journal par run. 2 vérifications de plugin de plus (883).
 - **Changé** : `commands/go.md`, étape 7.4 : « find it, or create it…; otherwise give the MR LINK » se lisait « cherche-la ; sinon le lien », et un `/go` a répondu « aucune MR ouverte ni fusionnée pour cette branche — elle reste donc à créer à la main ». Maintenant : la MR ouverte de la branche, ou sinon la créer avec l'outil ; ne pas en trouver (aucune, seulement des fusionnées ou fermées, ou celles d'autres branches) est la raison de la créer, jamais de donner le lien. Même règle dans `agents/pilot.md` et `commands/fix.md` (étape 6.2). COMMANDES.md (« Vérifier le nom de l'outil qui crée les MR »), FICHIERS, README, MIGRATION, la carte (comptes).
