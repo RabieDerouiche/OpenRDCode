@@ -36,7 +36,7 @@ writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "package.json"),
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "index.js"), "export const Plugin = { define: (definition) => definition }\n")
 writeFileSync(join(stub, "openrd-pack.js"), readFileSync(join(pack, "plugins", "openrd-pack.js"), "utf8"))
 const { Guards, prune, fillNullContent, withAgentOptions, withoutConversationOnly, stripConversationOnly, narrowPilotTools,
-  clearOldOutputs, requestTokens, usableTokens, reviewedSkill, typedCommand, mergeRequestToolGap, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
+  clearOldOutputs, requestTokens, usableTokens, reviewedSkill, typedCommand, mergeRequestToolGap, mergeRequestToCreate, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
 
 // ---------- fake OpenCode client ----------
 const sessions = new Map()
@@ -806,6 +806,23 @@ await check("[v2 33] the tool under the name of glab mcp serve: the pilot has it
   assert.ok(mrLines().some((l) => l.includes("the pilot has the tool that creates merge requests") && l.includes('"command":"/fix"') && l.includes('"tool":"gitlab_glab_mr_create"')))
   mcp31.registry.splice(2, 0, { id: "gitlab_create_merge_request", name: "create_merge_request", options: { namespace: "gitlab" } })
 })
+// the output of ship.sh after a push, and a call of the tool that creates merge requests
+const NEW_MR = "https://gitlab.example.com/g/api/-/merge_requests/new?merge_request%5Bsource_branch%5D=feature%2FABC-32-export"
+const shipped = (link) => [{ role: "assistant", content: [{ type: "tool-call", id: "s1", name: "shell", input: {} }] },
+  { role: "tool", content: [{ type: "tool-result", id: "s1", name: "shell", result: { type: "text", value: "COMMIT: abc1234\nPUSH: OK, origin/feature/ABC-32-export at abc1234\nMR LINK: " + link + "\nRESULT: OK" } }] }]
+const mrCalled = [{ role: "assistant", content: [{ type: "tool-call", id: "s2", name: "gitlab_create_merge_request", input: {} }] },
+  { role: "tool", content: [{ type: "tool-result", id: "s2", name: "gitlab_create_merge_request", result: { type: "text", value: "Error: 422 Unprocessable" } }] }]
+await check("[v2 33] the link to create a merge request that the push printed, until the tool is called", () => {
+  assert.equal(mergeRequestToCreate(shipped(NEW_MR)), NEW_MR)
+  assert.equal(mergeRequestToCreate([...shipped(NEW_MR), ...mrCalled]), "")
+  assert.equal(mergeRequestToCreate([...shipped(NEW_MR), ...mrCalled, ...shipped(NEW_MR)]), NEW_MR)
+  // the merge request exists: GitLab gives its page, not the link to create one
+  assert.equal(mergeRequestToCreate(shipped("https://gitlab.example.com/g/api/-/merge_requests/12")), "")
+  // a trial pushed without a merge request on purpose
+  assert.equal(mergeRequestToCreate(shipped("https://gitlab.example.com/g/api/-/merge_requests/new?merge_request%5Bsource_branch%5D=poc%2Fcache")), "")
+  assert.equal(mergeRequestToCreate([]), "")
+  assert.equal(mergeRequestToCreate(undefined), "")
+})
 await check("[v2 33] why no tool creates merge requests: no GitLab server, not connected, refused, none on the server", () => {
   const tool = (namespace, name) => ({ id: namespace + "_" + name, name, options: { namespace } })
   assert.equal(mergeRequestToolGap([], []).fr, "aucun serveur MCP GitLab dans opencode.json")
@@ -836,6 +853,27 @@ await mcp31.hooks["session.prompt"]({ sessionID: "m31-go", messageID: "m3", prom
 await check("[v2 31] /tests: no server of the pack at all", async () =>
   assert.ok(!(await pilotContext("m31-go")).some((t) => /jira|gitlab|sonar|fortify|confluence|kibana/i.test(t))))
 await endRun("m31-go")
+// (one run of the pack at a time in this folder: after the /tests of m31-go)
+await check("[v2 33] a /go whose push printed that link: the pilot told to create it with its tool, named, then nothing once it called it", async () => {
+  mcp31.sessions.set("m33-go", { id: "m33-go", title: "/go ABC-32" })
+  await mcp31.hooks["session.prompt"]({ sessionID: "m33-go", messageID: "m", prompt: { text: "[[command go ABC-32]]\nRequest: « ABC-32 »" }, delivery: "steer" })
+  const request = async (messages) => {
+    const event = { sessionID: "m33-go", agent: "pilot", model: { id: "qwen", providerID: "fake" }, system: [], messages, options: {}, tools: Object.fromEntries(MCP_TOOLS.map((t) => [t, {}])) }
+    await mcp31.hooks["session.context"](event)
+    return event.system.map((part) => part.text)
+  }
+  const notes = await request(shipped(NEW_MR))
+  assert.equal(notes.length, 1)
+  assert.ok(notes[0].includes("GitLab says this branch has no open merge request. Create it now, as Draft, with the tool gitlab_create_merge_request"), notes[0])
+  assert.ok(notes[0].includes(NEW_MR), notes[0])
+  assert.equal((await request(shipped(NEW_MR))).length, 1)
+  assert.deepEqual(await request([...shipped(NEW_MR), ...mrCalled]), [])
+  assert.deepEqual(await request([]), [])
+  const lines = mrLines().filter((l) => l.includes("the push printed the link to create the merge request"))
+  assert.equal(lines.length, 1)
+  assert.ok(lines[0].includes('"command":"/go"') && lines[0].includes('"tool":"gitlab_create_merge_request"') && !lines[0].includes("merge_requests/new"), lines[0])
+  await endRun("m33-go")
+})
 // the analysts of /fortify write a vulnerability card from the code and the Fortify details of their prompt
 mcp31.sessions.set("m31-fortify", { id: "m31-fortify", title: "/fortify" })
 mcp31.sessions.set("m31-an1", { id: "m31-an1", parentID: "m31-fortify", title: "Analyse V1" })

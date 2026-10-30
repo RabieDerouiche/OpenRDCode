@@ -228,6 +228,8 @@
 //    of the tool or of the permission rules (its type, its HTTP status and the first 160 characters of its message). The
 //    pilot is told that cause in each of its requests while it lasts, and a run that gives the link to create the merge
 //    request by hand says it in its answer (agents/pilot.md); the log is the proof, without a word of the conversation.
+//    Once the push of a /go, /fix or /fortify printed the link to create its merge request (GitLab: the branch has none
+//    open), each request of the pilot reminds it to create it with that tool, named, until it calls it.
 // Every refusal of 6, 7, 9, 12, 16, 23, 24 and 25 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
@@ -1281,6 +1283,39 @@ export function mergeRequestToolGap(registered, servers) {
     en: 'the GitLab MCP server "' + connected[0].name + '" offers no tool that creates merge requests (' + own.length + " tools: read-only?)",
     tools: own.map(id).slice(0, 80) }
 }
+// 33. the commands whose merge request the pilot always creates (/push only when it was chosen)
+const MR_ALWAYS = new Set(["go", "fix", "fortify"])
+// 33. The link to create a merge request that the last push of the run printed (« MR LINK: …merge_requests/new… »:
+// GitLab says the branch has no open merge request), when no call of the tool that creates merge requests came after
+// it: the link, or "". Never for a branch poc/… or wip/… (a trial pushed without a merge request on purpose).
+export function mergeRequestToCreate(messages) {
+  if (!Array.isArray(messages)) return ""
+  let link = ""
+  for (const message of messages) {
+    if (!message || !Array.isArray(message.content)) continue
+    for (const part of message.content) {
+      if (!part) continue
+      if (message.role === "tool" && part.type === "tool-result") {
+        const found = resultText(part.result).match(/^MR LINK: (\S*merge_requests\/new\S*)/m)
+        if (found) link = found[1]
+      } else if (message.role === "assistant" && part.type === "tool-call" && MR_TOOL.test(String(part.name || part.toolName || ""))) {
+        link = ""
+      }
+    }
+  }
+  let source = ""
+  try {
+    source = decodeURIComponent((link.match(/source_branch(?:%5D|\])=([^&\s]+)/i) || [])[1] || "")
+  } catch {
+    // a link that does not decode: its branch unknown
+  }
+  return /^(?:poc|wip)\//i.test(source) ? "" : link
+}
+// 33. what the pilot is told when the push of its run printed that link
+const mrToCreateNote = (tool, link) => "Note of the pack: the push of this run printed « MR LINK: " + link + " »: GitLab " +
+  "says this branch has no open merge request. Create it now, as Draft, with the tool " + tool + " (source, target, title " +
+  "and description as your rules say), before the rest of the delivery. The link goes to your answer only if that tool " +
+  "refuses twice, with its error word for word."
 // 33. what the pilot is told when it has no such tool: the cause, for the line that gives the link instead
 const mrGapNote = (gap) => "Note of the pack: no tool that creates merge requests is in your tools for this run, because " +
   gap.en + ". If the branch has no open merge request, give the MR LINK as agents/pilot.md says, and the line after the " +
@@ -3634,6 +3669,13 @@ export default Plugin.define({
                 if (!state.tool) log("the pilot has the tool that creates merge requests", { command: "/" + run.command, tool })
                 state.tool = tool
                 state.gap = undefined
+                // the push printed the link to create the merge request, and the pilot has not called the tool since
+                const link = MR_ALWAYS.has(run.command) ? mergeRequestToCreate(event.messages) : ""
+                if (link && Array.isArray(event.system)) {
+                  if (state.link !== link) log("the push printed the link to create the merge request: the pilot is told to create it", { command: "/" + run.command, tool })
+                  state.link = link
+                  event.system.push({ type: "text", text: mrToCreateNote(tool, link) })
+                }
               } else {
                 const gap = await mergeRequestGap()
                 if (gap.en !== (state.gap && state.gap.en)) {

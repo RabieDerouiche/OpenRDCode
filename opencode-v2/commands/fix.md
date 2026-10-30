@@ -59,7 +59,7 @@ When something was fixed: the full suite in one call. .NET that builds here: `sh
 
 ## 6. Deliver
 1. `sh ~/.config/opencode/scripts/ship.sh --base "fix(<scope>): address the CI, scan and review feedback (<KEY>)"` (it also commits the local changes made by the developer on this machine, and checks the changes before the push). "GUARD: STOP": stop with « ⛔ Contrôle avant push : rien n'a été poussé », its lines, and « COMMANDES.md, section « Contrôle avant push » ». Another "STOP:" line: stop with it. The WARNING and PACKAGES lines go to « Points d'attention » of the answer.
-2. No open merge request (it was closed or never created): create it as Draft, as your rules say; on a branch `poc/…` or `wip/…` (a trial pushed with /push, without a merge request on purpose), never: the answer gives the "MR LINK" line of ship.sh instead.
+2. No open merge request (it was closed, merged or never created): create it now as Draft with the GitLab tool that creates merge requests, as your rules say (not finding one is the reason to create it, never a reason to give the link); on a branch `poc/…` or `wip/…` (a trial pushed with /push, without a merge request on purpose), never: the answer gives the "MR LINK" line of ship.sh instead.
 3. `sh ~/.config/opencode/scripts/ticket-sheet.sh suivi "/fix - <n> corrigés, <n> réponses, <n> hors périmètre - build ok - tests <passed>/<total>"`.
 
 ## Answer, in French

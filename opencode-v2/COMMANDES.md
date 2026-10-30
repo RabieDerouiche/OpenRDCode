@@ -113,6 +113,8 @@ Arrête la v2 (Ctrl+C dans son terminal) et rouvre l'adresse de ta 1.19 : `MIGRA
 ```sh
 grep 'merge request' ~/oc2/data/opencode/log/openrd-pack.log | tail -10
 ```
+« the push printed the link to create the merge request: the pilot is told to create it » : après le push, GitLab a dit que la branche n'avait pas de MR ouverte ; le plugin rappelle alors au pilote, à chaque requête, de la créer avec son outil, jusqu'à ce qu'il l'appelle. Une ligne « the merge request was … » doit suivre ; sinon, envoie-moi les deux lignes.
+
 « has no tool that creates merge requests », suivie de sa cause (`cause`) :
 - « no GitLab MCP server in opencode.json » : aucun serveur dont le nom contient `gitlab` ou `glab` dans la section `mcp` de `~/oc2/config/opencode/opencode.json` ;
 - « … is not connected (failed : …) » ou « (needs_auth …) » : le serveur ne démarre pas, ou son jeton est refusé ou expiré. `opencode mcp list` le confirme ; redémarre OpenCode après avoir corrigé sa section `mcp` ;
