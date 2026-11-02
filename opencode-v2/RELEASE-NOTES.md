@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-03 11:00 — La présentation aux tech leads, plus simple et sans redites
+- **Ajouté** : `docs/presentation-tech-leads.pptx` : « L'agentique, en deux phrases », un schéma caricatural (un assistant répond et c'est le développeur qui exécute ; un agent reçoit un objectif et boucle : il réfléchit, agit, regarde le résultat, jusqu'à la MR) ; DevX Studio Next Gen d'après sa documentation (une refonte sur IBM ROKS OpenShift au lieu de l'IBM Kubernetes actuel, un bureau Linux par XPRA depuis Windows, HVD ou Mac, des outils à la carte avec VS Code, Docker et Docker Compose, pensé pour l'IA) et nos agents qui y travaillent ; une diapositive finale « Questions ? », ses réponses dans les notes de l'orateur.
+- **Changé** : 13 diapositives au lieu de 15 : nos agents et leur métier reprennent le modèle, les outils MCP et les droits ; chaque idée n'apparaît qu'une fois (ce que les agents ne font jamais, la relecture à neuf, les reprises).
+- **Retiré** : la boucle détaillée et le harnais (repris dans les deux phrases et dans nos agents), les puces de commandes du titre, la légende répétée sous chaque schéma, les emojis dans les blocs, la diapositive des questions en cartes et celle des chiffres à retenir. README, FICHIERS.
+- **But** : une présentation claire pour des tech leads, sans redite ni ornement.
+
 ## 2026-11-03 09:30 — La présentation aux tech leads : la résilience
 - **Ajouté** : `docs/presentation-tech-leads.pptx`, une diapositive « Résilience : ce qui coince ne bloque pas le run », avant les questions : ce qui est relancé seul (réseau, NuGet, npm, index git, Jira et GitLab en erreur serveur, le serveur du modèle, un 429), ce qui est borné dans le temps, le contexte maîtrisé (sous-agents à contexte neuf, vieilles sorties d'outils effacées de 60 % à 35 %, résumé en dernier recours, boucles coupées, étapes bornées), la reprise (fiche cochée, un commit par étape, un run coupé repris seul, le service après un redémarrage, `/go` relancé, un sous-agent repris une fois) et ce qui n'est jamais relancé. 15 diapositives. README, FICHIERS.
 - **Changé** : rien.
