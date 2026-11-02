@@ -190,11 +190,17 @@ MCP_WRITE_DENY = [(p, "deny") for p in ["*create*", "*update*", "*delete*", "*re
                                          # pipelines of GitLab (a retried or cancelled job is a write too)
                                          "*change_*", "*suppress*", "*resolve*", "*post_*", "*publish*", "*edit_*",
                                          "*close_*", "*reopen*", "*retry*", "*cancel*", "*trigger*", "*play_*",
-                                         "*rebase*", "*mark_*"]]
+                                         "*rebase*", "*mark_*",
+                                         # the writes of a server that serves several tools under one name
+                                         # (itg-devops_transition_jira_issue, _log_jira_work, _link_jira_issues_to_epic,
+                                         # _duplicate_jira_issue, _apply_nexusiq_policy_waivers, _manage_confluence_tags…)
+                                         "*transition*", "*duplicate*", "*link_jira*", "*link_issue*", "*log_jira_work*",
+                                         "*log_work*", "*worklog*", "*manage_*", "*record_*", "*submit_*", "*apply_*"]]
 # The tool that creates a merge request, by the names the GitLab MCP servers give it: create_merge_request (the MCP
-# server of GitLab, @zereight/mcp-gitlab, the reference server), mr_create (glab mcp serve: glab_mr_create), and the
-# other orders. The pilot only, after MCP_WRITE_DENY; never a note, a discussion or an update (their names go on).
-MR_CREATE = ["*create_merge_request", "*merge_request_create", "*mr_create", "*create_mr", "*createMergeRequest"]
+# server of GitLab, @zereight/mcp-gitlab, the reference server), create_gitlab_merge_request (an internal server that
+# serves Jira, GitLab, Sonar and Fortify together), mr_create (glab mcp serve: glab_mr_create), and the other orders. The pilot only, after MCP_WRITE_DENY; never a note, a discussion or an update (their names go on).
+MR_CREATE = ["*create_merge_request", "*create_gitlab_merge_request", "*merge_request_create", "*mr_create", "*create_mr",
+             "*createMergeRequest"]
 CONFLUENCE_WRITE = [(p, "ask") for p in ["*confluence*create*", "*confluence*update*", "*confluence*upload*",
                                          "*Confluence*create*", "*Confluence*update*", "*Confluence*upload*"]]
 # MCP servers, matched by tool name (OpenCode names MCP tools "<server>_<tool>"). Hiding a server from an agent

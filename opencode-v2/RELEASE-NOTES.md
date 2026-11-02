@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-02 15:00 — L'outil qui crée les MR sous le nom de `itg-devops`, et ses autres écritures refusées
+- **Ajouté** : `*create_gitlab_merge_request` permis au pilote (`tools/permissions.py`, `MR_CREATE`) : c'est le nom de l'outil qui crée les MR sur `itg-devops`, un serveur MCP interne qui sert Jira, Confluence, GitLab, SonarQube, Fortify, Nexus IQ et ServiceNow sous un seul nom. Refusés à tous les agents (`MCP_WRITE_DENY`) : `*transition*`, `*duplicate*`, `*link_jira*`, `*link_issue*`, `*log_jira_work*`, `*log_work*`, `*worklog*`, `*manage_*`, `*record_*`, `*submit_*`, `*apply_*`, les écritures de ce serveur qu'aucune règle ne couvrait (`transition_jira_issue`, `log_jira_work`, `link_jira_issues_to_epic`, `duplicate_jira_issue`, `apply_nexusiq_policy_waivers`, `manage_confluence_tags`…). 39 cas de permissions tirés de ses vrais outils (3 210). 1 vérification de plugin (886).
+- **Changé** : plugin, fonction 33 : `create_gitlab_merge_request` reconnu comme l'outil qui crée les MR (le pilote l'a, le diagnostic le trouve) ; le journal redit l'outil quand son nom change dans un run. `agents/pilot.md`, la ligne `permission` des agents et `opencode.snippet.json` régénérés. COMMANDES.md : en tête, la cause et les quatre étapes pour l'appliquer ; README, FICHIERS, MIGRATION, la carte (comptes).
+- **Retiré** : rien.
+- **But** : `/go` disait « itg-devops ne propose aucun outil qui crée une MR » alors que l'outil existe : `gitlab_` au milieu de son nom le faisait passer sous la règle qui refuse `*create*`.
+
 ## 2026-11-02 12:00 — Le diagnostic en cours en tête de COMMANDES.md
 - **Ajouté** : COMMANDES.md, tout en haut : « En cours : /go bloqué à « Mise à jour avec develop… », et la MR pas créée », les commandes du diagnostic du moment avec les chemins d'une v2 qui a remplacé la 1.19 (`~/.config/opencode`, `~/.local/share/opencode/log`) : un script ou un git qui tourne encore, le journal du plugin, les erreurs du serveur, les jetons `{env:…}` que le serveur a, les outils du serveur MCP `itg-devops`.
 - **Changé** : rien.

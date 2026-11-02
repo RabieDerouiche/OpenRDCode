@@ -799,6 +799,12 @@ await check("[v2 33] the same cause: told to the pilot again, not logged again; 
   assert.ok(lines[1].includes("offers no tool that creates merge requests (1 tools: read-only?)") && lines[1].includes('"tools":["gitlab_get_merge_request"]'), lines[1])
   assert.ok(notes[0].includes("ne propose aucun outil qui crée une MR (1 outils : lecture seule ?)"), notes[0])
 })
+await check("[v2 33] the tool of a server that serves several tools under one name (itg-devops): the pilot has it", async () => {
+  const before = mrLines().filter((l) => l.includes("the pilot has the tool that creates merge requests") && l.includes("itg-devops_create_gitlab_merge_request")).length
+  const { notes } = await withoutMrTool([...MCP_TOOLS.filter((t) => !/create_merge_request/.test(t)), "itg-devops_create_gitlab_merge_request", "itg-devops_create_gitlab_branch"])
+  assert.deepEqual(notes, [])
+  assert.equal(mrLines().filter((l) => l.includes("the pilot has the tool that creates merge requests") && l.includes('"tool":"itg-devops_create_gitlab_merge_request"')).length, before + 1)
+})
 await check("[v2 33] the tool under the name of glab mcp serve: the pilot has it, nothing told", async () => {
   const { lines, notes } = await withoutMrTool([...MCP_TOOLS.filter((t) => !/create_merge_request/.test(t)), "gitlab_glab_mr_create"])
   assert.equal(lines.length, 2)
@@ -873,7 +879,7 @@ await check("[v2 33] why no tool creates merge requests: no GitLab server, not c
   // glab mcp serve, its server named "GitLab Prod" in opencode.json
   const glab = mergeRequestToolGap([tool("GitLab_Prod", "glab_mr_list"), tool("GitLab_Prod", "glab_mr_create"), tool("jira", "create_issue")], [{ name: "GitLab Prod", status: { status: "connected" } }])
   assert.equal(glab.tool, "GitLab_Prod_glab_mr_create")
-  for (const name of ["create_merge_request", "merge_request_create", "createMergeRequest", "create-mr"]) {
+  for (const name of ["create_merge_request", "create_gitlab_merge_request", "merge_request_create", "createMergeRequest", "create-mr"]) {
     assert.equal(mergeRequestToolGap([tool("gitlab", name)], [{ name: "gitlab", status: { status: "connected" } }]).tool, "gitlab_" + name, name)
   }
   // read-only: a note or a discussion of a merge request is not one

@@ -4,32 +4,24 @@ Les commandes du pack à taper toi-même, à copier-coller, quand OpenCode v2 to
 
 **Aucun script à lancer toi-même.** Les commandes de ce guide sont des commandes git, dotnet ou système. Les scripts du pack (`~/.config/opencode/scripts`) sont lancés par les agents ; quand un diagnostic a besoin de l'un d'eux, ce guide te donne la phrase à écrire dans une session OpenCode, et c'est l'agent qui le lance.
 
-## En cours : /go bloqué à « Mise à jour avec develop… », et la MR pas créée
+## En cours : la MR pas créée, cause trouvée, à appliquer
 
-Le diagnostic du moment, avec les chemins d'une v2 qui a remplacé la 1.19 (`~/.config/opencode`, journal dans `~/.local/share/opencode/log`). Aucune de ces commandes n'affiche de secret. Envoie leurs sorties, et le titre de la session (ce qui suit `⏳`).
+La cause (certaine) : `itg-devops` a bien l'outil qui crée les MR, sous le nom `itg-devops_create_gitlab_merge_request`. Ce nom ne finit pas par `create_merge_request` (`gitlab_` est au milieu) : la règle du pack qui refuse `*create*` le cachait au pilote. Corrigé : le pilote l'a, sous ce nom. Et les écritures de `itg-devops` que les règles laissaient passer sont maintenant refusées à tous les agents : `transition_jira_issue`, `log_jira_work`, `link_jira_issues_to_epic`, `duplicate_jira_issue`, `apply_nexusiq_policy_waivers`, `manage_confluence_tags`, `record_confluence_feedback`, `submit_confluence_dev_challenge`.
 
-1. Un script ou un git qui tourne encore, et depuis combien de secondes (`etimes`) :
+1. Recrée `~/CHECKSUMS-config.txt` depuis GitHub (vue Raw), puis recolle chaque fichier que cette commande dit `FAILED` (dans cette version : `plugins/openrd-pack.js`, `agents/pilot.md`, `agents/analyst.md`, `agents/checker.md`, `agents/debugger.md`, `agents/doc-writer.md`) :
 ```sh
-ps -eo pid,etimes,args | grep -E '[s]hip\.sh|[g]it (fetch|merge|push)' | cut -c1-150
+cd ~/.config/opencode && sha256sum --strict -c ~/CHECKSUMS-config.txt 2>/dev/null | grep -v ': OK$'; echo fini
 ```
-2. Les dernières lignes du journal du plugin :
+2. Recolle la section `permission` de `~/.config/opencode/opencode.json` depuis `opencode-v2/opencode.snippet.json` (MIGRATION.md, annexe A.10) : c'est elle qui refuse les écritures de `itg-devops` aux agents de la conversation.
+3. Redémarre OpenCode depuis un terminal neuf :
 ```sh
-tail -n 15 ~/.local/share/opencode/log/openrd-pack.log | cut -c1-300
+opencode service restart
 ```
-3. Les dernières erreurs du serveur OpenCode :
+4. Relance `/go` sur la branche (`feature/LOCAL-1-retrait-complet-blazorise`) : la MR est créée. La preuve, dans le journal du plugin :
 ```sh
-tail -n 200 ~/.local/share/opencode/log/*.log 2>/dev/null | grep -iE 'error|retry|timeout|429|503' | tail -5 | cut -c1-200
+grep 'merge request' ~/.local/share/opencode/log/openrd-pack.log | tail -3 | cut -c1-250
 ```
-4. Les jetons `{env:…}` de ta section `mcp` que le serveur OpenCode a, ou pas (le serveur MCP `itg-devops` reçoit `gitlab-token` par `{env:GITLAB_WORKFLOW_TOKEN}` ; une variable absente part vide, sans erreur) :
-```sh
-for p in $(pgrep -f '(^|/)[o]pencode (.* )?(serve|web)( |$)'); do echo "== PID $p : $(ps -o args= -p $p | cut -c1-70)"; for v in $(cat ~/.config/opencode/opencode.json* 2>/dev/null | grep -v '^[[:space:]]*//' | grep -oE '\{env:[A-Za-z_][A-Za-z0-9_]*\}' | sort -u | sed 's/{env:\(.*\)}/\1/'); do tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -q "^$v=." && echo "$v : présent" || echo "$v : ABSENT"; done; done
-```
-Une ligne `ABSENT` sous le PID du serveur : les lignes `export …TOKEN…` vont tout en haut de `~/.zshrc_perso`, avant les lignes `opencode service …` ; ferme tous les terminaux, ouvre-en un nouveau, `opencode service restart`, puis relance cette commande.
-
-5. Les outils de `itg-devops` que le plugin a vus quand le pilote n'avait pas celui qui crée les MR :
-```sh
-grep 'has no tool that creates merge requests' ~/.local/share/opencode/log/openrd-pack.log | tail -1 | grep -oE '"itg-devops_[^"]*"' | tr '\n' ' '
-```
+Tu dois voir « the pilot has the tool that creates merge requests » avec `itg-devops_create_gitlab_merge_request`, puis « the merge request was created ». Autre chose : envoie-moi ces trois lignes.
 
 ## Installer
 
@@ -136,7 +128,7 @@ Arrête la v2 (Ctrl+C dans son terminal) et rouvre l'adresse de ta 1.19 : `MIGRA
 
 ## Vérifier le nom de l'outil qui crée les MR
 
-`/go` crée la MR en Draft avec l'outil du MCP GitLab qui crée les MR : son nom finit par `create_merge_request` (le serveur MCP de GitLab, `@zereight/mcp-gitlab`), `mr_create` (`glab mcp serve`), `merge_request_create`, `create_mr` ou `createMergeRequest`. C'est le seul outil d'écriture GitLab permis, à l'agent `pilot` seulement. Le lien pour créer la MR à la main n'est qu'un dernier recours : la réponse dit alors pourquoi (« Création de la MR impossible : … »), l'erreur de l'outil mot pour mot, ou, quand le pilote n'a pas l'outil, la cause que le plugin a trouvée en comparant les outils de tes serveurs MCP à ceux du pilote. Le journal du plugin garde la preuve, pour chaque run : l'outil qu'avait le pilote (ou pourquoi il ne l'avait pas), puis la réponse de chaque appel (créée, ou l'erreur) :
+`/go` crée la MR en Draft avec l'outil du MCP GitLab qui crée les MR : son nom finit par `create_merge_request` (le serveur MCP de GitLab, `@zereight/mcp-gitlab`), `create_gitlab_merge_request` (un serveur qui sert Jira, GitLab, Sonar et Fortify sous un seul nom, comme `itg-devops`), `mr_create` (`glab mcp serve`), `merge_request_create`, `create_mr` ou `createMergeRequest`. C'est le seul outil d'écriture GitLab permis, à l'agent `pilot` seulement. Le lien pour créer la MR à la main n'est qu'un dernier recours : la réponse dit alors pourquoi (« Création de la MR impossible : … »), l'erreur de l'outil mot pour mot, ou, quand le pilote n'a pas l'outil, la cause que le plugin a trouvée en comparant les outils de tes serveurs MCP à ceux du pilote. Le journal du plugin garde la preuve, pour chaque run : l'outil qu'avait le pilote (ou pourquoi il ne l'avait pas), puis la réponse de chaque appel (créée, ou l'erreur) :
 ```sh
 grep 'merge request' ~/oc2/data/opencode/log/openrd-pack.log | tail -10
 ```

@@ -557,6 +557,19 @@ for (const t of ["gitlab_create_merge_request", "jira_get_issue", "jira_search",
 // never a note, a discussion or an update of a merge request
 for (const t of ["gitlab_merge_request_create", "gitlab_glab_mr_create", "glab_mr_create", "gitlab_create_mr", "gitlab_createMergeRequest"]) tool("pilot", t, "allow")
 for (const t of ["gitlab_glab_mr_create_note", "gitlab_create_mr_discussion", "gitlab_mr_update", "glab_mr_merge", "glab_mr_approve"]) tool("pilot", t, "deny")
+// a server that serves Jira, Confluence, GitLab, Sonar, Fortify and more under one name (the real tools of itg-devops):
+// the pilot creates the merge request and reads; every other write is refused, to every agent
+const ITG = (t) => "itg-devops_" + t
+for (const t of ["create_gitlab_merge_request", "get_gitlab_merge_requests", "get_gitlab_merge_request_diff", "get_jira_by_reference",
+  "get_gitlab_job_log", "list_gitlab_pipelines", "get_sonarqube_issues", "get_fortify_projects", "get_jira_workflow_options"]) tool("pilot", ITG(t), "allow")
+for (const t of ["create_gitlab_branch", "create_gitlab_tag", "add_gitlab_comment_on_merge_request", "transition_jira_issue", "duplicate_jira_issue",
+  "link_jira_issues_to_epic", "log_jira_work", "trigger_gitlab_pipeline", "retry_gitlab_pipeline", "cancel_gitlab_pipeline",
+  "play_gitlab_pipeline_schedule", "apply_nexusiq_policy_waivers", "remove_nexusiq_policy_waivers", "update_fortify_analysis_tag",
+  "create_jira", "add_jira_comment", "get_confluence_page"]) tool("pilot", ITG(t), "deny")
+for (const t of ["get_confluence_child_pages", "get_jira_issue_history", "get_gitlab_file_content"]) tool("analyst", ITG(t), "allow")
+for (const t of ["create_gitlab_merge_request", "manage_confluence_tags", "record_confluence_feedback", "submit_confluence_dev_challenge",
+  "transition_jira_issue", "log_jira_work"]) tool("analyst", ITG(t), "deny")
+for (const t of ["transition_jira_issue", "log_jira_work", "create_gitlab_merge_request", "apply_nexusiq_policy_waivers"]) tool("build", ITG(t), "deny")
 // Confluence is the analyst's: no procedure of the pilot reads it, and its tools would weigh on every request of a run
 for (const t of ["confluence_get_page", "confluence_search", "Confluence_get_page_children"]) tool("pilot", t, "deny")
 for (const t of ["gitlab_create_merge_request_note", "gitlab_create_issue", "gitlab_update_merge_request", "gitlab_merge_merge_request",

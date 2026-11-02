@@ -695,7 +695,18 @@
     "*trigger*": "deny",
     "*play_*": "deny",
     "*rebase*": "deny",
-    "*mark_*": "deny"
+    "*mark_*": "deny",
+    "*transition*": "deny",
+    "*duplicate*": "deny",
+    "*link_jira*": "deny",
+    "*link_issue*": "deny",
+    "*log_jira_work*": "deny",
+    "*log_work*": "deny",
+    "*worklog*": "deny",
+    "*manage_*": "deny",
+    "*record_*": "deny",
+    "*submit_*": "deny",
+    "*apply_*": "deny"
   },
   "experimental": {
     "primary_tools": [

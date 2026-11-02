@@ -221,8 +221,8 @@
 //    and none of these was reviewed. They are taken out of the list of skills and of the skill tool; the permission
 //    rules of opencode.json allow only the names of the pack's skills too (tools/permissions.py).
 // 33. Says in its log what became of the merge request of a run (/go, /fix, /fortify, /push): whether the pilot has a
-//    tool that creates merge requests (its name ends with create_merge_request, merge_request_create, mr_create,
-//    create_mr or createMergeRequest) once per run, or why it has none, from every tool OpenCode registered and its
+//    tool that creates merge requests (its name ends with create_merge_request, create_gitlab_merge_request,
+//    merge_request_create, mr_create, create_mr or createMergeRequest) once per run, or why it has none, from every tool OpenCode registered and its
 //    MCP servers: no GitLab server, a server not connected, its tool refused by the permission rules (another name), or
 //    no such tool on the server (its tools listed, by name); and the answer of each call of it: created, or the error
 //    of the tool or of the permission rules (its type, its HTTP status and the first 160 characters of its message). The
@@ -1245,12 +1245,13 @@ const PILOT_MCP = {
 const SUBAGENT_MCP = { analyst: { fortify: [] } }
 // 33. the commands of the pilot that create a merge request, and the tool that does it (its name on this machine)
 const MR_COMMANDS = new Set(["go", "fix", "fortify", "push"])
-// its names on the GitLab MCP servers: create_merge_request (the server of GitLab, @zereight/mcp-gitlab), mr_create
-// (glab mcp serve), the other orders; the permission rules of the pilot allow the same (tools/permissions.py, MR_CREATE)
-const MR_TOOL = /(?:create_merge_request|merge_request_create|mr_create|create_mr|createMergeRequest)$/
+// its names on the GitLab MCP servers: create_merge_request (the server of GitLab, @zereight/mcp-gitlab),
+// create_gitlab_merge_request (a server that serves several tools under one name), mr_create (glab mcp serve), the other
+// orders; the permission rules of the pilot allow the same (tools/permissions.py, MR_CREATE)
+const MR_TOOL = /(?:create_merge_request|create_gitlab_merge_request|merge_request_create|mr_create|create_mr|createMergeRequest)$/
 // a GitLab MCP server, by its name in opencode.json; a tool that creates a merge request, by its name without separators
 const GITLAB_SERVER = /gitlab|glab/i
-const MR_CREATE_WORDS = /(?:create|new|submit)(?:mergerequests?|mrs?)$|(?:mergerequests?|mrs?)(?:create|new|submit)$/
+const MR_CREATE_WORDS = /(?:create|new|submit)(?:gitlab)?(?:mergerequests?|mrs?)$|(?:mergerequests?|mrs?)(?:create|new|submit)$/
 // a tool about merge requests, by its name: what makes a server of any name the GitLab one
 const MR_WORDS = /merge[_-]?requests?|(?:^|[_-])mrs?(?:[_-]|$)/i
 // an answer of the tool that is an error, not a merge request (MCP servers often answer an error as text)
@@ -3726,7 +3727,7 @@ export default Plugin.define({
               const state = mrTools.get(run) || {}
               mrTools.set(run, state)
               if (tool) {
-                if (!state.tool) log("the pilot has the tool that creates merge requests", { command: "/" + run.command, tool })
+                if (state.tool !== tool) log("the pilot has the tool that creates merge requests", { command: "/" + run.command, tool })
                 state.tool = tool
                 state.gap = undefined
                 // the push printed the link to create the merge request, and the pilot has not called the tool since
