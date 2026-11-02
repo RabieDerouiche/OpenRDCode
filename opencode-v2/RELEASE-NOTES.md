@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-03 11:30 — La présentation aux tech leads raconte une journée
+- **Ajouté** : `docs/presentation-tech-leads.pptx` : un fil conducteur, du titre aux questions : ce qu'est un agent, où il travaille, pourquoi on l'a fait, puis une journée (8 h 45 `/daily`, 9 h `/go`, la CI et la review avec `/fix`, la dette sécurité avec `/fortify`) ; un repère `/daily · /go · /fix · /fortify` en haut de chaque flux ; `/go` en cinq temps avec les trois moments du développeur ; `/fortify` en cinq phases dans le temps (trois failles analysées et prouvées à la fois, puis corrigées une par une) et ce que ça change ; les signaux de `/daily` écrits en clair (pipeline en échec, conflit, review en attente, MR prête à merger…).
+- **Changé** : l'équipe d'agents passe dans « Nos travaux », après le pourquoi ; la non-régression devient le zoom de l'étape « Coder » de `/go` (« la preuve avant le code ») ; DevX en quatre titres courts, sans le détail de la plateforme ; « Et quand ça coince ? » en quatre cartes de trois lignes ; « Questions ? » se termine sur la phrase de l'histoire (le développeur décide et valide ; les agents font, et le prouvent).
+- **Retiré** : « tech leads » et la date de la couverture, la légende sous les deux phrases de l'agentique, le ticket et la MR de l'exemple de l'assistant, « refonte », OpenShift et la liste des postes de la diapositive DevX. README, FICHIERS.
+- **But** : une histoire claire et simple du début à la fin, avec `/go` et `/fortify`, les flux les plus attendus, lisibles d'un coup d'œil.
+
 ## 2026-11-03 11:00 — La présentation aux tech leads, plus simple et sans redites
 - **Ajouté** : `docs/presentation-tech-leads.pptx` : « L'agentique, en deux phrases », un schéma caricatural (un assistant répond et c'est le développeur qui exécute ; un agent reçoit un objectif et boucle : il réfléchit, agit, regarde le résultat, jusqu'à la MR) ; DevX Studio Next Gen d'après sa documentation (une refonte sur IBM ROKS OpenShift au lieu de l'IBM Kubernetes actuel, un bureau Linux par XPRA depuis Windows, HVD ou Mac, des outils à la carte avec VS Code, Docker et Docker Compose, pensé pour l'IA) et nos agents qui y travaillent ; une diapositive finale « Questions ? », ses réponses dans les notes de l'orateur.
 - **Changé** : 13 diapositives au lieu de 15 : nos agents et leur métier reprennent le modèle, les outils MCP et les droits ; chaque idée n'apparaît qu'une fois (ce que les agents ne font jamais, la relecture à neuf, les reprises).
