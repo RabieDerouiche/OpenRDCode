@@ -229,7 +229,10 @@
 //    pilot is told that cause in each of its requests while it lasts, and a run that gives the link to create the merge
 //    request by hand says it in its answer (agents/pilot.md); the log is the proof, without a word of the conversation.
 //    Once the push of a /go, /fix or /fortify printed the link to create its merge request (GitLab: the branch has none
-//    open), each request of the pilot reminds it to create it with that tool, named, until it calls it.
+//    open), each request of the pilot reminds it to create it with that tool, named, until it calls it. At its start, the
+//    log names the {env:NAME} variables of the MCP servers of opencode.json that the OpenCode server does not have
+//    (OpenCode sends them empty, without an error: a token in a header, as if none were given), never a value; the cause
+//    of a missing tool names them too.
 // Every refusal of 6, 7, 9, 12, 16, 23, 24 and 25 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
@@ -1259,8 +1262,13 @@ const MR_CREATED_TEXT = /web_url|merge_requests\/\d+|"iid"/i
 // name in opencode.json), a GitLab server not connected, or no such tool on it. Returns { fr, en, servers } and the
 // name of that tool (tool) or the names of the tools of the server (tools); never a value of the configuration (the
 // names and states of the MCP servers; an error of a server: 120 characters).
-export function mergeRequestToolGap(registered, servers) {
+export function mergeRequestToolGap(registered, servers, emptyEnv) {
   const list = (Array.isArray(servers) ? servers : []).filter((server) => server && server.name)
+  // the variables of a server that the OpenCode server does not have: said with the cause, first
+  const missing = (name) => (plainObject(emptyEnv) && Array.isArray(emptyEnv[name]) ? emptyEnv[name] : [])
+  const unset = (names) => (names.length ? { fr: ", et le serveur OpenCode n'a pas " + names.join(", ") + " (vide dans son environnement : la " +
+    "valeur part vide ; redémarre OpenCode depuis un terminal qui l'a)", en: ", and the OpenCode server has no " + names.join(", ") +
+    " (empty in its environment: sent empty; restart OpenCode from a terminal that has it)" } : { fr: "", en: "" })
   const tools = Array.isArray(registered) ? registered.filter((tool) => tool && tool.name) : undefined
   const space = (name) => String(name).replace(/[^a-zA-Z0-9_-]/g, "_")
   const id = (tool) => String(tool.id || (tool.options && tool.options.namespace ? tool.options.namespace + "_" : "") + tool.name)
@@ -1282,16 +1290,18 @@ export function mergeRequestToolGap(registered, servers) {
       return said({ fr: "les outils de MR ne viennent pas d'un serveur MCP (" + elsewhere.slice(0, 5).join(", ") + ") et aucun ne crée de MR",
         en: "the merge request tools do not come from an MCP server (" + elsewhere.slice(0, 5).join(", ") + ") and none creates one", tools: elsewhere.slice(0, 80) })
     }
-    return said({ fr: "aucun serveur MCP n'a d'outil de MR (serveurs MCP : " + (named.join(", ") || "aucun") + ")",
-      en: "no MCP server has a merge request tool (MCP servers: " + (named.join(", ") || "none") + ")" })
+    const empty = unset([...new Set(list.flatMap((server) => missing(server.name)))])
+    return said({ fr: "aucun serveur MCP n'a d'outil de MR (serveurs MCP : " + (named.join(", ") || "aucun") + ")" + empty.fr,
+      en: "no MCP server has a merge request tool (MCP servers: " + (named.join(", ") || "none") + ")" + empty.en })
   }
   const connected = gitlab.filter((server) => server.status && server.status.status === "connected")
   if (!connected.length) {
     const server = gitlab[0]
     const state = (server.status && server.status.status) || "unknown"
     const error = server.status && server.status.error ? " : " + String(server.status.error).replace(/\s+/g, " ").trim().slice(0, 120) : ""
-    return said({ fr: "le serveur MCP GitLab « " + server.name + " » n'est pas connecté (" + state + error + ")",
-      en: 'the GitLab MCP server "' + server.name + '" is not connected (' + state + error + ")" })
+    const empty = unset(missing(server.name))
+    return said({ fr: "le serveur MCP GitLab « " + server.name + " » n'est pas connecté (" + state + error + ")" + empty.fr,
+      en: 'the GitLab MCP server "' + server.name + '" is not connected (' + state + error + ")" + empty.en })
   }
   if (!tools) {
     return said({ fr: "le serveur MCP GitLab « " + connected[0].name + " » est connecté, mais OpenCode ne dit pas ses outils au plugin",
@@ -1299,8 +1309,9 @@ export function mergeRequestToolGap(registered, servers) {
   }
   const spaces = new Set(connected.map((server) => space(server.name)))
   const own = tools.filter((tool) => tool.options && spaces.has(String(tool.options.namespace)))
-  return said({ fr: "le serveur MCP GitLab « " + connected[0].name + " » ne propose aucun outil qui crée une MR (" + own.length + " outils : lecture seule ?)",
-    en: 'the GitLab MCP server "' + connected[0].name + '" offers no tool that creates merge requests (' + own.length + " tools: read-only?)",
+  const empty = unset([...new Set(connected.flatMap((server) => missing(server.name)))])
+  return said({ fr: "le serveur MCP GitLab « " + connected[0].name + " » ne propose aucun outil qui crée une MR (" + own.length + " outils : lecture seule ?)" + empty.fr,
+    en: 'the GitLab MCP server "' + connected[0].name + '" offers no tool that creates merge requests (' + own.length + " tools: read-only?)" + empty.en,
     tools: own.map(id).slice(0, 80) })
 }
 // 33. the commands whose merge request the pilot always creates (/push only when it was chosen)
@@ -1441,6 +1452,25 @@ function parseJsonc(text) {
   return JSON.parse(noComments.replace(new RegExp(STRING + String.raw`|,(\s*[}\]])`, "g"), (m, tail) => (m[0] === '"' ? m : tail)))
 }
 
+// The names of the {env:NAME} variables of a part of the configuration (OpenCode puts the value of NAME there, from the
+// environment of its own process, or nothing when it has none)
+function envNames(value, into = new Set()) {
+  if (typeof value === "string") for (const found of value.matchAll(/\{env:([^}]+)\}/g)) into.add(found[1].trim())
+  else if (Array.isArray(value)) for (const item of value) envNames(item, into)
+  else if (plainObject(value)) for (const item of Object.values(value)) envNames(item, into)
+  return into
+}
+// 33. The {env:NAME} variables of each MCP server that are empty in the environment of the OpenCode server: OpenCode
+// sends them empty (a token in a header: the server answers as if none were given), without an error.
+// { "<server>": [names] }, never a value.
+export function emptyMcpEnv(mcpEnv, env) {
+  const out = {}
+  for (const [server, names] of Object.entries(plainObject(mcpEnv) ? mcpEnv : {})) {
+    const empty = (Array.isArray(names) ? names : []).filter((name) => !(env && env[name]))
+    if (empty.length) out[server] = empty
+  }
+  return out
+}
 // The OpenCode configuration as the plugin reads it: in the configuration folder of OpenCode v2 (OPENCODE_CONFIG_DIR,
 // as MIGRATION.md starts it next to 1.19; otherwise the XDG one), opencode.json then opencode.jsonc, the second one
 // winning as in OpenCode
@@ -1448,8 +1478,9 @@ const configFolder = () => process.env.OPENCODE_CONFIG_DIR || join(process.env.X
 function configuration() {
   const dir = configFolder()
   // limits: "<provider>/<model>" -> the limit of the model ({ context, input, output }), as its provider section declares
-  // it; buffer: "compaction.buffer" (or "reserved", its older name, the newer one winning, as in OpenCode)
-  const out = { references: {}, prune: false, limits: {}, buffer: undefined }
+  // it; buffer: "compaction.buffer" (or "reserved", its older name, the newer one winning, as in OpenCode); mcpEnv:
+  // "<MCP server>" -> the names of the {env:NAME} variables of its section (a header, a variable of a local server)
+  const out = { references: {}, prune: false, limits: {}, buffer: undefined, mcpEnv: {} }
   for (const name of ["opencode.json", "opencode.jsonc"]) {
     try {
       const data = parseJsonc(readFileSync(join(dir, name), "utf8")) || {}
@@ -1457,6 +1488,10 @@ function configuration() {
       if (data.compaction && typeof data.compaction.prune === "boolean") out.prune = data.compaction.prune
       const buffer = data.compaction ? (data.compaction.buffer ?? data.compaction.reserved) : undefined
       if (Number.isInteger(buffer) && buffer >= 0) out.buffer = buffer
+      for (const [server, section] of Object.entries(plainObject(data.mcp) ? data.mcp : {})) {
+        const names = [...envNames(section)]
+        if (names.length) out.mcpEnv[server] = names
+      }
       for (const [provider, section] of Object.entries(plainObject(data.provider) ? data.provider : {})) {
         for (const [model, info] of Object.entries(section && plainObject(section.models) ? section.models : {})) {
           if (info && plainObject(info.limit)) out.limits[provider + "/" + model] = info.limit
@@ -2462,7 +2497,12 @@ export default Plugin.define({
         session: { get: async ({ path }) => ({ data: await sessionInfo(path.id) }) },
       },
     })
-    const { prune: pruning, limits, buffer: compactionBuffer } = configuration()
+    const { prune: pruning, limits, buffer: compactionBuffer, mcpEnv } = configuration()
+    // 33. the {env:…} variables of the MCP servers that this OpenCode server does not have: sent empty
+    const emptyEnv = emptyMcpEnv(mcpEnv, process.env)
+    if (Object.keys(emptyEnv).length) {
+      log("variables {env:…} of MCP servers empty in the OpenCode server: OpenCode sends them empty (restart it from a terminal that has them)", { servers: emptyEnv })
+    }
     // 13. the tool outputs cleared within each session, kept for its next requests (the most recent sessions)
     const clearedOutputs = new Map()
     const clearedLogged = new Set()
@@ -3655,7 +3695,7 @@ export default Plugin.define({
       try {
         const registered = ctx.tool && typeof ctx.tool.list === "function" ? await ctx.tool.list() : undefined
         const result = ctx.mcp && typeof ctx.mcp.list === "function" ? await ctx.mcp.list() : []
-        return mergeRequestToolGap(registered, Array.isArray(result) ? result : result && result.data)
+        return mergeRequestToolGap(registered, Array.isArray(result) ? result : result && result.data, emptyEnv)
       } catch (error) {
         const what = String((error && error.message) || error).replace(/\s+/g, " ").slice(0, 120)
         return { fr: "cause inconnue (" + what + ")", en: "cause unknown (" + what + ")" }

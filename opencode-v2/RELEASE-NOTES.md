@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-02 10:30 — Un jeton MCP vide dans le serveur OpenCode, dit au lieu d'un outil qui manque en silence
+- **Ajouté** : plugin, fonction 33 : au démarrage, le journal nomme les variables `{env:…}` des serveurs MCP d'`opencode.json` que le serveur OpenCode n'a pas (« variables {env:…} of MCP servers empty in the OpenCode server »), jamais leur valeur ; la cause d'un outil de création de MR absent les nomme aussi (« …, et le serveur OpenCode n'a pas GITLAB_WORKFLOW_TOKEN »). MIGRATION.md, A.12 : la commande qui vérifie que le serveur a chaque variable `{env:…}` de la configuration, sans afficher de valeur ; la même dans COMMANDES.md (« Vérifier le nom de l'outil qui crée les MR »). 2 vérifications de plugin de plus (885).
+- **Changé** : MIGRATION.md, A.11 : les jetons déplacés vers `~/.zshrc_perso` vont avant les lignes `opencode service …`, et pourquoi : OpenCode v2 met dans `{env:NOM}` la variable de son propre processus, et une variable absente part vide, sans erreur.
+- **Retiré** : rien.
+- **But** : un `/go` disait « le serveur MCP GitLab « itg-devops » ne propose aucun outil qui crée une MR » ; ce serveur interne reçoit les jetons de chaque service par des en-têtes `{env:…}`, et A.11 a sorti `GITLAB_WORKFLOW_TOKEN` de `~/.zshenv` : un serveur OpenCode démarré sans lui l'envoie vide, et l'outil d'écriture peut disparaître sans un mot. Le dire au démarrage évite de le chercher.
+
 ## 2026-10-30 19:10 — Le serveur GitLab reconnu à ses outils, quel que soit son nom
 - **Ajouté** : plugin, fonction 33 : la cause donnée quand le pilote n'a pas d'outil qui crée les MR nomme les serveurs MCP qu'OpenCode a chargés, avec leur état (`servers` dans le journal).
 - **Changé** : un serveur GitLab est reconnu à son nom (`gitlab`, `glab`) ou à ses outils de MR (`merge_request`, `mr`), quel que soit son nom dans `opencode.json` : un `/go` disait « aucun serveur MCP GitLab dans opencode.json » alors que son pilote venait de lire les MR du projet avec un serveur nommé autrement. L'outil qui crée les MR est cherché sur tous les serveurs, sous plus de noms (`create`, `new` ou `submit` avec `merge_request` ou `mr`, dans un ordre ou l'autre ; jamais une liste comme `list_open_merge_requests`). La cause « aucun serveur MCP GitLab » devient « aucun serveur MCP n'a d'outil de MR (serveurs MCP : …) ». COMMANDES.md, FICHIERS.

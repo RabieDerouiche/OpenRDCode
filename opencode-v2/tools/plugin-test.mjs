@@ -36,7 +36,7 @@ writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "package.json"),
 writeFileSync(join(stub, "node_modules", "@opencode", "plugin", "index.js"), "export const Plugin = { define: (definition) => definition }\n")
 writeFileSync(join(stub, "openrd-pack.js"), readFileSync(join(pack, "plugins", "openrd-pack.js"), "utf8"))
 const { Guards, prune, fillNullContent, withAgentOptions, withoutConversationOnly, stripConversationOnly, narrowPilotTools,
-  clearOldOutputs, requestTokens, usableTokens, reviewedSkill, typedCommand, mergeRequestToolGap, mergeRequestToCreate, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
+  clearOldOutputs, requestTokens, usableTokens, reviewedSkill, typedCommand, mergeRequestToolGap, mergeRequestToCreate, emptyMcpEnv, default: v2Plugin } = await import(join(stub, "openrd-pack.js"))
 
 // ---------- fake OpenCode client ----------
 const sessions = new Map()
@@ -822,6 +822,35 @@ await check("[v2 33] the link to create a merge request that the push printed, u
   assert.equal(mergeRequestToCreate(shipped("https://gitlab.example.com/g/api/-/merge_requests/new?merge_request%5Bsource_branch%5D=poc%2Fcache")), "")
   assert.equal(mergeRequestToCreate([]), "")
   assert.equal(mergeRequestToCreate(undefined), "")
+})
+await check("[v2 33] the {env:…} variables of an MCP server that the OpenCode server does not have: named, never a value", () => {
+  const mcpEnv = { "itg-devops": ["PAT_TOKEN", "GITLAB_WORKFLOW_TOKEN", "TOKEN_SONARQUBE"], jira: ["PAT_TOKEN"] }
+  assert.deepEqual(emptyMcpEnv(mcpEnv, { PAT_TOKEN: "x", TOKEN_SONARQUBE: "" }), { "itg-devops": ["GITLAB_WORKFLOW_TOKEN", "TOKEN_SONARQUBE"] })
+  assert.deepEqual(emptyMcpEnv(mcpEnv, { PAT_TOKEN: "x", GITLAB_WORKFLOW_TOKEN: "y", TOKEN_SONARQUBE: "z" }), {})
+  assert.deepEqual(emptyMcpEnv(undefined, {}), {})
+  // the cause of a missing tool names them
+  const gap = mergeRequestToolGap([{ id: "itg-devops_list_merge_requests", name: "list_merge_requests", options: { namespace: "itg-devops" } }],
+    [{ name: "itg-devops", status: { status: "connected" } }], { "itg-devops": ["GITLAB_WORKFLOW_TOKEN"] })
+  assert.equal(gap.fr, "le serveur MCP GitLab « itg-devops » ne propose aucun outil qui crée une MR (1 outils : lecture seule ?), et le serveur OpenCode " +
+    "n'a pas GITLAB_WORKFLOW_TOKEN (vide dans son environnement : la valeur part vide ; redémarre OpenCode depuis un terminal qui l'a)")
+})
+await check("[v2 33] at its start, the plugin logs the {env:…} variables of the MCP servers of opencode.json that it does not have", async () => {
+  const saved = readFileSync(join(configDir, "opencode.json"), "utf8")
+  process.env.OPENRD_TEST_JIRA_PAT = "set"
+  delete process.env.OPENRD_TEST_GITLAB_TOKEN
+  writeFileSync(join(configDir, "opencode.json"), '{\n  "compaction": { "prune": true },\n  "mcp": {\n    "itg-devops": {\n      "type": "remote",\n      "url": "https://mcp.invalid/x",\n' +
+    '      "headers": {\n        "jira-token": "{env:OPENRD_TEST_JIRA_PAT}",\n        "gitlab-token": "{env:OPENRD_TEST_GITLAB_TOKEN}",\n' +
+    '        // "jenkins-token": "{env:OPENRD_TEST_JENKINS}",\n      }\n    }\n  }\n}\n')
+  try {
+    const started = fakeV2(repo)
+    await v2Plugin.setup(started.ctx)
+    const lines = readFileSync(join(home, ".local", "share", "opencode", "log", "openrd-pack.log"), "utf8").split("\n").filter((l) => l.includes("empty in the OpenCode server"))
+    assert.ok(lines.length >= 1)
+    assert.ok(lines.at(-1).includes('"servers":{"itg-devops":["OPENRD_TEST_GITLAB_TOKEN"]}'), lines.at(-1))
+  } finally {
+    writeFileSync(join(configDir, "opencode.json"), saved)
+    delete process.env.OPENRD_TEST_JIRA_PAT
+  }
 })
 await check("[v2 33] why no tool creates merge requests: no GitLab server, not connected, refused, none on the server", () => {
   const tool = (namespace, name) => ({ id: namespace + "_" + name, name, options: { namespace } })
