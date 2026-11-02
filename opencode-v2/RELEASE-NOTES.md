@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-03 09:00 — La présentation aux tech leads, resserrée à 14 diapositives
+- **Ajouté** : rien.
+- **Changé** : `docs/presentation-tech-leads.pptx` passe de 30 à 14 diapositives. L'IA agentique en trois (un agent et sa boucle ; le harnais : le modèle, Qwen 3.8 ou GLM 5.3, MCP et `itg-devops`, les règles ; plusieurs agents, chacun son rôle, avec le réglage scripts-modèle-développeur) ; DevX en une, ses quatre raisons sous le schéma ; « Pourquoi : peu d'interactions, beaucoup de preuves » (les trois gestes du développeur) remplace la comparaison avec une version que les tech leads ne connaissent pas ; puis le grand schéma, `/daily`, `/go`, la non-régression et la preuve, `/fix`, `/fortify`, les questions qu'on nous pose (qui reprennent les risques des agents) et à retenir. README, FICHIERS.
+- **Retiré** : le programme, les intertitres, les marches de l'autocomplétion à l'agent (une ligne sous la boucle), les briques et le réglage (repris dans le harnais et les agents), la diapositive des risques (reprise dans les questions), la seconde de DevX, qui fait quoi, la journée type, `/go` préparer et livrer, `/fortify` une faille et ce que ça change, quand ça coince.
+- **But** : une présentation qui tient dans le temps d'une réunion de tech leads.
+
 ## 2026-11-02 18:00 — La présentation aux tech leads : l'agentique, DevX, puis les flux
 - **Ajouté** : `docs/presentation-tech-leads.pptx`, 30 diapositives en trois parties. L'IA agentique : de l'autocomplétion à l'agent, la boucle raisonner-agir-observer et le contexte, les briques d'un agent (modèle, outils, contexte, garde-fous, orchestration, vérification), MCP et le serveur interne `itg-devops` (un outil refusé n'apparaît même pas au modèle), plusieurs agents et pourquoi (orchestrateur, contexte neuf, état écrit, relecteur qui n'a pas vu l'analyse), le réglage scripts-modèle-développeur, les risques et leurs parades. DevX : le poste distant où tournent les agents, et pourquoi (isolé, outillé comme le développeur, sans les secrets, en parallèle). Nos travaux : pourquoi (24 → 10 commandes, ~12 → 3 interventions par ticket), qui fait quoi, le grand schéma « quelle commande, quand », une journée type, `/daily` (nouveau schéma), `/go`, la non-régression et la preuve, `/fix`, `/fortify`, les garde-fous et les questions qu'on nous pose ; le détail dans les notes de l'orateur, aucun nom du pack ni de l'outil qui l'a produite dans le fichier. README, FICHIERS.
 - **Changé** : rien.
