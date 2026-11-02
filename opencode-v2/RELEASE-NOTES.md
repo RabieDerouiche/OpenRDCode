@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-03 09:30 — La présentation aux tech leads : la résilience
+- **Ajouté** : `docs/presentation-tech-leads.pptx`, une diapositive « Résilience : ce qui coince ne bloque pas le run », avant les questions : ce qui est relancé seul (réseau, NuGet, npm, index git, Jira et GitLab en erreur serveur, le serveur du modèle, un 429), ce qui est borné dans le temps, le contexte maîtrisé (sous-agents à contexte neuf, vieilles sorties d'outils effacées de 60 % à 35 %, résumé en dernier recours, boucles coupées, étapes bornées), la reprise (fiche cochée, un commit par étape, un run coupé repris seul, le service après un redémarrage, `/go` relancé, un sous-agent repris une fois) et ce qui n'est jamais relancé. 15 diapositives. README, FICHIERS.
+- **Changé** : rien.
+- **Retiré** : rien.
+- **But** : répondre d'une diapositive aux questions sur les erreurs, les délais, le contexte et la reprise d'un ticket.
+
 ## 2026-11-03 09:00 — La présentation aux tech leads, resserrée à 14 diapositives
 - **Ajouté** : rien.
 - **Changé** : `docs/presentation-tech-leads.pptx` passe de 30 à 14 diapositives. L'IA agentique en trois (un agent et sa boucle ; le harnais : le modèle, Qwen 3.8 ou GLM 5.3, MCP et `itg-devops`, les règles ; plusieurs agents, chacun son rôle, avec le réglage scripts-modèle-développeur) ; DevX en une, ses quatre raisons sous le schéma ; « Pourquoi : peu d'interactions, beaucoup de preuves » (les trois gestes du développeur) remplace la comparaison avec une version que les tech leads ne connaissent pas ; puis le grand schéma, `/daily`, `/go`, la non-régression et la preuve, `/fix`, `/fortify`, les questions qu'on nous pose (qui reprennent les risques des agents) et à retenir. README, FICHIERS.
