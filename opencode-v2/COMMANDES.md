@@ -4,6 +4,33 @@ Les commandes du pack à taper toi-même, à copier-coller, quand OpenCode v2 to
 
 **Aucun script à lancer toi-même.** Les commandes de ce guide sont des commandes git, dotnet ou système. Les scripts du pack (`~/.config/opencode/scripts`) sont lancés par les agents ; quand un diagnostic a besoin de l'un d'eux, ce guide te donne la phrase à écrire dans une session OpenCode, et c'est l'agent qui le lance.
 
+## En cours : /go bloqué à « Mise à jour avec develop… », et la MR pas créée
+
+Le diagnostic du moment, avec les chemins d'une v2 qui a remplacé la 1.19 (`~/.config/opencode`, journal dans `~/.local/share/opencode/log`). Aucune de ces commandes n'affiche de secret. Envoie leurs sorties, et le titre de la session (ce qui suit `⏳`).
+
+1. Un script ou un git qui tourne encore, et depuis combien de secondes (`etimes`) :
+```sh
+ps -eo pid,etimes,args | grep -E '[s]hip\.sh|[g]it (fetch|merge|push)' | cut -c1-150
+```
+2. Les dernières lignes du journal du plugin :
+```sh
+tail -n 15 ~/.local/share/opencode/log/openrd-pack.log | cut -c1-300
+```
+3. Les dernières erreurs du serveur OpenCode :
+```sh
+tail -n 200 ~/.local/share/opencode/log/*.log 2>/dev/null | grep -iE 'error|retry|timeout|429|503' | tail -5 | cut -c1-200
+```
+4. Les jetons `{env:…}` de ta section `mcp` que le serveur OpenCode a, ou pas (le serveur MCP `itg-devops` reçoit `gitlab-token` par `{env:GITLAB_WORKFLOW_TOKEN}` ; une variable absente part vide, sans erreur) :
+```sh
+for p in $(pgrep -f '(^|/)[o]pencode (.* )?(serve|web)( |$)'); do echo "== PID $p : $(ps -o args= -p $p | cut -c1-70)"; for v in $(cat ~/.config/opencode/opencode.json* 2>/dev/null | grep -v '^[[:space:]]*//' | grep -oE '\{env:[A-Za-z_][A-Za-z0-9_]*\}' | sort -u | sed 's/{env:\(.*\)}/\1/'); do tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -q "^$v=." && echo "$v : présent" || echo "$v : ABSENT"; done; done
+```
+Une ligne `ABSENT` sous le PID du serveur : les lignes `export …TOKEN…` vont tout en haut de `~/.zshrc_perso`, avant les lignes `opencode service …` ; ferme tous les terminaux, ouvre-en un nouveau, `opencode service restart`, puis relance cette commande.
+
+5. Les outils de `itg-devops` que le plugin a vus quand le pilote n'avait pas celui qui crée les MR :
+```sh
+grep 'has no tool that creates merge requests' ~/.local/share/opencode/log/openrd-pack.log | tail -1 | grep -oE '"itg-devops_[^"]*"' | tr '\n' ' '
+```
+
 ## Installer
 
 Tout est dans `MIGRATION.md` : téléchargement de la v2 sans rien installer, configuration collée depuis GitHub et vérifiée par empreintes, démarrage, vérifications. Si la v2 a déjà remplacé ta 1.19 (procédure interne), c'est son annexe A, de l'état des lieux à l'interface web, démarrée par le service de ta procédure (port 4096) ou par `opencode-web.sh` (port <port>) ; la section suivante donne alors tes chemins.

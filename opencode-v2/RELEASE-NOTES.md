@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-02 12:00 — Le diagnostic en cours en tête de COMMANDES.md
+- **Ajouté** : COMMANDES.md, tout en haut : « En cours : /go bloqué à « Mise à jour avec develop… », et la MR pas créée », les commandes du diagnostic du moment avec les chemins d'une v2 qui a remplacé la 1.19 (`~/.config/opencode`, `~/.local/share/opencode/log`) : un script ou un git qui tourne encore, le journal du plugin, les erreurs du serveur, les jetons `{env:…}` que le serveur a, les outils du serveur MCP `itg-devops`.
+- **Changé** : rien.
+- **Retiré** : rien.
+- **But** : les commandes d'un diagnostic sont à copier depuis GitHub, au même endroit, tout de suite.
+
 ## 2026-11-02 10:30 — Un jeton MCP vide dans le serveur OpenCode, dit au lieu d'un outil qui manque en silence
 - **Ajouté** : plugin, fonction 33 : au démarrage, le journal nomme les variables `{env:…}` des serveurs MCP d'`opencode.json` que le serveur OpenCode n'a pas (« variables {env:…} of MCP servers empty in the OpenCode server »), jamais leur valeur ; la cause d'un outil de création de MR absent les nomme aussi (« …, et le serveur OpenCode n'a pas GITLAB_WORKFLOW_TOKEN »). MIGRATION.md, A.12 : la commande qui vérifie que le serveur a chaque variable `{env:…}` de la configuration, sans afficher de valeur ; la même dans COMMANDES.md (« Vérifier le nom de l'outil qui crée les MR »). 2 vérifications de plugin de plus (885).
 - **Changé** : MIGRATION.md, A.11 : les jetons déplacés vers `~/.zshrc_perso` vont avant les lignes `opencode service …`, et pourquoi : OpenCode v2 met dans `{env:NOM}` la variable de son propre processus, et une variable absente part vide, sans erreur.
