@@ -4,25 +4,6 @@ Les commandes du pack à taper toi-même, à copier-coller, quand OpenCode v2 to
 
 **Aucun script à lancer toi-même.** Les commandes de ce guide sont des commandes git, dotnet ou système. Les scripts du pack (`~/.config/opencode/scripts`) sont lancés par les agents ; quand un diagnostic a besoin de l'un d'eux, ce guide te donne la phrase à écrire dans une session OpenCode, et c'est l'agent qui le lance.
 
-## En cours : la MR pas créée, cause trouvée, à appliquer
-
-La cause (certaine) : `itg-devops` a bien l'outil qui crée les MR, sous le nom `itg-devops_create_gitlab_merge_request`. Ce nom ne finit pas par `create_merge_request` (`gitlab_` est au milieu) : la règle du pack qui refuse `*create*` le cachait au pilote. Corrigé : le pilote l'a, sous ce nom. Et les écritures de `itg-devops` que les règles laissaient passer sont maintenant refusées à tous les agents : `transition_jira_issue`, `log_jira_work`, `link_jira_issues_to_epic`, `duplicate_jira_issue`, `apply_nexusiq_policy_waivers`, `manage_confluence_tags`, `record_confluence_feedback`, `submit_confluence_dev_challenge`.
-
-1. Recrée `~/CHECKSUMS-config.txt` depuis GitHub (vue Raw), puis recolle chaque fichier que cette commande dit `FAILED` (dans cette version : `plugins/openrd-pack.js`, `agents/pilot.md`, `agents/analyst.md`, `agents/checker.md`, `agents/debugger.md`, `agents/doc-writer.md`) :
-```sh
-cd ~/.config/opencode && sha256sum --strict -c ~/CHECKSUMS-config.txt 2>/dev/null | grep -v ': OK$'; echo fini
-```
-2. Recolle la section `permission` de `~/.config/opencode/opencode.json` depuis `opencode-v2/opencode.snippet.json` (MIGRATION.md, annexe A.10) : c'est elle qui refuse les écritures de `itg-devops` aux agents de la conversation.
-3. Redémarre OpenCode depuis un terminal neuf :
-```sh
-opencode service restart
-```
-4. Relance `/go` sur la branche (`feature/LOCAL-1-retrait-complet-blazorise`) : la MR est créée. La preuve, dans le journal du plugin :
-```sh
-grep 'merge request' ~/.local/share/opencode/log/openrd-pack.log | tail -3 | cut -c1-250
-```
-Tu dois voir « the pilot has the tool that creates merge requests » avec `itg-devops_create_gitlab_merge_request`, puis « the merge request was created ». Autre chose : envoie-moi ces trois lignes.
-
 ## Installer
 
 Tout est dans `MIGRATION.md` : téléchargement de la v2 sans rien installer, configuration collée depuis GitHub et vérifiée par empreintes, démarrage, vérifications. Si la v2 a déjà remplacé ta 1.19 (procédure interne), c'est son annexe A, de l'état des lieux à l'interface web, démarrée par le service de ta procédure (port 4096) ou par `opencode-web.sh` (port <port>) ; la section suivante donne alors tes chemins.
