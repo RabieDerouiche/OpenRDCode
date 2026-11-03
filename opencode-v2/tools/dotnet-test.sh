@@ -565,6 +565,44 @@ check "setup on a VSTest template" 0 '^SETUP: tests/Api.UnitTests/Api.UnitTests.
 truth "setup on a VSTest template: coverlet" 'grep -q "coverlet.collector" tests/Api.UnitTests/Api.UnitTests.csproj'
 truth "setup: the example test removed" '[ ! -f tests/Api.UnitTests/UnitTest1.cs ]'
 
+# the test loggers of the CI: `dotnet test --logger junit` needs JunitXml.TestLogger in each test project, or the CI stops
+# on "Could not find a test logger … 'junit'" while the tests pass here
+git clean -qfdx && git checkout -q -- .
+printf 'test:\n  script:\n    - dotnet test App.sln --logger "junit;LogFilePath=report.xml"\n' > .gitlab-ci.yml
+git add -A && git commit -q -m ci
+NUGET_PACKAGES="$work/no-cache"
+export NUGET_PACKAGES
+run test-guardian.sh setup xunit src/Api/Orders.cs
+check "setup: the JUnit logger that the CI file names, in the new test project" 0 '^SETUP: tests/Api\.UnitTests/Api\.UnitTests\.csproj created .*; the test loggers of the CI: JunitXml\.TestLogger 6\.1\.0; build OK$'
+truth "setup: JunitXml.TestLogger referenced" 'grep -q "<PackageReference Include=\"JunitXml.TestLogger\" Version=\"6.1.0\" />" tests/Api.UnitTests/Api.UnitTests.csproj'
+git add -A && git commit -q -m tests
+run test-guardian.sh setup --loggers
+check "setup --loggers: nothing to do when every test project has them" 0 '^SETUP: nothing to do, every test project has the test loggers of the CI \(JunitXml\.TestLogger\)$'
+# the version of the team: another test project's, not the default
+project tests/Old.Tests/Old.Tests.csproj Microsoft.NET.Sdk \
+  '<ItemGroup>' '  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />' '  <PackageReference Include="xunit" Version="2.9.2" />' '</ItemGroup>'
+sed 's/Include="JunitXml.TestLogger" Version="6.1.0"/Include="JunitXml.TestLogger" Version="3.1.12"/' tests/Api.UnitTests/Api.UnitTests.csproj > x.tmp && mv x.tmp tests/Api.UnitTests/Api.UnitTests.csproj
+git rm -q --cached .gitlab-ci.yml && rm -f .gitlab-ci.yml
+git add -A && git commit -q -m old
+run test-guardian.sh setup --loggers
+check "setup --loggers: the logger of the other test projects, at their version" 0 '^SETUP: the test loggers of the CI added: tests/Old\.Tests/Old\.Tests\.csproj: JunitXml\.TestLogger 3\.1\.12; build OK$'
+truth "setup --loggers: in the project that lacked it" 'grep -q "<PackageReference Include=\"JunitXml.TestLogger\" Version=\"3.1.12\" />" tests/Old.Tests/Old.Tests.csproj'
+truth "setup --loggers: the other projects unchanged" '[ "$(git status --porcelain | wc -l)" -eq 1 ]'
+git checkout -q -- .
+# central versions: the reference without a version, the version in Directory.Packages.props
+printf '<Project>\n  <PropertyGroup>\n    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>\n  </PropertyGroup>\n  <ItemGroup>\n    <PackageVersion Include="xunit" Version="2.9.2" />\n  </ItemGroup>\n</Project>\n' > Directory.Packages.props
+sed 's/ Version="3.1.12"//' tests/Api.UnitTests/Api.UnitTests.csproj > x.tmp && mv x.tmp tests/Api.UnitTests/Api.UnitTests.csproj
+git add -A && git commit -q -m central
+run test-guardian.sh setup --loggers
+check "setup --loggers: central versions" 0 '^SETUP: the test loggers of the CI added: tests/Old\.Tests/Old\.Tests\.csproj: JunitXml\.TestLogger \(central\); build OK$'
+truth "setup --loggers: the version declared once, centrally" 'grep -q "<PackageVersion Include=\"JunitXml.TestLogger\" Version=\"6.1.0\" />" Directory.Packages.props && grep -q "<PackageReference Include=\"JunitXml.TestLogger\" />" tests/Old.Tests/Old.Tests.csproj'
+git checkout -q -- .
+# no logger anywhere, no CI file: nothing to add, said
+git rm -q -r --cached tests && rm -rf tests && git commit -q -m none
+run test-guardian.sh setup --loggers
+check "setup --loggers: no logger named here" 0 '^SETUP: no test logger to add'
+unset NUGET_PACKAGES
+
 # ---------- package-refs.sh --doc: the XML documentation of a public package (the Blazorise DataGrid case) ----------
 NUGET_PACKAGES="$work/nuget"
 export NUGET_PACKAGES

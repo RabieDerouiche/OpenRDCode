@@ -49,7 +49,9 @@
 #                                  their fixes one after the other, each commit with its own tests only
 #   setup [--integration [--db sqlite] | --components] xunit|mstest|nunit <file.cs, file.razor or project>...
 #                                  (the pilot, once the developer agreed) creates the unit test project of these files:
-#                                  the dotnet new template of the SDK, coverlet.collector, the versions this machine's
+#                                  the dotnet new template of the SDK, coverlet.collector, the test loggers of the CI
+#                                  (JunitXml.TestLogger for `dotnet test --logger junit`: those of the other test
+#                                  projects, otherwise those a CI file of the repository names), the versions this machine's
 #                                  NuGet cache already holds (otherwise the template's), the central versions when the
 #                                  repository has them, the project references and the solution, then a build; or adds
 #                                  the coverage collector to the test projects that lack it (coverlet.collector, or
@@ -67,6 +69,10 @@
 #                                  unit test project that references the project of these components (the only unit
 #                                  test project otherwise, which then references it), with its coverage collector when
 #                                  it lacks; the unit test project created with bUnit when there is none
+#   setup --loggers                (the pilot) the test loggers of the CI added to each test project that lacks them,
+#                                  then a build of each: a CI that stops on "Could not find a test logger with
+#                                  AssemblyQualifiedName, URI or FriendlyName 'junit'" (a test project without
+#                                  JunitXml.TestLogger); "SETUP: no test logger to add" when the CI names none here
 #   changes <base> [<solution, project or folder>]
 #                                  the whole suite once, with coverlet (the BUILD, TESTS and FAILED TESTS lines of
 #                                  build-test.sh), then the lines the branch changed since <base> that no test runs, in
@@ -351,6 +357,67 @@ add_package_version() {
     !done && seen && /<\/ItemGroup>/ { print line(); done = 1 }
     !done && /<\/Project>/ { print "  <ItemGroup>"; print line(); print "  </ItemGroup>"; done = 1 }
     { print }' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+
+# The VSTest loggers of the CI that come from a package: `dotnet test --logger junit` needs JunitXml.TestLogger in each
+# test project it runs, otherwise "Could not find a test logger with AssemblyQualifiedName, URI or FriendlyName 'junit'"
+# on the one that lacks it (the tests pass here, the CI fails). Those the test projects of the repository reference
+# ("<id> <version>", the version empty when they take it from Directory.Packages.props), otherwise those a CI file of
+# the repository passes to dotnet test (--logger junit, nunit or xunit, at the version of this machine's NuGet cache,
+# otherwise 6.1.0); one per line, nothing when there is none
+LOGGER_DEFAULT=6.1.0
+ci_loggers() {
+  found=$(test_projects | while IFS= read -r t; do
+    sed -n -e 's/.*<PackageReference[^>]*Include="\([A-Za-z0-9_.-]*TestLogger\)"[^>]*Version="\([^"]*\)".*/\1 \2/p' \
+      -e 's/.*<PackageReference[^>]*Include="\([A-Za-z0-9_.-]*TestLogger\)".*/\1/p' "$t" 2>/dev/null
+  done | awk '!seen[tolower($1)]++')
+  if [ -n "$found" ]; then
+    printf '%s\n' "$found"
+    return 0
+  fi
+  git grep -h -o -i -E -e '--logger[ :=]+["'"'"']?(junit|nunit|xunit)' -- '*.yml' '*.yaml' 2>/dev/null |
+    tr '[:upper:]' '[:lower:]' | sed -E 's/.*(junit|nunit|xunit)$/\1/' | sort -u | while IFS= read -r n; do
+      case "$n" in
+        junit) id=JunitXml.TestLogger ;;
+        nunit) id=NunitXml.TestLogger ;;
+        xunit) id=XunitXml.TestLogger ;;
+        *) continue ;;
+      esac
+      printf '%s %s\n' "$id" "$(cache_version "$id" "$LOGGER_DEFAULT")"
+    done
+}
+
+# A package that a test project has from a Directory.Build.props or .targets of its folders (nothing to add then)
+inherited() {
+  dir=$(dirname "$1")
+  while :; do
+    for f in Directory.Build.props Directory.Build.targets; do
+      grep -qi "Include=\"$2\"" "$dir/$f" 2>/dev/null && return 0
+    done
+    [ "$dir" = "." ] || [ "$dir" = "/" ] && return 1
+    dir=$(dirname "$dir")
+  done
+}
+
+# Adds to a VSTest test project the loggers of ci_loggers it lacks, at their version (in Directory.Packages.props when
+# the repository manages its versions there); prints "<id> <version>" per package added
+add_loggers() {
+  is_mtp "$1" && return 0
+  ci_loggers | while read -r id v; do
+    [ -n "$id" ] || continue
+    grep -qi "Include=\"$id\"" "$1" && continue
+    inherited "$1" "$id" && continue
+    cp=$(central_props "$(dirname "$1")")
+    if [ -n "$cp" ]; then
+      grep -qi "<PackageVersion[^>]*Include=\"$id\"" "$cp" || add_package_version "$cp" "$id" "${v:-$(cache_version "$id" "$LOGGER_DEFAULT")}"
+      add_package_ref "$1" "$id" ""
+      printf '%s %s\n' "$id" "(central)"
+    else
+      v=${v:-$(cache_version "$id" "$LOGGER_DEFAULT")}
+      add_package_ref "$1" "$id" "$v"
+      printf '%s %s\n' "$id" "$v"
+    fi
+  done
 }
 
 # The target framework a new test project takes from a production project (its own, or its Directory.Build.props):
@@ -1107,6 +1174,39 @@ METHODS
 
   setup)
     kind=unit db=""
+    if [ "$2" = --loggers ]; then
+      # the test loggers of the CI (dotnet test --logger junit…) added to each test project that lacks them, then a
+      # build of each: what fixes a CI that stops on "Could not find a test logger … 'junit'"
+      need_dotnet
+      [ -z "$(git status --porcelain)" ] || stop "uncommitted changes: setup runs on a clean working tree, so that a failure undoes all it did"
+      wanted=$(ci_loggers)
+      [ -n "$wanted" ] || { echo "SETUP: no test logger to add: no test project of the repository references one (JunitXml.TestLogger…) and no CI file of the repository passes --logger junit, nunit or xunit to dotnet test (its CI template is elsewhere: add the package of the logger it names to each test project, at the version the team uses)"; exit 0; }
+      mkdir -p "$folder" || stop "cannot create $folder"
+      log="$folder/setup.log"
+      take_lock
+      added=""
+      while IFS= read -r t; do
+        [ -n "$t" ] || continue
+        a=$(add_loggers "$t")
+        [ -z "$a" ] || added="$added$t: $(printf '%s\n' "$a" | tr '\n' ',' | sed 's/,$//; s/,/, /g')
+"
+      done <<EOF
+$(test_projects)
+EOF
+      [ -n "$added" ] || { echo "SETUP: nothing to do, every test project has the test loggers of the CI ($(printf '%s\n' "$wanted" | cut -d' ' -f1 | tr '\n' ' ' | sed 's/ $//'))"; exit 0; }
+      printf '%s' "$added" | while IFS= read -r line; do
+        t=${line%%: *}
+        [ -n "$t" ] || continue
+        if ! again "$log" build "$t" -nologo -v q; then
+          git checkout -q -- . 2>/dev/null
+          environment "$log"
+          grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5
+          stop "the build of $t fails with its test logger: nothing changed"
+        fi
+      done || exit 1
+      echo "SETUP: the test loggers of the CI added: $(printf '%s' "$added" | tr '\n' ';' | sed 's/;$//; s/;/; /g'); build OK"
+      exit 0
+    fi
     case "$2" in
       --integration) kind=integration; shift ;;
       --components) kind=components; shift ;;
@@ -1370,6 +1470,8 @@ EOF
     done <<EOF
 $pvs
 EOF
+    # the test loggers the CI passes to dotnet test (JunitXml.TestLogger…), as the other test projects have them
+    loggers=$(add_loggers "$csproj" | tr '\n' ',' | sed 's/,$//; s/,/, /g')
     if ! printf '%s\n' "$prods" | tr '\n' '\0' | xargs -0 dotnet add "$csproj" reference > "$log" 2>&1; then
       undo
       stop "dotnet add reference failed: $(grep -v '^[[:space:]]*$' "$log" | tail -n 2 | tr '\n' ' ')"
@@ -1406,7 +1508,7 @@ EOF
       grep -E ': error [A-Z]+[0-9]+' "$log" | sed -E 's/ \[[^]]*\]$//' | sort -u | head -n 5
       stop "the new test project does not build: nothing created"
     fi
-    echo "SETUP: $csproj created ($framework${tfm:+, $tfm}), it references $(printf '%s\n' "$prods" | tr '\n' ' ' | sed 's/ $//'); packages:${versions#,}${props:+; versions in $props}${slns:+; added to $(printf '%s\n' "$slns" | tr '\n' ' ' | sed 's/ $//')}${program:+; public partial class Program added to $program}; build OK"
+    echo "SETUP: $csproj created ($framework${tfm:+, $tfm}), it references $(printf '%s\n' "$prods" | tr '\n' ' ' | sed 's/ $//'); packages:${versions#,}${props:+; versions in $props}${slns:+; added to $(printf '%s\n' "$slns" | tr '\n' ' ' | sed 's/ $//')}${program:+; public partial class Program added to $program}${loggers:+; the test loggers of the CI: $loggers}; build OK"
     exit 0 ;;
 
   changes)

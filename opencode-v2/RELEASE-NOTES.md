@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-03 13:30 — Les loggers de tests de la CI dans les projets de tests du pack
+- **Ajouté** : `test-guardian.sh setup --loggers` : les loggers de tests que la CI passe à `dotnet test` (`JunitXml.TestLogger` pour `--logger junit`, `NunitXml.TestLogger`, `XunitXml.TestLogger`), ceux des autres projets de tests à leur version, sinon ceux qu'un fichier de CI du dépôt nomme (la version du cache NuGet, sinon 6.1.0), ajoutés à chaque projet de tests qui ne les a pas (versions centrales comprises, rien quand un `Directory.Build.props` les donne déjà), puis un build de chacun. `/fix` le lance quand un job de tests s'arrête sur « Could not find a test logger with AssemblyQualifiedName, URI or FriendlyName 'junit' », jamais un tour du coder ni un projet sonde ; la même règle dans `AGENTS.global.md` pour la conversation. 11 contrôles dans `tools/dotnet-test.sh`.
+- **Changé** : un projet de tests créé par `test-guardian.sh setup` (le filet bUnit d'un retrait de Blazorise dans un dépôt sans projet de tests, `/tests`, `/tests api`, `/fortify`) reçoit ces loggers ; avant, il n'avait que le modèle de `dotnet new`, coverlet et bUnit, et la CI s'arrêtait sur lui alors que tout passait ici. FICHIERS.
+- **Retiré** : rien.
+- **But** : une MR du pack qui passe la CI quand ses tests passent ici, et un agent qui corrige en une commande au lieu de fabriquer des projets sondes (`.junit-probe`) pour deviner le paquet.
+
 ## 2026-11-03 13:00 — COMMANDES : la CI qui s'arrête sur le logger JUnit
 - **Ajouté** : COMMANDES.md, tout en haut : « En cours : la CI s'arrête sur « Could not find a test logger … 'junit' » », la cause (un projet de tests sans `JunitXml.TestLogger`, créé par le retrait de Blazorise) et les commandes pour corriger le dépôt tout de suite : arrêter le run qui crée `.junit-probe` et le supprimer, trouver la version du logger de l'équipe, l'ajouter au projet de tests qui ne l'a pas, lancer les tests comme la CI.
 - **Changé** : rien.
