@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-03 13:00 — COMMANDES : la CI qui s'arrête sur le logger JUnit
+- **Ajouté** : COMMANDES.md, tout en haut : « En cours : la CI s'arrête sur « Could not find a test logger … 'junit' » », la cause (un projet de tests sans `JunitXml.TestLogger`, créé par le retrait de Blazorise) et les commandes pour corriger le dépôt tout de suite : arrêter le run qui crée `.junit-probe` et le supprimer, trouver la version du logger de l'équipe, l'ajouter au projet de tests qui ne l'a pas, lancer les tests comme la CI.
+- **Changé** : rien.
+- **Retiré** : rien.
+- **But** : la pipeline réparée tout de suite, avant la correction du pack.
+
 ## 2026-11-03 12:30 — La présentation aux tech leads, plus claire là où elle ne l'était pas
 - **Ajouté** : `docs/presentation-tech-leads.pptx` : une diapositive de titre « Une journée avec nos agents » avant `/daily` (8 h 45 `/daily` · 9 h `/go` · la CI et la review : `/fix` · la dette sécurité : `/fortify`) ; 14 diapositives.
 - **Changé** : les mots qu'on ne comprenait pas sans l'orateur. `/daily` : un signal est la couleur de chaque ticket et de chaque MR, qui dit quoi en faire ; « bloqué » dit où dans Jira (drapeau, statut, lien de blocage). La preuve : « le test passe déjà, avant tout correctif ? Le problème n'existe pas : rien à corriger, le test reste comme preuve ». `/fortify` : ce qui est prouvé (le correctif, par le test de sa faille, rouge avant, vert après), « Rien ne casse », « Faux positifs justifiés », « Facile à relire », « Plus rapide », et des légendes de phases en clair. « Et quand ça coince ? » : « Mémoire maîtrisée » au lieu de « Contexte maîtrisé », en trois lignes simples (chaque agent part de zéro, les vieux résultats effacés avant saturation, une réponse qui boucle est coupée). COMMANDES.md : le bloc « En cours : la MR pas créée » retiré, la création de la MR marche.

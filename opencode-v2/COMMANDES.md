@@ -4,6 +4,29 @@ Les commandes du pack à taper toi-même, à copier-coller, quand OpenCode v2 to
 
 **Aucun script à lancer toi-même.** Les commandes de ce guide sont des commandes git, dotnet ou système. Les scripts du pack (`~/.config/opencode/scripts`) sont lancés par les agents ; quand un diagnostic a besoin de l'un d'eux, ce guide te donne la phrase à écrire dans une session OpenCode, et c'est l'agent qui le lance.
 
+## En cours : la CI s'arrête sur « Could not find a test logger … 'junit' »
+
+La cause (certaine pour le mécanisme) : ta CI lance `dotnet test … --logger junit`, et ce logger vient du paquet `JunitXml.TestLogger`, que **chaque** projet de test doit référencer. Le retrait de Blazorise a créé un projet de tests unitaires (le filet bUnit) sans ce paquet : les tests passent ici, la CI échoue sur ce projet. Corrigé dans le pack : un projet de tests créé par le pack reprend les loggers des autres projets de tests, ou ceux que ton fichier de CI nomme ; `/fix` le corrige de lui-même (`test-guardian.sh setup --loggers`).
+
+Tout de suite, dans ton dépôt :
+1. Arrête le run d'OpenCode qui crée `.junit-probe` (Échap), vérifie qu'aucun commit ne le contient (la commande n'affiche rien), puis supprime le dossier :
+```sh
+git log --oneline origin/develop..HEAD -- .junit-probe
+rm -rf .junit-probe && git status --short
+```
+2. Qui a le logger, qui ne l'a pas, et la version de l'équipe :
+```sh
+git grep -n -i "JunitXml" -- '*.csproj' '*.props'; git ls-files '*Tests*.csproj'; ls ~/.nuget/packages/junitxml.testlogger/ 2>/dev/null
+```
+3. Ajoute-le au projet de tests qui ne l'a pas (la version de tes autres projets ou dépôts ; sinon `6.1.0`, licence MIT), puis lance les tests comme la CI :
+```sh
+dotnet add <chemin/du/projet>.Tests.csproj package JunitXml.TestLogger --version <version>
+dotnet test --logger "junit"
+```
+4. Commit (`fix(tests): add the test logger the CI uses`) et push : la pipeline repasse.
+
+Après la mise à jour du pack (`scripts/test-guardian.sh`, `commands/fix.md`, et la ligne du logger de `AGENTS.global.md` dans ton `AGENTS.md`), les étapes 2 et 3 se font en une phrase dans OpenCode : « lance `sh ~/.config/opencode/scripts/test-guardian.sh setup --loggers` ». Autre chose que « SETUP: the test loggers of the CI added » ou « nothing to do » : envoie-moi la ligne.
+
 ## Installer
 
 Tout est dans `MIGRATION.md` : téléchargement de la v2 sans rien installer, configuration collée depuis GitHub et vérifiée par empreintes, démarrage, vérifications. Si la v2 a déjà remplacé ta 1.19 (procédure interne), c'est son annexe A, de l'état des lieux à l'interface web, démarrée par le service de ta procédure (port 4096) ou par `opencode-web.sh` (port <port>) ; la section suivante donne alors tes chemins.
