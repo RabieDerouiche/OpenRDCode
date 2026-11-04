@@ -1,6 +1,6 @@
 # Commandes à taper à la main (pack pour OpenCode v2)
 
-Les commandes du pack à taper toi-même, à copier-coller, quand OpenCode v2 tourne à côté de ta 1.19 comme le dit `MIGRATION.md` : sa configuration est dans `~/oc2/config/opencode`, son journal dans `~/oc2/serve.log`, et son programme est `~/oc2/cli/package/bin/opencode` (le simple mot `opencode` reste ta 1.19). Sauf mention « dans OpenCode », elles se tapent dans un terminal de la machine qui héberge OpenCode. Aucune n'affiche de mot de passe ni de token.
+Les commandes du pack à taper toi-même, à copier-coller. OpenCode v2 a remplacé la 1.19 (annexe A de `MIGRATION.md`) : sa configuration est dans `~/.config/opencode`, ses journaux dans `~/.local/share/opencode/log/` (`opencode.log` pour OpenCode, `openrd-pack.log` pour le plugin du pack), les empreintes du pack dans `~/CHECKSUMS-config.txt` et `~/CHECKSUMS-scripts.txt`, et il redémarre avec `opencode service restart`. Sauf mention « dans OpenCode », elles se tapent dans un terminal de la machine qui héberge OpenCode. Aucune n'affiche de mot de passe ni de token.
 
 **Aucun script à lancer toi-même.** Les commandes de ce guide sont des commandes git, dotnet ou système. Les scripts du pack (`~/.config/opencode/scripts`) sont lancés par les agents ; quand un diagnostic a besoin de l'un d'eux, ce guide te donne la phrase à écrire dans une session OpenCode, et c'est l'agent qui le lance.
 
@@ -22,23 +22,9 @@ Supprime la méthode, ou le fichier s'il ne contient qu'elle, puis commit (`test
 
 ## Installer
 
-Tout est dans `MIGRATION.md` : téléchargement de la v2 sans rien installer, configuration collée depuis GitHub et vérifiée par empreintes, démarrage, vérifications. Si la v2 a déjà remplacé ta 1.19 (procédure interne), c'est son annexe A, de l'état des lieux à l'interface web, démarrée par le service de ta procédure (port 4096) ou par `opencode-web.sh` (port <port>) ; la section suivante donne alors tes chemins.
+Tout est dans l'annexe A de `MIGRATION.md` (la v2 a remplacé la 1.19 par la procédure interne) : de l'état des lieux à l'interface web, démarrée par le service de ta procédure (port 4096) ou par `opencode-web.sh` (port <port>).
 
-## Si ta v2 a remplacé la 1.19 (annexe A de `MIGRATION.md`)
-
-Les autres sections de ce guide sont écrites pour l'essai côte à côte. Si tu as suivi l'annexe A, remplace dans leurs commandes :
-
-| Dans ce guide | Chez toi |
-|---|---|
-| `~/oc2/config/opencode` | `~/.config/opencode` |
-| `~/oc2/serve.log` | `~/.local/share/opencode/log/opencode.log` |
-| `~/oc2/CHECKSUMS-config.txt` et `~/oc2/CHECKSUMS-scripts.txt` | `~/CHECKSUMS-config.txt` et `~/CHECKSUMS-scripts.txt` |
-| `~/oc2/cli/package/bin/opencode` | `opencode` |
-| `~/oc2/data/opencode/log/openrd-pack.log` (le journal du plugin) | `~/.local/share/opencode/log/openrd-pack.log` |
-| redémarrer : Ctrl+C, puis l'étape 6 | avec le service : `opencode service restart` ; avec `opencode-web.sh` : `opencode-web.sh stop && opencode-web.sh start`, ou `oc-web restart` |
-| `MIGRATION.md`, étapes 5.5 et 5.6 | annexe A.9 et A.10 |
-
-Les plus utilisées, déjà adaptées :
+## Les commandes de tous les jours
 
 Redémarrer OpenCode, depuis un terminal ouvert après l'annexe A.11 (il a le mot de passe et les tokens), puis rouvrir l'adresse : le lien de ta plateforme et son rechargement forcé (Cmd+Maj+R), puis la racine (section « Ouvrir l'interface web », annexe A.13). Avec le service :
 ```sh
@@ -59,7 +45,7 @@ Le serveur : depuis combien de secondes il tourne (un petit nombre juste après 
 for p in $(pgrep -f -- 'opencode(\.exe)? serve'); do e=$(readlink -f /proc/$p/exe); case $e in */opencode*) echo "pid $p, démarré il y a $(ps -o etimes= -p $p | tr -d ' ') s : $(tr '\0' ' ' < /proc/$p/cmdline)"; $e --version;; esac; done
 ```
 
-Mettre à jour le pack (section suivante), avec tes chemins :
+Mettre à jour le pack (section suivante) :
 ```sh
 cd ~/.config/opencode && sha256sum --quiet --strict -c ~/CHECKSUMS-config.txt 2>/dev/null && echo "OK : la configuration est identique à GitHub"
 ```
@@ -101,33 +87,33 @@ grep -n '"ask"' ~/.config/opencode/opencode.json
 ## Mettre à jour le pack
 
 Quand j'annonce une nouvelle version, avec la liste des fichiers modifiés :
-1. Recrée `~/oc2/CHECKSUMS-config.txt` et `~/oc2/CHECKSUMS-scripts.txt` depuis GitHub (vue Raw).
-2. Ce qui a changé dans la configuration, puis dans les scripts : chaque ligne `FAILED` est un fichier à recoller depuis `opencode-v2/` ; tu as fini quand la commande affiche son `OK`. Un skill nouveau (`skills/<nom>/SKILL.md: FAILED open or read`) a besoin de son dossier d'abord : `mkdir -p ~/oc2/config/opencode/skills/<nom>` (dans cette version : `testability` et `test-quality`).
+1. Recrée `~/CHECKSUMS-config.txt` et `~/CHECKSUMS-scripts.txt` depuis GitHub (vue Raw).
+2. Ce qui a changé dans la configuration, puis dans les scripts : chaque ligne `FAILED` est un fichier à recoller depuis `opencode-v2/` ; tu as fini quand la commande affiche son `OK`. Un skill nouveau (`skills/<nom>/SKILL.md: FAILED open or read`) a besoin de son dossier d'abord : `mkdir -p ~/.config/opencode/skills/<nom>` (dans cette version : `testability` et `test-quality`).
 ```sh
-cd ~/oc2/config/opencode && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-config.txt 2>/dev/null && echo "OK : la configuration est identique à GitHub"
+cd ~/.config/opencode && sha256sum --quiet --strict -c ~/CHECKSUMS-config.txt 2>/dev/null && echo "OK : la configuration est identique à GitHub"
 ```
 ```sh
-cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
+cd ~/.config/opencode/scripts && sha256sum --quiet --strict -c ~/CHECKSUMS-scripts.txt 2>/dev/null && echo "OK : les scripts sont identiques à GitHub"
 ```
-3. Si ma liste contient `AGENTS.global.md` ou `opencode.snippet.json` : `MIGRATION.md`, étape 5.5 ou 5.6.
+3. Si ma liste contient `AGENTS.global.md` ou `opencode.snippet.json` : `MIGRATION.md`, annexe A.9 ou A.10.
 4. Redémarre OpenCode (section « Redémarrer OpenCode »).
 
 ## Vérifier qu'aucune règle ne demande
 
 Un clic sur « Toujours » à une demande d'autorisation vaut pour tous les agents jusqu'au redémarrage d'OpenCode, et ouvre bien plus large que la commande demandée (`rm *` pour un `rm -rf`, `dotnet *` pour un `dotnet run`, toute lecture pour un fichier `.env`). La v2 n'a donc plus aucune règle « ask » : seules restent les 6 lignes de publication Confluence (`*confluence*create*`, `update`, `upload`, en deux casses), dont l'outil n'est visible que de l'agent build. Cette commande doit afficher exactement ces 6 lignes :
 ```sh
-grep -n '"ask"' ~/oc2/config/opencode/opencode.json
+grep -n '"ask"' ~/.config/opencode/opencode.json
 ```
 
 ## Revenir à OpenCode 1.19
 
-Arrête la v2 (Ctrl+C dans son terminal) et rouvre l'adresse de ta 1.19 : `MIGRATION.md`, étape 11. Rien d'autre à faire, sa configuration n'a pas été modifiée. Si la v2 a remplacé ta 1.19 : annexe A.17.
+La v2 a remplacé ta 1.19 : `MIGRATION.md`, annexe A.17.
 
 ## Vérifier le nom de l'outil qui crée les MR
 
 `/go` crée la MR en Draft avec l'outil du MCP GitLab qui crée les MR : son nom finit par `create_merge_request` (le serveur MCP de GitLab, `@zereight/mcp-gitlab`), `create_gitlab_merge_request` (un serveur qui sert Jira, GitLab, Sonar et Fortify sous un seul nom, comme `itg-devops`), `mr_create` (`glab mcp serve`), `merge_request_create`, `create_mr` ou `createMergeRequest`. C'est le seul outil d'écriture GitLab permis, à l'agent `pilot` seulement. Le lien pour créer la MR à la main n'est qu'un dernier recours : la réponse dit alors pourquoi (« Création de la MR impossible : … »), l'erreur de l'outil mot pour mot, ou, quand le pilote n'a pas l'outil, la cause que le plugin a trouvée en comparant les outils de tes serveurs MCP à ceux du pilote. Le journal du plugin garde la preuve, pour chaque run : l'outil qu'avait le pilote (ou pourquoi il ne l'avait pas), puis la réponse de chaque appel (créée, ou l'erreur) :
 ```sh
-grep 'merge request' ~/oc2/data/opencode/log/openrd-pack.log | tail -10
+grep 'merge request' ~/.local/share/opencode/log/openrd-pack.log | tail -10
 ```
 « the push printed the link to create the merge request: the pilot is told to create it » : après le push, GitLab a dit que la branche n'avait pas de MR ouverte ; le plugin rappelle alors au pilote, à chaque requête, de la créer avec son outil, jusqu'à ce qu'il l'appelle. Une ligne « the merge request was … » doit suivre ; sinon, envoie-moi les deux lignes.
 
@@ -137,11 +123,11 @@ grep 'merge request' ~/oc2/data/opencode/log/openrd-pack.log | tail -10
 - « the tool … creates merge requests, but the permission rules do not give it to the pilot » : l'outil existe, sur n'importe quel serveur, sous un nom que les règles du pack ne permettent pas (`tool` le donne) : envoie-moi ce nom ;
 - « …, and the OpenCode server has no <VARIABLE> » à la fin d'une cause : le jeton qu'un en-tête de ton serveur MCP prend avec `{env:<VARIABLE>}` est vide dans le serveur OpenCode, qui l'envoie vide ; le serveur MCP répond alors comme sans jeton, et l'outil d'écriture peut manquer. C'est la première chose à corriger : la commande ci-dessous, puis MIGRATION.md, A.12. Au démarrage, le journal le dit aussi (« variables {env:…} of MCP servers empty in the OpenCode server ») :
 ```sh
-for p in $(pgrep -f '(^|/)[o]pencode (.* )?(serve|web)( |$)'); do echo "== PID $p : $(ps -o args= -p $p | cut -c1-70)"; for v in $(cat ~/oc2/config/opencode/opencode.json* ~/.config/opencode/opencode.json* 2>/dev/null | grep -v '^[[:space:]]*//' | grep -oE '\{env:[A-Za-z_][A-Za-z0-9_]*\}' | sort -u | sed 's/{env:\(.*\)}/\1/'); do tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -q "^$v=." && echo "$v : présent" || echo "$v : ABSENT"; done; done
+for p in $(pgrep -f '(^|/)[o]pencode (.* )?(serve|web)( |$)'); do echo "== PID $p : $(ps -o args= -p $p | cut -c1-70)"; for v in $(cat ~/.config/opencode/opencode.json* 2>/dev/null | grep -v '^[[:space:]]*//' | grep -oE '\{env:[A-Za-z_][A-Za-z0-9_]*\}' | sort -u | sed 's/{env:\(.*\)}/\1/'); do tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -q "^$v=." && echo "$v : présent" || echo "$v : ABSENT"; done; done
 ```
 - « … offers no tool that creates merge requests (… tools: read-only?) » : le serveur ne propose que des outils de lecture (`tools` les liste). Un serveur MCP GitLab en lecture seule le fait : dans sa section `mcp`, une variable comme `GITLAB_READ_ONLY_MODE` à `true`, ou une liste d'outils (`toolsets`) qui laisse de côté les MR. Voir sans afficher de valeur secrète :
 ```sh
-grep -n -iE 'read_only|readonly|toolset|"command"|"url"' ~/oc2/config/opencode/opencode.json
+grep -n -iE 'read_only|readonly|toolset|"command"|"url"' ~/.config/opencode/opencode.json
 ```
 « Permission denied » sur un appel : l'outil porte un nom que les règles du pack ne permettent pas : envoie-moi le nom qu'il cite. Une autre erreur (403, 404, 409, 422) : c'est GitLab qui refuse (droits du jeton, projet, MR déjà ouverte) : envoie-moi la ligne.
 
@@ -149,7 +135,7 @@ grep -n -iE 'read_only|readonly|toolset|"command"|"url"' ~/oc2/config/opencode/o
 
 Après une modification d'`opencode.json`, du plugin, d'un agent, d'une commande ou d'un skill. Inutile après un `/outil pattern` (`/go` lit les fichiers des patterns lui-même) et après une modification de `~/.zshenv` (relu à chaque commande d'un agent).
 
-Dans le terminal de la v2 : Ctrl+C, puis les étapes 6.1, 6.3 et 6.4 de `MIGRATION.md` (les dossiers, le mot de passe, le démarrage). Si la v2 a remplacé ta 1.19 : `opencode service restart` avec le service, `opencode-web.sh stop && opencode-web.sh start` (ou `oc-web restart`) sinon.
+`opencode service restart` avec le service, `opencode-web.sh stop && opencode-web.sh start` (ou `oc-web restart`) sinon.
 
 Un `/go`, `/fix` ou `/fortify` qui tournait est coupé par le redémarrage. Avec le service, la v2 le reprend toute seule là où il en était, et le plugin lui garde son dossier ; sinon, relance la commande dans sa session : elle reprend à sa dernière étape faite.
 
@@ -163,7 +149,7 @@ Après une mise à jour d'OpenCode : ferme une fois tous les onglets de l'adress
 
 ## Trouver les chemins à mettre dans la config
 
-Chemin de zsh, pour la clé `"shell"` de `~/oc2/config/opencode/opencode.json` :
+Chemin de zsh, pour la clé `"shell"` de `~/.config/opencode/opencode.json` :
 ```sh
 command -v zsh
 ```
@@ -182,9 +168,9 @@ Si tu fais du front sur cette machine : dossier qui contient `node`, à ajouter 
 dirname "$(command -v node)"
 ```
 
-Dossiers d'OpenCode v2 (config, données, logs), dans un terminal où tu as fait l'étape 6.1 de `MIGRATION.md` :
+Dossiers d'OpenCode v2 (config, données, logs) :
 ```sh
-~/oc2/cli/package/bin/opencode debug paths
+opencode debug paths
 ```
 
 ## Vérifier ce que voit l'agent
@@ -205,19 +191,19 @@ env -i HOME="$HOME" "$(command -v zsh)" -c true 2>&1 | wc -c
 chmod 600 ~/.zshenv
 ```
 
-`opencode.json` accepté par la v2 (`0`), après une connexion et l'ouverture d'un projet. Plus que `0` : `MIGRATION.md`, étape 8, point 1. N'utilise pas `debug config` de la v2 pour ça : il affiche les valeurs de la configuration, clés comprises, et laisse un service tourner.
+`opencode.json` accepté par la v2 (`0`), après une connexion et l'ouverture d'un projet. Plus que `0` : `MIGRATION.md`, annexe A.14, point 1. N'utilise pas `debug config` de la v2 pour ça : il affiche les valeurs de la configuration, clés comprises, et laisse un service tourner.
 ```sh
-grep -c 'kind=invalid' ~/oc2/serve.log
+grep -c 'kind=invalid' ~/.local/share/opencode/log/opencode.log
 ```
 
 La clé `shell` (le shell des commandes des agents ; sans elle, ton `$SHELL`) :
 ```sh
-grep -n '"shell"' ~/oc2/config/opencode/opencode.json
+grep -n '"shell"' ~/.config/opencode/opencode.json
 ```
 
 Les agents, commandes et skills du pack sont ceux de GitHub, que mes tests valident, si cette commande affiche `OK` :
 ```sh
-cd ~/oc2/config/opencode && sha256sum --quiet --strict -c ~/oc2/CHECKSUMS-config.txt 2>/dev/null && echo "OK : la configuration est identique à GitHub"
+cd ~/.config/opencode && sha256sum --quiet --strict -c ~/CHECKSUMS-config.txt 2>/dev/null && echo "OK : la configuration est identique à GitHub"
 ```
 
 Taille de contexte réelle du serveur Qwen, à mettre dans `limit.context` d'`opencode.json` (vLLM la donne dans `max_model_len`). Remplace l'adresse par la `baseURL` de ton provider (elle finit en général par `/v1`) ; si le serveur demande une clé, ajoute `-H "Authorization: Bearer <ta clé>"` :
@@ -228,7 +214,7 @@ Rien ne s'affiche : la réponse ne vient pas directement de vLLM (passerelle) ; 
 
 Les limites déclarées pour ton modèle (`context`, et `output`, la longueur maximale d'une réponse, réflexion comprise) :
 ```sh
-grep -n -A2 '"limit"' ~/oc2/config/opencode/opencode.json
+grep -n -A2 '"limit"' ~/.config/opencode/opencode.json
 ```
 `output` à 4096 ou moins : passe-le à 32768, `context` restant la valeur du serveur (README.md, « Réglages du modèle ») ; rien ne s'affiche : OpenCode prend 32000 pour `output`, mais ne résume jamais la session.
 
@@ -254,14 +240,14 @@ L'effort de réflexion (`reasoning_effort`, nouveau dans Qwen 3.8) : la même re
 ```sh
 curl -s https://adresse-du-serveur/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"<nom du modèle>","messages":[{"role":"user","content":"Réponds OK"}],"max_tokens":4000,"chat_template_kwargs":{"reasoning_effort":"low"}}' | grep -oE '"completion_tokens": ?[0-9]+'
 ```
-S'il en tient compte, l'effort se règle par agent dans `~/oc2/config/opencode/opencode.json`, section `agent`, par exemple pour le pilote, qui orchestre et n'a pas besoin de réfléchir longtemps : `"pilot": { "options": { "chat_template_kwargs": { "reasoning_effort": "medium" } } }`. La v2 lit ces options sans les envoyer : c'est le plugin du pack qui les met dans chaque requête de l'agent (point 28 ; le journal du plugin le dit une fois par agent : `grep 'options of the agent' ~/oc2/data/opencode/log/openrd-pack.log`). C'est le levier de vitesse qui ne touche à rien d'autre : mesure avec `/outil vitesse` (section suivante) avant et après, sur quelques `/go`, et relis les MR comme d'habitude ; le coder, l'analyste et le checker gardent l'effort par défaut tant que la qualité de leurs MR n'est pas confirmée.
+S'il en tient compte, l'effort se règle par agent dans `~/.config/opencode/opencode.json`, section `agent`, par exemple pour le pilote, qui orchestre et n'a pas besoin de réfléchir longtemps : `"pilot": { "options": { "chat_template_kwargs": { "reasoning_effort": "medium" } } }`. La v2 lit ces options sans les envoyer : c'est le plugin du pack qui les met dans chaque requête de l'agent (point 28 ; le journal du plugin le dit une fois par agent : `grep 'options of the agent' ~/.local/share/opencode/log/openrd-pack.log`). C'est le levier de vitesse qui ne touche à rien d'autre : mesure avec `/outil vitesse` (section suivante) avant et après, sur quelques `/go`, et relis les MR comme d'habitude ; le coder, l'analyste et le checker gardent l'effort par défaut tant que la qualité de leurs MR n'est pas confirmée.
 
 Les « Gateway Time-out » (504) : combien, et les derniers :
 ```sh
-grep -c 'Gateway Time-out' ~/oc2/serve.log
+grep -c 'Gateway Time-out' ~/.local/share/opencode/log/opencode.log
 ```
 ```sh
-grep 'Gateway Time-out' ~/oc2/serve.log | tail -5 | cut -c1-200
+grep 'Gateway Time-out' ~/.local/share/opencode/log/opencode.log | tail -5 | cut -c1-200
 ```
 OpenCode réessaie seul, et chaque essai repart de zéro : la v2 fait jusqu'à 10 nouveaux essais (la 1.19 en faisait 5). Seule, elle les fait en environ 1 min 30 ; pendant un `/go`, `/fix` ou `/fortify` et ses sous-agents, le plugin les étale sur environ 8 minutes (10 s, 20 s, 30 s, 45 s, puis 1 min), pour qu'une passerelle qui redémarre ou une série de 504 n'arrête pas un run. Un 429 (trop de requêtes : une limite de débit de la passerelle, souvent atteinte quand `/fortify` ou `/fix` font travailler trois sous-agents à la fois) n'est pas une panne : le prochain essai vient après l'attente que demande le serveur (en-tête `Retry-After`, qu'OpenCode suit), sans rien de plus ; sans elle, 3 s, 5 s, 10 s, 15 s, 20 s, puis 30 s au plus (3 min 30 à 4 min en tout), plus longues de 0 à 25 % au hasard, pour que les sous-agents refusés ensemble ne redemandent pas au même instant. Le titre de la session dit « nouvel essai <n> dans <délai> (serveur du modèle) », ou « (serveur du modèle : trop de requêtes) ». Si le serveur ne répond toujours pas, le run s'arrête, puis le plugin le reprend tout seul 2 minutes plus tard, puis 5 (section « Un run qui reprend tout seul »). À demander à l'équipe qui héberge le modèle, avec ces chiffres : le délai de la passerelle devant vLLM pour `/v1/chat/completions` (une réponse avec réflexion peut durer plusieurs minutes : 10 minutes laisse de la marge), et des réponses en streaming transmises sans mise en tampon (nginx : `proxy_read_timeout 600s` et `proxy_buffering off`).
 
@@ -285,53 +271,53 @@ Le plugin mesure chaque run d'une commande du pack (point 29) et en écrit une l
 
 Ce qui revient à l'équipe qui héberge le modèle (passerelle, tampon, prefix caching, répliques, MTP), donne-lui la ligne de `/outil vitesse` et ses chiffres. Ce qui revient à ton `opencode.json` (effort de réflexion, `chunkTimeout`, `limit.context`) : section « Qwen 3.8 » ci-dessus. Les mesures brutes :
 ```sh
-tail -5 ~/oc2/data/opencode/log/openrd-pack-runs.tsv | tr '\t' '\n' | grep -E '^(command|total|top_|wait|think|write|ttft|retries|buffered|stall)'
+tail -5 ~/.local/share/opencode/log/openrd-pack-runs.tsv | tr '\t' '\n' | grep -E '^(command|total|top_|wait|think|write|ttft|retries|buffered|stall)'
 ```
 
 ## Logs d'OpenCode
 
-Le journal de la v2 est `~/oc2/serve.log` (le même contenu va aussi dans `~/oc2/data/opencode/log/opencode.log`). Le plugin du pack a le sien, `~/oc2/data/opencode/log/openrd-pack.log` : ce qu'il a refusé et pourquoi, jamais une commande ni un texte de la conversation.
+Le journal de la v2 est `~/.local/share/opencode/log/opencode.log`. Le plugin du pack a le sien, `~/.local/share/opencode/log/openrd-pack.log` : ce qu'il a refusé et pourquoi, jamais une commande ni un texte de la conversation.
 
 Les 200 dernières lignes :
 ```sh
-tail -n 200 ~/oc2/serve.log
+tail -n 200 ~/.local/share/opencode/log/opencode.log
 ```
 
 Les avertissements et erreurs récents :
 ```sh
-grep -E 'level=(ERROR|WARN)' ~/oc2/serve.log | tail -30 | cut -c1-300
+grep -E 'level=(ERROR|WARN)' ~/.local/share/opencode/log/opencode.log | tail -30 | cut -c1-300
 ```
 
 Les refus du plugin du pack (chemin hors du dépôt, dossier en lecture seule, commande qui écrit un identifiant, second `/go`, outil fermé de la v2, même appel répété trois fois, commande qui ne finit jamais, changement des dépendances ou installation sur la machine par un agent), avec l'agent et le chemin, jamais la commande. C'est ce qu'il faut m'envoyer quand un agent bute sur un refus :
 ```sh
-grep 'refused by the pack' ~/oc2/data/opencode/log/openrd-pack.log | tail -20
+grep 'refused by the pack' ~/.local/share/opencode/log/openrd-pack.log | tail -20
 ```
 
 Les réponses du modèle coupées parce qu'elles bouclaient (la même phrase répétée pendant la réflexion), avec la session et l'agent ; puis les « continue » repris par le pilote :
 ```sh
-grep 'repeated itself was cut' ~/oc2/data/opencode/log/openrd-pack.log | tail -20
+grep 'repeated itself was cut' ~/.local/share/opencode/log/openrd-pack.log | tail -20
 ```
 ```sh
-grep "resumed at the developer's request" ~/oc2/data/opencode/log/openrd-pack.log | tail -10
+grep "resumed at the developer's request" ~/.local/share/opencode/log/openrd-pack.log | tail -10
 ```
 Une coupure de temps en temps est normale (le modèle repart, sans la boucle, avec une pénalité de présence). Plusieurs par heure sur le même agent : envoie-moi ces lignes.
 
 Les réglages de ta configuration que la v2 ignore ou refuse (`MIGRATION.md`, étapes 8 et 9) :
 ```sh
-grep 'configuration normalization diagnostic' ~/oc2/serve.log | grep -o 'path=[^ ]*' | sort -u
+grep 'configuration normalization diagnostic' ~/.local/share/opencode/log/opencode.log | grep -o 'path=[^ ]*' | sort -u
 ```
 
 Le détail des erreurs « Service Unavailable » ou de contexte du modèle (si le texte parle de « maximum context length », la session a dépassé la taille acceptée par le serveur : voir `limit.context`) :
 ```sh
-grep -iE 'service unavailable|context length|maximum context|too long' ~/oc2/serve.log | tail -5 | cut -c1-300
+grep -iE 'service unavailable|context length|maximum context|too long' ~/.local/share/opencode/log/opencode.log | tail -5 | cut -c1-300
 ```
 
 Le chargement du plugin (`0` = pas d'erreur), puis sa connexion aux évènements d'OpenCode (`1` ou plus) :
 ```sh
-grep -c 'failed to load plugin' ~/oc2/serve.log
+grep -c 'failed to load plugin' ~/.local/share/opencode/log/opencode.log
 ```
 ```sh
-grep -c 'event stream connected' ~/oc2/data/opencode/log/openrd-pack.log
+grep -c 'event stream connected' ~/.local/share/opencode/log/openrd-pack.log
 ```
 
 ## Après un agent qui a dérapé
@@ -385,7 +371,7 @@ time timeout 30 env GIT_TERMINAL_PROMPT=0 git fetch -q --no-tags origin; echo "c
 
 Le titre de la session du pilote dit ce que fait le sous-agent en cours, par exemple « ⏳ 31:02 outil · Auto-review · nouvel essai 3 dans 45 s (serveur du modèle) — /go ABC-123 », « … · rien reçu depuis 4 min », « … · résumé du contexte », ou « ❓ … · autorisation attendue ». Plusieurs sous-agents à la fois (les analyses de `/fortify`) : « ⏳ 3:10 outils (3) · Analyse V1, Analyse V2, Analyse V3 ». Le titre suit dans la seconde quand un outil démarre ou finit. Un sous-agent ne pose jamais de question (le plugin la refuse) : il ne peut pas attendre une réponse de toi. Ce que le serveur du modèle a renvoyé, et les nouveaux essais :
 ```sh
-grep -E 'Gateway|timed out|retry' ~/oc2/serve.log | tail -20 | cut -c1-220
+grep -E 'Gateway|timed out|retry' ~/.local/share/opencode/log/opencode.log | tail -20 | cut -c1-220
 ```
 Le pilote reprend une fois un checker en échec, puis livre sans auto-review en le disant dans la MR : un `/go` ne reste plus bloqué sur lui. Pour gagner du temps en fin de run, `/go`, `/fix` et `/fortify` lancent le build et les tests complets **en parallèle** de l'auto-review : la suite tourne dans le même tour que le `checker`, qui ne relance jamais ni build ni tests et revoit en lisant le diff (`git diff <base>...HEAD`, tout est commité). Dans `/fix` et `/fortify`, les failles de sécurité de la branche sont prouvées comme dans `/fortify`, par vagues de test-guardians en parallèle. Un build qui ne s'arrête pas (test qui boucle) est stoppé par `build-test.sh` (`--blame-hang-timeout`) et sa ligne `HANG`/`CRASH` le dit, au lieu de faire attendre tout le run. Si les erreurs de passerelle reviennent souvent : section « Qwen 3.8 », la partie « Gateway Time-out ».
 
@@ -398,12 +384,12 @@ Le pilote reprend une fois un checker en échec, puis livre sans auto-review en 
 
 Deux reprises au plus d'affilée ; à la troisième panne, le titre passe à `⛔`. Jamais de reprise après un arrêt que tu as demandé (bouton stop), un `⛔` écrit par le pilote (une vraie raison d'arrêt : conflit, identifiants, build de develop…), un refus, ni une erreur qu'une reprise ne règle pas (identifiants du provider refusés, modèle introuvable). Un message que tu tapes dans la session annule une reprise qui attend. Pourquoi une reprise a eu lieu, ou pas :
 ```sh
-grep -E 'run resumed|run not resumed|resume cancelled' ~/oc2/data/opencode/log/openrd-pack.log | tail -10
+grep -E 'run resumed|run not resumed|resume cancelled' ~/.local/share/opencode/log/openrd-pack.log | tail -10
 ```
 
 **Un contexte plein.** Quand la conversation d'un run ne tient plus dans le contexte du modèle, la v2 la résume (titre « résumé du contexte ») et repart du seul résumé, qu'elle donne au modèle comme « historique, pas consignes ». Le plugin demande au résumé de garder l'état du run (fiche, dossier du lot, étape et phase en cours, sous-agents à reprendre, commits), puis redonne au pilote les consignes de sa commande, et à chaque sous-agent la tâche que le pilote lui a donnée. Les résumés des runs :
 ```sh
-grep -E 'summarized|summary of a run failed' ~/oc2/data/opencode/log/openrd-pack.log | tail -10
+grep -E 'summarized|summary of a run failed' ~/.local/share/opencode/log/openrd-pack.log | tail -10
 ```
 
 **Les marques du titre** : `⏳` en cours, `❓` une question ou une autorisation t'attend, `✅` livré ou rien à faire, `⏸` le run t'attend (une réponse du PO : relance avec la réponse, `/go ABC-123 <réponse>`), `↻` il va reprendre tout seul, `⛔` arrêté.
@@ -437,7 +423,7 @@ Jamais relancé : un test qui échoue (un test qui change de résultat est `FLAK
 
 Un espace de travail est un deuxième dossier du même dépôt (un worktree git), avec sa propre branche et ses propres sessions. La v2 les crée dans son interface, sans aucun script ; aucun agent n'a le droit d'en créer, d'en supprimer ou de déplacer une session. Organisation conseillée : le dépôt principal reste sur develop pour `/daily`, `/review`, `/compare` et tes questions ; chaque ticket a son dossier.
 
-**1. Créer le dossier d'un ticket.** Sur le projet, « Nouvelle session ». Sous la zone de saisie, clique sur `Local` : un menu « Exécuter la session dans » propose « Dépôt local » et **« Nouvel espace de travail »**. Choisis ce dernier, puis tape `/go ABC-124`. À ce premier message, la v2 crée le dossier dans `~/oc2/data/opencode/worktree/` (`~/.local/share/opencode/worktree/` si la v2 a remplacé ta 1.19), à partir de la branche affichée (develop), et la session y travaille. Ta commande s'affiche « /go ABC-124 — mon-api · worktree <dossier> · … » : c'est la preuve que la session travaille dans le bon dossier. Le titre de la session commence par `[<dossier>]`, pour la retrouver sur l'accueil, qui liste ensemble les sessions de tous les dossiers.
+**1. Créer le dossier d'un ticket.** Sur le projet, « Nouvelle session ». Sous la zone de saisie, clique sur `Local` : un menu « Exécuter la session dans » propose « Dépôt local » et **« Nouvel espace de travail »**. Choisis ce dernier, puis tape `/go ABC-124`. À ce premier message, la v2 crée le dossier dans `~/.local/share/opencode/worktree/` (`~/.local/share/opencode/worktree/` si la v2 a remplacé ta 1.19), à partir de la branche affichée (develop), et la session y travaille. Ta commande s'affiche « /go ABC-124 — mon-api · worktree <dossier> · … » : c'est la preuve que la session travaille dans le bon dossier. Le titre de la session commence par `[<dossier>]`, pour la retrouver sur l'accueil, qui liste ensemble les sessions de tous les dossiers.
 
 Les fichiers ignorés par git du dépôt principal (un `.env`, des réglages locaux) ne sont pas dans le nouveau dossier : copie ceux dont le build ou les tests ont besoin.
 
@@ -460,7 +446,7 @@ git worktree list
 
 **5. Supprimer un dossier, quand la MR est créée ou le ticket abandonné (`/outil abandon`)**, depuis le dépôt principal (remplace le chemin par celui de `git worktree list`) :
 ```sh
-git worktree remove ~/oc2/data/opencode/worktree/<numéro>/<nom>
+git worktree remove ~/.local/share/opencode/worktree/<numéro>/<nom>
 ```
 git refuse tant qu'il reste des fichiers non commités ; la branche, elle, reste (la MR en a besoin), avec sa fiche. Archive ensuite les sessions de ce dossier sur l'accueil : sans leur dossier, elles ne peuvent plus rien faire.
 
@@ -545,7 +531,6 @@ Après un réglage : refais le test, puis dans OpenCode, dans la même session :
 - Avec une connexion d'entreprise (SSO), le mot de passe que git demande est un token d'accès personnel (étape 1 ci-dessus), pas ton mot de passe.
 - Jamais de token dans l'adresse du dépôt (`https://nom:token@…`) ni dans `~/.zshenv` : il serait écrit en clair dans `.git/config`, affiché par `git remote -v`, ou visible de chaque commande des agents.
 - Adresse en `git@…` (ssh) : une clé sans phrase de passe réservée à cette machine et ajoutée à ton profil GitLab, ou une clé chargée dans un agent ssh (`ssh-add`) avant le démarrage du serveur OpenCode.
-- Les commandes des agents de la v2 retrouvent ton cache d'identifiants et tes réglages git : le plugin du pack leur retire les dossiers `~/oc2` que la v2 utilise pour elle-même.
 - Test OK mais l'agent échoue encore : le serveur OpenCode ne voit pas ces identifiants (démarré par un autre utilisateur, ou trousseau verrouillé) : redémarre-le depuis ce terminal (section « Redémarrer OpenCode »).
 - Les agents ne peuvent pas lire ces identifiants : `~/.git-credentials`, `git credential`, le dossier du cache, `security` et `secret-tool` leur sont refusés.
 
@@ -605,7 +590,7 @@ git reset --soft "$(git merge-base HEAD origin/develop)"
 
 `/go ABC-123 comme dans ancienne-api (ExportService)` : l'analyste lit l'implémentation de l'autre dépôt et la décrit dans la fiche (section « Référence »), le coder la reproduit. Personne n'écrit dans l'autre dépôt.
 
-Le dossier que tu cites, dans un message ou dans les arguments d'une commande que tu tapes, devient lisible par les agents de cette session, en lecture seule : `/go ABC-123 comme dans ~/repos/ancienne-api (ExportService)`. Pas celui d'une option de QCM : ses options sont écrites par le modèle. Un fichier cité rend lisible son dossier, jamais ton dossier personnel lui-même ni un de ses dossiers cachés (`~/.ssh`, `~/.config`…), ni `/proc` : citer `~/.zshenv` ne rend rien lisible. Pour l'avoir dans toutes les sessions, déclare-le comme référence dans `~/oc2/config/opencode/opencode.json` (au premier niveau, entre deux sections, en gardant les virgules ; le nom, sans espace ni `/`, sert dans `/go … comme dans ancienne-api`, et `@ancienne-api` l'ajoute à un message), puis redémarre OpenCode :
+Le dossier que tu cites, dans un message ou dans les arguments d'une commande que tu tapes, devient lisible par les agents de cette session, en lecture seule : `/go ABC-123 comme dans ~/repos/ancienne-api (ExportService)`. Pas celui d'une option de QCM : ses options sont écrites par le modèle. Un fichier cité rend lisible son dossier, jamais ton dossier personnel lui-même ni un de ses dossiers cachés (`~/.ssh`, `~/.config`…), ni `/proc` : citer `~/.zshenv` ne rend rien lisible. Pour l'avoir dans toutes les sessions, déclare-le comme référence dans `~/.config/opencode/opencode.json` (au premier niveau, entre deux sections, en gardant les virgules ; le nom, sans espace ni `/`, sert dans `/go … comme dans ancienne-api`, et `@ancienne-api` l'ajoute à un message), puis redémarre OpenCode :
 ```json
 "references": {
   "ancienne-api": { "path": "~/repos/ancienne-api", "description": "Ancienne API d'export : implémentation de référence de l'export SharePoint vers S3" }
@@ -1187,7 +1172,7 @@ Pour voir d'un coup d'œil ce que fait le pack, ou le présenter à quelqu'un qu
 ```text
 /outil carte
 ```
-`pack-map.sh` lit le pack tel qu'il est installé (ses commandes, leurs étapes, les agents qui y travaillent, leurs questions, les outils de `/outil`, les skills, les fonctions du plugin, les scripts) et écrit une page HTML en français : « En une minute » (le pack expliqué sans jargon), la carte d'ensemble, puis une section par commande (à quoi elle sert, comment la lancer, ses étapes en schéma et en liste avec qui travaille et ce qu'il te demande, comment elle peut finir), les agents et ce qu'ils ont le droit d'écrire, les skills et les garde-fous. Rien n'est lu dans ton dépôt. L'agent te dit où est la page (par défaut dans le dossier de configuration d'OpenCode : `~/oc2/config/opencode/carte-des-flux.html` pendant l'essai à côté de la 1.19, `~/.config/opencode/carte-des-flux.html` sinon) et la résume en un tableau. Ouvre-la dans un navigateur ; quand OpenCode tourne sur une autre machine que la tienne, copie-la chez toi (`scp <machine>:<fichier> .`) ou écris-la dans le dépôt (ci-dessous). Les schémas de cette page générée viennent de Mermaid, chargé depuis `cdn.jsdelivr.net` : sans Internet, ou quand le proxy de l'entreprise bloque ce site, la liste des étapes reste. La carte tenue à la main, elle, a ses schémas dessinés dans la page : `docs/carte-des-flux.html` du dépôt du pack (`opencode-v2/docs/`), à ouvrir dans n'importe quel navigateur, hors ligne aussi. Pour une réunion, les flux principaux en diapositives : `docs/presentation-flux.pptx` (PowerPoint ; le détail de chaque schéma dans les notes de l'orateur).
+`pack-map.sh` lit le pack tel qu'il est installé (ses commandes, leurs étapes, les agents qui y travaillent, leurs questions, les outils de `/outil`, les skills, les fonctions du plugin, les scripts) et écrit une page HTML en français : « En une minute » (le pack expliqué sans jargon), la carte d'ensemble, puis une section par commande (à quoi elle sert, comment la lancer, ses étapes en schéma et en liste avec qui travaille et ce qu'il te demande, comment elle peut finir), les agents et ce qu'ils ont le droit d'écrire, les skills et les garde-fous. Rien n'est lu dans ton dépôt. L'agent te dit où est la page (par défaut dans le dossier de configuration d'OpenCode : `~/.config/opencode/carte-des-flux.html` pendant l'essai à côté de la 1.19, `~/.config/opencode/carte-des-flux.html` sinon) et la résume en un tableau. Ouvre-la dans un navigateur ; quand OpenCode tourne sur une autre machine que la tienne, copie-la chez toi (`scp <machine>:<fichier> .`) ou écris-la dans le dépôt (ci-dessous). Les schémas de cette page générée viennent de Mermaid, chargé depuis `cdn.jsdelivr.net` : sans Internet, ou quand le proxy de l'entreprise bloque ce site, la liste des étapes reste. La carte tenue à la main, elle, a ses schémas dessinés dans la page : `docs/carte-des-flux.html` du dépôt du pack (`opencode-v2/docs/`), à ouvrir dans n'importe quel navigateur, hors ligne aussi. Pour une réunion, les flux principaux en diapositives : `docs/presentation-flux.pptx` (PowerPoint ; le détail de chaque schéma dans les notes de l'orateur).
 
 Pour la mettre dans un dépôt (la partager, la pousser) :
 ```text
@@ -1196,7 +1181,7 @@ Pour la mettre dans un dépôt (la partager, la pousser) :
 ```text
 /outil carte docs/pack/carte.html
 ```
-Un chemin du dépôt seulement (relatif à sa racine, jamais `..` ni `/…`). Elle se régénère en une seconde : relance-la après chaque mise à jour du pack, elle est toujours exacte. Sans agent, dans un terminal de la machine d'OpenCode (pendant l'essai à côté de la 1.19, ajoute `--pack ~/oc2/config/opencode`, sinon c'est le pack 1.19 qui est lu) :
+Un chemin du dépôt seulement (relatif à sa racine, jamais `..` ni `/…`). Elle se régénère en une seconde : relance-la après chaque mise à jour du pack, elle est toujours exacte. Sans agent, dans un terminal de la machine d'OpenCode :
 ```sh
 sh ~/.config/opencode/scripts/pack-map.sh --out /tmp/carte.html
 ```

@@ -2,9 +2,9 @@
 
 Ce guide part de zéro. Chaque étape dit **pourquoi** on la fait, **quoi taper**, **ce que tu dois voir**, et **quoi faire si ce n'est pas ce que tu vois**. Ne saute aucune étape et ne passe à la suivante que si la précédente donne le résultat attendu.
 
-Le principe : OpenCode v2 s'installe **à côté** de ta version 1.19, dans son propre dossier `~/oc2`, sur un autre port. La 1.19 continue de tourner comme avant pendant tout l'essai : la v2 n'écrit rien dans ses dossiers, à une exception près, les scripts `fortify.sh` et `test-guardian.sh` que tu ajoutes toi-même au dossier des scripts du pack (étape 5.4). Revenir en arrière consiste à rouvrir l'adresse de la 1.19.
+**La v2 a remplacé la 1.19** (la procédure interne, qui fait `npm install -g @opencode/cli`) : c'est le cas de l'équipe. Va directement à l'**annexe A**, à la fin de ce guide : c'est le parcours complet, de l'état des lieux à l'interface web, avec la configuration dans `~/.config/opencode`, les journaux dans `~/.local/share/opencode/log/` et les empreintes dans `~/CHECKSUMS-config.txt` et `~/CHECKSUMS-scripts.txt`. L'annexe renvoie aux étapes 4, 5 et 9 pour quelques détails ; le reste des étapes 1 à 12 décrit l'essai côte à côte dans `~/oc2`, qui n'existe plus : ne le suis pas.
 
-**La v2 a déjà remplacé ta 1.19** (par exemple avec une procédure interne qui fait `npm install -g @opencode/cli`) ? Ne fais pas les étapes 1 à 12 : va directement à l'**annexe A**, à la fin de ce guide. C'est le parcours complet pour ce cas, de l'état des lieux à l'interface web, démarrée par le service de ta procédure interne ou par `opencode-web.sh`.
+L'essai côte à côte, pour mémoire : OpenCode v2 s'installait **à côté** de ta version 1.19, dans son propre dossier `~/oc2`, sur un autre port. La 1.19 continue de tourner comme avant pendant tout l'essai : la v2 n'écrit rien dans ses dossiers, à une exception près, les scripts `fortify.sh` et `test-guardian.sh` que tu ajoutes toi-même au dossier des scripts du pack (étape 5.4). Revenir en arrière consiste à rouvrir l'adresse de la 1.19.
 
 Tout ce guide a été rejoué de bout en bout sur une machine de test, avec un utilisateur `coder`, zsh, une configuration 1.19 du pack, et le vrai OpenCode v2.1.3. Les résultats « Ce que tu dois voir » viennent de ce test.
 

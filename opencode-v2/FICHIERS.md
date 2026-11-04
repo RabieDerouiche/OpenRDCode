@@ -4,7 +4,7 @@ Chaque fichier de `opencode-v2/` : ce qu'il fait exactement, qui le lance et qua
 
 | Dossier | Où il va sur ta machine | Qui le lit |
 |---|---|---|
-| `plugins/` | `~/oc2/config/opencode/plugins/` (ou `~/.config/opencode/plugins/`, annexe A de `MIGRATION.md`) | OpenCode v2, à son démarrage |
+| `plugins/` | `~/.config/opencode/plugins/` (annexe A de `MIGRATION.md`) | OpenCode v2, à son démarrage |
 | `commands/` | `…/opencode/commands/` | OpenCode : chaque fichier est une commande `/<nom>` |
 | `agents/` | `…/opencode/agents/` | OpenCode : chaque fichier est un agent, avec ses règles (`permission:`) |
 | `skills/` | `…/opencode/skills/<nom>/SKILL.md` | les agents, qui les chargent quand leur description le dit |

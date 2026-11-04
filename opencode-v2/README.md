@@ -48,7 +48,7 @@ Plusieurs `/go` en même temps, chacun dans son dossier et sa session : le titre
 
 ### Plusieurs tickets du même dépôt : un dossier par ticket (worktrees)
 
-OpenCode v2 crée les espaces de travail dans son interface : dans une nouvelle session, « Local », sous la zone de saisie, puis « Nouvel espace de travail » (vérifié dans les v2.1.2 et v2.1.3). Au premier message, la session part dans un dossier à part, un worktree git créé dans `~/oc2/data/opencode/worktree/` à partir de la branche affichée. Aucun script à lancer, et le pack ne laisse aucun agent créer ou supprimer un worktree, ni déplacer une session : c'est ton choix, dans l'interface. `/go ABC-124` y travaille comme ailleurs (sa commande s'affiche « /go ABC-124 — mon-api · worktree <dossier> · … », et le titre de ses sessions commence par `[<dossier>]`, l'accueil listant ensemble les sessions de tous les dossiers) et les fiches ticket restent dans le `.git` du dépôt principal, visibles de tous les dossiers. Le pas à pas : COMMANDES.md, « Plusieurs tickets d'un même dépôt ».
+OpenCode v2 crée les espaces de travail dans son interface : dans une nouvelle session, « Local », sous la zone de saisie, puis « Nouvel espace de travail » (vérifié dans les v2.1.2 et v2.1.3). Au premier message, la session part dans un dossier à part, un worktree git créé dans `~/.local/share/opencode/worktree/` à partir de la branche affichée. Aucun script à lancer, et le pack ne laisse aucun agent créer ou supprimer un worktree, ni déplacer une session : c'est ton choix, dans l'interface. `/go ABC-124` y travaille comme ailleurs (sa commande s'affiche « /go ABC-124 — mon-api · worktree <dossier> · … », et le titre de ses sessions commence par `[<dossier>]`, l'accueil listant ensemble les sessions de tous les dossiers) et les fiches ticket restent dans le `.git` du dépôt principal, visibles de tous les dossiers. Le pas à pas : COMMANDES.md, « Plusieurs tickets d'un même dépôt ».
 
 Ce que ça coûte, à connaître avant d'en ouvrir trois :
 - Chaque dossier est une copie complète des fichiers (l'historique git, lui, est partagé) avec ses propres `bin/obj` (et `node_modules` en front) : de l'espace disque, et un premier build qui repart de zéro (les packages NuGet viennent du cache commun, rien n'est retéléchargé ; la compilation, si).
@@ -456,9 +456,9 @@ Le reste : 10 commandes, 13 skills de connaissances (conventions CQRS, Entity Fr
 
 ## Installation
 
-`MIGRATION.md`, pas à pas et sans lancer aucun script : OpenCode v2 est téléchargé comme une archive avec `npm pack` (rien ne s'installe ni ne s'exécute), sa configuration va dans `~/oc2/config/opencode`, à côté de la 1.19 qui reste intacte. Les fichiers du pack se collent depuis GitHub, et `CHECKSUMS-config.txt` et `CHECKSUMS-scripts.txt` disent, par empreintes, lesquels manquent ou diffèrent. Ne copie jamais `tools/` (outils de maintenance du pack). Deux fichiers se composent au lieu d'être collés tels quels :
-- `AGENTS.global.md` devient `~/oc2/config/opencode/AGENTS.md`, avec tes sections « Daily » et « Release groups » ;
-- `opencode.snippet.json` devient `~/oc2/config/opencode/opencode.json`, avec tes sections à toi (`provider`, `model`, `mcp`…) ajoutées.
+`MIGRATION.md`, annexe A, pas à pas et sans lancer aucun script : la v2 a remplacé la 1.19 (procédure interne), sa configuration est dans `~/.config/opencode`. Les fichiers du pack se collent depuis GitHub, et `CHECKSUMS-config.txt` et `CHECKSUMS-scripts.txt` disent, par empreintes, lesquels manquent ou diffèrent. Ne copie jamais `tools/` (outils de maintenance du pack). Deux fichiers se composent au lieu d'être collés tels quels :
+- `AGENTS.global.md` devient `~/.config/opencode/AGENTS.md`, avec tes sections « Daily » et « Release groups » ;
+- `opencode.snippet.json` devient `~/.config/opencode/opencode.json`, avec tes sections à toi (`provider`, `model`, `mcp`…) ajoutées.
 
 Mettre à jour le pack : `COMMANDES.md`, section « Mettre à jour le pack ».
 
