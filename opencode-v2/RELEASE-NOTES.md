@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-04 11:40 — README : le compteur des contrôles .NET
+- **Ajouté** : rien.
+- **Changé** : README, « Pour la maintenance du pack » : `tools/dotnet-test.sh` compte 468 contrôles, et non plus 459 (les 11 contrôles des loggers de tests ajoutés le 3 novembre n'y étaient pas comptés ; FICHIERS disait déjà 468).
+- **Retiré** : rien.
+- **But** : un README qui donne le même nombre que la suite et que FICHIERS.
+
 ## 2026-11-03 13:30 — Les loggers de tests de la CI dans les projets de tests du pack
 - **Ajouté** : `test-guardian.sh setup --loggers` : les loggers de tests que la CI passe à `dotnet test` (`JunitXml.TestLogger` pour `--logger junit`, `NunitXml.TestLogger`, `XunitXml.TestLogger`), ceux des autres projets de tests à leur version, sinon ceux qu'un fichier de CI du dépôt nomme (la version du cache NuGet, sinon 6.1.0), ajoutés à chaque projet de tests qui ne les a pas (versions centrales comprises, rien quand un `Directory.Build.props` les donne déjà), puis un build de chacun. `/fix` le lance quand un job de tests s'arrête sur « Could not find a test logger with AssemblyQualifiedName, URI or FriendlyName 'junit' », jamais un tour du coder ni un projet sonde ; la même règle dans `AGENTS.global.md` pour la conversation. 11 contrôles dans `tools/dotnet-test.sh`.
 - **Changé** : un projet de tests créé par `test-guardian.sh setup` (le filet bUnit d'un retrait de Blazorise dans un dépôt sans projet de tests, `/tests`, `/tests api`, `/fortify`) reçoit ces loggers ; avant, il n'avait que le modèle de `dotnet new`, coverlet et bUnit, et la CI s'arrêtait sur lui alors que tout passait ici. FICHIERS.
