@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-04 14:14 — COMMANDES : le logger JUnit manque au seul projet de tests
+- **Ajouté** : rien.
+- **Changé** : COMMANDES, bloc « En cours » : la cause vue sur le `.csproj` du développeur (son seul projet de tests n'a pas `JunitXml.TestLogger`, et son modèle de CI est dans un autre dépôt), la ligne à ajouter tout de suite, sa version (le cache NuGet, sinon 6.1.0) et sa vérification comme la CI ; `FakeS3Endpoint` et sa variable `probe` à garder ; puis les fichiers du pack à recoller.
+- **Retiré** : du même bloc, les diagnostics « L'erreur est encore là après le push », devenus inutiles.
+- **But** : la pipeline verte tout de suite, sans attendre le pack.
+
 ## 2026-11-04 13:30 — COMMANDES : l'erreur du logger JUnit encore là après le push
 - **Ajouté** : COMMANDES, bloc « En cours » : quoi m'envoyer quand la pipeline s'arrête encore sur « Could not find a test logger … 'junit' » : la commande de test du job et la ligne `Test run for …dll` qui nomme l'assembly fautif ; le commit testé contre le commit poussé ; chaque projet de tests avec ou sans `JunitXml.TestLogger`, et les réglages Microsoft.Testing.Platform du dépôt ; les commandes du fichier de CI ; la commande de la CI rejouée ici.
 - **Changé** : rien.

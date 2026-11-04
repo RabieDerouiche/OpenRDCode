@@ -6,38 +6,26 @@ Les commandes du pack à taper toi-même, à copier-coller. OpenCode v2 a rempla
 
 ## En cours : la CI s'arrête sur « Could not find a test logger … 'junit' »
 
-La cause (certaine pour le mécanisme) : ta CI lance `dotnet test … --logger junit`, et ce logger vient du paquet `JunitXml.TestLogger`, que **chaque** projet de test doit référencer. Le retrait de Blazorise a créé un projet de tests unitaires (le filet bUnit) sans ce paquet : les tests passent ici, la CI échoue sur ce projet.
+**La cause (certaine, vue sur ton `.csproj`)** : ton seul projet de tests (xunit, bUnit, coverlet) n'a pas le paquet `JunitXml.TestLogger`, dont `dotnet test --logger junit` a besoin. Le pack ne l'ajoutait pas : il prenait la version des autres projets de tests (il n'y en a pas) ou d'un fichier de CI du dépôt (ton modèle de CI est ailleurs), et il ne trouvait donc rien à ajouter. Corrigé : `setup --loggers junit` l'ajoute avec le nom de l'erreur, et `/fix` le lui donne.
 
-Ce que `/fix` a fait de travers (probable) : il a traité l'échec comme un bug à prouver, et le test-guardian a écrit un test « sonde » pour montrer le logger. Corrigé dans le pack : ce cas n'est jamais un bug (ni preuve, ni filet, ni test) ; `test-guardian.sh setup --loggers` ajoute le paquet puis lance `dotnet test --logger junit` comme la CI (ses lignes `LOGGER:` sont la preuve) ; le plugin refuse à tout agent un fichier, un dossier ou un test sonde (`.junit-probe`, `ProbeTest`, `…Junit…`), et le contrôle avant push l'arrête s'il est déjà commité.
-
-1. Retire le test sonde. Trouve-le (fichiers ajoutés par la branche, puis les tests qui parlent de sonde ou de JUnit) :
+Tout de suite, sans attendre le pack, dans ton dépôt, sur la branche :
+1. La version de l'équipe (la plus haute de la liste ; rien : prends `6.1.0`) :
 ```sh
-git diff --stat origin/develop...HEAD -- '*.cs'
-git grep -n -i -E 'probe|junit|spekt' -- '*.cs'
+ls ~/.nuget/packages/junitxml.testlogger/ 2>/dev/null
 ```
-Supprime la méthode, ou le fichier s'il ne contient qu'elle, puis commit (`test: remove the probe test`). Ne touche pas au `.csproj` : la ligne `JunitXml.TestLogger` doit y rester.
-2. Recolle depuis GitHub (vue Raw) `plugins/openrd-pack.js`, `commands/fix.md`, `agents/test-guardian.md`, `agents/coder.md`, `scripts/test-guardian.sh`, `scripts/diff-guard.sh`, et la ligne du logger de `AGENTS.global.md` dans ton `~/.config/opencode/AGENTS.md`. Puis les empreintes (section « Mettre à jour le pack ») : rien d'autre que `OK`. Puis `opencode service restart`.
-3. Dans une session OpenCode sur ta branche : « lance `sh ~/.config/opencode/scripts/test-guardian.sh setup --loggers` ». Attendu : `SETUP: nothing to do …` (le paquet est déjà là), ou `SETUP: the test loggers of the CI added …` suivi d'une ligne `LOGGER: <projet>: --logger junit loads (…)` par projet.
-4. Push (`/push`), puis regarde la pipeline. Elle repasse : dis-le-moi, je retire ce bloc.
-
-**L'erreur est encore là après le push** : il faut savoir quel projet la CI teste sans le logger. Envoie-moi ces quatre sorties (aucune n'affiche de secret).
-
-a. Dans le job GitLab en échec : la commande `dotnet test …` du job, et la ligne `Test run for …dll` juste avant « Could not find a test logger » (elle nomme l'assembly fautif).
-
-b. Dans ton dépôt, sur la branche : le commit que la pipeline a testé est-il bien le tien, poussé, et chaque projet de tests a-t-il le paquet ?
+2. Dans le `.csproj` de tests, dans l'`ItemGroup` des `PackageReference`, ajoute la ligne (avec ta version) :
+```xml
+<PackageReference Include="JunitXml.TestLogger" Version="6.1.0" />
+```
+3. Lance-le comme la CI : aucune ligne « Could not find a test logger », et `Passed!` :
 ```sh
-git status -sb | head -1; git log -1 --format='%h %s'; git log -1 --format='%h' "origin/$(git branch --show-current)"
-for p in $(git ls-files '*.csproj'); do grep -qiE 'Microsoft\.NET\.Test\.Sdk|xunit|bunit|MSTest|NUnit|TUnit|<IsTestProject>' "$p" || continue; printf '%s : ' "$p"; grep -qi 'JunitXml.TestLogger' "$p" && echo "logger présent" || echo "PAS DE LOGGER"; done
-git grep -n -i -E 'JunitXml|TestingPlatformDotnetTestSupport|UseMicrosoftTestingPlatformRunner' -- '*.props' '*.targets' '*.csproj' 'global.json'
+dotnet test <chemin/du/projet>.csproj --logger junit 2>&1 | grep -E 'Could not find a test logger|Passed!|Failed!'
 ```
-c. Le fichier de CI, s'il est dans le dépôt :
-```sh
-git grep -n -E 'dotnet (test|build|restore)|--logger|test-adapter-path|include:' -- '*.yml' '*.yaml'
-```
-d. La même commande que la CI, ici, ses seules lignes utiles (elle lance tous les tests : quelques minutes) :
-```sh
-dotnet test --logger junit 2>&1 | grep -E 'Test run for|Could not find a test logger|error'
-```
+4. Commit (`fix(tests): add the test logger the CI uses`) et push : la pipeline repasse. Dis-le-moi, je retire ce bloc.
+
+`FakeS3Endpoint` et sa variable `probe` (un `TcpListener` sur le port 0 pour trouver un port libre) ne sont pas une sonde : garde-les. Le pack ne les refuse pas (vérifié par ses tests).
+
+Ensuite, mets le pack à jour (section « Mettre à jour le pack ») : `scripts/test-guardian.sh`, `commands/fix.md`, `plugins/openrd-pack.js`, `agents/test-guardian.md`, `agents/coder.md`, `scripts/diff-guard.sh`, et la ligne du logger de `AGENTS.global.md` dans ton `~/.config/opencode/AGENTS.md`, puis `opencode service restart`. La prochaine fois, `/fix` lance `test-guardian.sh setup --loggers junit` : le paquet ajouté, les tests lancés avec le logger comme la CI (une ligne `LOGGER: … loads`), jamais de test ni de projet sonde.
 
 ## Installer
 
