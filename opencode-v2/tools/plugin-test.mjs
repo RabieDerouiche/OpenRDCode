@@ -2577,6 +2577,8 @@ await check("[34] the probe tests of a C# text", () => {
   assert.equal(probeCode("tests/A/OrderTests.cs", "[Fact]\npublic void Total_WithTax_AddsTheTax() {}"), "")
   assert.equal(probeCode("tests/A/OrderTests.cs", "var logger = new TestLogger<OrderService>();"), "")
   assert.equal(probeCode("tests/A/OrderTests.cs", "public void TemporaryFile_IsDeleted() {}"), "")
+  // a variable named probe in a fake server of the tests (a free port: bound, read, released) is no probe test
+  assert.equal(probeCode("tests/A/FakeS3Endpoint.cs", "public static FakeS3Endpoint Start(S3Response response)\n{\n    int port;\n    using (var probe = new TcpListener(IPAddress.Loopback, 0))\n    {\n        probe.Start();\n        port = ((IPEndPoint)probe.LocalEndpoint).Port;\n    }\n    return new FakeS3Endpoint(port, response);\n}"), "")
   // what the text replaced already held is not new
   assert.equal(probeCode("tests/A/HealthTests.cs", "public void ProbeEndpoint_Returns200() { Assert.True(true); }", "public void ProbeEndpoint_Returns200() {}"), "")
   // a project file or a pipeline names the logger: never C#

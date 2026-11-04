@@ -71,14 +71,13 @@ Ce fichier est chargé au début de chaque session Claude Code. Il dit le cadre 
   - `/fix` : l'échec du logger est de la configuration, jamais un bug (ni preuve, ni filet, ni test-guardian, ni coder) ;
   - `setup --loggers` lance les tests de chaque projet changé avec le logger, comme la CI : lignes `LOGGER:` ;
   - point 34 du plugin : un agent ne peut écrire ni fichier, ni dossier, ni test sonde ; `diff-guard.sh` arrête le push d'une sonde.
+- **Le logger du seul projet de tests** : le `.csproj` de l'utilisateur (un seul projet de tests : xunit 2.9.3, bUnit, coverlet, Microsoft.NET.Test.Sdk 18.11, net10.0) n'avait pas `JunitXml.TestLogger`, et son modèle de CI est dans un autre dépôt : `setup --loggers` ne trouvait rien. `setup --loggers junit` l'ajoute avec le nom de l'erreur, et `/fix` le lui passe. Son `FakeS3Endpoint` (variable `probe` d'un `TcpListener` sur le port 0) n'est pas une sonde : le pack ne le refuse pas.
 - **`~/oc2`** (e50cb12) : retiré de COMMANDES ; MIGRATION dit que l'annexe A est le parcours, les étapes 1 à 12 restent pour mémoire. Les replis du code vers `~/oc2` restent.
 
 ## Ce qui reste à faire
 
-1. **Pipeline de l'utilisateur** : il doit retirer le test sonde, recoller les fichiers que liste le bloc en tête de `opencode-v2/COMMANDES.md` (« En cours : la CI s'arrête sur … 'junit' »), puis pousser. **Pas encore de confirmation que la pipeline repasse.** Quand il confirme, retire ce bloc de COMMANDES.md, avec son entrée de RELEASE-NOTES, sur `main`.
+1. **Pipeline de l'utilisateur** : il ajoute `JunitXml.TestLogger` à son `.csproj` de tests (bloc en tête de `opencode-v2/COMMANDES.md`), vérifie avec `dotnet test --logger junit`, pousse. **Pas encore de confirmation que la pipeline repasse.** Quand il confirme, retire ce bloc de COMMANDES.md, avec son entrée de RELEASE-NOTES, sur `main`.
 2. **Paquets devenus payants** : l'utilisateur demande une passe pour faciliter leur retrait vers du natif. Existent déjà : Blazorise (`blazor-native.sh`, skill `blazorise`), AutoMapper (`automapper.sh`, skills `automapper`, `mapster`), MediatR (conventions CQRS : médiateur maison). Rien pour NPOI 2.8+ (frais de maintenance), EPPlus 5+, FluentAssertions 8+, MassTransit 9+, QuestPDF, ImageSharp 3+ (`package-licenses.sh` les signale seulement). Question posée : lesquels sont dans ses dépôts.
-3. **Cas non couvert pour les loggers** : un modèle de CI hébergé dans un autre dépôt GitLab, dans un dépôt dont aucun projet de tests n'a encore de logger. Le pack ne peut pas le deviner ; il le dit (« SETUP: no test logger to add ») et nomme le paquet à ajouter.
-
 ## Vérifier avant de pousser (depuis `opencode-v2/`)
 
 ```sh
@@ -86,7 +85,7 @@ node tools/validate.js && sh tools/release-notes.sh check
 node tools/plugin-test.mjs                      # 897 vérifications
 (cd tools && node permission-sim.mjs ..)        # 3 210 cas ; python3 tools/permissions.py régénère les permissions
 sh tools/scripts-test.sh sh                     # puis dash et bash
-sh tools/dotnet-test.sh sh                      # 474 contrôles, faux dotnet ; puis dash et bash (plus de 2 minutes : en arrière-plan)
+sh tools/dotnet-test.sh sh                      # 481 contrôles, faux dotnet ; puis dash et bash (plus de 2 minutes : en arrière-plan)
 sh tools/scenarios-test.sh sh
 sh tools/fortify-test.sh sh
 ```

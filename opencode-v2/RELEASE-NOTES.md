@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-04 14:16 — Le logger JUnit ajouté au seul projet de tests, avec le nom de l'erreur de la CI
+- **Ajouté** : `test-guardian.sh setup --loggers [junit|nunit|xunit]` : les loggers nommés (le FriendlyName de l'erreur « Could not find a test logger … 'junit' ») s'ajoutent à ceux des autres projets de tests et d'un fichier de CI du dépôt, à la version des autres projets de tests, sinon du cache NuGet, sinon 6.1.0 ; un nom qui n'est pas un logger d'un paquet (`trx`) : `STOP`. 7 contrôles dans `tools/dotnet-test.sh` (le cas du dépôt : un seul projet de tests xunit et bUnit sans logger, pas de fichier de CI ; la version du cache ; la casse ; `trx`) ; une vérification du plugin et un contrôle avant push sur une variable `probe` d'un faux serveur des tests (un port libre), qui n'est pas une sonde.
+- **Changé** : sans nom ni logger connu, « SETUP: no test logger to add » dit de relancer avec le nom de l'erreur. `/fix` passe ce nom (`setup --loggers junit`) ; `AGENTS.global.md` aussi. README et FICHIERS (481 contrôles .NET), empreintes.
+- **Retiré** : rien.
+- **But** : le dépôt du développeur n'a qu'un projet de tests, sans le logger, et son modèle de CI est dans un autre dépôt : le pack ne trouvait rien à ajouter et la pipeline restait rouge. Le nom de l'erreur suffit maintenant.
+
 ## 2026-11-04 14:14 — COMMANDES : le logger JUnit manque au seul projet de tests
 - **Ajouté** : rien.
 - **Changé** : COMMANDES, bloc « En cours » : la cause vue sur le `.csproj` du développeur (son seul projet de tests n'a pas `JunitXml.TestLogger`, et son modèle de CI est dans un autre dépôt), la ligne à ajouter tout de suite, sa version (le cache NuGet, sinon 6.1.0) et sa vérification comme la CI ; `FakeS3Endpoint` et sa variable `probe` à garder ; puis les fichiers du pack à recoller.

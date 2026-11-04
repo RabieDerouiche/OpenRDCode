@@ -69,10 +69,14 @@
 #                                  unit test project that references the project of these components (the only unit
 #                                  test project otherwise, which then references it), with its coverage collector when
 #                                  it lacks; the unit test project created with bUnit when there is none
-#   setup --loggers                (the pilot) the test loggers of the CI added to each test project that lacks them,
-#                                  then a build of each: a CI that stops on "Could not find a test logger with
-#                                  AssemblyQualifiedName, URI or FriendlyName 'junit'" (a test project without
-#                                  JunitXml.TestLogger); "SETUP: no test logger to add" when the CI names none here
+#   setup --loggers [junit|nunit|xunit]...
+#                                  (the pilot) the test loggers of the CI added to each test project that lacks them,
+#                                  then a build of each and its tests run with them, as the CI runs them (LOGGER: lines):
+#                                  a CI that stops on "Could not find a test logger with AssemblyQualifiedName, URI or
+#                                  FriendlyName 'junit'" (a test project without JunitXml.TestLogger). Those of the
+#                                  other test projects or of a CI file of the repository, and those named (the
+#                                  FriendlyName of the CI error: a CI template kept in another repository, a repository
+#                                  whose only test project lacks it); "SETUP: no test logger to add" when none is known
 #   changes <base> [<solution, project or folder>]
 #                                  the whole suite once, with coverlet (the BUILD, TESTS and FAILED TESTS lines of
 #                                  build-test.sh), then the lines the branch changed since <base> that no test runs, in
@@ -364,9 +368,29 @@ add_package_version() {
 # on the one that lacks it (the tests pass here, the CI fails). Those the test projects of the repository reference
 # ("<id> <version>", the version empty when they take it from Directory.Packages.props), otherwise those a CI file of
 # the repository passes to dotnet test (--logger junit, nunit or xunit, at the version of this machine's NuGet cache,
-# otherwise 6.1.0); one per line, nothing when there is none
+# otherwise 6.1.0); and those named on the command line (setup --loggers junit: the name of the CI error, for a CI
+# template kept in another repository), at the version of the other test projects, of the cache or 6.1.0; one per
+# line, nothing when there is none
 LOGGER_DEFAULT=6.1.0
+named_loggers=""
+logger_id() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    junit) echo JunitXml.TestLogger ;;
+    nunit) echo NunitXml.TestLogger ;;
+    xunit) echo XunitXml.TestLogger ;;
+    *) return 1 ;;
+  esac
+}
 ci_loggers() {
+  {
+    repo_loggers
+    for n in $named_loggers; do
+      id=$(logger_id "$n") || continue
+      printf '%s %s\n' "$id" "$(cache_version "$id" "$LOGGER_DEFAULT")"
+    done
+  } | awk 'NF && !seen[tolower($1)]++'
+}
+repo_loggers() {
   found=$(test_projects | while IFS= read -r t; do
     sed -n -e 's/.*<PackageReference[^>]*Include="\([A-Za-z0-9_.-]*TestLogger\)"[^>]*Version="\([^"]*\)".*/\1 \2/p' \
       -e 's/.*<PackageReference[^>]*Include="\([A-Za-z0-9_.-]*TestLogger\)".*/\1/p' "$t" 2>/dev/null
@@ -385,6 +409,7 @@ ci_loggers() {
       esac
       printf '%s %s\n' "$id" "$(cache_version "$id" "$LOGGER_DEFAULT")"
     done
+  return 0
 }
 
 # A package that a test project has from a Directory.Build.props or .targets of its folders (nothing to add then)
@@ -1177,10 +1202,17 @@ METHODS
     if [ "$2" = --loggers ]; then
       # the test loggers of the CI (dotnet test --logger junit…) added to each test project that lacks them, then a
       # build of each: what fixes a CI that stops on "Could not find a test logger … 'junit'"
+      # the names of the loggers the CI asks for (the FriendlyName of its error: junit, nunit, xunit), for a CI template
+      # kept in another repository
+      shift 2
+      for n in "$@"; do
+        logger_id "$n" > /dev/null || stop "$n is not a test logger of a package: junit, nunit or xunit (the name of the CI error, FriendlyName '<name>'); trx, console and html come with the SDK"
+        named_loggers="$named_loggers $n"
+      done
       need_dotnet
       [ -z "$(git status --porcelain)" ] || stop "uncommitted changes: setup runs on a clean working tree, so that a failure undoes all it did"
       wanted=$(ci_loggers)
-      [ -n "$wanted" ] || { echo "SETUP: no test logger to add: no test project of the repository references one (JunitXml.TestLogger…) and no CI file of the repository passes --logger junit, nunit or xunit to dotnet test (its CI template is elsewhere: add the package of the logger it names to each test project, at the version the team uses)"; exit 0; }
+      [ -n "$wanted" ] || { echo "SETUP: no test logger to add: no test project of the repository references one (JunitXml.TestLogger…) and no CI file of the repository passes --logger junit, nunit or xunit to dotnet test (its CI template is elsewhere). Give the name of the CI error (FriendlyName 'junit'): setup --loggers junit"; exit 0; }
       mkdir -p "$folder" || stop "cannot create $folder"
       log="$folder/setup.log"
       take_lock

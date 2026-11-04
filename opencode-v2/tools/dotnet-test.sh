@@ -612,6 +612,29 @@ git checkout -q -- .
 git rm -q -r --cached tests && rm -rf tests && git commit -q -m none
 run test-guardian.sh setup --loggers
 check "setup --loggers: no logger named here" 0 '^SETUP: no test logger to add'
+# the only test project of the repository lacks the logger, and the CI template is in another repository: nothing in
+# this one names it, so the name of the CI error does (the case of a Blazorise removal whose bUnit project is the first)
+git rm -q --cached Directory.Packages.props && rm -f Directory.Packages.props
+project tests/Web.Tests/Web.Tests.csproj Microsoft.NET.Sdk \
+  '<ItemGroup>' '  <PackageReference Include="coverlet.collector" Version="10.1.0" />' '  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />' \
+  '  <PackageReference Include="xunit" Version="2.9.3" />' '  <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />' '  <PackageReference Include="bunit" Version="2.11.3" />' '</ItemGroup>' \
+  '<!-- fake-test: Web.Tests.OrdersPageTests.Renders pass -->' '<!-- fake-test: Web.Tests.OrdersPageTests.Filters pass -->' '<!-- fake-test: Web.Tests.FakeS3EndpointTests.Denies pass -->'
+git add -A && git commit -q -m "one test project, no logger"
+run test-guardian.sh setup --loggers
+check "setup --loggers: the only test project without logger, no CI file: the name of the CI error asked" 0 "^SETUP: no test logger to add: .*setup --loggers junit\$"
+truth "setup --loggers: nothing changed without a name" '[ -z "$(git status --porcelain)" ]'
+run test-guardian.sh setup --loggers junit
+check "setup --loggers junit: the logger the CI error names, added" 0 '^SETUP: the test loggers of the CI added: tests/Web\.Tests/Web\.Tests\.csproj: JunitXml\.TestLogger 6\.1\.0; build OK$'
+check "setup --loggers junit: and its tests run with it, as the CI runs them" 0 '^LOGGER: tests/Web\.Tests/Web\.Tests\.csproj: --logger junit loads \(3 tests ran, 0 failed\)$'
+truth "setup --loggers junit: the reference in the project" 'grep -q "<PackageReference Include=\"JunitXml.TestLogger\" Version=\"6.1.0\" />" tests/Web.Tests/Web.Tests.csproj'
+git checkout -q -- .
+mkdir -p "$work/team-cache/junitxml.testlogger/5.0.0"
+NUGET_PACKAGES="$work/team-cache"
+run test-guardian.sh setup --loggers JUnit
+check "setup --loggers JUnit: the version of this machine's NuGet cache (the team's)" 0 '^SETUP: the test loggers of the CI added: tests/Web\.Tests/Web\.Tests\.csproj: JunitXml\.TestLogger 5\.0\.0; build OK$'
+git checkout -q -- .
+run test-guardian.sh setup --loggers trx
+check "setup --loggers trx: not a logger of a package" 1 "^STOP: trx is not a test logger of a package: junit, nunit or xunit"
 unset NUGET_PACKAGES
 
 # ---------- package-refs.sh --doc: the XML documentation of a public package (the Blazorise DataGrid case) ----------

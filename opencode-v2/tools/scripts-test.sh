@@ -408,8 +408,9 @@ guard_case feature/G-10-logger-test 'tests/Api.Tests/CiTests.cs=var logger = typ
 check "guard: C# that loads the logger of the CI: nothing pushed" 1 '^- C# that uses the test loggers of the CI \(a probe test\) in tests/Api\.Tests/CiTests\.cs:1$'
 guard_case feature/G-11-health 'src/Api/HealthProbe.cs=public sealed class HealthProbe { }
 tests/Api.Tests/HealthProbeTests.cs=public class HealthProbeTests { [Fact] public void Live_Returns200() { } }
-tests/Api.Tests/Api.Tests.csproj=<PackageReference Include="JunitXml.TestLogger" Version="6.1.0" />'
-check "guard: a health probe of the application and the logger package in a project: pushed" 0 '^GUARD: OK '
+tests/Api.Tests/Api.Tests.csproj=<PackageReference Include="JunitXml.TestLogger" Version="6.1.0" />
+tests/Api.Tests/FakeS3Endpoint.cs=using (var probe = new TcpListener(IPAddress.Loopback, 0)) { probe.Start(); port = ((IPEndPoint)probe.LocalEndpoint).Port; }'
+check "guard: a health probe, a variable named probe in a fake server, the logger package in a project: pushed" 0 '^GUARD: OK '
 guard_case feature/G-12-probe-removed 'ProbeTest.cs=public class ProbeTest { }'
 git rm -q ProbeTest.cs && git commit -q -m "chore: remove the probe"
 run diff-guard.sh
