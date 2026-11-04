@@ -1,6 +1,6 @@
 # Passation entre sessions (pack OpenCode v2)
 
-Ce fichier est chargé au début de chaque session Claude Code. Il dit le cadre de travail, l'état au 4 novembre 2026 et ce qui reste à faire. Mets-le à jour à la fin d'une session qui change l'un de ces points.
+Ce fichier est chargé au début de chaque session Claude Code. Il dit le cadre de travail, l'état au 4 novembre 2026 (fin de matinée) et ce qui reste à faire. Mets-le à jour à la fin d'une session qui change l'un de ces points.
 
 ## Le cadre (consignes durables de l'utilisateur)
 
@@ -70,9 +70,8 @@ Ce fichier est chargé au début de chaque session Claude Code. Il dit le cadre 
 ## Ce qui reste à faire
 
 1. **Pipeline de l'utilisateur** : il doit corriger son dépôt avec le bloc en tête de `opencode-v2/COMMANDES.md` (« En cours : la CI s'arrête sur … 'junit' »), puis recoller `scripts/test-guardian.sh`, `commands/fix.md` et la nouvelle ligne de `AGENTS.global.md`. **Pas encore de confirmation que la pipeline repasse.** Quand il confirme, retire ce bloc de COMMANDES.md, avec son entrée de RELEASE-NOTES, sur `main`.
-2. **Compteur faux** : `opencode-v2/README.md`, section « Pour la maintenance du pack », dit `dotnet-test.sh` « 459 contrôles ». Il y en a 468 ; FICHIERS dit déjà 468. À corriger au prochain commit du pack.
-3. **Chemins `~/oc2`** : l'introduction de `COMMANDES.md` et une partie de `MIGRATION.md` décrivent encore l'installation côte à côte. Pour cet utilisateur, c'est l'annexe A de MIGRATION et `~/.config/opencode` qui valent. À clarifier si l'occasion se présente, sans casser le guide de ceux qui ont l'installation côte à côte.
-4. **Cas non couvert pour les loggers** : un modèle de CI hébergé dans un autre dépôt GitLab, dans un dépôt dont aucun projet de tests n'a encore de logger. Le pack ne peut pas le deviner ; il le dit (« SETUP: no test logger to add ») et nomme le paquet à ajouter.
+2. **Chemins `~/oc2`** : l'introduction de `COMMANDES.md` et une partie de `MIGRATION.md` décrivent encore l'installation côte à côte. Pour cet utilisateur, c'est l'annexe A de MIGRATION et `~/.config/opencode` qui valent. À clarifier si l'occasion se présente, sans casser le guide de ceux qui ont l'installation côte à côte.
+3. **Cas non couvert pour les loggers** : un modèle de CI hébergé dans un autre dépôt GitLab, dans un dépôt dont aucun projet de tests n'a encore de logger. Le pack ne peut pas le deviner ; il le dit (« SETUP: no test logger to add ») et nomme le paquet à ajouter.
 
 ## Vérifier avant de pousser (depuis `opencode-v2/`)
 
