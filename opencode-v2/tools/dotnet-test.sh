@@ -580,7 +580,8 @@ run test-guardian.sh setup --loggers
 check "setup --loggers: nothing to do when every test project has them" 0 '^SETUP: nothing to do, every test project has the test loggers of the CI \(JunitXml\.TestLogger\)$'
 # the version of the team: another test project's, not the default
 project tests/Old.Tests/Old.Tests.csproj Microsoft.NET.Sdk \
-  '<ItemGroup>' '  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />' '  <PackageReference Include="xunit" Version="2.9.2" />' '</ItemGroup>'
+  '<ItemGroup>' '  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />' '  <PackageReference Include="xunit" Version="2.9.2" />' '</ItemGroup>' \
+  '<!-- fake-test: Old.Tests.AgeTests.Adult pass -->' '<!-- fake-test: Old.Tests.AgeTests.Minor pass -->'
 sed 's/Include="JunitXml.TestLogger" Version="6.1.0"/Include="JunitXml.TestLogger" Version="3.1.12"/' tests/Api.UnitTests/Api.UnitTests.csproj > x.tmp && mv x.tmp tests/Api.UnitTests/Api.UnitTests.csproj
 git rm -q --cached .gitlab-ci.yml && rm -f .gitlab-ci.yml
 git add -A && git commit -q -m old
@@ -588,13 +589,23 @@ run test-guardian.sh setup --loggers
 check "setup --loggers: the logger of the other test projects, at their version" 0 '^SETUP: the test loggers of the CI added: tests/Old\.Tests/Old\.Tests\.csproj: JunitXml\.TestLogger 3\.1\.12; build OK$'
 truth "setup --loggers: in the project that lacked it" 'grep -q "<PackageReference Include=\"JunitXml.TestLogger\" Version=\"3.1.12\" />" tests/Old.Tests/Old.Tests.csproj'
 truth "setup --loggers: the other projects unchanged" '[ "$(git status --porcelain | wc -l)" -eq 1 ]'
+check "setup --loggers: the tests run with the logger, as the CI runs them" 0 '^LOGGER: tests/Old\.Tests/Old\.Tests\.csproj: --logger junit loads \(2 tests ran, 0 failed\)$'
+truth "setup --loggers: nothing new in the repository but the project file" '[ -z "$(git ls-files --others --exclude-standard)" ] && [ "$(git status --porcelain)" = " M tests/Old.Tests/Old.Tests.csproj" ]'
+check "setup --loggers: never a test to check it" 0 '^NOTE: .*Never a test, a project or a folder to check a logger\.$'
 git checkout -q -- .
+FAKE_DOTNET_NO_LOGGER=1
+export FAKE_DOTNET_NO_LOGGER
+run test-guardian.sh setup --loggers
+unset FAKE_DOTNET_NO_LOGGER
+check "setup --loggers: a logger that does not load after its package was added stops" 1 "^STOP: tests/Old\.Tests/Old\.Tests\.csproj: dotnet test --logger junit does not find the logger after JunitXml\.TestLogger was added: nothing changed$"
+truth "setup --loggers: nothing changed after that stop" '[ -z "$(git status --porcelain)" ]'
 # central versions: the reference without a version, the version in Directory.Packages.props
 printf '<Project>\n  <PropertyGroup>\n    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>\n  </PropertyGroup>\n  <ItemGroup>\n    <PackageVersion Include="xunit" Version="2.9.2" />\n  </ItemGroup>\n</Project>\n' > Directory.Packages.props
 sed 's/ Version="3.1.12"//' tests/Api.UnitTests/Api.UnitTests.csproj > x.tmp && mv x.tmp tests/Api.UnitTests/Api.UnitTests.csproj
 git add -A && git commit -q -m central
 run test-guardian.sh setup --loggers
 check "setup --loggers: central versions" 0 '^SETUP: the test loggers of the CI added: tests/Old\.Tests/Old\.Tests\.csproj: JunitXml\.TestLogger \(central\); build OK$'
+check "setup --loggers: central versions, the logger loads" 0 '^LOGGER: tests/Old\.Tests/Old\.Tests\.csproj: --logger junit loads \(2 tests ran, 0 failed\)$'
 truth "setup --loggers: the version declared once, centrally" 'grep -q "<PackageVersion Include=\"JunitXml.TestLogger\" Version=\"6.1.0\" />" Directory.Packages.props && grep -q "<PackageReference Include=\"JunitXml.TestLogger\" />" tests/Old.Tests/Old.Tests.csproj'
 git checkout -q -- .
 # no logger anywhere, no CI file: nothing to add, said

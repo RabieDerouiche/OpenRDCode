@@ -398,6 +398,22 @@ guard_case feature/G-6-dotenv 'src/Api/.env=Payments__ApiKey=pk-live-0123456789a
 check "guard: a .env file: nothing pushed" 1 '^- \.env file added: src/Api/\.env$'
 guard_case feature/G-7-example 'src/Api/.env.example=Payments__ApiKey=<your key>'
 check "guard: a .env.example with a placeholder: pushed" 0 '^GUARD: OK '
+# probe or scratch files, folders and tests (the guard 34 of the plugin, at the last gate)
+guard_case feature/G-8-junit-probe '.junit-probe/JunitProbe.csproj=<Project Sdk="Microsoft.NET.Sdk" />'
+check "guard: a .junit-probe folder: nothing pushed" 1 '^- probe or scratch file added: \.junit-probe/JunitProbe\.csproj \(\.junit-probe\)$'
+check "guard: what to do with a probe, not the advice for a secret" 1 '^A probe or scratch file or test: take it out in a commit of the branch' 'gitleaks:allow'
+guard_case feature/G-9-probe-test 'tests/Api.Tests/OrderTests.cs=public class OrderTests { [Fact] public void Probe_JunitLogger_Loads() { } }'
+check "guard: a probe test in a test class: nothing pushed" 1 '^- probe test added: Probe_JunitLogger_Loads in tests/Api\.Tests/OrderTests\.cs:1$'
+guard_case feature/G-10-logger-test 'tests/Api.Tests/CiTests.cs=var logger = typeof(JUnit.Xml.TestLogger.JunitXmlTestLogger);'
+check "guard: C# that loads the logger of the CI: nothing pushed" 1 '^- C# that uses the test loggers of the CI \(a probe test\) in tests/Api\.Tests/CiTests\.cs:1$'
+guard_case feature/G-11-health 'src/Api/HealthProbe.cs=public sealed class HealthProbe { }
+tests/Api.Tests/HealthProbeTests.cs=public class HealthProbeTests { [Fact] public void Live_Returns200() { } }
+tests/Api.Tests/Api.Tests.csproj=<PackageReference Include="JunitXml.TestLogger" Version="6.1.0" />'
+check "guard: a health probe of the application and the logger package in a project: pushed" 0 '^GUARD: OK '
+guard_case feature/G-12-probe-removed 'ProbeTest.cs=public class ProbeTest { }'
+git rm -q ProbeTest.cs && git commit -q -m "chore: remove the probe"
+run diff-guard.sh
+check "guard: a probe removed by a later commit of the branch: pushed" 0 '^GUARD: OK '
 git switch -q develop
 
 # ---------- /sync on develop: a fast-forward to origin, never a merge ----------

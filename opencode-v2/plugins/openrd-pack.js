@@ -233,7 +233,17 @@
 //    log names the {env:NAME} variables of the MCP servers of opencode.json that the OpenCode server does not have
 //    (OpenCode sends them empty, without an error: a token in a header, as if none were given), never a value; the cause
 //    of a missing tool names them too.
-// Every refusal of 6, 7, 9, 12, 16, 23, 24 and 25 is written as "refused by the pack" to the log of the plugin,
+// 34. Refuses to the agents of the pack a probe or scratch file, folder or test: one made to find out how a tool, a
+//    package or the CI behaves, never part of the change (a .junit-probe folder with a project in it, a ProbeTest
+//    added to a test class to see whether the JUnit logger of the CI loads, a scratch or sandbox folder). Written with
+//    write, edit or patch, or created with mkdir, touch, cp, mv or dotnet new: a new path of the repository with a
+//    segment named so (.junit-probe, Probe…, LoggerProbe, Scratch…, sandbox, playground, tmp, TempTest…), or C# that
+//    declares a test or a class named Probe…, Scratch…, TempTest… or …Junit…, or uses the test loggers of the CI
+//    themselves (JunitXml, NunitXml, XunitXml). A file the last commit holds keeps its name, and the word "probe"
+//    alone stays allowed in a repository whose C# code already has it (a health probe of the application). The agent
+//    is told what to do instead: `test-guardian.sh setup --loggers` for the loggers, `package-refs.sh --doc` for the
+//    API of a package, otherwise « BLOQUÉ ». The free conversation is mine. diff-guard.sh stops a push that holds one.
+// Every refusal of 6, 7, 9, 12, 16, 23, 24, 25 and 34 is written as "refused by the pack" to the log of the plugin,
 // <XDG data folder>/opencode/log/openrd-pack.log (~/.local/share/opencode/log/openrd-pack.log), and to the output of
 // the OpenCode server (lost when OpenCode runs as its background service): COMMANDES.md, "Logs d'OpenCode". So are
 // the summaries of a run (17), its automatic resumes (19), the loops cut (21), the resumes I ask for (22), the end of a
@@ -845,6 +855,57 @@ function toolText(name, input) {
 const PATCH_FILE = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+?)\s*$/gm
 const patchFiles = (text) => [...String(text || "").matchAll(PATCH_FILE)].map((m) => m[1])
 
+// 34. A probe or scratch file: a file, a folder or a test made to find out how a tool, a package or the CI behaves (a
+// probe project, a .junit-probe folder, a ProbeTest), never part of the change. The name of one segment of a path, as
+// { piece, weak }: weak when only the word "probe" says it (a health probe of the application is a probe too: a
+// repository whose C# code already has that word keeps it), "" otherwise.
+export function probePath(path) {
+  for (const segment of String(path || "").split(/[\\/]+/)) {
+    if (!segment || segment === "." || segment === "..") continue
+    const lower = segment.toLowerCase()
+    if (lower.startsWith(".")) {
+      if (/probe|scratch|sandbox|playground/.test(lower)) return { piece: segment, weak: false }
+      continue
+    }
+    const stem = lower.split(".")[0]
+    if (/^(?:scratch|sandbox|playground|tmp|temp)$/.test(stem) || /^scratch/.test(stem)) return { piece: segment, weak: false }
+    if (/^(?:te?mp|temporary)[-_]?(?:tests?|probes?)$/.test(stem)) return { piece: segment, weak: false }
+    if (/(?:junit|nunit|xunit|logger)[-_]?probe/.test(stem)) return { piece: segment, weak: false }
+    if (/^probe/.test(stem)) return { piece: segment, weak: true }
+  }
+  return ""
+}
+
+// The probe tests of a C# text an agent writes (its new text only: what `previous` already held is not new), as
+// { piece, weak }, or "": a test method or class named Probe…, Scratch…, TempTest…, …Junit…, or C# that uses the test
+// loggers of the CI themselves (JunitXml, NunitXml, XunitXml: a test never checks the tooling of the CI)
+const PROBE_MEMBER = /\b(?:Task|ValueTask|void|class)\s+((?:Probe|Scratch)\w*|Te?mp(?:orary)?_?Tests?\w*|\w*J[Uu]nit\w*)\s*[({:<\n]/g
+const CI_LOGGER = /\b(?:Junit|JUnit|Nunit|NUnit|Xunit|XUnit)Xml|\bSpekt\b/
+export function probeCode(file, text, previous = "") {
+  if (!/\.cs$/i.test(String(file || "")) || typeof text !== "string" || !text) return ""
+  const before = String(previous || "")
+  for (const m of text.matchAll(PROBE_MEMBER)) {
+    if (before.includes(m[1])) continue
+    return { piece: m[1], weak: /^Probe/.test(m[1]) }
+  }
+  const logger = text.match(CI_LOGGER)
+  if (logger && !before.includes(logger[0])) return { piece: logger[0], weak: false }
+  return ""
+}
+
+// The text a patch adds to each file ("+" lines of its hunks, and every line of an added file), by path
+function patchAdded(text) {
+  const added = new Map()
+  let file = ""
+  for (const line of String(text || "").split("\n")) {
+    const head = line.match(/^\*\*\* (?:Add File|Update File|Move to): (.+?)\s*$/)
+    if (head) { file = head[1]; if (!added.has(file)) added.set(file, ""); continue }
+    if (/^\*\*\* /.test(line)) { file = ""; continue }
+    if (file && line.startsWith("+")) added.set(file, added.get(file) + line.slice(1) + "\n")
+  }
+  return added
+}
+
 // The guards of the shell and file tools (6, 7, 11, the timeouts of 8) and the stable environment (2), for the folder
 // of one location. `client` gives the session of an id ({ data: { parentID } }), the configuration (references) and
 // the log.
@@ -911,6 +972,70 @@ export const Guards = async (input) => {
   function addNamed(sessionID, text) {
     const found = namedFolders(text, root)
     if (found.length) named.set(sessionID, [...new Set([...(named.get(sessionID) || []), ...found])])
+  }
+
+  // 34. the probe or scratch file, folder or test a tool call of an agent would write, as { piece, kind }, or null.
+  // A file the last commit already holds keeps its name; a weak name ("probe" alone) is the application's own when
+  // its C# code already has that word (a health probe).
+  let probeWord
+  function probeInCode() {
+    if (probeWord === undefined) {
+      try {
+        execFileSync("git", ["-C", root, "grep", "-q", "-i", "-I", "probe", "HEAD", "--", "*.cs"], { stdio: "ignore", timeout: 10000 })
+        probeWord = true
+      } catch {
+        probeWord = false
+      }
+    }
+    return probeWord
+  }
+  function tracked(file) {
+    try {
+      execFileSync("git", ["-C", root, "ls-files", "--error-unmatch", "--", resolve(directory, file)], { stdio: "ignore", timeout: 10000 })
+      return true
+    } catch {
+      return false
+    }
+  }
+  function probeWrite(tool, args) {
+    if (!args) return null
+    const keep = (hit) => hit && !(hit.weak && probeInCode())
+    const files = []
+    // the text written: every string argument but the path and the text replaced (the names of the arguments change
+    // from one version of OpenCode to the next: content, newString, new_string…)
+    const strings = (skip) => Object.entries(args).filter(([key, value]) => typeof value === "string" && !skip.test(key)).map(([, value]) => value)
+    if (tool === "write" || tool === "edit" || tool === "multiedit") {
+      const file = args.filePath || args.file_path
+      if (typeof file === "string" && file) {
+        const edits = Array.isArray(args.edits) ? args.edits.filter((e) => e && typeof e === "object") : []
+        const text = [...strings(/^(?:filePath|file_path|path|old\w*|description)$/i), ...edits.flatMap((e) => [e.newString, e.new_string])].filter((v) => typeof v === "string").join("\n")
+        const previous = [args.oldString, args.old_string, ...edits.flatMap((e) => [e.oldString, e.old_string])].filter((v) => typeof v === "string").join("\n")
+        files.push([file, text, previous])
+      }
+    } else if (tool === "patch" || tool === "apply_patch") {
+      for (const text of strings(/^description$/i)) for (const [file, added] of patchAdded(text)) files.push([file, added, ""])
+    } else if (tool === "bash" && typeof args.command === "string") {
+      // a folder, a file or a project created or copied from the shell (mkdir, touch, cp, mv, dotnet new)
+      if (!/(?:^|[\s;&|(])(?:mkdir|touch|cp|mv|dotnet\s+new)(?=\s)/.test(args.command)) return null
+      for (const word of args.command.split(/[\s;&|()]+/)) {
+        const path = word.replace(/^['"]|['"]$/g, "").replace(/^--?\w+=/, "")
+        if (!path || path.startsWith("-") || /^\w+:\/\//.test(path)) continue
+        if (isAbsolute(path) && !within(resolve(path), root)) continue
+        const hit = probePath(path)
+        if (keep(hit) && !tracked(path)) return { piece: hit.piece, kind: "folder or file" }
+      }
+      return null
+    }
+    for (const [file, text, previous] of files) {
+      const full = resolve(directory, file)
+      if (!within(full, root)) continue
+      const rel = full.slice(root.length)
+      const hit = probePath(rel)
+      if (keep(hit) && !tracked(file)) return { piece: hit.piece, kind: "folder or file" }
+      const code = probeCode(file, text, previous)
+      if (keep(code)) return { piece: code.piece, kind: "test" }
+    }
+    return null
   }
 
   // Where a tool call leaves the folders allowed to its agent (7), as { piece, readOnly }, or null
@@ -1057,6 +1182,22 @@ export const Guards = async (input) => {
               "that needs a package is « BLOQUÉ » with what is needed (the package, its version, why). The dependencies " +
               "of the lockfile are installed by sh ~/.config/opencode/scripts/build-test.sh [<folder>] when they are " +
               "missing (npm ci, dotnet restore). Never try another form of this command.",
+          )
+        }
+      }
+      // 34. the agents of the pack never write a probe or scratch file, folder or test
+      if (PACK_AGENTS.has(call.agent || agents.get(call.sessionID) || "")) {
+        const found = probeWrite(call.tool, output.args)
+        if (found) {
+          logRefusal(call, "a probe or scratch " + found.kind, found.piece)
+          throw new Error(
+            "Refused by the pack: " + found.piece + " is a probe or scratch " + found.kind + ": a file, a folder, a " +
+              "project or a test made to find out how a tool, a package or the CI behaves never goes in the repository, " +
+              "not even for a moment. A test checks the code of the application, nothing else. The test loggers of the " +
+              "CI (Could not find a test logger … 'junit'): sh ~/.config/opencode/scripts/test-guardian.sh setup " +
+              "--loggers adds them and runs dotnet test with them as the CI does. The API of a package: sh " +
+              "~/.config/opencode/scripts/package-refs.sh --doc <package id>. Nothing tells it: report « BLOQUÉ » with " +
+              "what is missing. Never try another name or another form.",
           )
         }
       }

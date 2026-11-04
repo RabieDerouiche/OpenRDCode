@@ -1204,7 +1204,33 @@ EOF
           stop "the build of $t fails with its test logger: nothing changed"
         fi
       done || exit 1
+      # then the tests of each of these projects with the loggers, as the CI runs them: the proof that each logger loads
+      # (its report written in the measures folder, never in the repository), so that nobody writes a test, a project or
+      # a folder to find out
+      proof=$(printf '%s' "$added" | while IFS= read -r line; do
+        t=${line%%: *}
+        [ -n "$t" ] || continue
+        for id in $(printf '%s\n' "${line#*: }" | tr ',' '\n' | sed 's/^ *//' | cut -d' ' -f1); do
+          name=$(printf '%s' "$id" | sed 's/Xml\.TestLogger$//' | tr '[:upper:]' '[:lower:]')
+          n=$(basename "$t" .csproj)
+          again "$log" test "$t" --no-build --nologo --logger "$name;LogFilePath=$folder/$n-$name.xml"
+          if grep -q 'Could not find a test logger' "$log"; then
+            git checkout -q -- . 2>/dev/null
+            grep 'Could not find a test logger' "$log" | head -n 1
+            echo "STOP:$t: dotnet test --logger $name does not find the logger after $id was added: nothing changed"
+            exit 1
+          fi
+          if grep -q 'No test is available' "$log"; then
+            echo "$t: --logger $name loads (no test in it yet: the CI runs it as it is)"
+          else
+            set -- $(counts "$log")
+            echo "$t: --logger $name loads ($(( ${1:-0} + ${2:-0} )) tests ran, ${2:-0} failed)"
+          fi
+        done
+      done) || { printf '%s\n' "$proof" | grep -v '^STOP:' ; stop "$(printf '%s\n' "$proof" | sed -n 's/^STOP://p' | head -n 1)"; }
       echo "SETUP: the test loggers of the CI added: $(printf '%s' "$added" | tr '\n' ';' | sed 's/;$//; s/;/; /g'); build OK"
+      printf '%s\n' "$proof" | sed 's/^/LOGGER: /'
+      echo "NOTE: the CI test job runs as it is now: commit these project files, nothing else. Never a test, a project or a folder to check a logger."
       exit 0
     fi
     case "$2" in

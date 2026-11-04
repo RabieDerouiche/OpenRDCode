@@ -401,6 +401,16 @@ case "$1" in
     [ "$nobuild" -eq 0 ] && moment_failure "$t" && exit 1
     status=0 any=0
     for p in $(projects_of "$t"); do
+      # a logger of a package (--logger junit: JunitXml.TestLogger): VSTest stops when the project does not reference it
+      case "$logger" in
+        junit*|nunit*|xunit*)
+          lname=${logger%%;*}
+          if grep -q 'Microsoft.NET.Test.Sdk' "$p" 2>/dev/null && { ! grep -qi "Include=\"${lname}Xml.TestLogger\"" "$p" || [ -n "${FAKE_DOTNET_NO_LOGGER:-}" ]; }; then
+            echo "Could not find a test logger with AssemblyQualifiedName, URI or FriendlyName '$lname'."
+            status=1 any=1
+            continue
+          fi ;;
+      esac
       if ! sources_of "$p" | while IFS= read -r src; do cat "$src" 2>/dev/null; done | grep -q 'fake-test:'; then
         # a test project with no test yet (just set up): VSTest finds none, and coverlet still writes its report, each
         # line of the code at 0 (fake-no-cover-without-tests: a runner that then writes none)

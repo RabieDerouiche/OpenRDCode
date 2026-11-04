@@ -2051,7 +2051,7 @@ await check("[v2 19] a conversation that ends without a mark is never resumed", 
 
 // ---------- 21. an answer that repeats itself ----------
 const pack21 = await import(join(stub, "openrd-pack.js"))
-const { segmentsOf, loopAtEnd, collapseRepeats, sanitizeLoops, watchStream, isContinue, dotnetRunTarget, dependencyChange, scheduleEntries, scheduleAllowed, dueSchedules } = pack21
+const { segmentsOf, loopAtEnd, collapseRepeats, sanitizeLoops, watchStream, isContinue, dotnetRunTarget, dependencyChange, scheduleEntries, scheduleAllowed, dueSchedules, probePath, probeCode } = pack21
 const loopSentence = "Je vérifie l'API réelle de Blazorise.DataGrid 2.2.2 avant de trancher."
 const intro = "Le coder est BLOQUÉ : le mécanisme DataGridLocalization n'existe pas dans Blazorise.DataGrid 2.2.2. "
 const looping = intro + Array(20).fill(loopSentence).join(" ")
@@ -2552,6 +2552,80 @@ await check("[23] build runs the tests of a committed test project", () => runTo
 for (const command of ["dotnet run --project Probe", "dotnet run --project Probe/Probe.csproj", "dotnet run Probe.cs", "cd Probe && dotnet run"]) {
   await check(`[23] refused: ${command}`, () => assert.rejects(() => runTool(command), /dotnet run runs only a project of this repository that the last commit holds/))
 }
+
+// ---------- 34. probe or scratch files, folders and tests: never written by the agents of the pack ----------
+await check("[34] the names of probe and scratch files and folders", () => {
+  for (const path of [".junit-probe/Probe.csproj", "tests/.probe/x.cs", "Probe/Probe.csproj", "tests/Api.Tests/ProbeTests.cs", "ProbeTest.cs",
+    "tests/Api.Tests/JunitProbeTests.cs", "tests/LoggerProbe/LoggerProbe.csproj", "scratch/a.cs", "ScratchPad.cs", "tests/Api.Tests/TempTest.cs",
+    "tests/Api.Tests/Temporary_Tests.cs", "sandbox/x.cs", "tmp/a.txt"]) {
+    assert.ok(probePath(path), path)
+  }
+  for (const path of ["src/Api/Orders.cs", "tests/Api.Tests/OrderTests.cs", "src/Api/HealthProbe.cs", "tests/Api.Tests/HealthProbeTests.cs",
+    "src/Templates/Mail.cs", "src/Api/TemperatureSensor.cs", "tests/Api.Tests/TemporaryFileTests.cs", ".github/workflows/ci.yml", ".gitlab-ci.yml"]) {
+    assert.equal(probePath(path), "", path)
+  }
+  assert.equal(probePath("Probe.cs").weak, true)
+  assert.equal(probePath(".junit-probe").weak, false)
+  assert.equal(probePath("tests/JunitProbe.cs").weak, false)
+})
+await check("[34] the probe tests of a C# text", () => {
+  assert.equal(probeCode("tests/A/OrderTests.cs", "[Fact]\npublic void Probe_JunitLogger_Loads()\n{\n}").piece, "Probe_JunitLogger_Loads")
+  assert.equal(probeCode("tests/A/OrderTests.cs", "public class ProbeTest\n{").piece, "ProbeTest")
+  assert.equal(probeCode("tests/A/OrderTests.cs", "public async Task JunitLoggerIsLoaded() {}").piece, "JunitLoggerIsLoaded")
+  assert.equal(probeCode("tests/A/OrderTests.cs", "public void TempTest() {}").piece, "TempTest")
+  assert.equal(probeCode("tests/A/X.cs", "var t = typeof(JUnit.Xml.TestLogger.JUnitXmlTestLogger);").piece, "JUnitXml")
+  assert.equal(probeCode("tests/A/OrderTests.cs", "[Fact]\npublic void Total_WithTax_AddsTheTax() {}"), "")
+  assert.equal(probeCode("tests/A/OrderTests.cs", "var logger = new TestLogger<OrderService>();"), "")
+  assert.equal(probeCode("tests/A/OrderTests.cs", "public void TemporaryFile_IsDeleted() {}"), "")
+  // what the text replaced already held is not new
+  assert.equal(probeCode("tests/A/HealthTests.cs", "public void ProbeEndpoint_Returns200() { Assert.True(true); }", "public void ProbeEndpoint_Returns200() {}"), "")
+  // a project file or a pipeline names the logger: never C#
+  assert.equal(probeCode("tests/A/A.csproj", "<PackageReference Include=\"JunitXml.TestLogger\" />"), "")
+})
+runGuards.agent("run-coder", "coder")
+runGuards.agent("run-guardian", "test-guardian")
+const packTool = async (tool, args, agent = "coder") => {
+  const output = { args }
+  await runGuards.before({ tool, sessionID: agent === "coder" ? "run-coder" : agent === "test-guardian" ? "run-guardian" : "run-build", agent, callID: "p" }, output)
+}
+const probeRefusal = /Refused by the pack: .* is a probe or scratch (?:folder or file|test): .*test-guardian\.sh setup --loggers/
+await check("[34] a probe folder written by an agent: refused", () =>
+  assert.rejects(() => packTool("write", { filePath: join(runRepo, ".junit-probe", "JunitProbe.csproj"), content: "<Project />" }), probeRefusal))
+await check("[34] a probe test file of the test-guardian: refused", () =>
+  assert.rejects(() => packTool("write", { filePath: "tests/Api.Tests/ProbeTest.cs", content: "public class ProbeTest {}" }, "test-guardian"), probeRefusal))
+await check("[34] a probe test added to an existing test class: refused", () =>
+  assert.rejects(() => packTool("edit", { filePath: "tests/Api.Tests/OrderTests.cs", oldString: "}", newString: "[Fact]\npublic void Probe_JunitLogger() {}\n}" }, "test-guardian"), probeRefusal))
+await check("[34] a test of the logger in a patch: refused", () =>
+  assert.rejects(() => packTool("patch", { patchText: "*** Begin Patch\n*** Update File: tests/Api.Tests/OrderTests.cs\n@@\n+    [Fact] public void JunitLoggerLoads() {}\n*** End Patch" }), probeRefusal))
+await check("[34] a probe folder or project from the shell: refused", async () => {
+  await assert.rejects(() => packTool("bash", { command: "mkdir -p .junit-probe" }), probeRefusal)
+  await assert.rejects(() => packTool("bash", { command: "cd tests && mkdir LoggerProbe" }), probeRefusal)
+})
+await check("[34] a real test, a real folder: allowed", async () => {
+  await packTool("write", { filePath: "tests/Api.Tests/OrderTests.cs", content: "public class OrderTests { [Fact] public void Total_WithTax_AddsTheTax() {} }" }, "test-guardian")
+  await packTool("edit", { filePath: "tests/Api.Tests/OrderTests.cs", oldString: "}", newString: "[Fact] public void Ship_Twice_Throws() {}\n}" }, "test-guardian")
+  await packTool("bash", { command: "mkdir -p tests/Api.Tests/Orders" })
+})
+await check("[34] the free conversation writes what it wants", () =>
+  packTool("write", { filePath: "ProbeTest.cs", content: "public class ProbeTest {}" }, "build"))
+// a repository whose code has the word (a health probe): the name "probe" alone is the application's; .junit-probe never
+const healthRepo = join(home, "repos", "health-api")
+mkdirSync(join(healthRepo, "src", "Api"), { recursive: true })
+writeFileSync(join(healthRepo, "src", "Api", "LivenessProbe.cs"), "public sealed class LivenessProbe {}\n")
+execFileSync("git", ["init", "-q", healthRepo])
+execFileSync("git", ["-C", healthRepo, "add", "-A"])
+execFileSync("git", ["-C", healthRepo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init"])
+const healthGuards = await Guards({ client, directory: healthRepo, worktree: healthRepo })
+healthGuards.agent("h-coder", "coder")
+const healthTool = async (tool, args) => { const output = { args }; await healthGuards.before({ tool, sessionID: "h-coder", agent: "coder", callID: "h" }, output) }
+await check("[34] a health probe of the application: its tests and files allowed", async () => {
+  await healthTool("write", { filePath: "tests/Api.Tests/ProbeTests.cs", content: "public class ProbeTests { [Fact] public void Probe_Live_Returns200() {} }" })
+  await healthTool("write", { filePath: "src/Api/ReadinessProbe.cs", content: "public sealed class ReadinessProbe {}" })
+})
+await check("[34] a health probe of the application: .junit-probe and a test of the logger still refused", async () => {
+  await assert.rejects(() => healthTool("bash", { command: "mkdir .junit-probe" }), probeRefusal)
+  await assert.rejects(() => healthTool("write", { filePath: "tests/Api.Tests/LoggerTests.cs", content: "public void JunitLogger_Writes() {}" }), probeRefusal)
+})
 
 // ---------- 24. commands that never end by themselves ----------
 // An application with an Angular front-end (Karma: ng test watches), a Next.js package (jest runs once) and a web API

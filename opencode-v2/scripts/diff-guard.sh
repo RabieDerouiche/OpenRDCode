@@ -191,6 +191,41 @@ while IFS= read -r f; do
   fi
 done < "$tmp/added" >> "$tmp/findings"
 
+# Probe or scratch files, folders and tests the branch adds (the names of the guard 34 of the plugin): a file, a
+# project or a test made to find out how a tool, a package or the CI behaves (a .junit-probe folder, a ProbeTest added
+# to see whether the JUnit logger loads) never goes in a merge request. The word "probe" alone stays allowed in a
+# repository whose C# code already had it (a health probe of the application). Only what the branch still holds: a
+# probe added then removed by a later commit is gone.
+weak=1
+git grep -q -i -I probe "$mb" -- '*.cs' 2>/dev/null && weak=0
+awk -v weak="$weak" '{
+  n = split($0, parts, "/")
+  for (i = 1; i <= n; i++) {
+    l = tolower(parts[i])
+    if (substr(l, 1, 1) == ".") {
+      if (l ~ /probe|scratch|sandbox|playground/) { print "STOP|probe or scratch file added: " $0 " (" parts[i] ")"; next }
+      continue
+    }
+    stem = l; sub(/\..*$/, "", stem)
+    if (stem ~ /^(scratch|sandbox|playground|tmp|temp)$/ || stem ~ /^scratch/ || stem ~ /^(te?mp|temporary)[-_]?(tests?|probes?)$/ || stem ~ /(junit|nunit|xunit|logger)[-_]?probe/ || (weak && stem ~ /^probe/)) {
+      print "STOP|probe or scratch file added: " $0 " (" parts[i] ")"; next
+    }
+  }
+}' "$tmp/added" >> "$tmp/findings"
+awk -v weak="$weak" '
+  /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); cs = (tolower(file) ~ /\.cs$/); next }
+  /^@@ / { n = $0; sub(/^@@ -[0-9,]+ \+/, "", n); sub(/[ ,].*$/, "", n); line = n + 0; next }
+  /^\+/ && cs {
+    text = substr($0, 2)
+    if (match(text, /(^|[^A-Za-z0-9_])(Task|ValueTask|void|class)[ \t]+((Probe|Scratch)[A-Za-z0-9_]*|Te?mp(orary)?_?Tests?[A-Za-z0-9_]*|[A-Za-z0-9_]*J[Uu]nit[A-Za-z0-9_]*)[ \t]*[({:<]/)) {
+      name = substr(text, RSTART, RLENGTH); sub(/^.*(Task|ValueTask|void|class)[ \t]+/, "", name); sub(/[ \t]*[({:<]$/, "", name)
+      if (weak || name !~ /^Probe/) print "STOP|probe test added: " name " in " file ":" line
+    } else if (text ~ /(Junit|JUnit|Nunit|NUnit|Xunit|XUnit)Xml/ || text ~ /(^|[^A-Za-z0-9_])Spekt([^A-Za-z0-9_]|$)/) {
+      print "STOP|C# that uses the test loggers of the CI (a probe test) in " file ":" line
+    }
+    line++
+  }' "$tmp/diff" >> "$tmp/findings"
+
 # Packages added or changed, and the paid or copyleft versions among them
 sh "$here/package-licenses.sh" --diff "$base" > "$tmp/packages" 2>/dev/null
 grep -E '^- [+~] .*\]: (COMMERCIAL|MAINTENANCE FEE|AGPL) ' "$tmp/packages" | sed 's/^- /STOP|paid or copyleft package: /' >> "$tmp/findings"
@@ -200,6 +235,8 @@ warnings=$(grep -c '^WARNING|' "$tmp/findings")
 if [ "$stops" -gt 0 ]; then
   echo "GUARD: STOP, $stops problem(s) in the $commits commit(s) not pushed yet or in the changes since $base: nothing may be pushed"
   grep '^STOP|' "$tmp/findings" | sort -u | sed 's/^STOP|/- /'
+  grep -q '^STOP|probe ' "$tmp/findings" && echo "A probe or scratch file or test: take it out in a commit of the branch (git rm, or the coder removes the test), then run again: it never goes in a merge request, and nothing it checked needs it (the test loggers of the CI: test-guardian.sh setup --loggers)."
+  grep -q -v '^STOP|probe ' "$tmp/findings" &&
   echo "A false positive: the comment gitleaks:allow on that line, then run again. A real secret: it is in a local commit only (nothing was pushed): rewrite the local commits without it (COMMANDES.md, section \"Contrôle avant push\"), and have it revoked if it is a real one."
 else
   echo "GUARD: OK ($commits commit(s) to push, $files files changed since $base: no secret, no conflict marker, no paid package)"

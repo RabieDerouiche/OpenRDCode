@@ -6,26 +6,19 @@ Les commandes du pack à taper toi-même, à copier-coller, quand OpenCode v2 to
 
 ## En cours : la CI s'arrête sur « Could not find a test logger … 'junit' »
 
-La cause (certaine pour le mécanisme) : ta CI lance `dotnet test … --logger junit`, et ce logger vient du paquet `JunitXml.TestLogger`, que **chaque** projet de test doit référencer. Le retrait de Blazorise a créé un projet de tests unitaires (le filet bUnit) sans ce paquet : les tests passent ici, la CI échoue sur ce projet. Corrigé dans le pack : un projet de tests créé par le pack reprend les loggers des autres projets de tests, ou ceux que ton fichier de CI nomme ; `/fix` le corrige de lui-même (`test-guardian.sh setup --loggers`).
+La cause (certaine pour le mécanisme) : ta CI lance `dotnet test … --logger junit`, et ce logger vient du paquet `JunitXml.TestLogger`, que **chaque** projet de test doit référencer. Le retrait de Blazorise a créé un projet de tests unitaires (le filet bUnit) sans ce paquet : les tests passent ici, la CI échoue sur ce projet.
 
-Tout de suite, dans ton dépôt :
-1. Arrête le run d'OpenCode qui crée `.junit-probe` (Échap), vérifie qu'aucun commit ne le contient (la commande n'affiche rien), puis supprime le dossier :
-```sh
-git log --oneline origin/develop..HEAD -- .junit-probe
-rm -rf .junit-probe && git status --short
-```
-2. Qui a le logger, qui ne l'a pas, et la version de l'équipe :
-```sh
-git grep -n -i "JunitXml" -- '*.csproj' '*.props'; git ls-files '*Tests*.csproj'; ls ~/.nuget/packages/junitxml.testlogger/ 2>/dev/null
-```
-3. Ajoute-le au projet de tests qui ne l'a pas (la version de tes autres projets ou dépôts ; sinon `6.1.0`, licence MIT), puis lance les tests comme la CI :
-```sh
-dotnet add <chemin/du/projet>.Tests.csproj package JunitXml.TestLogger --version <version>
-dotnet test --logger "junit"
-```
-4. Commit (`fix(tests): add the test logger the CI uses`) et push : la pipeline repasse.
+Ce que `/fix` a fait de travers (probable) : il a traité l'échec comme un bug à prouver, et le test-guardian a écrit un test « sonde » pour montrer le logger. Corrigé dans le pack : ce cas n'est jamais un bug (ni preuve, ni filet, ni test) ; `test-guardian.sh setup --loggers` ajoute le paquet puis lance `dotnet test --logger junit` comme la CI (ses lignes `LOGGER:` sont la preuve) ; le plugin refuse à tout agent un fichier, un dossier ou un test sonde (`.junit-probe`, `ProbeTest`, `…Junit…`), et le contrôle avant push l'arrête s'il est déjà commité.
 
-Après la mise à jour du pack (`scripts/test-guardian.sh`, `commands/fix.md`, et la ligne du logger de `AGENTS.global.md` dans ton `AGENTS.md`), les étapes 2 et 3 se font en une phrase dans OpenCode : « lance `sh ~/.config/opencode/scripts/test-guardian.sh setup --loggers` ». Autre chose que « SETUP: the test loggers of the CI added » ou « nothing to do » : envoie-moi la ligne.
+1. Retire le test sonde. Trouve-le (fichiers ajoutés par la branche, puis les tests qui parlent de sonde ou de JUnit) :
+```sh
+git diff --stat origin/develop...HEAD -- '*.cs'
+git grep -n -i -E 'probe|junit|spekt' -- '*.cs'
+```
+Supprime la méthode, ou le fichier s'il ne contient qu'elle, puis commit (`test: remove the probe test`). Ne touche pas au `.csproj` : la ligne `JunitXml.TestLogger` doit y rester.
+2. Recolle depuis GitHub (vue Raw) `plugins/openrd-pack.js`, `commands/fix.md`, `agents/test-guardian.md`, `agents/coder.md`, `scripts/test-guardian.sh`, `scripts/diff-guard.sh`, et la ligne du logger de `AGENTS.global.md` dans ton `~/.config/opencode/AGENTS.md`. Puis les empreintes (section « Mettre à jour le pack ») : rien d'autre que `OK`. Puis `opencode service restart`.
+3. Dans une session OpenCode sur ta branche : « lance `sh ~/.config/opencode/scripts/test-guardian.sh setup --loggers` ». Attendu : `SETUP: nothing to do …` (le paquet est déjà là), ou `SETUP: the test loggers of the CI added …` suivi d'une ligne `LOGGER: <projet>: --logger junit loads (…)` par projet.
+4. Push (`/push`), puis regarde la pipeline. Elle repasse : dis-le-moi, je retire ce bloc. Elle échoue encore : envoie-moi la ligne d'erreur du job.
 
 ## Installer
 
@@ -587,7 +580,7 @@ NOTE: a test run this long cannot prove a change on this machine: AGENTS.md « B
 
 ## Contrôle avant push
 
-Avant chaque push de `/go` et `/fix`, un script, sans le modèle, relit tout ce qui va partir : chaque commit pas encore poussé (même un secret retiré par un commit suivant part avec l'historique) et l'état de la branche. Il arrête tout, rien n'est poussé, sur : une clé privée, un token GitLab, GitHub, AWS ou Slack, un utilisateur et un mot de passe dans une URL, un mot de passe dans une chaîne de connexion, une valeur secrète dans un fichier de configuration, un fichier de clé ou `.env` ajouté, un marqueur de conflit, une version payante d'un package, des dépendances installées ou des sorties de build qu'un `.gitignore` oublie (`node_modules`, `obj`, `bin/Debug`, `TestResults` ; `dist` et `coverage` : un avertissement), et la valeur exacte d'une variable secrète de ton environnement (un nom avec PASSWORD, TOKEN, SECRET, API_KEY ou CREDENTIAL : le mot de passe Artifactory de `~/.zshenv`), où qu'elle soit. Dans un fichier de test, c'est un avertissement (valeurs factices), sauf pour la valeur d'une variable secrète : elle n'est jamais factice. La valeur n'est jamais affichée : seulement le type et l'endroit.
+Avant chaque push de `/go` et `/fix`, un script, sans le modèle, relit tout ce qui va partir : chaque commit pas encore poussé (même un secret retiré par un commit suivant part avec l'historique) et l'état de la branche. Il arrête tout, rien n'est poussé, sur : une clé privée, un token GitLab, GitHub, AWS ou Slack, un utilisateur et un mot de passe dans une URL, un mot de passe dans une chaîne de connexion, une valeur secrète dans un fichier de configuration, un fichier de clé ou `.env` ajouté, un marqueur de conflit, une version payante d'un package, des dépendances installées ou des sorties de build qu'un `.gitignore` oublie (`node_modules`, `obj`, `bin/Debug`, `TestResults` ; `dist` et `coverage` : un avertissement), un fichier, un dossier ou un test « sonde » que la branche contient encore (`.junit-probe`, `ProbeTest`, un test `…Junit…`), et la valeur exacte d'une variable secrète de ton environnement (un nom avec PASSWORD, TOKEN, SECRET, API_KEY ou CREDENTIAL : le mot de passe Artifactory de `~/.zshenv`), où qu'elle soit. Dans un fichier de test, c'est un avertissement (valeurs factices), sauf pour la valeur d'une variable secrète : elle n'est jamais factice. La valeur n'est jamais affichée : seulement le type et l'endroit.
 
 Il tourne tout seul avant chaque push de `/go` et `/fix`. Pour le lancer sans pousser, dans OpenCode, dans une session du dépôt :
 ```text
@@ -595,6 +588,7 @@ lance `sh ~/.config/opencode/scripts/diff-guard.sh`
 ```
 
 - Faux positif : ajoute le commentaire `gitleaks:allow` en fin de la ligne signalée (dans Rider), puis relance `/go` (ou `/fix`). Il ne lève pas « value of the environment variable » : cette valeur est réellement ton secret.
+- Fichier ou test « sonde » (`probe or scratch file added`, `probe test added`) : supprime-le dans Rider et commite (`test: remove the probe test`), puis relance. Un commit suivant qui le retire suffit : seul ce que la branche contient encore compte.
 - Marqueur de conflit ou package payant : corrige dans Rider (le package : son option gratuite, `/outil licences <package>`), puis relance.
 - `node_modules`, `obj`… : les scripts du pack ne les commitent plus (`ship.sh` les laisse hors du commit, avec une ligne `WARNING` : « add obj/ to .gitignore »). S'ils arrivent quand même au contrôle, c'est qu'un commit fait à la main les contient : ajoute le dossier au `.gitignore` du dépôt, puis retire-le des commits pas encore poussés comme pour un secret (ci-dessous), et relance.
 - Vrai secret : il n'est que dans tes commits locaux. Réécris-les sans lui : les commits locaux redeviennent des modifications non commitées, tu remplaces le secret (variable d'environnement, coffre de secrets, valeur factice), puis `/go` fait un seul commit propre et pousse. Branche déjà poussée une fois :

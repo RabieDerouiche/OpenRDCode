@@ -77,10 +77,10 @@ Ce fichier est chargé au début de chaque session Claude Code. Il dit le cadre 
 
 ```sh
 node tools/validate.js && sh tools/release-notes.sh check
-node tools/plugin-test.mjs                      # 886 vérifications
+node tools/plugin-test.mjs                      # 897 vérifications
 (cd tools && node permission-sim.mjs ..)        # 3 210 cas ; python3 tools/permissions.py régénère les permissions
 sh tools/scripts-test.sh sh                     # puis dash et bash
-sh tools/dotnet-test.sh sh                      # 468 contrôles, faux dotnet ; puis dash et bash (plus de 2 minutes : en arrière-plan)
+sh tools/dotnet-test.sh sh                      # 474 contrôles, faux dotnet ; puis dash et bash (plus de 2 minutes : en arrière-plan)
 sh tools/scenarios-test.sh sh
 sh tools/fortify-test.sh sh
 ```
