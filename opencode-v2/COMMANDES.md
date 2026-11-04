@@ -18,7 +18,26 @@ git grep -n -i -E 'probe|junit|spekt' -- '*.cs'
 Supprime la méthode, ou le fichier s'il ne contient qu'elle, puis commit (`test: remove the probe test`). Ne touche pas au `.csproj` : la ligne `JunitXml.TestLogger` doit y rester.
 2. Recolle depuis GitHub (vue Raw) `plugins/openrd-pack.js`, `commands/fix.md`, `agents/test-guardian.md`, `agents/coder.md`, `scripts/test-guardian.sh`, `scripts/diff-guard.sh`, et la ligne du logger de `AGENTS.global.md` dans ton `~/.config/opencode/AGENTS.md`. Puis les empreintes (section « Mettre à jour le pack ») : rien d'autre que `OK`. Puis `opencode service restart`.
 3. Dans une session OpenCode sur ta branche : « lance `sh ~/.config/opencode/scripts/test-guardian.sh setup --loggers` ». Attendu : `SETUP: nothing to do …` (le paquet est déjà là), ou `SETUP: the test loggers of the CI added …` suivi d'une ligne `LOGGER: <projet>: --logger junit loads (…)` par projet.
-4. Push (`/push`), puis regarde la pipeline. Elle repasse : dis-le-moi, je retire ce bloc. Elle échoue encore : envoie-moi la ligne d'erreur du job.
+4. Push (`/push`), puis regarde la pipeline. Elle repasse : dis-le-moi, je retire ce bloc.
+
+**L'erreur est encore là après le push** : il faut savoir quel projet la CI teste sans le logger. Envoie-moi ces quatre sorties (aucune n'affiche de secret).
+
+a. Dans le job GitLab en échec : la commande `dotnet test …` du job, et la ligne `Test run for …dll` juste avant « Could not find a test logger » (elle nomme l'assembly fautif).
+
+b. Dans ton dépôt, sur la branche : le commit que la pipeline a testé est-il bien le tien, poussé, et chaque projet de tests a-t-il le paquet ?
+```sh
+git status -sb | head -1; git log -1 --format='%h %s'; git log -1 --format='%h' "origin/$(git branch --show-current)"
+for p in $(git ls-files '*.csproj'); do grep -qiE 'Microsoft\.NET\.Test\.Sdk|xunit|bunit|MSTest|NUnit|TUnit|<IsTestProject>' "$p" || continue; printf '%s : ' "$p"; grep -qi 'JunitXml.TestLogger' "$p" && echo "logger présent" || echo "PAS DE LOGGER"; done
+git grep -n -i -E 'JunitXml|TestingPlatformDotnetTestSupport|UseMicrosoftTestingPlatformRunner' -- '*.props' '*.targets' '*.csproj' 'global.json'
+```
+c. Le fichier de CI, s'il est dans le dépôt :
+```sh
+git grep -n -E 'dotnet (test|build|restore)|--logger|test-adapter-path|include:' -- '*.yml' '*.yaml'
+```
+d. La même commande que la CI, ici, ses seules lignes utiles (elle lance tous les tests : quelques minutes) :
+```sh
+dotnet test --logger junit 2>&1 | grep -E 'Test run for|Could not find a test logger|error'
+```
 
 ## Installer
 

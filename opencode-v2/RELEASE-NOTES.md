@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-04 13:30 — COMMANDES : l'erreur du logger JUnit encore là après le push
+- **Ajouté** : COMMANDES, bloc « En cours » : quoi m'envoyer quand la pipeline s'arrête encore sur « Could not find a test logger … 'junit' » : la commande de test du job et la ligne `Test run for …dll` qui nomme l'assembly fautif ; le commit testé contre le commit poussé ; chaque projet de tests avec ou sans `JunitXml.TestLogger`, et les réglages Microsoft.Testing.Platform du dépôt ; les commandes du fichier de CI ; la commande de la CI rejouée ici.
+- **Changé** : rien.
+- **Retiré** : rien.
+- **But** : trouver quel projet la CI teste encore sans le logger, au lieu de deviner.
+
 ## 2026-11-04 12:45 — `setup --loggers` : le compte des tests sans découpage de mots
 - **Ajouté** : rien.
 - **Changé** : `test-guardian.sh setup --loggers` lit le compte des tests de sa ligne `LOGGER:` dans une variable au lieu de `set -- $(…)` (shellcheck SC2046, qui arrêtait la CI) ; même sortie. Empreintes.
