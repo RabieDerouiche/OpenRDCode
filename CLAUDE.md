@@ -67,10 +67,16 @@ Ce fichier est chargé au début de chaque session Claude Code. Il dit le cadre 
   - `setup --loggers` les ajoute là où ils manquent ;
   - `/fix` lance `setup --loggers` sur ce message, et `AGENTS.global.md` interdit les projets sondes (l'agent avait créé un dossier `.junit-probe`).
 
+- **Jamais de sonde** (464e6af, e07c204, sur `main`) : après `.junit-probe`, un `/fix` avait ajouté un test « ProbeTest » pour vérifier le logger JUnit (probablement traité comme un bug à prouver). Les corrections :
+  - `/fix` : l'échec du logger est de la configuration, jamais un bug (ni preuve, ni filet, ni test-guardian, ni coder) ;
+  - `setup --loggers` lance les tests de chaque projet changé avec le logger, comme la CI : lignes `LOGGER:` ;
+  - point 34 du plugin : un agent ne peut écrire ni fichier, ni dossier, ni test sonde ; `diff-guard.sh` arrête le push d'une sonde.
+- **`~/oc2`** (e50cb12) : retiré de COMMANDES ; MIGRATION dit que l'annexe A est le parcours, les étapes 1 à 12 restent pour mémoire. Les replis du code vers `~/oc2` restent.
+
 ## Ce qui reste à faire
 
-1. **Pipeline de l'utilisateur** : il doit corriger son dépôt avec le bloc en tête de `opencode-v2/COMMANDES.md` (« En cours : la CI s'arrête sur … 'junit' »), puis recoller `scripts/test-guardian.sh`, `commands/fix.md` et la nouvelle ligne de `AGENTS.global.md`. **Pas encore de confirmation que la pipeline repasse.** Quand il confirme, retire ce bloc de COMMANDES.md, avec son entrée de RELEASE-NOTES, sur `main`.
-2. **Chemins `~/oc2`** : l'introduction de `COMMANDES.md` et une partie de `MIGRATION.md` décrivent encore l'installation côte à côte. Pour cet utilisateur, c'est l'annexe A de MIGRATION et `~/.config/opencode` qui valent. À clarifier si l'occasion se présente, sans casser le guide de ceux qui ont l'installation côte à côte.
+1. **Pipeline de l'utilisateur** : il doit retirer le test sonde, recoller les fichiers que liste le bloc en tête de `opencode-v2/COMMANDES.md` (« En cours : la CI s'arrête sur … 'junit' »), puis pousser. **Pas encore de confirmation que la pipeline repasse.** Quand il confirme, retire ce bloc de COMMANDES.md, avec son entrée de RELEASE-NOTES, sur `main`.
+2. **Paquets devenus payants** : l'utilisateur demande une passe pour faciliter leur retrait vers du natif. Existent déjà : Blazorise (`blazor-native.sh`, skill `blazorise`), AutoMapper (`automapper.sh`, skills `automapper`, `mapster`), MediatR (conventions CQRS : médiateur maison). Rien pour NPOI 2.8+ (frais de maintenance), EPPlus 5+, FluentAssertions 8+, MassTransit 9+, QuestPDF, ImageSharp 3+ (`package-licenses.sh` les signale seulement). Question posée : lesquels sont dans ses dépôts.
 3. **Cas non couvert pour les loggers** : un modèle de CI hébergé dans un autre dépôt GitLab, dans un dépôt dont aucun projet de tests n'a encore de logger. Le pack ne peut pas le deviner ; il le dit (« SETUP: no test logger to add ») et nomme le paquet à ajouter.
 
 ## Vérifier avant de pousser (depuis `opencode-v2/`)
