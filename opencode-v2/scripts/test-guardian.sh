@@ -1223,8 +1223,8 @@ EOF
           if grep -q 'No test is available' "$log"; then
             echo "$t: --logger $name loads (no test in it yet: the CI runs it as it is)"
           else
-            set -- $(counts "$log")
-            echo "$t: --logger $name loads ($(( ${1:-0} + ${2:-0} )) tests ran, ${2:-0} failed)"
+            pf=$(counts "$log")
+            echo "$t: --logger $name loads ($(( ${pf% *} + ${pf#* } )) tests ran, ${pf#* } failed)"
           fi
         done
       done) || { printf '%s\n' "$proof" | grep -v '^STOP:' ; stop "$(printf '%s\n' "$proof" | sed -n 's/^STOP://p' | head -n 1)"; }

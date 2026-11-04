@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-04 12:45 — `setup --loggers` : le compte des tests sans découpage de mots
+- **Ajouté** : rien.
+- **Changé** : `test-guardian.sh setup --loggers` lit le compte des tests de sa ligne `LOGGER:` dans une variable au lieu de `set -- $(…)` (shellcheck SC2046, qui arrêtait la CI) ; même sortie. Empreintes.
+- **Retiré** : rien.
+- **But** : une CI verte pour le commit qui prouve le logger de la CI.
+
 ## 2026-11-04 12:25 — Plus de `~/oc2` dans les commandes données : la v2 a remplacé la 1.19
 - **Ajouté** : rien.
 - **Changé** : COMMANDES : toutes les commandes donnent les chemins de la v2 installée à la place de la 1.19 (`~/.config/opencode`, `~/.local/share/opencode/log/opencode.log` et `openrd-pack.log`, `~/CHECKSUMS-config.txt`, `opencode`, `opencode service restart`) ; la table de correspondance « Dans ce guide / Chez toi » devient « Les commandes de tous les jours » ; « Installer », « Revenir à OpenCode 1.19 » et « Redémarrer OpenCode » renvoient à l'annexe A de MIGRATION. MIGRATION : l'annexe A est le parcours de l'équipe, dit dès le début ; les étapes 1 à 12 (l'essai côte à côte dans `~/oc2`) restent pour mémoire, l'annexe renvoyant aux étapes 4, 5 et 9. README (« Installation », le dossier des worktrees) et FICHIERS (le dossier du plugin).
