@@ -78,6 +78,13 @@ Ce fichier est chargé au début de chaque session Claude Code. Il dit le cadre 
 
 1. **Pipeline de l'utilisateur** : il ajoute `JunitXml.TestLogger` à son `.csproj` de tests (bloc en tête de `opencode-v2/COMMANDES.md`), vérifie avec `dotnet test --logger junit`, pousse. **Pas encore de confirmation que la pipeline repasse.** Quand il confirme, retire ce bloc de COMMANDES.md, avec son entrée de RELEASE-NOTES, sur `main`.
 2. **Paquets devenus payants** : l'utilisateur demande une passe pour faciliter leur retrait vers du natif. Existent déjà : Blazorise (`blazor-native.sh`, skill `blazorise`), AutoMapper (`automapper.sh`, skills `automapper`, `mapster`), MediatR (conventions CQRS : médiateur maison). Rien pour NPOI 2.8+ (frais de maintenance), EPPlus 5+, FluentAssertions 8+, MassTransit 9+, QuestPDF, ImageSharp 3+ (`package-licenses.sh` les signale seulement). Question posée : lesquels sont dans ses dépôts.
+3. **502 et pod qui redémarre après AutoMapper → Mapster** (19 novembre, bloc en tête de COMMANDES.md, 9f72f8a sur `main`) : l'application de l'utilisateur, migrée par `/go` avec GLM 5.3, répond 502 sur chaque écran de données. **Cause reproduite ici, pas encore confirmée sur son pod** : un graphe en boucle (entités EF, DTO en boucle aussi) que Mapster mappe jusqu'au « Stack overflow » (code 134), là où AutoMapper gardait les références tout seul. On attend son `Last State` et les types du journal. **Le pack est à corriger** (pas commencé, à faire quand il confirme ou le demande) :
+   - `MappingSample` (`automapper.sh helpers`, « a cycle: left null ») coupe les boucles : les tests instantanés ne peuvent pas voir le plantage ;
+   - `Compile()` du test des Registers ne le voit pas non plus ;
+   - `MapsterSetup.cs` n'a pas `.PreserveReference(true)`, et le skill `mapster` ne dit pas qu'AutoMapper le faisait sans option ;
+   - `ProjectToType` sur des DTO en boucle lève « Projection does not support circular reference, please use MaxDepth setting ».
+
+   Vérifié : `config.Default.PreserveReference(true)` répare `Map` et rend le même objet qu'AutoMapper, sans casser les maps ni les projections sans boucle (requête en mémoire, pas testé sur EF).
 ## Vérifier avant de pousser (depuis `opencode-v2/`)
 
 ```sh
@@ -89,7 +96,7 @@ sh tools/dotnet-test.sh sh                      # 481 contrôles, faux dotnet ; 
 sh tools/scenarios-test.sh sh
 sh tools/fortify-test.sh sh
 ```
-Les suites avec les vrais SDK .NET et Docker ne tournent que dans la CI GitHub. Il n'y a pas de `dotnet` dans le conteneur de la session.
+Les suites avec les vrais SDK .NET et Docker ne tournent que dans la CI GitHub. Il n'y a pas de `dotnet` dans le conteneur de la session ; pour reproduire un comportement de .NET, `apt-get update && apt-get install -y dotnet-sdk-10.0` marche (l'archive Ubuntu ; `dot.net` est bloqué, nuget.org passe).
 
 ## Les présentations : sources et reconstruction
 
