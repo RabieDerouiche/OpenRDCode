@@ -6,36 +6,47 @@ Les commandes du pack à taper toi-même, à copier-coller. OpenCode v2 a rempla
 
 ## En cours : après AutoMapper → Mapster, un écran de données donne 502 et le pod redémarre
 
-**La cause la plus probable (reproduite avec le `MapsterSetup.cs` du pack et Mapster 10.0.13 ; pas encore vue sur ton pod)** : un objet qui pointe vers lui-même par ses relations. Une commande chargée par Entity Framework a ses lignes, et chaque ligne pointe vers sa commande. Quand le DTO suit la même boucle (`OrderDto.Lines` → `OrderLineDto.Order`), AutoMapper s'en sortait tout seul (il repère ces boucles au démarrage). Mapster, lui, tourne en rond jusqu'à remplir la pile : « Stack overflow », que .NET ne peut pas rattraper. Le processus meurt (code 134), le pod redémarre, la route répond 502. L'écran d'accueil ne mappe rien, donc il marche.
+**La cause la plus probable (reproduite avec le `MapsterSetup.cs` du pack, Mapster 10.0.13 et une vraie base Entity Framework ; pas encore vue sur ton pod)** : un objet qui pointe vers lui-même par ses relations. Une commande chargée par Entity Framework a ses lignes, et chaque ligne pointe vers sa commande. Quand le DTO suit la même boucle (`OrderDto.Lines` → `OrderLineDto.Order`), AutoMapper s'en sortait tout seul (il repère ces boucles au démarrage). Mapster, lui, tourne en rond jusqu'à remplir la pile : « Stack overflow », que .NET ne peut pas rattraper. Le processus meurt (code 134), le pod redémarre, la route répond 502. L'écran d'accueil ne mappe rien, donc il marche.
 
-Pourquoi tout était vert : le build ne voit pas une boucle, `Compile()` du test des Registers non plus, et les exemples des tests instantanés du pack coupent les boucles (c'est le défaut du pack, à corriger).
+Pourquoi tout était vert : le build ne voit pas une boucle, `Compile()` du test des Registers non plus, et les exemples des tests instantanés du pack coupent les boucles (c'est le défaut du pack, corrigé plus tard).
 
-1. Pourquoi le pod est mort (`kubectl` : les mêmes arguments). `Exit Code: 134` : c'est bien ça. `OOMKilled` ou `137` : la mémoire, une autre piste, dis-le-moi.
+**Réparer d'abord, sur ton poste, sans attendre un déploiement** :
+
+1. Voir le plantage : lance l'application sur ton poste comme d'habitude (`dotnet run --project <le projet web>`), ouvre un écran qui donne 502. Le terminal affiche `Stack overflow.` et l'application s'arrête : c'est bien la boucle. Elle ne s'arrête pas : passe à « Si ce n'est pas ça ».
+2. Le correctif, une ligne dans `MapsterSetup.cs`, à la main (pas par `/go` : son relecteur refuse un `MapsterSetup.cs` changé). Après `.AddDestinationTransform(DestinationTransform.EmptyCollectionIfNull)`, retire le `;` et ajoute :
+```csharp
+                    .PreserveReference(true);
+```
+Ton fichier n'a pas la ligne `EmptyCollectionIfNull` (`AllowNullCollections = true`) : ajoute-la après `.EnumMappingStrategy(EnumMappingStrategy.ByName)`.
+3. Relance l'application, rouvre le même écran, puis chaque écran de données une fois : il s'affiche et le terminal reste en vie.
+4. Les projections (elles ne tuent pas le pod, elles donnent une erreur 500 « Projection does not support circular reference, please use MaxDepth setting ») : la liste des appels, ouvre l'écran de chacun.
+```sh
+git grep -n 'ProjectToType<' -- '*.cs' '*.razor'
+```
+Une projection qui lève cette erreur : dans son Register, `.MaxDepth(2)` sur la map, ou le membre de retour ignoré (`.Ignore(d => d.Order)`).
+5. Les tests, puis le commit (`fix(mapping): keep references in Mapster as AutoMapper did`), le push et le déploiement en recette.
+```sh
+dotnet test 2>&1 | grep -E 'Passed!|Failed!|error'
+```
+
+Ce que le correctif fait (vérifié sur une base SQLite, par `AddMapsterMaps` et l'`IMapper` injecté) : `Map<T>` et `Adapt<T>()` d'un graphe en boucle passent et rendent le même objet qu'AutoMapper (la ligne pointe vers le DTO de sa commande) ; `Map(source, destination)` sur une entité suivie et `ProjectToType` sans boucle marchent comme avant (une seule requête SQL).
+
+**Si ce n'est pas ça** (l'application ne s'arrête pas sur ton poste, ou le pod redémarre encore), `kubectl` prend les mêmes arguments :
+
+- Pourquoi le pod est mort. `Exit Code: 134` : un « Stack overflow ». `OOMKilled` ou `137` : la mémoire, une autre piste, dis-le-moi.
 ```sh
 oc get pods
 oc describe pod <le pod> | grep -A 7 'Last State'
 ```
-2. Les types qui bouclent (le journal du conteneur d'avant le redémarrage ; une ligne par type, la plus fréquente en haut) :
+- Les types qui bouclent (le journal du conteneur d'avant le redémarrage ; la ligne la plus fréquente en haut) :
 ```sh
 oc logs <le pod> --previous | grep 'lambda_method' | sed -E 's/^.*lambda_method[0-9]*\(//; s/System\.Runtime\.CompilerServices\.Closure, //' | sort | uniq -c | sort -rn | head -5
 ```
-3. D'où part l'appel (les dernières lignes : ton service ou ton composant, puis `Mapper.Map`) :
+- D'où part l'appel (les dernières lignes : ton service ou ton composant, puis `Mapper.Map`) :
 ```sh
 oc logs <le pod> --previous | grep -A 100000 'Stack overflow' | grep '^ *at ' | grep -v 'DynamicClass' | tail -15
 ```
-Rien à l'étape 2 ou 3 : envoie-moi les 30 premières lignes de `oc logs <le pod> --previous | grep -v lambda_method`, sans mot de passe ni token.
-
-4. Le correctif le plus court, une ligne dans `MapsterSetup.cs` (toutes les maps gardent les références, comme AutoMapper le faisait pour les boucles) : après `.AddDestinationTransform(DestinationTransform.EmptyCollectionIfNull)`, retire le `;` et ajoute
-```csharp
-                    .PreserveReference(true);
-```
-Ton fichier n'a pas la ligne `EmptyCollectionIfNull` (`AllowNullCollections = true`) : ajoute-la après `.EnumMappingStrategy(EnumMappingStrategy.ByName)`. Vérifié ici : le mapping de la boucle passe et rend le même objet qu'AutoMapper (la ligne pointe vers le DTO de sa commande), les maps sans boucle et `ProjectToType` passent toujours.
-
-Plus précis, si tu préfères ne toucher que les maps de l'étape 2 : dans leur Register, `.PreserveReference(true)` sur la map du type qui porte la liste (`config.NewConfig<Order, OrderDto>().PreserveReference(true)`).
-
-5. La preuve avant de redéployer : lance l'application sur ton poste, ouvre l'écran qui plantait. Le processus reste en vie et l'écran s'affiche.
-
-Un `ProjectToType` sur des DTO en boucle ne tue pas le pod : il lève « Projection does not support circular reference, please use MaxDepth setting » (une erreur 500). Là, `.MaxDepth(2)` sur la map, ou le membre de retour ignoré (`.Ignore(d => d.Order)`).
+- Rien de tout ça : envoie-moi les 30 premières lignes de `oc logs <le pod> --previous | grep -v lambda_method`, sans mot de passe ni token.
 
 ## En cours : la CI s'arrête sur « Could not find a test logger … 'junit' »
 
