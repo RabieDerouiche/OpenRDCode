@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-19 13:05 — COMMANDES : le 502 après Mapster, un conteneur local aux services nuls
+- **Ajouté** : au bloc « En cours », deux écarts de plus, rejoués : un conteneur local réécrit avec `.AddSingleton((IService)null)` lève `ArgumentNullException … 'implementationInstance'` (les lignes à retirer, `GetService` rendant nul comme avant) ; avec `ShallowCopyForSameType(true)`, un membre liste d'une map d'un type vers lui-même partage la liste de la source.
+- **Changé** : « Trois autres écarts » devient « Cinq autres écarts ».
+- **Retiré** : rien.
+- **But** : le parcours de saisie du développeur donnait une erreur 500 après le premier correctif.
+
 ## 2026-11-19 12:10 — COMMANDES : le 502 après Mapster, la cause lue dans le journal, le correctif d'une ligne
 - **Ajouté** : au bloc « En cours » : la cause confirmée par le journal du pod et rejouée avec les mêmes lignes de pile (une entité gardée telle quelle dans un view model, que Mapster recopie avec tout son graphe) ; trois écarts à regarder avant la recette, chacun rejoué avec les deux bibliothèques : une méthode appelée sur un maillon nul dans un `.Map(…)` et la recherche de ses candidats, `Map(source, destination, types)` avec deux listes (la destination n'est plus remplie) et son remplacement, une destination d'un type dérivé de celui de la map (`AllowImplicitDestinationInheritance`).
 - **Changé** : le correctif est `.ShallowCopyForSameType(true)` seul ; les commandes du journal du pod passent en fin de bloc.

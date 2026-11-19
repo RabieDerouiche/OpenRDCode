@@ -22,7 +22,7 @@ Vérifié avec les deux bibliothèques, sur le chemin du journal : le view model
 
 Puis, sur ton poste : lance l'application, ouvre l'écran qui donnait 502 et chaque écran de données une fois, lance les tests, commit (`fix(mapping): keep an entity of the same type by reference, as AutoMapper did`), push, recette.
 
-**Trois autres écarts à regarder avant la recette** (aucun ne tue le pod ; chacun rejoué ici) :
+**Cinq autres écarts à regarder avant la recette** (aucun ne tue le pod ; chacun rejoué ici) :
 
 1. Une méthode appelée sur un maillon nul, dans un `.Map(…)` : `s => s.Company.Accounts.FirstOrDefault() ?? new Account()` quand `Company` est nul, ou `s.Lines.Where(…)` quand `Lines` est nul. AutoMapper rendait nul ou une liste vide, Mapster lève `NullReferenceException` ou `ArgumentNullException` (erreur 500). Écris le test : `s => s.Company == null ? null : (s.Company.Accounts.FirstOrDefault() ?? new Account())`. Une chaîne de propriétés seule (`s.Product.Device.Max`) est sans risque des deux côtés. Les candidats :
 ```sh
@@ -39,6 +39,9 @@ foreach (var item in mapped) destList.Add(item);
 git grep -n -E 'UseLazyLoadingProxies|Castle\.Proxies' -- '*.cs'
 ```
 alors, dans `MapsterSetup.cs`, à côté de `config.RequireDestinationMemberSource = strict;` : `config.AllowImplicitDestinationInheritance = true;`.
+
+4. Un conteneur local qui donnait au profil des services **nuls** (`new ServiceCollection().AddScoped(p => new MapperConfiguration(cfg => cfg.AddProfile(new XProfile(p.GetService<IService>())))…` : rien d'autre n'y est enregistré, `GetService` rend nul). Réécrit avec `.AddSingleton((IService)null)`, il lève `ArgumentNullException … 'implementationInstance'` (erreur 500) : .NET refuse une instance nulle. Retire ces lignes et garde `.AddMapsterMaps(typeof(XRegister))` : `MapContext.Current.GetService<T>()` rend nul pour un service non enregistré, comme avant.
+5. Avec `ShallowCopyForSameType(true)`, une map d'un type vers lui-même donne à la destination **la même liste** que la source pour un membre liste du même type (AutoMapper en donnait une autre, avec les mêmes éléments). Sans effet tant que le code ne modifie pas ensuite l'une des deux listes.
 
 Un `ProjectToType` sur des DTO en boucle lève « Projection does not support circular reference, please use MaxDepth setting » (erreur 500) : `.MaxDepth(2)` sur sa map, ou le membre de retour ignoré.
 
