@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-19 12:10 — COMMANDES : le 502 après Mapster, la cause lue dans le journal, le correctif d'une ligne
+- **Ajouté** : au bloc « En cours » : la cause confirmée par le journal du pod et rejouée avec les mêmes lignes de pile (une entité gardée telle quelle dans un view model, que Mapster recopie avec tout son graphe) ; trois écarts à regarder avant la recette, chacun rejoué avec les deux bibliothèques : une méthode appelée sur un maillon nul dans un `.Map(…)` et la recherche de ses candidats, `Map(source, destination, types)` avec deux listes (la destination n'est plus remplie) et son remplacement, une destination d'un type dérivé de celui de la map (`AllowImplicitDestinationInheritance`).
+- **Changé** : le correctif est `.ShallowCopyForSameType(true)` seul ; les commandes du journal du pod passent en fin de bloc.
+- **Retiré** : `.PreserveReference(true)` sur `config.Default`, proposé à tort : il recopie tout le graphe d'entités, et dans une map qui en appelle d'autres, la même source mappée deux fois rend le premier résultat (un `Map(source, existant)` ne met plus l'objet existant à jour).
+- **But** : le bon correctif pour la recette, et pas un second aller-retour sur un écart déjà connu.
+
 ## 2026-11-19 10:05 — COMMANDES : le 502 après Mapster, l'entité gardée dans un view model
 - **Ajouté** : au bloc « En cours » : `.ShallowCopyForSameType(true)` avec `.PreserveReference(true)` dans `MapsterSetup.cs` (un view model qui garde une entité telle quelle : AutoMapper donnait la même entité, Mapster la recopie avec tout ce qu'elle atteint, jusqu'au « Stack overflow ») ; l'écart d'un `MapFrom` qui appelle `.Where(…)` sur une liste nulle (liste vide avec AutoMapper, `ArgumentNullException` avec Mapster) et ce qui ne change pas (une chaîne de propriétés avec un maillon nul).
 - **Changé** : le correctif passe d'une ligne à deux.
