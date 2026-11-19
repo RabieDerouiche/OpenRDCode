@@ -13,11 +13,12 @@ Pourquoi tout était vert : le build ne voit pas une boucle, `Compile()` du test
 **Réparer d'abord, sur ton poste, sans attendre un déploiement** :
 
 1. Voir le plantage : lance l'application sur ton poste comme d'habitude (`dotnet run --project <le projet web>`), ouvre un écran qui donne 502. Le terminal affiche `Stack overflow.` et l'application s'arrête : c'est bien la boucle. Elle ne s'arrête pas : passe à « Si ce n'est pas ça ».
-2. Le correctif, une ligne dans `MapsterSetup.cs`, à la main (pas par `/go` : son relecteur refuse un `MapsterSetup.cs` changé). Après `.AddDestinationTransform(DestinationTransform.EmptyCollectionIfNull)`, retire le `;` et ajoute :
+2. Le correctif, deux lignes dans `MapsterSetup.cs`, à la main (pas par `/go` : son relecteur refuse un `MapsterSetup.cs` changé). Après `.AddDestinationTransform(DestinationTransform.EmptyCollectionIfNull)`, retire le `;` et ajoute :
 ```csharp
+                    .ShallowCopyForSameType(true)
                     .PreserveReference(true);
 ```
-Ton fichier n'a pas la ligne `EmptyCollectionIfNull` (`AllowNullCollections = true`) : ajoute-la après `.EnumMappingStrategy(EnumMappingStrategy.ByName)`.
+Ton fichier n'a pas la ligne `EmptyCollectionIfNull` (`AllowNullCollections = true`) : ajoute-les après `.EnumMappingStrategy(EnumMappingStrategy.ByName)`. La première : un view model qui garde une entité telle quelle (un membre du même type des deux côtés) reçoit la même entité, comme avec AutoMapper ; sans elle, Mapster recopie l'entité et tout ce qu'elle atteint, en boucle. La seconde : les boucles entre view models.
 3. Relance l'application, rouvre le même écran, puis chaque écran de données une fois : il s'affiche et le terminal reste en vie.
 4. Les projections (elles ne tuent pas le pod, elles donnent une erreur 500 « Projection does not support circular reference, please use MaxDepth setting ») : la liste des appels, ouvre l'écran de chacun.
 ```sh
@@ -29,7 +30,9 @@ Une projection qui lève cette erreur : dans son Register, `.MaxDepth(2)` sur la
 dotnet test 2>&1 | grep -E 'Passed!|Failed!|error'
 ```
 
-Ce que le correctif fait (vérifié sur une base SQLite, par `AddMapsterMaps` et l'`IMapper` injecté) : `Map<T>` et `Adapt<T>()` d'un graphe en boucle passent et rendent le même objet qu'AutoMapper (la ligne pointe vers le DTO de sa commande) ; `Map(source, destination)` sur une entité suivie et `ProjectToType` sans boucle marchent comme avant (une seule requête SQL).
+Ce que le correctif fait (vérifié sur une base SQLite, par `AddMapsterMaps` et l'`IMapper` injecté) : `Map<T>` et `Adapt<T>()` d'un graphe en boucle passent et rendent le même objet qu'AutoMapper (la ligne pointe vers le DTO de sa commande, l'entité gardée dans un view model est la même) ; `Map(source, destination)` sur une entité suivie et `ProjectToType` sans boucle marchent comme avant (une seule requête SQL).
+
+Un autre écart, qui donne une erreur 500 et pas un redémarrage : un `MapFrom` qui appelle `.Where(…)` ou une autre méthode sur une liste nulle. AutoMapper rendait une liste vide, Mapster lève `ArgumentNullException`. Dans le Register : `s => s.Liste == null ? null : s.Liste.Where(…)`. Une chaîne de propriétés (`s.Product.ProductDevice.Max`) avec un maillon nul donne la valeur par défaut des deux côtés : rien à changer.
 
 **Si ce n'est pas ça** (l'application ne s'arrête pas sur ton poste, ou le pod redémarre encore), `kubectl` prend les mêmes arguments :
 
