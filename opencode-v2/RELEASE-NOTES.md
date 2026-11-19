@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-19 09:20 — COMMANDES : le 502 après Mapster, réparer d'abord
+- **Ajouté** : au bloc « En cours » : voir le plantage sur son poste (`Stack overflow.` dans le terminal), la liste des `ProjectToType` à ouvrir une fois, les tests puis le commit ; ce que le correctif fait, vérifié sur une base SQLite par `AddMapsterMaps` et l'`IMapper` injecté (`Map<T>`, `Adapt<T>()`, `Map(source, destination)` sur une entité suivie, `ProjectToType` sans boucle).
+- **Changé** : l'ordre du bloc : le correctif d'une ligne dans `MapsterSetup.cs` et sa preuve en premier, les commandes du pod ensuite, sous « Si ce n'est pas ça » ; le correctif se fait à la main (le relecteur de `/go` refuse un `MapsterSetup.cs` changé).
+- **Retiré** : la variante par map du correctif.
+- **But** : une version sans AutoMapper en recette au plus vite ; le pack est corrigé après.
+
 ## 2026-11-19 08:45 — COMMANDES : après AutoMapper → Mapster, un écran donne 502 et le pod redémarre
 - **Ajouté** : COMMANDES, bloc « En cours », tout en haut : la cause la plus probable, reproduite avec le `MapsterSetup.cs` du pack et Mapster 10.0.13 (un graphe d'objets en boucle, que Mapster mappe jusqu'au « Stack overflow », code 134, là où AutoMapper gardait les références tout seul) ; pourquoi le pod est mort (`Last State`) ; les types qui bouclent et l'appel de départ, lus dans le journal du conteneur précédent ; le correctif d'une ligne dans `MapsterSetup.cs` (`.PreserveReference(true)`) ou par map ; le cas de `ProjectToType` (`MaxDepth`).
 - **Changé** : rien.
