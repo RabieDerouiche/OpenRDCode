@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-19 10:05 — COMMANDES : le 502 après Mapster, l'entité gardée dans un view model
+- **Ajouté** : au bloc « En cours » : `.ShallowCopyForSameType(true)` avec `.PreserveReference(true)` dans `MapsterSetup.cs` (un view model qui garde une entité telle quelle : AutoMapper donnait la même entité, Mapster la recopie avec tout ce qu'elle atteint, jusqu'au « Stack overflow ») ; l'écart d'un `MapFrom` qui appelle `.Where(…)` sur une liste nulle (liste vide avec AutoMapper, `ArgumentNullException` avec Mapster) et ce qui ne change pas (une chaîne de propriétés avec un maillon nul).
+- **Changé** : le correctif passe d'une ligne à deux.
+- **Retiré** : rien.
+- **But** : le profil du développeur mappe des entités Entity Framework vers des view models sans map pour leurs membres du même type ; les deux réglages redonnent ce qu'AutoMapper faisait, reproduit avec les deux bibliothèques.
+
 ## 2026-11-19 09:20 — COMMANDES : le 502 après Mapster, réparer d'abord
 - **Ajouté** : au bloc « En cours » : voir le plantage sur son poste (`Stack overflow.` dans le terminal), la liste des `ProjectToType` à ouvrir une fois, les tests puis le commit ; ce que le correctif fait, vérifié sur une base SQLite par `AddMapsterMaps` et l'`IMapper` injecté (`Map<T>`, `Adapt<T>()`, `Map(source, destination)` sur une entité suivie, `ProjectToType` sans boucle).
 - **Changé** : l'ordre du bloc : le correctif d'une ligne dans `MapsterSetup.cs` et sa preuve en premier, les commandes du pod ensuite, sous « Si ce n'est pas ça » ; le correctif se fait à la main (le relecteur de `/go` refuse un `MapsterSetup.cs` changé).
