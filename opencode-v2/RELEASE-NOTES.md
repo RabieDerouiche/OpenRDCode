@@ -12,6 +12,12 @@ Format d'une entrée (vérifié par la CI) :
 - **But** : …
 ```
 
+## 2026-11-19 08:45 — COMMANDES : après AutoMapper → Mapster, un écran donne 502 et le pod redémarre
+- **Ajouté** : COMMANDES, bloc « En cours », tout en haut : la cause la plus probable, reproduite avec le `MapsterSetup.cs` du pack et Mapster 10.0.13 (un graphe d'objets en boucle, que Mapster mappe jusqu'au « Stack overflow », code 134, là où AutoMapper gardait les références tout seul) ; pourquoi le pod est mort (`Last State`) ; les types qui bouclent et l'appel de départ, lus dans le journal du conteneur précédent ; le correctif d'une ligne dans `MapsterSetup.cs` (`.PreserveReference(true)`) ou par map ; le cas de `ProjectToType` (`MaxDepth`).
+- **Changé** : rien.
+- **Retiré** : rien.
+- **But** : savoir en trois commandes si c'est bien la boucle, et remettre le site en marche sans attendre la correction du pack (ses tests instantanés coupent les boucles et `Compile()` ne les voit pas : à corriger).
+
 ## 2026-11-04 14:16 — Le logger JUnit ajouté au seul projet de tests, avec le nom de l'erreur de la CI
 - **Ajouté** : `test-guardian.sh setup --loggers [junit|nunit|xunit]` : les loggers nommés (le FriendlyName de l'erreur « Could not find a test logger … 'junit' ») s'ajoutent à ceux des autres projets de tests et d'un fichier de CI du dépôt, à la version des autres projets de tests, sinon du cache NuGet, sinon 6.1.0 ; un nom qui n'est pas un logger d'un paquet (`trx`) : `STOP`. 7 contrôles dans `tools/dotnet-test.sh` (le cas du dépôt : un seul projet de tests xunit et bUnit sans logger, pas de fichier de CI ; la version du cache ; la casse ; `trx`) ; une vérification du plugin et un contrôle avant push sur une variable `probe` d'un faux serveur des tests (un port libre), qui n'est pas une sonde.
 - **Changé** : sans nom ni logger connu, « SETUP: no test logger to add » dit de relancer avec le nom de l'erreur. `/fix` passe ce nom (`setup --loggers junit`) ; `AGENTS.global.md` aussi. README et FICHIERS (481 contrôles .NET), empreintes.
