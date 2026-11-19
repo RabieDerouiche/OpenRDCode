@@ -6,50 +6,53 @@ Les commandes du pack à taper toi-même, à copier-coller. OpenCode v2 a rempla
 
 ## En cours : après AutoMapper → Mapster, un écran de données donne 502 et le pod redémarre
 
-**La cause la plus probable (reproduite avec le `MapsterSetup.cs` du pack, Mapster 10.0.13 et une vraie base Entity Framework ; pas encore vue sur ton pod)** : un objet qui pointe vers lui-même par ses relations. Une commande chargée par Entity Framework a ses lignes, et chaque ligne pointe vers sa commande. Quand le DTO suit la même boucle (`OrderDto.Lines` → `OrderLineDto.Order`), AutoMapper s'en sortait tout seul (il repère ces boucles au démarrage). Mapster, lui, tourne en rond jusqu'à remplir la pile : « Stack overflow », que .NET ne peut pas rattraper. Le processus meurt (code 134), le pod redémarre, la route répond 502. L'écran d'accueil ne mappe rien, donc il marche.
+**La cause (certaine : lue dans le journal du pod, puis rejouée ici avec les mêmes lignes de pile)** : un view model qui garde une entité Entity Framework telle quelle, par exemple `OrderLineDetailViewModel.ProductType` de type `ProductType`, l'entité. Le membre a le même type des deux côtés et aucune map : AutoMapper donnait la même entité, par référence. Mapster, lui, la recopie avec tout ce qu'elle atteint (ses listes, leurs éléments, leurs relations de retour) et tourne en rond : « Stack overflow », que .NET ne peut pas rattraper. Le processus meurt (code 134), le pod redémarre, la route répond 502. Dans le journal, la pile répète une ligne `lambda_method…(…ICollection<Une entité>)`.
 
 Pourquoi tout était vert : le build ne voit pas une boucle, `Compile()` du test des Registers non plus, et les exemples des tests instantanés du pack coupent les boucles (c'est le défaut du pack, corrigé plus tard).
 
-**Réparer d'abord, sur ton poste, sans attendre un déploiement** :
-
-1. Voir le plantage : lance l'application sur ton poste comme d'habitude (`dotnet run --project <le projet web>`), ouvre un écran qui donne 502. Le terminal affiche `Stack overflow.` et l'application s'arrête : c'est bien la boucle. Elle ne s'arrête pas : passe à « Si ce n'est pas ça ».
-2. Le correctif, deux lignes dans `MapsterSetup.cs`, à la main (pas par `/go` : son relecteur refuse un `MapsterSetup.cs` changé). Après `.AddDestinationTransform(DestinationTransform.EmptyCollectionIfNull)`, retire le `;` et ajoute :
+**Le correctif : une ligne dans `MapsterSetup.cs`**, à la main (pas par `/go` : son relecteur refuse un `MapsterSetup.cs` changé). Après `.AddDestinationTransform(DestinationTransform.EmptyCollectionIfNull)`, retire le `;` et ajoute :
 ```csharp
-                    .ShallowCopyForSameType(true)
-                    .PreserveReference(true);
+                    .ShallowCopyForSameType(true);
 ```
-Ton fichier n'a pas la ligne `EmptyCollectionIfNull` (`AllowNullCollections = true`) : ajoute-les après `.EnumMappingStrategy(EnumMappingStrategy.ByName)`. La première : un view model qui garde une entité telle quelle (un membre du même type des deux côtés) reçoit la même entité, comme avec AutoMapper ; sans elle, Mapster recopie l'entité et tout ce qu'elle atteint, en boucle. La seconde : les boucles entre view models.
-3. Relance l'application, rouvre le même écran, puis chaque écran de données une fois : il s'affiche et le terminal reste en vie.
-4. Les projections (elles ne tuent pas le pod, elles donnent une erreur 500 « Projection does not support circular reference, please use MaxDepth setting ») : la liste des appels, ouvre l'écran de chacun.
+Ton fichier n'a pas la ligne `EmptyCollectionIfNull` (`AllowNullCollections = true`) : ajoute-la après `.EnumMappingStrategy(EnumMappingStrategy.ByName)`.
+
+Vérifié avec les deux bibliothèques, sur le chemin du journal : le view model reçoit la même entité qu'avec AutoMapper ; une liste d'entités devient une nouvelle liste des mêmes entités, comme avec AutoMapper ; les maps d'un type vers lui-même (`CompanyViewModel → CompanyViewModel` et ses `Ignore`) recopient toujours sur l'objet existant.
+
+**Pas de `.PreserveReference(true)` sur `config.Default`** (ce guide le proposait, à tort) : il évite le plantage mais recopie quand même tout le graphe d'entités, et dans une map qui en appelle d'autres (`MapWith` ou `MapToTargetWith` avec `mapper.Map(…)` dedans), la même source mappée deux fois rend le premier résultat : un `Map(source, existant)` ne met plus l'objet existant à jour. Seulement sur la map d'une vraie boucle entre view models, si un journal en montre une.
+
+Puis, sur ton poste : lance l'application, ouvre l'écran qui donnait 502 et chaque écran de données une fois, lance les tests, commit (`fix(mapping): keep an entity of the same type by reference, as AutoMapper did`), push, recette.
+
+**Trois autres écarts à regarder avant la recette** (aucun ne tue le pod ; chacun rejoué ici) :
+
+1. Une méthode appelée sur un maillon nul, dans un `.Map(…)` : `s => s.Company.Accounts.FirstOrDefault() ?? new Account()` quand `Company` est nul, ou `s.Lines.Where(…)` quand `Lines` est nul. AutoMapper rendait nul ou une liste vide, Mapster lève `NullReferenceException` ou `ArgumentNullException` (erreur 500). Écris le test : `s => s.Company == null ? null : (s.Company.Accounts.FirstOrDefault() ?? new Account())`. Une chaîne de propriétés seule (`s.Product.Device.Max`) est sans risque des deux côtés. Les candidats :
 ```sh
-git grep -n 'ProjectToType<' -- '*.cs' '*.razor'
+git grep -n -E '\.Map\(.*\.(FirstOrDefault|First|Where|Select|GroupBy|OrderBy|Any|Count|ToUpper|ToLower|Substring)\(' -- '*Register.cs'
 ```
-Une projection qui lève cette erreur : dans son Register, `.MaxDepth(2)` sur la map, ou le membre de retour ignoré (`.Ignore(d => d.Order)`).
-5. Les tests, puis le commit (`fix(mapping): keep references in Mapster as AutoMapper did`), le push et le déploiement en recette.
-```sh
-dotnet test 2>&1 | grep -E 'Passed!|Failed!|error'
+2. `mapper.Map(source, destination, source.GetType(), destination.GetType())` avec deux **listes** : AutoMapper vidait la liste de destination et la remplissait, Mapster la laisse comme elle était. Dans un utilitaire de copie, pour deux listes :
+```csharp
+var mapped = (IList)mapper.Map(source, source.GetType(), destination.GetType());
+destList.Clear();
+foreach (var item in mapped) destList.Add(item);
 ```
-
-Ce que le correctif fait (vérifié sur une base SQLite, par `AddMapsterMaps` et l'`IMapper` injecté) : `Map<T>` et `Adapt<T>()` d'un graphe en boucle passent et rendent le même objet qu'AutoMapper (la ligne pointe vers le DTO de sa commande, l'entité gardée dans un view model est la même) ; `Map(source, destination)` sur une entité suivie et `ProjectToType` sans boucle marchent comme avant (une seule requête SQL).
-
-Un autre écart, qui donne une erreur 500 et pas un redémarrage : un `MapFrom` qui appelle `.Where(…)` ou une autre méthode sur une liste nulle. AutoMapper rendait une liste vide, Mapster lève `ArgumentNullException`. Dans le Register : `s => s.Liste == null ? null : s.Liste.Where(…)`. Une chaîne de propriétés (`s.Product.ProductDevice.Max`) avec un maillon nul donne la valeur par défaut des deux côtés : rien à changer.
-
-**Si ce n'est pas ça** (l'application ne s'arrête pas sur ton poste, ou le pod redémarre encore), `kubectl` prend les mêmes arguments :
-
-- Pourquoi le pod est mort. `Exit Code: 134` : un « Stack overflow ». `OOMKilled` ou `137` : la mémoire, une autre piste, dis-le-moi.
+3. La même forme avec une destination d'un type **dérivé** de celui de la map (une entité en proxy de chargement différé) : Mapster n'applique plus les `Ignore` ni les `.Map` de la map. Seulement si cette commande trouve quelque chose :
 ```sh
-oc get pods
+git grep -n -E 'UseLazyLoadingProxies|Castle\.Proxies' -- '*.cs'
+```
+alors, dans `MapsterSetup.cs`, à côté de `config.RequireDestinationMemberSource = strict;` : `config.AllowImplicitDestinationInheritance = true;`.
+
+Un `ProjectToType` sur des DTO en boucle lève « Projection does not support circular reference, please use MaxDepth setting » (erreur 500) : `.MaxDepth(2)` sur sa map, ou le membre de retour ignoré.
+
+**Lire un autre plantage dans le journal du pod** (`kubectl` : les mêmes arguments). `Exit Code: 134` : un « Stack overflow ». `OOMKilled` ou `137` : la mémoire.
+```sh
 oc describe pod <le pod> | grep -A 7 'Last State'
 ```
-- Les types qui bouclent (le journal du conteneur d'avant le redémarrage ; la ligne la plus fréquente en haut) :
+Les types qui bouclent (la ligne la plus fréquente en haut), puis d'où part l'appel (les dernières lignes : ton contrôleur, puis `Mapper.Map`) :
 ```sh
 oc logs <le pod> --previous | grep 'lambda_method' | sed -E 's/^.*lambda_method[0-9]*\(//; s/System\.Runtime\.CompilerServices\.Closure, //' | sort | uniq -c | sort -rn | head -5
 ```
-- D'où part l'appel (les dernières lignes : ton service ou ton composant, puis `Mapper.Map`) :
 ```sh
-oc logs <le pod> --previous | grep -A 100000 'Stack overflow' | grep '^ *at ' | grep -v 'DynamicClass' | tail -15
+oc logs <le pod> --previous | grep -A 100000 'Stack overflow' | grep ' at ' | grep -v 'DynamicClass' | tail -15
 ```
-- Rien de tout ça : envoie-moi les 30 premières lignes de `oc logs <le pod> --previous | grep -v lambda_method`, sans mot de passe ni token.
 
 ## En cours : la CI s'arrête sur « Could not find a test logger … 'junit' »
 
